@@ -1,0 +1,60 @@
+# Risip
+
+Multi-tenant SaaS: any company signs up, its workers scan receipts, its accountants generate category-grouped invoices, its owner sees a live financial dashboard. Started for a Tanzanian civil-engineering firm, built generic. UI copy is in Swahili.
+
+## Tech stack
+
+- **Frontend:** Vite + React 18 + TypeScript + Tailwind. Path alias `@/*` → `src/*`.
+- **Backend / DB / Auth / Storage / Realtime:** Supabase (Postgres 15).
+- **AI receipt extraction:** Claude API — default **Haiku 4.5** (`claude-haiku-4-5-20251001`), allow swap to Sonnet 5 per company/project for hard-to-read receipts. Anthropic API key lives only in Edge Function env vars.
+- **PDF generation for invoices:** `pdf-lib` (Deno-native, no Node polyfills needed).
+- **Transactional email:** **Resend**, called from a Supabase Edge Function. The Resend API key must never ship to the browser or appear in a `VITE_*` env var. This covers signup email confirmations (once prod turns them on), invite-link delivery, invoice-sent notifications, etc.
+
+## Roles
+
+Three roles, fixed per company via `profiles.role`:
+
+- `owner` — full admin, sees everything. UI color: **purple** (`--role-admin`).
+- `accountant` — financials + invoices, all projects in the company. UI color: **coral** (`--role-accountant`).
+- `worker` — only projects they're a member of, upload flow only. UI color: **teal** (`--role-worker`).
+
+Invite links are role-bound (one link per role per project — never a role dropdown).
+
+## Data model (see `supabase/migrations/`)
+
+Every business row is scoped by `company_id`, directly or via `project → company`. `receipts.company_id` is denormalized and kept in sync by a trigger so the duplicate-receipt unique index can span the whole company.
+
+Duplicate/fraud guard: unique index on `(receipts.company_id, verification_code)` where `status <> 'duplicate'`.
+
+## RLS posture
+
+RLS enabled on every table. No policies = deny. Anon role has **no** direct table access. Anything that must cross tenants (company signup, join-by-token, invoice generation) runs in an Edge Function using the `service_role` key.
+
+Helper SQL functions (`auth_company_id`, `auth_role`, `auth_can_see_project`) are `security definer` with a pinned `search_path = public`, and `execute` is granted only to `authenticated` (or `service_role` for the RPC).
+
+## Storage buckets
+
+- `receipts` (private) — path: `<project_id>/<receipt_id>.<ext>`
+- `invoices` (private, signed URLs) — path: `<project_id>/<invoice_id>.pdf`, writes by edge function only
+- `company-logos` (public read) — path: `<company_id>.<ext>`, writes by owner only
+
+Policies key off the first path segment via `storage_first_uuid_segment(name)` (deliberately neutral name — different buckets encode different ids there).
+
+## Build order
+
+1. Foundation — scaffold, migrations, shell. ✅
+2. Auth + company signup (`signup-company` edge function). ✅
+3. Projects CRUD + role-bound invite links.
+4. Public `/join/:token` (edge function creates user + profile, adds worker to `project_members`).
+5. Worker upload flow (mobile-first camera → storage → `extract-receipt` edge function).
+6. Live realtime dashboard.
+7. Invoice generation (`generate-invoice` edge function → aggregate + `pdf-lib` → storage).
+8. Settings (company profile, logo, member list, deactivate).
+
+## Conventions
+
+- All UI copy comes from `src/i18n/sw.ts`. Don't hardcode strings in components.
+- Currency default is `TZS`, displayed as `TSh 1,234` (prefix, thousands-separated). See `src/lib/format.ts`.
+- Role tokens are CSS vars (`--role-worker`, `--role-accountant`, `--role-admin`) exposed as Tailwind `text-role-*` / `bg-role-*`. Never hardcode teal/coral/purple hex values in components.
+- Migrations are numbered `NNNN_name.sql`. New RPCs get their own migration; do not edit past migrations after they've been pushed.
+- Edge functions live under `supabase/functions/<name>/index.ts`; shared helpers under `supabase/functions/_shared/`.
