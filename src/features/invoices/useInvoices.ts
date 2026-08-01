@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { Invoice } from '@/types/db';
 
@@ -25,13 +26,39 @@ export function useInvoices(projectId?: string) {
   return { state, refresh };
 }
 
+export class GenerateInvoiceError extends Error {
+  reason: 'no_receipts' | 'forbidden' | 'not_found' | 'unknown';
+  constructor(message: string, reason: GenerateInvoiceError['reason']) {
+    super(message);
+    this.reason = reason;
+  }
+}
+
 export async function generateInvoice(input: {
   project_id: string;
   period_start: string;
   period_end: string;
 }): Promise<{ invoice_id: string; pdf_path: string; total_amount: number; tax_amount: number; receipt_count: number }> {
   const { data, error } = await supabase.functions.invoke('generate-invoice', { body: input });
-  if (error) throw error;
+  if (error) {
+    // Pull the actual reason out of the edge function's JSON body so we can show
+    // a friendly Swahili message instead of "Edge Function returned a non-2xx status code".
+    if (error instanceof FunctionsHttpError) {
+      try {
+        const body = await error.context.json();
+        const message: string = body?.error ?? error.message;
+        const reason: GenerateInvoiceError['reason'] =
+          /no confirmed receipts/i.test(message) ? 'no_receipts'
+          : /forbidden/i.test(message) ? 'forbidden'
+          : /not found/i.test(message) ? 'not_found'
+          : 'unknown';
+        throw new GenerateInvoiceError(message, reason);
+      } catch (parseErr) {
+        if (parseErr instanceof GenerateInvoiceError) throw parseErr;
+      }
+    }
+    throw error;
+  }
   return data;
 }
 

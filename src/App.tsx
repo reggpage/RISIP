@@ -5,23 +5,17 @@ import RequireRole from '@/guards/RequireRole';
 import Login from '@/routes/auth/Login';
 import SignupCompany from '@/routes/auth/SignupCompany';
 import JoinPage from '@/routes/join/JoinPage';
+import FindCompany from '@/routes/find/FindCompany';
 import Landing from '@/routes/marketing/Landing';
 import ProjectsList from '@/routes/projects/ProjectsList';
 import NewProject from '@/routes/projects/NewProject';
+import EditProject from '@/routes/projects/EditProject';
 import ProjectDetail from '@/routes/projects/ProjectDetail';
 import ReceiptsPage from '@/routes/receipts/ReceiptsPage';
+import ManualReceipt from '@/routes/receipts/ManualReceipt';
 import Dashboard from '@/routes/dashboard/Dashboard';
 import InvoicesPage from '@/routes/invoices/InvoicesPage';
-import { sw } from '@/i18n/sw';
-
-function Placeholder({ title }: { title: string }) {
-  return (
-    <div className="p-8">
-      <h1 className="text-2xl font-semibold">{title}</h1>
-      <p className="mt-2 text-ink-muted">{sw.common.comingSoon}</p>
-    </div>
-  );
-}
+import SettingsPage from '@/routes/settings/SettingsPage';
 
 export default function App() {
   return (
@@ -30,6 +24,7 @@ export default function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<SignupCompany />} />
+      <Route path="/find-company" element={<FindCompany />} />
       <Route path="/join/:token" element={<JoinPage />} />
 
       {/* Authed app */}
@@ -52,8 +47,17 @@ export default function App() {
           }
         />
         <Route path="/projects/:id" element={<ProjectDetail />} />
+        <Route
+          path="/projects/:id/edit"
+          element={
+            <RequireRole allowed={['owner']}>
+              <EditProject />
+            </RequireRole>
+          }
+        />
 
         <Route path="/receipts" element={<ReceiptsPage />} />
+        <Route path="/receipts/new" element={<ManualReceipt />} />
 
         <Route
           path="/invoices"
@@ -64,7 +68,7 @@ export default function App() {
           }
         />
 
-        <Route path="/settings" element={<Placeholder title={sw.nav.settings} />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

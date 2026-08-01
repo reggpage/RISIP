@@ -1,5 +1,5 @@
 import { Link, Navigate } from 'react-router-dom';
-import { Camera, Sparkles, FileText, ArrowRight } from 'lucide-react';
+import { Camera, Sparkles, FileText } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { useAuth } from '@/lib/auth';
 import { sw } from '@/i18n/sw';
@@ -7,27 +7,21 @@ import { sw } from '@/i18n/sw';
 export default function Landing() {
   const auth = useAuth();
 
-  // If they're already signed in, drop them straight into the app.
   if (auth.status === 'signed-in' && auth.profile) {
     return <Navigate to="/dashboard" replace />;
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-role-admin/5 via-surface-muted to-role-worker/5">
-      {/* Fixed header */}
+      {/* Fixed header — only Log in, no Find your company button */}
       <header className="fixed top-0 left-0 right-0 z-40 border-b border-surface-border/60 bg-surface/80 backdrop-blur-sm">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link to="/" className="text-xl font-bold tracking-tight text-role-admin">
             Risip
           </Link>
-          <div className="flex items-center gap-2">
-            <Link to="/login">
-              <Button variant="ghost">{sw.auth.login}</Button>
-            </Link>
-            <Link to="/signup">
-              <Button tint="admin">{sw.auth.signupCompany}</Button>
-            </Link>
-          </div>
+          <Link to="/login">
+            <Button variant="ghost">{sw.auth.login}</Button>
+          </Link>
         </div>
       </header>
 
@@ -42,18 +36,24 @@ export default function Landing() {
             {sw.landing.heroLead}
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link to="/signup">
+            <Link to="/find-company">
               <Button tint="admin" className="px-6 py-3 text-base">
                 {sw.landing.ctaPrimary}
-                <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
-            <Link to="/login">
+            {/* Secondary CTA: hidden on mobile, visible on sm+ */}
+            <Link to="/login" className="hidden sm:block">
               <Button variant="secondary" tint="admin" className="px-6 py-3 text-base">
                 {sw.landing.ctaSecondary}
               </Button>
             </Link>
           </div>
+          <p className="mt-6 text-sm text-ink-muted">
+            {sw.landing.startNew}{' '}
+            <Link to="/signup" className="font-medium text-role-admin hover:underline">
+              {sw.landing.startNewLink}
+            </Link>
+          </p>
         </div>
       </section>
 
@@ -65,19 +65,16 @@ export default function Landing() {
           </h2>
           <div className="grid gap-6 md:grid-cols-3">
             <FeatureCard
-              tint="worker"
               icon={<Camera className="h-6 w-6" />}
               title={sw.landing.features.capture.title}
               body={sw.landing.features.capture.body}
             />
             <FeatureCard
-              tint="admin"
               icon={<Sparkles className="h-6 w-6" />}
               title={sw.landing.features.ai.title}
               body={sw.landing.features.ai.body}
             />
             <FeatureCard
-              tint="accountant"
               icon={<FileText className="h-6 w-6" />}
               title={sw.landing.features.invoices.title}
               body={sw.landing.features.invoices.body}
@@ -95,22 +92,21 @@ export default function Landing() {
           </p>
           <div className="mt-8">
             <Link to="/signup">
-              <Button
-                className="border border-white bg-white px-6 py-3 text-base text-role-admin hover:bg-white/90"
-              >
-                {sw.landing.ctaPrimary}
-                <ArrowRight className="h-4 w-4" />
+              {/* White button with red text, no arrow icon. `!text-role-admin` beats
+                  the primary variant's built-in text-white in the CSS cascade. */}
+              <Button className="border border-white bg-white px-6 py-3 text-base font-semibold !text-role-admin hover:bg-white/90">
+                {sw.landing.startNewLink}
               </Button>
             </Link>
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="bg-ink py-10 text-white/80">
+      {/* Footer — white background, red brand, black copy */}
+      <footer className="bg-surface border-t border-surface-border py-10">
         <div className="mx-auto max-w-7xl px-4 text-center text-sm sm:px-6 lg:px-8">
-          <div className="mb-2 text-lg font-bold text-white">Risip</div>
-          <p>{sw.landing.footerTagline}</p>
+          <div className="mb-2 text-lg font-bold text-role-admin">Risip</div>
+          <p className="text-ink">{sw.landing.footerTagline}</p>
         </div>
       </footer>
     </div>
@@ -121,20 +117,15 @@ function FeatureCard({
   icon,
   title,
   body,
-  tint,
 }: {
   icon: React.ReactNode;
   title: string;
   body: string;
-  tint: 'worker' | 'accountant' | 'admin';
 }) {
-  const bg =
-    tint === 'worker' ? 'bg-role-worker/10 text-role-worker'
-    : tint === 'accountant' ? 'bg-role-accountant/10 text-role-accountant'
-    : 'bg-role-admin/10 text-role-admin';
   return (
     <div className="rounded-xl border border-surface-border bg-surface p-6 transition hover:-translate-y-0.5 hover:shadow-md">
-      <div className={`mb-4 inline-flex h-10 w-10 items-center justify-center rounded-lg ${bg}`}>
+      {/* Icon: red, no background box */}
+      <div className="mb-4 text-role-admin">
         {icon}
       </div>
       <h3 className="mb-2 text-lg font-semibold text-ink">{title}</h3>

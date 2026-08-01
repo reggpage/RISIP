@@ -18,6 +18,9 @@ export type DashboardData = {
   invoicesThisMonth: number;
   categories: CategoryBreakdown[];
   recent: Receipt[];
+  // Raw receipt stream (up to `limit`) so downstream widgets like SpendTrendChart
+  // can compute their own aggregates without a second query.
+  receipts: Receipt[];
 };
 
 // Client-side aggregation. Fine for MVP (up to a few thousand rows). If/when we outgrow
@@ -62,6 +65,7 @@ export function useDashboardData(projectId?: string): DashboardData {
         invoicesThisMonth,
         categories: [],
         recent: [],
+        receipts: [],
       };
     }
     const confirmed = receiptsState.receipts.filter((r) => r.status === 'confirmed');
@@ -92,6 +96,7 @@ export function useDashboardData(projectId?: string): DashboardData {
       invoicesThisMonth,
       categories,
       recent: receiptsState.receipts.slice(0, 8),
+      receipts: receiptsState.receipts,
     };
   }, [receiptsState, activeWorkers, invoicesThisMonth]);
 }

@@ -1,5 +1,5 @@
 # Local Supabase config. Populated when you run `supabase init && supabase link --project-ref <ref>`.
-project_id = "risip"
+project_id = "rrywprcqrxknsayzacpl"
 
 [api]
 enabled = true

@@ -24,7 +24,7 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
       <div className="mx-auto flex min-h-full max-w-sm items-center px-4 py-16">
         <div className="w-full text-center">
           <p className="mb-4 text-sm text-ink-muted">
-            Akaunti yako haijaunganishwa na kampuni yoyote. Tafadhali maliza usajili au toka.
+            Your account isn’t linked to a company yet. Finish signup or log out to start over.
           </p>
           <Button variant="secondary" onClick={() => void signOut()}>
             {sw.common.logout}

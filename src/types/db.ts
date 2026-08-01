@@ -215,6 +215,21 @@ export type Database = {
       auth_company_id: { Args: Record<string, never>; Returns: string };
       auth_role: { Args: Record<string, never>; Returns: UserRole };
       auth_can_see_project: { Args: { pid: string }; Returns: boolean };
+      /** Public company name search (anon + authenticated). */
+      search_companies: {
+        Args: { q: string };
+        Returns: Array<{ id: string; name: string }>;
+      };
+      /** Checks a company's shared staff password (anon + authenticated). */
+      verify_company_password: {
+        Args: { p_company_id: string; p_password: string };
+        Returns: boolean;
+      };
+      /** Owner-only: set/update the shared staff password for their company. */
+      set_company_password: {
+        Args: { p_password: string };
+        Returns: undefined;
+      };
     };
     Enums: {
       user_role: UserRole;

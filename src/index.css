@@ -5,7 +5,7 @@
 :root {
   --role-worker: 13 148 136;      /* teal-600 */
   --role-accountant: 244 114 92;  /* coral */
-  --role-admin: 124 58 237;       /* purple-600 */
+  --role-admin: 221 45 74;        /* #DD2D4A — Risip primary brand */
 
   --surface: 255 255 255;
   --surface-muted: 248 250 252;

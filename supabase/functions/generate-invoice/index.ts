@@ -31,11 +31,13 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader?.startsWith('Bearer ')) return bad('missing bearer token', 401);
 
-  const asCaller = createClient(supabaseUrl, anonKey, {
-    global: { headers: { Authorization: authHeader } },
+  const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data: userData, error: userErr } = await asCaller.auth.getUser();
+
+  // Verify the caller's JWT using the service-role client (most reliable in edge functions).
+  const token = authHeader.slice(7);
+  const { data: userData, error: userErr } = await admin.auth.getUser(token);
   if (userErr || !userData.user) return bad('invalid session', 401);
   const uid = userData.user.id;
 
@@ -43,10 +45,6 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return bad('invalid json'); }
   const { project_id, period_start, period_end } = body;
   if (!project_id || !period_start || !period_end) return bad('project_id, period_start, period_end required');
-
-  const admin = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
 
   // Verify caller is owner/accountant in the project's company.
   const { data: profile } = await admin.from('profiles').select('role, company_id, full_name').eq('id', uid).maybeSingle();

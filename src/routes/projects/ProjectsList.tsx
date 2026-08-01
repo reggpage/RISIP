@@ -3,6 +3,7 @@ import { FolderKanban, Plus } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
+import { ProjectCardSkeleton } from '@/components/ui/Skeleton';
 import { useProjects } from '@/features/projects/useProjects';
 import { useAuth } from '@/lib/auth';
 import { formatDate } from '@/lib/format';
@@ -14,19 +15,31 @@ export default function ProjectsList() {
   const canCreate = auth.status === 'signed-in' && auth.profile?.role === 'owner';
 
   if (state.status === 'loading') {
-    return <div className="p-8 text-ink-muted">{sw.common.loading}</div>;
+    return (
+      <div className="mx-auto max-w-5xl p-6">
+        <div className="mb-6 flex items-center justify-between">
+          <div className="h-8 w-28 animate-pulse rounded-lg bg-surface-muted" />
+          <div className="h-9 w-28 animate-pulse rounded-lg bg-surface-muted" />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => <ProjectCardSkeleton key={i} />)}
+        </div>
+      </div>
+    );
   }
   if (state.status === 'error') {
     return <div className="p-8 text-red-600">{state.message}</div>;
   }
 
   if (state.projects.length === 0) {
+    // Staff/accountant shouldn't be prompted to create — that's an owner action.
+    // Show a friendly "ask your admin" state instead.
     return (
       <div className="mx-auto max-w-2xl p-8">
         <EmptyState
           icon={<FolderKanban className="h-10 w-10" />}
-          title={sw.projects.createFirst}
-          description={sw.projects.createFirstHint}
+          title={canCreate ? sw.projects.createFirst : sw.projects.noneYetForStaff}
+          description={canCreate ? sw.projects.createFirstHint : sw.projects.noneYetForStaffHint}
           action={
             canCreate ? (
               <Link to="/projects/new">

@@ -18,7 +18,7 @@ import { sw } from '@/i18n/sw';
 
 type Step1Fields = Pick<
   CompanyDetails,
-  'company_name' | 'hq_location' | 'sector' | 'full_name' | 'phone' | 'email'
+  'company_name' | 'hq_location' | 'sector' | 'full_name' | 'phone' | 'email' | 'company_password'
 >;
 
 const STEP_LABELS = [sw.auth.stepCompany, sw.auth.stepVerify, sw.auth.stepPassword] as const;
@@ -51,7 +51,7 @@ export default function SignupCompany() {
 
   async function goStep2() {
     setSubmitError(null);
-    const ok = await trigger(['company_name', 'hq_location', 'full_name', 'email']);
+    const ok = await trigger(['company_name', 'hq_location', 'full_name', 'email', 'company_password']);
     if (!ok) return;
     const { email, full_name } = getValues();
     setSubmitting(true);
@@ -114,6 +114,7 @@ export default function SignupCompany() {
         company_name: v.company_name,
         hq_location: v.hq_location,
         sector: v.sector,
+        company_password: v.company_password,
       });
       navigate('/dashboard', { replace: true });
     } catch (err) {
@@ -151,6 +152,12 @@ export default function SignupCompany() {
               error={errors.hq_location && sw.common.error}
             />
             <Input label={sw.auth.sector} {...register('sector')} />
+            <Input
+              label={sw.auth.companyPassword}
+              hint={sw.auth.companyPasswordHint}
+              {...register('company_password', { required: true, minLength: 6 })}
+              error={errors.company_password && sw.auth.companyPasswordHint}
+            />
 
             <div className="my-1 h-px bg-surface-border" />
 

@@ -32,7 +32,7 @@ export default function Login() {
   return (
     <AuthShell>
       <div className="mb-6 text-center">
-        <h1 className="text-2xl font-semibold text-ink">{sw.auth.login}</h1>
+        <h1 className="text-2xl font-semibold text-ink">{sw.auth.adminLogin}</h1>
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">

@@ -1,13 +1,16 @@
 import { useMemo, useRef, useState } from 'react';
-import { Camera, Upload } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Camera, PencilLine, Upload } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
+import { ListItemSkeleton } from '@/components/ui/Skeleton';
 import ReceiptCard from '@/components/receipts/ReceiptCard';
 import { uploadReceipt } from '@/features/receipts/uploadReceipt';
 import { useReceipts } from '@/features/receipts/useReceipts';
 import { useProjects } from '@/features/projects/useProjects';
 import { useAuth } from '@/lib/auth';
+import { useToast } from '@/components/ui/Toast';
 import { sw } from '@/i18n/sw';
 
 export default function ReceiptsPage() {
@@ -39,21 +42,33 @@ export default function ReceiptsPage() {
     : selectedProjectId ?? undefined;
   const { state: receiptsState } = useReceipts(streamProjectId);
 
+  const toast = useToast();
+
   async function handleFile(file: File | null) {
     if (!file || !profile || !effectiveProjectId) return;
     setUploadError(null);
     setUploading(true);
     try {
       await uploadReceipt(file, { project_id: effectiveProjectId, user_id: profile.id });
+      toast.success('Receipt uploaded — extracting…');
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : sw.common.error);
+      const msg = err instanceof Error ? err.message : sw.common.error;
+      setUploadError(msg);
+      toast.error(msg);
     } finally {
       setUploading(false);
     }
   }
 
   if (projectsState.status === 'loading') {
-    return <div className="p-8 text-ink-muted">{sw.common.loading}</div>;
+    return (
+      <div className="mx-auto max-w-2xl p-4 sm:p-6">
+        <div className="mb-4 h-8 w-28 animate-pulse rounded-lg bg-surface-muted" />
+        <div className="flex flex-col gap-3">
+          {Array.from({ length: 4 }).map((_, i) => <ListItemSkeleton key={i} lines={3} />)}
+        </div>
+      </div>
+    );
   }
   if (isWorker && activeProjects.length === 0) {
     return (
@@ -87,12 +102,35 @@ export default function ReceiptsPage() {
         </Card>
       )}
 
+      {/* Recent receipts first — they're the primary content of the page. */}
+      <h2 className="mb-2 text-sm font-semibold text-ink-muted">{sw.receipts.recent}</h2>
+
+      {receiptsState.status === 'loading' && (
+        <div className="flex flex-col gap-3">
+          {Array.from({ length: 4 }).map((_, i) => <ListItemSkeleton key={i} lines={3} />)}
+        </div>
+      )}
+      {receiptsState.status === 'error' && (
+        <div className="text-sm text-red-600">{receiptsState.message}</div>
+      )}
+      {receiptsState.status === 'ready' && receiptsState.receipts.length === 0 && (
+        <EmptyState title={sw.receipts.empty} description={isWorker ? sw.receipts.uploadHint : undefined} />
+      )}
+      {receiptsState.status === 'ready' && receiptsState.receipts.length > 0 && (
+        <div className="flex flex-col gap-3">
+          {receiptsState.receipts.map((r) => (
+            <ReceiptCard key={r.id} receipt={r} />
+          ))}
+        </div>
+      )}
+
+      {/* Upload actions pinned at the bottom — no Card wrapper, buttons carry the brand. */}
       {isWorker && effectiveProjectId && (
-        <Card className="mb-6">
+        <div className="mt-8">
           <p className="mb-3 text-sm text-ink-muted">{sw.receipts.uploadHint}</p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Button
-              tint="worker"
+              tint="admin"
               fullWidth
               disabled={uploading}
               onClick={() => cameraInput.current?.click()}
@@ -102,7 +140,7 @@ export default function ReceiptsPage() {
             </Button>
             <Button
               variant="secondary"
-              tint="worker"
+              tint="admin"
               fullWidth
               disabled={uploading}
               onClick={() => galleryInput.current?.click()}
@@ -127,25 +165,28 @@ export default function ReceiptsPage() {
             onChange={(e) => void handleFile(e.target.files?.[0] ?? null)}
           />
           {uploadError && <p className="mt-3 text-sm text-red-600">{uploadError}</p>}
-        </Card>
+
+          {/* Fallback for hard-to-read or missing photos — takes user straight to the
+              manual entry form which inserts a confirmed receipt without touching AI. */}
+          <Link
+            to="/receipts/new"
+            className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-role-admin hover:underline"
+          >
+            <PencilLine className="h-4 w-4" />
+            {sw.receipts.enterManually}
+          </Link>
+        </div>
       )}
 
-      <h2 className="mb-2 text-sm font-semibold text-ink-muted">{sw.receipts.recent}</h2>
-
-      {receiptsState.status === 'loading' && (
-        <div className="text-sm text-ink-muted">{sw.common.loading}</div>
-      )}
-      {receiptsState.status === 'error' && (
-        <div className="text-sm text-red-600">{receiptsState.message}</div>
-      )}
-      {receiptsState.status === 'ready' && receiptsState.receipts.length === 0 && (
-        <EmptyState title={sw.receipts.empty} description={isWorker ? sw.receipts.uploadHint : undefined} />
-      )}
-      {receiptsState.status === 'ready' && receiptsState.receipts.length > 0 && (
-        <div className="flex flex-col gap-3">
-          {receiptsState.receipts.map((r) => (
-            <ReceiptCard key={r.id} receipt={r} />
-          ))}
+      {/* Non-worker roles (owner/accountant) also get manual entry — useful for backfill. */}
+      {!isWorker && (
+        <div className="mt-8">
+          <Link to="/receipts/new">
+            <Button variant="secondary" tint="admin">
+              <PencilLine className="h-4 w-4" />
+              {sw.receipts.enterManually}
+            </Button>
+          </Link>
         </div>
       )}
     </div>

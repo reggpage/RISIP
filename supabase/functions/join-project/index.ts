@@ -33,11 +33,12 @@ Deno.serve(async (req) => {
   const authHeader = req.headers.get('Authorization');
   if (!authHeader?.startsWith('Bearer ')) return bad('missing bearer token', 401);
 
-  const asCaller = createClient(supabaseUrl, anonKey, {
-    global: { headers: { Authorization: authHeader } },
+  const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data: userData, error: userErr } = await asCaller.auth.getUser();
+
+  const jwtToken = authHeader.slice(7);
+  const { data: userData, error: userErr } = await admin.auth.getUser(jwtToken);
   if (userErr || !userData.user) return bad('invalid session', 401);
 
   let body: JoinBody;
@@ -51,10 +52,6 @@ Deno.serve(async (req) => {
   const full_name = body.full_name?.trim();
   if (!token) return bad('token required');
   if (!full_name) return bad('full_name required');
-
-  const admin = createClient(supabaseUrl, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
 
   const { data, error } = await admin.rpc('join_by_invite_v1', {
     p_user_id: userData.user.id,

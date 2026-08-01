@@ -1,17 +1,22 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { ArrowLeft, Plus, Receipt as ReceiptIcon, Wallet } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
+import EmptyState from '@/components/ui/EmptyState';
+import { ListItemSkeleton } from '@/components/ui/Skeleton';
 import InviteLinkCard from '@/components/projects/InviteLinkCard';
+import ReceiptCard from '@/components/receipts/ReceiptCard';
+import MetricCard from '@/components/dashboard/MetricCard';
 import {
   createInviteLink,
   revokeInviteLink,
   useInviteLinks,
 } from '@/features/projects/useInviteLinks';
 import { useProject } from '@/features/projects/useProjects';
+import { useReceipts } from '@/features/receipts/useReceipts';
 import { useAuth } from '@/lib/auth';
-import { formatDate } from '@/lib/format';
+import { formatDate, formatMoney } from '@/lib/format';
 import { sw } from '@/i18n/sw';
 import type { InviteLink, InviteRole } from '@/types/db';
 
@@ -27,6 +32,16 @@ export default function ProjectDetail() {
 
   const isOwner = auth.status === 'signed-in' && auth.profile?.role === 'owner';
   const canSeeLinks = auth.status === 'signed-in' && (auth.profile?.role === 'owner' || auth.profile?.role === 'accountant');
+  const { state: receiptsState } = useReceipts(id);
+
+  const summary = useMemo(() => {
+    if (receiptsState.status !== 'ready') return { total: 0, count: 0 };
+    const confirmed = receiptsState.receipts.filter((r) => r.status === 'confirmed');
+    return {
+      total: confirmed.reduce((s, r) => s + Number(r.total_amount || 0), 0),
+      count: confirmed.length,
+    };
+  }, [receiptsState]);
 
   if (projectState.status === 'loading') {
     return <div className="p-8 text-ink-muted">{sw.common.loading}</div>;
@@ -81,78 +96,132 @@ export default function ProjectDetail() {
         <ArrowLeft className="h-4 w-4" /> {sw.projects.detailBack}
       </Link>
 
-      <div className="mb-6">
-        <div className="mb-1 flex items-center gap-3">
-          <h1 className="text-2xl font-semibold text-ink">{project.name}</h1>
-          <span
-            className={`rounded-full px-2 py-0.5 text-xs ${
-              project.status === 'active'
-                ? 'bg-role-worker/10 text-role-worker'
-                : 'bg-surface-muted text-ink-muted'
-            }`}
-          >
-            {sw.projects.status[project.status]}
-          </span>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="mb-1 flex items-center gap-3">
+            <h1 className="text-2xl font-semibold text-ink">{project.name}</h1>
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs ${
+                project.status === 'active'
+                  ? 'bg-role-worker/10 text-role-worker'
+                  : 'bg-surface-muted text-ink-muted'
+              }`}
+            >
+              {sw.projects.status[project.status]}
+            </span>
+          </div>
+          <div className="text-sm text-ink-muted">
+            {project.site_location && <span>{project.site_location}</span>}
+            {project.client_name && <span> · {project.client_name}</span>}
+            {project.start_date && <span> · {formatDate(project.start_date)}</span>}
+          </div>
+          {project.description && (
+            <p className="mt-3 text-sm text-ink">{project.description}</p>
+          )}
         </div>
-        <div className="text-sm text-ink-muted">
-          {project.site_location && <span>{project.site_location}</span>}
-          {project.client_name && <span> · {project.client_name}</span>}
-          {project.start_date && <span> · {formatDate(project.start_date)}</span>}
-        </div>
-        {project.description && (
-          <p className="mt-3 text-sm text-ink">{project.description}</p>
+
+        {isOwner && (
+          <Link to={`/projects/${project.id}/edit`}>
+            <Button variant="secondary" tint="admin">
+              {sw.projects.edit}
+            </Button>
+          </Link>
         )}
       </div>
 
+      {/* Project-scoped summary — visible to every role that can see the project. */}
+      <div className="mb-6 grid gap-3 sm:grid-cols-2">
+        <MetricCard
+          label={sw.dashboard.metrics.totalExpenses}
+          value={formatMoney(summary.total)}
+          icon={<Wallet className="h-5 w-5" />}
+        />
+        <MetricCard
+          label={sw.dashboard.metrics.receipts}
+          value={summary.count}
+          icon={<ReceiptIcon className="h-5 w-5" />}
+        />
+      </div>
+
+      {/* Recent receipts on this project (realtime). */}
+      <section className="mb-8">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-ink">{sw.receipts.recent}</h2>
+          <Link to="/receipts" className="text-sm font-medium text-role-admin hover:underline">
+            {sw.nav.receipts} →
+          </Link>
+        </div>
+
+        {receiptsState.status === 'loading' && (
+          <div className="flex flex-col gap-3">
+            {Array.from({ length: 3 }).map((_, i) => <ListItemSkeleton key={i} lines={3} />)}
+          </div>
+        )}
+        {receiptsState.status === 'error' && (
+          <div className="text-sm text-red-600">{receiptsState.message}</div>
+        )}
+        {receiptsState.status === 'ready' && receiptsState.receipts.length === 0 && (
+          <EmptyState title={sw.receipts.empty} />
+        )}
+        {receiptsState.status === 'ready' && receiptsState.receipts.length > 0 && (
+          <div className="flex flex-col gap-3">
+            {receiptsState.receipts.slice(0, 5).map((r) => (
+              <ReceiptCard key={r.id} receipt={r} />
+            ))}
+          </div>
+        )}
+      </section>
+
       {canSeeLinks && (
         <section className="mb-8">
-          <Card>
-            <CardHeader>
-              <div>
-                <CardTitle>{sw.projects.inviteLinksTitle}</CardTitle>
-                <p className="mt-1 text-xs text-ink-muted">{sw.projects.inviteLinksHint}</p>
-              </div>
-            </CardHeader>
+          {/* Section header — plain, no wrapping Card. Individual link cards below
+              stand on their own for a cleaner look, especially on mobile. */}
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-ink">{sw.projects.inviteLinksTitle}</h2>
+            <p className="mt-1 text-sm text-ink-muted">{sw.projects.inviteLinksHint}</p>
+          </div>
 
-            {actionError && <p className="mb-3 text-sm text-red-600">{actionError}</p>}
+          {actionError && <p className="mb-3 text-sm text-red-600">{actionError}</p>}
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              {INVITE_ROLES.map((role) => {
-                const link = linksByRole.get(role);
-                if (link) {
-                  return (
-                    <InviteLinkCard
-                      key={role}
-                      link={link}
-                      projectName={project.name}
-                      canRevoke={isOwner}
-                      onRevoke={handleRevoke}
-                    />
-                  );
-                }
+          <div className="grid gap-3 sm:grid-cols-2">
+            {INVITE_ROLES.map((role) => {
+              const link = linksByRole.get(role);
+              if (link) {
                 return (
-                  <Card key={role}>
-                    <p className="mb-3 text-sm text-ink-muted">
-                      {role === 'worker' ? sw.projects.inviteWorker : sw.projects.inviteAccountant}
-                    </p>
-                    {isOwner ? (
-                      <Button
-                        variant="secondary"
-                        tint={role === 'worker' ? 'worker' : 'accountant'}
-                        onClick={() => void generate(role)}
-                        disabled={busy === role}
-                      >
-                        <Plus className="h-4 w-4" />
-                        {busy === role ? sw.common.loading : sw.projects.generateInvite}
-                      </Button>
-                    ) : (
-                      <p className="text-xs text-ink-muted">{sw.common.empty}</p>
-                    )}
-                  </Card>
+                  <InviteLinkCard
+                    key={role}
+                    link={link}
+                    projectName={project.name}
+                    canRevoke={isOwner}
+                    onRevoke={handleRevoke}
+                    // Revoked cards get a Regenerate button that spins up a fresh
+                    // token for the same role. The old row stays revoked for audit.
+                    onRegenerate={(r) => void generate(r)}
+                  />
                 );
-              })}
-            </div>
-          </Card>
+              }
+              return (
+                <Card key={role}>
+                  <p className="mb-3 text-sm text-ink-muted">
+                    {role === 'worker' ? sw.projects.inviteWorker : sw.projects.inviteAccountant}
+                  </p>
+                  {isOwner ? (
+                    <Button
+                      variant="secondary"
+                      tint={role === 'worker' ? 'worker' : 'accountant'}
+                      onClick={() => void generate(role)}
+                      disabled={busy === role}
+                    >
+                      <Plus className="h-4 w-4" />
+                      {busy === role ? sw.common.loading : sw.projects.generateInvite}
+                    </Button>
+                  ) : (
+                    <p className="text-xs text-ink-muted">{sw.common.empty}</p>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
         </section>
       )}
     </div>

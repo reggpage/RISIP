@@ -1,22 +1,28 @@
 import { supabase } from '@/lib/supabase';
+import { compressImage } from '@/lib/imageCompression';
+import { uuidv4 } from '@/lib/uuid';
 import type { Receipt } from '@/types/db';
 
 // Full worker upload flow:
-//   1. Upload the image to the private `receipts` bucket at <project_id>/<receipt_id>.<ext>.
-//   2. Insert a receipts row (status='processing'); the DB trigger populates company_id.
-//   3. Fire-and-forget invoke extract-receipt — the client subscribes to realtime updates
-//      to see the row flip to confirmed/duplicate/error.
+//   1. Compress the phone photo down to ~300KB JPEG (keeps text readable, saves 10–20×
+//      storage + bandwidth vs the raw HEIC/JPEG that iPhones/Androids ship).
+//   2. Upload to the private `receipts` bucket at <project_id>/<receipt_id>.jpg.
+//   3. Insert a receipts row (status='processing'); DB trigger fills company_id.
+//   4. Fire-and-forget invoke extract-receipt — updates arrive via realtime.
 export async function uploadReceipt(
   file: File,
   ctx: { project_id: string; user_id: string },
 ): Promise<Receipt> {
-  const receiptId = crypto.randomUUID();
-  const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().slice(0, 5);
+  const receiptId = uuidv4();
+
+  // Compress before upload. compressImage no-ops for already-small JPEGs.
+  const compressed = await compressImage(file).catch(() => file);
+  const ext = 'jpg'; // Compressor always emits jpeg; safe to fix the extension.
   const path = `${ctx.project_id}/${receiptId}.${ext}`;
 
   const { error: uploadErr } = await supabase.storage
     .from('receipts')
-    .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false });
+    .upload(path, compressed, { contentType: 'image/jpeg', upsert: false });
   if (uploadErr) throw uploadErr;
 
   const { data, error: insertErr } = await supabase

@@ -1,0 +1,101 @@
+// Swahili translations that override the English defaults from ./sw.ts when the
+// user picks Kiswahili in Settings. Keys omitted here fall back to English — safe
+// because the merge below is deep and additive.
+//
+// Only the high-visibility strings are translated for MVP. Contribute more here
+// as the app grows; missing keys quietly fall back to English so nothing breaks.
+
+export const swahiliOverrides = {
+  common: {
+    save: 'Hifadhi',
+    cancel: 'Ghairi',
+    delete: 'Futa',
+    edit: 'Hariri',
+    loading: 'Inapakia…',
+    comingSoon: 'Inajengwa…',
+    empty: 'Hakuna kitu bado.',
+    error: 'Kuna hitilafu.',
+    copy: 'Nakili',
+    copied: 'Imenakiliwa',
+    share: 'Shiriki',
+    shareWhatsapp: 'Shiriki kwa WhatsApp',
+    logout: 'Toka',
+  },
+  nav: {
+    dashboard: 'Dashibodi',
+    projects: 'Miradi',
+    receipts: 'Risiti',
+    invoices: 'Ankara',
+    settings: 'Mipangilio',
+  },
+  auth: {
+    login: 'Ingia',
+    adminLogin: 'Ingia kama Msimamizi',
+    logout: 'Toka',
+    signupCompany: 'Sajili kampuni yako',
+    email: 'Barua pepe',
+    password: 'Nenosiri',
+    passwordConfirm: 'Thibitisha nenosiri',
+    passwordMismatch: 'Nenosiri hazifanani',
+    fullName: 'Jina kamili',
+    phone: 'Namba ya simu',
+    companyName: 'Jina la kampuni',
+    hqLocation: 'Mahali pa makao makuu',
+    sector: 'Sekta (si lazima)',
+    next: 'Endelea',
+    back: 'Rudi',
+    finish: 'Maliza usajili',
+  },
+  dashboard: {
+    metrics: {
+      totalExpenses: 'Jumla ya matumizi',
+      receipts: 'Risiti zilizothibitishwa',
+      activeWorkers: 'Wafanyakazi hai',
+      invoicesThisMonth: 'Ankara mwezi huu',
+    },
+    categoryTitle: 'Matumizi kwa kategoria',
+    recentTitle: 'Shughuli za hivi karibuni',
+    noReceipts: 'Bado hakuna risiti zilizothibitishwa.',
+    filterProject: 'Chuja kwa mradi',
+    allProjects: 'Miradi yote',
+  },
+  find: {
+    title: 'Tafuta kampuni yako',
+    searchPlaceholder: 'Jina la kampuni…',
+    passwordPromptTitle: 'Ingiza nenosiri la kampuni',
+    tabLogin: 'Tayari nafanya kazi hapa',
+    tabRegister: 'Ni mpya',
+    yourName: 'Jina lako',
+    loginSubmit: 'Ingia',
+    registerSubmit: 'Fungua akaunti',
+  },
+  projects: {
+    create: 'Mradi mpya',
+    createFirst: 'Unda mradi wako wa kwanza',
+    inviteLinksTitle: 'Link za kualika',
+    generateInvite: 'Tengeneza link',
+    revoke: 'Batilisha',
+    revoked: 'Imebatilishwa',
+    regenerate: 'Tengeneza tena',
+    detailBack: 'Rudi kwenye miradi',
+  },
+  receipts: {
+    capture: 'Piga picha ya risiti',
+    upload: 'Pakia',
+    processing: 'Inachambua…',
+    confirmed: 'Imethibitishwa',
+    duplicate: 'Risiti hii imeshaingizwa',
+    error: 'Hitilafu ya uchambuzi',
+    recent: 'Risiti za hivi karibuni',
+    empty: 'Bado hakuna risiti.',
+  },
+  invoices: {
+    generate: 'Tengeneza ankara',
+    preview: 'Fungua PDF',
+    markSent: 'Weka kama imetumwa',
+  },
+  settingsCopy: {
+    subtitle: 'Taarifa za kampuni, timu na usalama.',
+    languageDesc: 'Chagua lugha ya app. Itapakia upya baada ya kubadilisha.',
+  },
+} as const;

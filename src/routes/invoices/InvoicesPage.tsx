@@ -4,8 +4,10 @@ import Button from '@/components/ui/Button';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
 import Input from '@/components/ui/Input';
+import { ListItemSkeleton } from '@/components/ui/Skeleton';
 import {
   generateInvoice,
+  GenerateInvoiceError,
   invoicePdfUrl,
   markInvoiceSent,
   useInvoices,
@@ -26,6 +28,7 @@ export default function InvoicesPage() {
   const [success, setSuccess] = useState<string | null>(null);
   const { state: invoicesState, refresh } = useInvoices(projectId || undefined);
 
+  const authReady = auth.status !== 'loading';
   const canGenerate =
     auth.status === 'signed-in' && (auth.profile?.role === 'owner' || auth.profile?.role === 'accountant');
   const projects = projectsState.status === 'ready' ? projectsState.projects : [];
@@ -43,7 +46,11 @@ export default function InvoicesPage() {
       setSuccess(sw.invoices.receiptsInWindow(result.receipt_count));
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : sw.common.error);
+      if (err instanceof GenerateInvoiceError && err.reason === 'no_receipts') {
+        setError(sw.invoices.noReceipts);
+      } else {
+        setError(err instanceof Error ? err.message : sw.common.error);
+      }
     } finally {
       setBusy(false);
     }
@@ -65,6 +72,12 @@ export default function InvoicesPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : sw.common.error);
     }
+  }
+
+  // Gate on auth being resolved so the generation form doesn't pop in after mount
+  // (was causing the visible layout jump on page load).
+  if (!authReady) {
+    return <div className="p-8 text-ink-muted">{sw.common.loading}</div>;
   }
 
   return (
@@ -108,7 +121,7 @@ export default function InvoicesPage() {
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
           {success && <p className="mt-3 text-sm text-emerald-700">{success}</p>}
           <div className="mt-4">
-            <Button tint="accountant" onClick={() => void submit()} disabled={busy || !projectId}>
+            <Button tint="admin" onClick={() => void submit()} disabled={busy || !projectId}>
               <Plus className="h-4 w-4" />
               {busy ? sw.common.loading : sw.invoices.generate}
             </Button>
@@ -118,7 +131,11 @@ export default function InvoicesPage() {
 
       <h2 className="mb-2 text-sm font-semibold text-ink-muted">{sw.invoices.list}</h2>
 
-      {invoicesState.status === 'loading' && <div className="text-sm text-ink-muted">{sw.common.loading}</div>}
+      {invoicesState.status === 'loading' && (
+        <div className="flex flex-col gap-3">
+          {Array.from({ length: 3 }).map((_, i) => <ListItemSkeleton key={i} lines={3} />)}
+        </div>
+      )}
       {invoicesState.status === 'error' && <div className="text-sm text-red-600">{invoicesState.message}</div>}
       {invoicesState.status === 'ready' && invoicesState.invoices.length === 0 && (
         <EmptyState icon={<FileText className="h-10 w-10" />} title={sw.invoices.empty} />

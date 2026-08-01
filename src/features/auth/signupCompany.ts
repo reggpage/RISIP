@@ -7,6 +7,7 @@ export type CompanyDetails = {
   company_name: string;
   hq_location: string;
   sector?: string;
+  company_password: string;
 };
 
 // Step 1 → send a 6-digit OTP to email. Delivered by the send-email Auth hook (Resend).
@@ -44,6 +45,7 @@ export async function setPasswordAndCreateCompany(
       company_name: details.company_name,
       hq_location: details.hq_location,
       sector: details.sector,
+      company_password: details.company_password,
     },
   });
   if (error) throw error;

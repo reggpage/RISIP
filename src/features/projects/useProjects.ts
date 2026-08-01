@@ -73,3 +73,36 @@ export async function createProject(
   if (error) throw error;
   return data as Project;
 }
+
+// Partial update — only send the fields the caller changed. RLS still enforces
+// owner-only writes at the DB layer, so no server-side role check needed here.
+export async function updateProject(id: string, patch: Partial<NewProjectInput>): Promise<Project> {
+  const payload: Record<string, unknown> = {};
+  if (patch.name !== undefined) payload.name = patch.name.trim();
+  if (patch.site_location !== undefined) payload.site_location = patch.site_location.trim() || null;
+  if (patch.client_name !== undefined) payload.client_name = patch.client_name.trim() || null;
+  if (patch.start_date !== undefined) payload.start_date = patch.start_date || null;
+  if (patch.description !== undefined) payload.description = patch.description.trim() || null;
+
+  const { data, error } = await supabase
+    .from('projects')
+    .update(payload)
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as Project;
+}
+
+// Toggle between active/archived. Archived projects still show in lists (with badge)
+// but new receipts can't target them from the worker upload chooser.
+export async function setProjectStatus(id: string, status: 'active' | 'archived'): Promise<Project> {
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ status })
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as Project;
+}
