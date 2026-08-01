@@ -20,7 +20,10 @@ export default function MetricCard({
         <div className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</div>
         {icon && <div className="text-ink-muted">{icon}</div>}
       </div>
-      <div className="mt-2 text-2xl font-semibold text-ink">{value}</div>
+      {/* Lora display face — gives metric numbers a "financial report" feel. */}
+      <div className="mt-2 font-display text-2xl font-semibold tracking-tight text-ink">
+        {value}
+      </div>
       {hint && <div className="mt-1 text-xs text-ink-muted">{hint}</div>}
     </Card>
   );

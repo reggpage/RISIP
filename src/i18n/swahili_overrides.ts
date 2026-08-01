@@ -88,6 +88,7 @@ export const swahiliOverrides = {
     error: 'Hitilafu ya uchambuzi',
     recent: 'Risiti za hivi karibuni',
     empty: 'Bado hakuna risiti.',
+    vatExceedsTotal: 'Kosa: Kiasi cha VAT hakiwezi kuwa kikubwa kuliko Jumla ya Risiti yenyewe. Tafadhali kagua risiti yako upya.',
   },
   invoices: {
     generate: 'Tengeneza ankara',

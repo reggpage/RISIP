@@ -86,7 +86,7 @@ export async function updateProject(id: string, patch: Partial<NewProjectInput>)
 
   const { data, error } = await supabase
     .from('projects')
-    .update(payload)
+    .update(payload as Partial<Project>)
     .eq('id', id)
     .select('*')
     .single();

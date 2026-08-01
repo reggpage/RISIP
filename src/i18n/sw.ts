@@ -199,6 +199,7 @@ const english = {
     lowConfidence: 'These fields need review:',
     uploadHint: 'Tap to snap or upload a receipt. It will be extracted automatically.',
     noProjectsAssigned: "You haven't been added to a project yet. Ask your admin for an invite link.",
+    vatExceedsTotal: 'Error: VAT cannot be greater than the receipt total. Please double-check your receipt.',
     enterManually: 'Enter manually',
     manualTitle: 'Enter a receipt by hand',
     manualHint: "Use this when the receipt is hard to photograph or when the AI misreads it.",

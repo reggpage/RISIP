@@ -5,6 +5,7 @@ import { Archive, ArrowLeft, RotateCcw } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import {
   NewProjectInput,
   setProjectStatus,
@@ -19,6 +20,7 @@ export default function EditProject() {
   const navigate = useNavigate();
   const auth = useAuth();
   const { state, refresh } = useProject(id);
+  const confirm = useConfirm();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [busy, setBusy] = useState<'save' | 'toggle' | null>(null);
 
@@ -45,7 +47,19 @@ export default function EditProject() {
 
   const isOwner = auth.status === 'signed-in' && auth.profile?.role === 'owner';
 
-  if (state.status === 'loading') return <div className="p-8 text-ink-muted">{sw.common.loading}</div>;
+  if (state.status === 'loading') {
+    return (
+      <div className="mx-auto max-w-xl p-6">
+        <div className="mb-4 h-4 w-32 animate-pulse rounded bg-surface-muted" />
+        <div className="mb-6 h-8 w-64 animate-pulse rounded-lg bg-surface-muted" />
+        <div className="flex flex-col gap-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-11 animate-pulse rounded-lg bg-surface-muted" />
+          ))}
+        </div>
+      </div>
+    );
+  }
   if (state.status === 'error') return <div className="p-8 text-red-600">{state.message}</div>;
   if (!state.project) return <div className="p-8 text-ink-muted">{sw.common.empty}</div>;
   if (!isOwner) return <div className="p-8 text-ink-muted">Only the admin can edit projects.</div>;
@@ -69,7 +83,15 @@ export default function EditProject() {
 
   async function toggleArchive() {
     if (!id) return;
-    if (!archived && !window.confirm(sw.projects.archiveConfirm)) return;
+    if (!archived) {
+      const ok = await confirm({
+        title: 'Archive this project?',
+        message: sw.projects.archiveConfirm,
+        confirmLabel: 'Archive',
+        danger: true,
+      });
+      if (!ok) return;
+    }
     setSubmitError(null);
     setBusy('toggle');
     try {

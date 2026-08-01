@@ -10,6 +10,7 @@ export default {
           accountant: 'rgb(var(--role-accountant) / <alpha-value>)',
           admin: 'rgb(var(--role-admin) / <alpha-value>)',
         },
+        sidebar: 'rgb(var(--sidebar-bg) / <alpha-value>)',
         surface: {
           DEFAULT: 'rgb(var(--surface) / <alpha-value>)',
           muted: 'rgb(var(--surface-muted) / <alpha-value>)',
@@ -21,7 +22,11 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        // Outfit is the primary UI face: geometric sans with wide language coverage.
+        sans: ['Outfit', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        // Lora reserved for large numeric displays where a slight serif feel adds gravitas
+        // (dashboard metrics, invoice totals). Apply via `font-display` utility.
+        display: ['Lora', 'ui-serif', 'Georgia', 'serif'],
       },
     },
   },

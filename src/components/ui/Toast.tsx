@@ -25,38 +25,42 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={push}>
       {children}
-      {/* Top-center on mobile, top-right on desktop. pointer-events-none on the wrapper
-          so it doesn't block clicks; each toast re-enables pointer events. */}
+      {/* Stack sits fixed at top-center (mobile) / top-right (desktop). Width is
+          clamped to a standard 380px so every toast looks the same. */}
       <div className="pointer-events-none fixed inset-x-0 top-3 z-[100] flex flex-col items-center gap-2 px-3 sm:left-auto sm:right-4 sm:top-4 sm:items-end">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            role={t.kind === 'error' ? 'alert' : 'status'}
-            className={
-              'pointer-events-auto flex max-w-sm items-start gap-2 rounded-lg border px-3 py-2 text-sm shadow-lg ' +
-              (t.kind === 'success'
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-                : t.kind === 'error'
-                  ? 'border-red-200 bg-red-50 text-red-900'
-                  : 'border-surface-border bg-surface text-ink')
-            }
-          >
-            <span className="mt-0.5 shrink-0">
-              {t.kind === 'success' && <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
-              {t.kind === 'error' && <AlertTriangle className="h-4 w-4 text-red-600" />}
-              {t.kind === 'info' && <Info className="h-4 w-4 text-ink-muted" />}
-            </span>
-            <span className="flex-1 leading-snug">{t.message}</span>
-            <button
-              type="button"
-              onClick={() => dismiss(t.id)}
-              className="shrink-0 rounded p-0.5 opacity-60 hover:opacity-100"
-              aria-label="Dismiss"
+        {toasts.map((t) => {
+          const accent =
+            t.kind === 'success' ? 'border-l-emerald-500 text-emerald-600'
+            : t.kind === 'error' ? 'border-l-role-admin text-role-admin'
+            : 'border-l-ink-muted text-ink-muted';
+          return (
+            <div
+              key={t.id}
+              role={t.kind === 'error' ? 'alert' : 'status'}
+              className={
+                // Roomier — 14px vertical padding + slightly larger text so the
+                // toast reads well even from arm's length on a phone screen.
+                'toast-enter pointer-events-auto flex w-[calc(100vw-2rem)] min-h-[56px] max-w-[400px] items-start gap-3 rounded-xl border border-surface-border border-l-4 bg-surface px-4 py-3.5 text-sm shadow-lg ring-1 ring-black/[0.03] ' +
+                accent
+              }
             >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        ))}
+              <span className="mt-0.5 shrink-0">
+                {t.kind === 'success' && <CheckCircle2 className="h-4 w-4" />}
+                {t.kind === 'error' && <AlertTriangle className="h-4 w-4" />}
+                {t.kind === 'info' && <Info className="h-4 w-4" />}
+              </span>
+              <span className="flex-1 leading-snug text-ink">{t.message}</span>
+              <button
+                type="button"
+                onClick={() => dismiss(t.id)}
+                className="shrink-0 rounded p-0.5 text-ink-muted opacity-70 hover:opacity-100"
+                aria-label="Dismiss"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          );
+        })}
       </div>
     </ToastContext.Provider>
   );
@@ -65,8 +69,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 export function useToast() {
   const push = useContext(ToastContext);
   if (!push) {
-    // Fail loudly during development, silently no-op in prod so a missing provider
-    // never breaks a page (better UX than crashing on toast).
     if (import.meta.env.DEV) {
       throw new Error('useToast must be used inside <ToastProvider>');
     }

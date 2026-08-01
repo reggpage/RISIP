@@ -15,6 +15,9 @@ import ReceiptsPage from '@/routes/receipts/ReceiptsPage';
 import ManualReceipt from '@/routes/receipts/ManualReceipt';
 import Dashboard from '@/routes/dashboard/Dashboard';
 import InvoicesPage from '@/routes/invoices/InvoicesPage';
+import InvoiceEditor from '@/routes/invoices/InvoiceEditor';
+import PublicInvoice from '@/routes/invoices/PublicInvoice';
+import PettyCashPage from '@/routes/pettyCash/PettyCashPage';
 import SettingsPage from '@/routes/settings/SettingsPage';
 
 export default function App() {
@@ -26,6 +29,8 @@ export default function App() {
       <Route path="/signup" element={<SignupCompany />} />
       <Route path="/find-company" element={<FindCompany />} />
       <Route path="/join/:token" element={<JoinPage />} />
+      {/* Public, no-login invoice view opened by the client via secure token. */}
+      <Route path="/public/invoices/:token" element={<PublicInvoice />} />
 
       {/* Authed app */}
       <Route
@@ -64,6 +69,22 @@ export default function App() {
           element={
             <RequireRole allowed={['owner', 'accountant']}>
               <InvoicesPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/invoices/:id/edit"
+          element={
+            <RequireRole allowed={['owner', 'accountant']}>
+              <InvoiceEditor />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/petty-cash"
+          element={
+            <RequireRole allowed={['owner', 'accountant']}>
+              <PettyCashPage />
             </RequireRole>
           }
         />

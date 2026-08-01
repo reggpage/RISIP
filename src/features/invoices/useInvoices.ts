@@ -72,3 +72,51 @@ export async function invoicePdfUrl(path: string, expiresIn = 60 * 10): Promise<
   if (error) throw error;
   return data.signedUrl;
 }
+
+// ── Digital-first invoice editing ──────────────────────────────────────────
+import type { InvoiceLineItem, Receipt } from '@/types/db';
+
+export async function fetchInvoice(id: string): Promise<Invoice | null> {
+  const { data, error } = await supabase.from('invoices').select('*').eq('id', id).maybeSingle();
+  if (error) throw error;
+  return (data as Invoice | null) ?? null;
+}
+
+// The receipts backing an invoice (via the invoice_receipts join). These are the
+// candidates the accountant can include/exclude on the canvas.
+export async function fetchInvoiceReceipts(invoiceId: string): Promise<Receipt[]> {
+  const { data, error } = await supabase
+    .from('invoice_receipts')
+    .select('receipt_id, receipts(*)')
+    .eq('invoice_id', invoiceId);
+  if (error) throw error;
+  return (data ?? [])
+    .map((row) => (row as unknown as { receipts: Receipt }).receipts)
+    .filter(Boolean);
+}
+
+export type InvoicePatch = {
+  invoice_number?: string;
+  client_name?: string | null;
+  custom_notes?: string | null;
+  line_items?: InvoiceLineItem[];
+  total_amount?: number;
+  tax_amount?: number;
+};
+
+export async function updateInvoice(id: string, patch: InvoicePatch): Promise<void> {
+  const { error } = await supabase.from('invoices').update(patch).eq('id', id);
+  if (error) throw error;
+}
+
+export async function setInvoiceStatus(id: string, status: Invoice['status']): Promise<void> {
+  const stamp =
+    status === 'sent' ? { sent_at: new Date().toISOString() } : {};
+  const { error } = await supabase.from('invoices').update({ status, ...stamp }).eq('id', id);
+  if (error) throw error;
+}
+
+// Public share URL a client opens without logging in.
+export function invoicePublicUrl(publicToken: string): string {
+  return `${window.location.origin}/public/invoices/${publicToken}`;
+}

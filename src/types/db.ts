@@ -11,7 +11,13 @@
 export type UserRole = 'owner' | 'accountant' | 'worker';
 export type ProjectStatus = 'active' | 'archived';
 export type ReceiptStatus = 'processing' | 'confirmed' | 'duplicate' | 'error';
-export type InvoiceStatus = 'draft' | 'sent';
+export type InvoiceStatus =
+  | 'draft'
+  | 'pending_approval'
+  | 'approved'
+  | 'sent'
+  | 'accepted'
+  | 'disputed';
 export type InviteRole = Exclude<UserRole, 'owner'>; // owner is fixed at signup only
 
 // ─── Row types ─────────────────────────────────────────────────────────────────
@@ -65,12 +71,35 @@ export type InviteLink = {
   created_at: string;
 };
 
+export type PaymentMethod = 'cash_personal' | 'petty_cash';
+export type PettyCashTxnType = 'allocation' | 'expense' | 'adjustment';
+
+export type PettyCashAccount = {
+  id: string;
+  company_id: string;
+  user_id: string;
+  current_balance: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PettyCashTransaction = {
+  id: string;
+  account_id: string;
+  amount: number;
+  type: PettyCashTxnType;
+  receipt_id: string | null;
+  description: string | null;
+  created_by: string;
+  created_at: string;
+};
+
 export type Receipt = {
   id: string;
   project_id: string;
   company_id: string;
   uploaded_by: string;
-  image_url: string;
+  image_url: string | null;
   vendor_name: string | null;
   vendor_tin: string | null;
   vendor_vrn: string | null;
@@ -82,6 +111,7 @@ export type Receipt = {
   tax_amount: number | null;
   category: string | null;
   status: ReceiptStatus;
+  payment_method: PaymentMethod;
   raw_ai_response: unknown;
   low_confidence_fields: string[];
   created_at: string;
@@ -90,6 +120,7 @@ export type Receipt = {
 export type Invoice = {
   id: string;
   project_id: string;
+  company_id: string | null;
   period_start: string;
   period_end: string;
   total_amount: number;
@@ -98,6 +129,23 @@ export type Invoice = {
   status: InvoiceStatus;
   generated_by: string;
   created_at: string;
+  invoice_number: string | null;
+  client_name: string | null;
+  custom_notes: string | null;
+  signature_url: string | null;
+  public_token: string;
+  line_items: InvoiceLineItem[] | null;
+  signed_by: string | null;
+  signed_at: string | null;
+  sent_at: string | null;
+};
+
+// A line item groups the receipts of one category. `excludedReceiptIds` lets the
+// accountant drop specific receipts from the invoice without deleting the receipt.
+export type InvoiceLineItem = {
+  category: string;
+  description: string;
+  receiptIds: string[];
 };
 
 export type InvoiceReceipt = {
@@ -150,14 +198,30 @@ export type Database = {
       receipts: {
         Row: Receipt;
         Insert: Partial<Receipt> & {
-          id: string;
           project_id: string;
           company_id: string;
           uploaded_by: string;
-          image_url: string;
+          image_url?: string | null;
           status: ReceiptStatus;
         };
         Update: Partial<Receipt>;
+        Relationships: [];
+      };
+      petty_cash_accounts: {
+        Row: PettyCashAccount;
+        Insert: Partial<PettyCashAccount> & { company_id: string; user_id: string };
+        Update: Partial<PettyCashAccount>;
+        Relationships: [];
+      };
+      petty_cash_transactions: {
+        Row: PettyCashTransaction;
+        Insert: Partial<PettyCashTransaction> & {
+          account_id: string;
+          amount: number;
+          type: PettyCashTxnType;
+          created_by: string;
+        };
+        Update: Partial<PettyCashTransaction>;
         Relationships: [];
       };
       invoices: {
@@ -182,6 +246,16 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      /** Public invoice reader for /public/invoices/:token (anon). Returns a JSON blob. */
+      get_public_invoice: {
+        Args: { p_token: string };
+        Returns: unknown;
+      };
+      /** Client accepts/disputes a sent invoice from the public page (anon). */
+      public_invoice_respond: {
+        Args: { p_token: string; p_action: string; p_note?: string | null };
+        Returns: boolean;
+      };
       /** Public lookup for the /join/:token page (callable by anon). */
       get_invite_info: {
         Args: { p_token: string };

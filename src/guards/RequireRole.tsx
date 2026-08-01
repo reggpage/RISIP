@@ -1,7 +1,6 @@
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { hasAnyRole, type UserRole } from '@/lib/roles';
-import { sw } from '@/i18n/sw';
 
 export default function RequireRole({
   allowed,
@@ -13,7 +12,14 @@ export default function RequireRole({
   const auth = useAuth();
 
   if (auth.status === 'loading') {
-    return <div className="p-8 text-ink-muted">{sw.common.loading}</div>;
+    // Minimal skeleton so children pages don't briefly flash a "Loading..." string
+    // before the role gate resolves.
+    return (
+      <div className="mx-auto max-w-4xl p-6">
+        <div className="mb-4 h-8 w-40 animate-pulse rounded-lg bg-surface-muted" />
+        <div className="h-40 animate-pulse rounded-xl bg-surface-muted" />
+      </div>
+    );
   }
   if (auth.status === 'signed-out') return <Navigate to="/login" replace />;
 

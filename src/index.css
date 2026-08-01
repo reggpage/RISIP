@@ -6,6 +6,9 @@
   --role-worker: 13 148 136;      /* teal-600 */
   --role-accountant: 244 114 92;  /* coral */
   --role-admin: 221 45 74;        /* #DD2D4A — Risip primary brand */
+  /* Sidebar uses the primary brand red (same as buttons) — kept as a var so a future
+     dark-red variant can drop in without touching component classes. */
+  --sidebar-bg: 221 45 74;
 
   --surface: 255 255 255;
   --surface-muted: 248 250 252;
@@ -22,3 +25,10 @@ html, body, #root { height: 100%; }
 body {
   @apply bg-surface-muted text-ink font-sans antialiased;
 }
+
+/* Toast slide-in — used by Toaster. Standard cubic-bezier ease-out, 200ms. */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.toast-enter { animation: toast-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both; }

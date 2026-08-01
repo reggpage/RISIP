@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { compressImage } from '@/lib/imageCompression';
 import { uuidv4 } from '@/lib/uuid';
-import type { Receipt } from '@/types/db';
+import type { PaymentMethod, Receipt } from '@/types/db';
 
 // Full worker upload flow:
 //   1. Compress the phone photo down to ~300KB JPEG (keeps text readable, saves 10–20×
@@ -11,7 +11,7 @@ import type { Receipt } from '@/types/db';
 //   4. Fire-and-forget invoke extract-receipt — updates arrive via realtime.
 export async function uploadReceipt(
   file: File,
-  ctx: { project_id: string; user_id: string },
+  ctx: { project_id: string; user_id: string; payment_method?: PaymentMethod },
 ): Promise<Receipt> {
   const receiptId = uuidv4();
 
@@ -35,6 +35,7 @@ export async function uploadReceipt(
       uploaded_by: ctx.user_id,
       image_url: path,
       status: 'processing',
+      payment_method: ctx.payment_method ?? 'cash_personal',
     })
     .select('*')
     .single();

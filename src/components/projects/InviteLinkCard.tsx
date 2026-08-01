@@ -4,7 +4,7 @@ import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import WhatsappIcon from '@/components/ui/WhatsappIcon';
 import { inviteJoinUrl } from '@/lib/tokens';
-import { roleColorClass, roleLabel } from '@/lib/roles';
+import { roleLabel } from '@/lib/roles';
 import { formatDateTime } from '@/lib/format';
 import { sw } from '@/i18n/sw';
 import type { InviteLink } from '@/types/db';
@@ -42,14 +42,27 @@ export default function InviteLinkCard({
   }
 
   async function copy() {
+    // Try the modern async clipboard first; fall back to the classic hidden-textarea
+    // + execCommand trick when the browser blocks it (Safari on HTTP, older Android).
+    // Both paths stay silent — no browser prompt popup.
     try {
       await navigator.clipboard.writeText(url);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1600);
     } catch {
-      // Older browsers / insecure contexts — fall back to a prompt.
-      window.prompt(sw.common.copy, url);
+      const el = document.createElement('textarea');
+      el.value = url;
+      el.setAttribute('readonly', '');
+      el.style.cssText = 'position:absolute;left:-9999px;top:0;opacity:0';
+      document.body.appendChild(el);
+      el.select();
+      try {
+        document.execCommand('copy');
+      } catch {
+        // Give up silently — user can long-press the visible URL to copy manually.
+      }
+      document.body.removeChild(el);
     }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
   }
 
   function shareWhatsapp() {
@@ -63,7 +76,7 @@ export default function InviteLinkCard({
     <Card className={revoked ? 'opacity-60' : ''}>
       <div className="mb-3 flex items-center justify-between">
         <div>
-          <div className={`text-sm font-semibold ${roleColorClass[link.role]}`}>{roleName}</div>
+          <div className="text-sm font-semibold text-ink">{roleName}</div>
           <div className="text-xs text-ink-muted">
             {revoked ? `${sw.projects.revoked} · ${formatDateTime(link.revoked_at)}` : formatDateTime(link.created_at)}
           </div>
@@ -105,11 +118,7 @@ export default function InviteLinkCard({
             {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             {copied ? sw.common.copied : sw.common.copy}
           </Button>
-          <Button
-            variant="secondary"
-            className="!border-[#25D366] !text-[#25D366] hover:!bg-[#25D366]/10"
-            onClick={shareWhatsapp}
-          >
+          <Button variant="secondary" tint="admin" onClick={shareWhatsapp}>
             <WhatsappIcon />
             {sw.common.shareWhatsapp}
           </Button>

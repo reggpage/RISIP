@@ -1,21 +1,42 @@
 import { useState } from 'react';
-import { FileText, Plus, Send, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { FileText, Plus, Pencil, Link as LinkIcon } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
 import Input from '@/components/ui/Input';
+import Select from '@/components/ui/Select';
 import { ListItemSkeleton } from '@/components/ui/Skeleton';
+import { useToast } from '@/components/ui/Toast';
 import {
   generateInvoice,
   GenerateInvoiceError,
-  invoicePdfUrl,
-  markInvoiceSent,
+  invoicePublicUrl,
+  setInvoiceStatus,
   useInvoices,
 } from '@/features/invoices/useInvoices';
 import { useProjects } from '@/features/projects/useProjects';
 import { useAuth } from '@/lib/auth';
 import { formatDate, formatMoney } from '@/lib/format';
 import { sw } from '@/i18n/sw';
+import type { Invoice, InvoiceStatus } from '@/types/db';
+
+const STATUS_LABEL: Record<InvoiceStatus, string> = {
+  draft: 'Draft',
+  pending_approval: 'Pending approval',
+  approved: 'Approved',
+  sent: 'Sent',
+  accepted: 'Accepted',
+  disputed: 'Disputed',
+};
+const STATUS_STYLE: Record<InvoiceStatus, string> = {
+  draft: 'bg-surface-muted text-ink-muted',
+  pending_approval: 'bg-amber-100 text-amber-800',
+  approved: 'bg-sky-100 text-sky-800',
+  sent: 'bg-emerald-100 text-emerald-800',
+  accepted: 'bg-emerald-100 text-emerald-800',
+  disputed: 'bg-red-100 text-red-800',
+};
 
 export default function InvoicesPage() {
   const auth = useAuth();
@@ -56,28 +77,43 @@ export default function InvoicesPage() {
     }
   }
 
-  async function preview(path: string) {
-    try {
-      const url = await invoicePdfUrl(path);
-      window.open(url, '_blank', 'noopener,noreferrer');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : sw.common.error);
-    }
-  }
+  const toast = useToast();
 
-  async function markSent(id: string) {
+  // "Send to Client" from the list: mark sent (if not already) and copy the public link.
+  async function shareLink(inv: Invoice) {
     try {
-      await markInvoiceSent(id);
-      await refresh();
+      if (inv.status !== 'sent') {
+        await setInvoiceStatus(inv.id, 'sent');
+        await refresh();
+      }
+      const url = invoicePublicUrl(inv.public_token);
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success('Live link copied to clipboard.');
+      } catch {
+        toast.info(url);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : sw.common.error);
+      toast.error(err instanceof Error ? err.message : sw.common.error);
     }
   }
 
   // Gate on auth being resolved so the generation form doesn't pop in after mount
   // (was causing the visible layout jump on page load).
   if (!authReady) {
-    return <div className="p-8 text-ink-muted">{sw.common.loading}</div>;
+    // Skeleton mirrors the real layout so nothing jumps when auth resolves.
+    return (
+      <div className="mx-auto max-w-4xl p-4 sm:p-6">
+        <div className="mb-6 h-8 w-32 animate-pulse rounded-lg bg-surface-muted" />
+        <div className="mb-6 h-40 animate-pulse rounded-xl bg-surface-muted" />
+        <div className="mb-2 h-4 w-40 animate-pulse rounded bg-surface-muted" />
+        <div className="flex flex-col gap-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <ListItemSkeleton key={i} lines={3} />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -91,19 +127,13 @@ export default function InvoicesPage() {
           </CardHeader>
           <div className="grid gap-3 sm:grid-cols-4">
             <div className="sm:col-span-2">
-              <label className="mb-1 block text-xs font-medium text-ink-muted">{sw.invoices.project}</label>
-              <select
-                className="w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-role-accountant/30"
+              <Select
+                label={sw.invoices.project}
                 value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
-              >
-                <option value="">—</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+                onChange={setProjectId}
+                placeholder="Choose a project"
+                options={projects.map((p) => ({ value: p.id, label: p.name }))}
+              />
             </div>
             <Input
               type="date"
@@ -147,19 +177,16 @@ export default function InvoicesPage() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs text-ink-muted">#{inv.id.slice(0, 8).toUpperCase()}</span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs ${
-                        inv.status === 'sent'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-amber-100 text-amber-800'
-                      }`}
-                    >
-                      {sw.invoices.status[inv.status]}
+                    <span className="font-mono text-xs text-ink-muted">
+                      {inv.invoice_number ?? `#${inv.id.slice(0, 8).toUpperCase()}`}
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs ${STATUS_STYLE[inv.status] ?? 'bg-surface-muted text-ink-muted'}`}>
+                      {STATUS_LABEL[inv.status] ?? inv.status}
                     </span>
                   </div>
                   <div className="mt-1 text-sm text-ink-muted">
                     {formatDate(inv.period_start)} — {formatDate(inv.period_end)}
+                    {inv.client_name && <> · {inv.client_name}</>}
                   </div>
                 </div>
                 <div className="text-right">
@@ -170,16 +197,16 @@ export default function InvoicesPage() {
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                {inv.pdf_url && (
-                  <Button variant="secondary" tint="accountant" onClick={() => void preview(inv.pdf_url!)}>
-                    <ExternalLink className="h-4 w-4" />
-                    {sw.invoices.preview}
+                <Link to={`/invoices/${inv.id}/edit`}>
+                  <Button variant="secondary" tint="admin">
+                    <Pencil className="h-4 w-4" />
+                    Edit Invoice
                   </Button>
-                )}
-                {inv.status === 'draft' && canGenerate && (
-                  <Button variant="secondary" tint="admin" onClick={() => void markSent(inv.id)}>
-                    <Send className="h-4 w-4" />
-                    {sw.invoices.markSent}
+                </Link>
+                {(inv.status === 'approved' || inv.status === 'sent') && (
+                  <Button variant="secondary" tint="admin" onClick={() => void shareLink(inv)}>
+                    <LinkIcon className="h-4 w-4" />
+                    {inv.status === 'sent' ? 'Copy live link' : 'Send to Client'}
                   </Button>
                 )}
               </div>

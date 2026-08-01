@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Building2, KeyRound, Languages, Lock, Upload, User, Users } from 'lucide-react';
+import { AlertTriangle, Building2, KeyRound, Languages, Lock, User, Users } from 'lucide-react';
 import { getLang, setLang, LANG_OPTIONS, type LangCode } from '@/lib/lang';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -8,6 +8,7 @@ import Input from '@/components/ui/Input';
 import PasswordField from '@/components/ui/PasswordField';
 import { CompanyProfileSkeleton, MemberRowSkeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
+import LogoCropModal from '@/components/settings/LogoCropModal';
 import { useAuth, signOut } from '@/lib/auth';
 import { roleLabel } from '@/lib/roles';
 import { supabase } from '@/lib/supabase';
@@ -154,28 +155,46 @@ export default function SettingsPage() {
     setProfileMsg(error ? { type: 'err', text: error.message } : { type: 'ok', text: sw.settings.saved });
   }
 
-  async function handleLogoFile(file: File | null) {
-    if (!file || !company || !isOwner) return;
-    const ext = (file.name.split('.').pop() ?? 'png').toLowerCase();
-    const path = `${company.id}.${ext}`;
+  // Two-step logo flow: user picks a file → LogoCropModal opens → on Confirm we
+  // upload the cropped blob (always JPEG, always at <company_id>/logo.jpg so the
+  // storage RLS uuid parser doesn't choke on a bare filename with extension).
+  const [pendingLogoFile, setPendingLogoFile] = useState<File | null>(null);
+
+  async function uploadCroppedLogo(blob: Blob) {
+    if (!company || !isOwner) return;
+    const path = `${company.id}/logo.jpg`;
     setUploadingLogo(true);
     setProfileMsg(null);
     try {
       const { error: uploadErr } = await supabase.storage.from('company-logos')
-        .upload(path, file, { contentType: file.type || 'image/png', upsert: true });
-      if (uploadErr) throw uploadErr;
+        .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
+      if (uploadErr) {
+        // Log the full error so the exact reason (RLS message / mime / size) shows in
+        // devtools, not just the summary the toast displays.
+        console.error('logo upload failed', uploadErr);
+        throw uploadErr;
+      }
+      // Cache-bust so the header refreshes to the new logo immediately.
       const { data: urlData } = supabase.storage.from('company-logos').getPublicUrl(path);
-      const freshUrl = urlData.publicUrl;
-      const { error: updateErr } = await supabase.from('companies').update({ logo_url: freshUrl }).eq('id', company.id);
+      const freshUrl = `${urlData.publicUrl}?v=${Date.now()}`;
+      const { error: updateErr } = await supabase.from('companies')
+        .update({ logo_url: freshUrl })
+        .eq('id', company.id);
       if (updateErr) throw updateErr;
       setLogoUrl(freshUrl);
       setCompany((c) => (c ? { ...c, logo_url: freshUrl } : c));
-      setProfileMsg({ type: 'ok', text: sw.settings.saved });
+      toast.success('Logo updated.');
+      setPendingLogoFile(null);
     } catch (err) {
-      setProfileMsg({ type: 'err', text: err instanceof Error ? err.message : sw.common.error });
+      toast.error(err instanceof Error ? err.message : sw.common.error);
     } finally {
       setUploadingLogo(false);
     }
+  }
+
+  function handleLogoFile(file: File | null) {
+    if (!file || !company || !isOwner) return;
+    setPendingLogoFile(file);
   }
 
   async function toggleDeactivation(member: Profile) {
@@ -235,11 +254,6 @@ export default function SettingsPage() {
     }
   }
 
-  const roleBadgeClass: Record<string, string> = {
-    owner: 'bg-role-admin/10 text-role-admin',
-    accountant: 'bg-role-accountant/10 text-role-accountant',
-    worker: 'bg-role-worker/10 text-role-worker',
-  };
 
   if (auth.status === 'loading') {
     return (
@@ -343,7 +357,6 @@ export default function SettingsPage() {
                   </div>
                   {isOwner && (
                     <Button variant="secondary" tint="admin" disabled={uploadingLogo} onClick={() => logoInput.current?.click()}>
-                      <Upload className="h-4 w-4" />
                       {uploadingLogo ? sw.common.loading : sw.settings.logoUpload}
                     </Button>
                   )}
@@ -389,8 +402,18 @@ export default function SettingsPage() {
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-sm font-medium text-ink">{m.full_name}</span>
-                          <span className={`rounded-full px-2 py-0.5 text-xs ${roleBadgeClass[m.role] ?? ''}`}>
-                            {roleLabel[m.role]}
+                          {/* Colored role text, no pill background — lighter, cleaner list. */}
+                          <span
+                            className={
+                              'text-xs font-medium ' +
+                              (m.role === 'owner'
+                                ? 'text-emerald-600'
+                                : m.role === 'accountant'
+                                  ? 'text-amber-600'
+                                  : 'text-sky-600')
+                            }
+                          >
+                            · {roleLabel[m.role]}
                           </span>
                           {m.deactivated_at && (
                             <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs text-ink-muted">
@@ -514,6 +537,15 @@ export default function SettingsPage() {
           </SettingsSection>
         )}
       </div>
+
+      {pendingLogoFile && (
+        <LogoCropModal
+          file={pendingLogoFile}
+          uploading={uploadingLogo}
+          onCancel={() => setPendingLogoFile(null)}
+          onConfirm={uploadCroppedLogo}
+        />
+      )}
     </div>
   );
 }

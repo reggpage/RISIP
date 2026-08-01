@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Plus, Receipt as ReceiptIcon, Wallet } from 'lucide-react';
+import { ArrowLeft, FileSpreadsheet, Loader2, Plus, Receipt as ReceiptIcon, Wallet } from 'lucide-react';
 import Button from '@/components/ui/Button';
-import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
 import { ListItemSkeleton } from '@/components/ui/Skeleton';
 import InviteLinkCard from '@/components/projects/InviteLinkCard';
@@ -14,8 +14,10 @@ import {
   useInviteLinks,
 } from '@/features/projects/useInviteLinks';
 import { useProject } from '@/features/projects/useProjects';
+import { exportProjectExcel } from '@/features/projects/exportExcel';
 import { useReceipts } from '@/features/receipts/useReceipts';
 import { useAuth } from '@/lib/auth';
+import { useToast } from '@/components/ui/Toast';
 import { formatDate, formatMoney } from '@/lib/format';
 import { sw } from '@/i18n/sw';
 import type { InviteLink, InviteRole } from '@/types/db';
@@ -29,6 +31,8 @@ export default function ProjectDetail() {
   const { state: linksState, refresh: refreshLinks } = useInviteLinks(id);
   const [busy, setBusy] = useState<InviteRole | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const toast = useToast();
 
   const isOwner = auth.status === 'signed-in' && auth.profile?.role === 'owner';
   const canSeeLinks = auth.status === 'signed-in' && (auth.profile?.role === 'owner' || auth.profile?.role === 'accountant');
@@ -43,8 +47,34 @@ export default function ProjectDetail() {
     };
   }, [receiptsState]);
 
+  async function handleExport() {
+    if (projectState.status !== 'ready' || !projectState.project) return;
+    setExporting(true);
+    try {
+      await exportProjectExcel(projectState.project.id, projectState.project.name);
+      toast.success('Excel downloaded.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   if (projectState.status === 'loading') {
-    return <div className="p-8 text-ink-muted">{sw.common.loading}</div>;
+    return (
+      <div className="mx-auto max-w-4xl p-6">
+        <div className="mb-4 h-4 w-32 animate-pulse rounded bg-surface-muted" />
+        <div className="mb-2 h-8 w-64 animate-pulse rounded-lg bg-surface-muted" />
+        <div className="mb-8 h-4 w-48 animate-pulse rounded bg-surface-muted" />
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <div className="h-28 animate-pulse rounded-xl bg-surface-muted" />
+          <div className="h-28 animate-pulse rounded-xl bg-surface-muted" />
+        </div>
+        <div className="flex flex-col gap-3">
+          {Array.from({ length: 3 }).map((_, i) => <ListItemSkeleton key={i} lines={3} />)}
+        </div>
+      </div>
+    );
   }
   if (projectState.status === 'error') {
     return <div className="p-8 text-red-600">{projectState.message}</div>;
@@ -100,15 +130,12 @@ export default function ProjectDetail() {
         <div>
           <div className="mb-1 flex items-center gap-3">
             <h1 className="text-2xl font-semibold text-ink">{project.name}</h1>
-            <span
-              className={`rounded-full px-2 py-0.5 text-xs ${
-                project.status === 'active'
-                  ? 'bg-role-worker/10 text-role-worker'
-                  : 'bg-surface-muted text-ink-muted'
-              }`}
-            >
-              {sw.projects.status[project.status]}
-            </span>
+            {/* Archived state still worth calling out; active is implicit — no pill. */}
+            {project.status !== 'active' && (
+              <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs text-ink-muted">
+                {sw.projects.status[project.status]}
+              </span>
+            )}
           </div>
           <div className="text-sm text-ink-muted">
             {project.site_location && <span>{project.site_location}</span>}
@@ -120,13 +147,26 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        {isOwner && (
-          <Link to={`/projects/${project.id}/edit`}>
-            <Button variant="secondary" tint="admin">
-              {sw.projects.edit}
+        <div className="flex items-center gap-2">
+          {canSeeLinks && (
+            <Button
+              variant="secondary"
+              tint="admin"
+              disabled={exporting}
+              onClick={() => void handleExport()}
+            >
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+              {exporting ? 'Exporting…' : 'Export to Excel'}
             </Button>
-          </Link>
-        )}
+          )}
+          {isOwner && (
+            <Link to={`/projects/${project.id}/edit`}>
+              <Button variant="secondary" tint="admin">
+                {sw.projects.edit}
+              </Button>
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Project-scoped summary — visible to every role that can see the project. */}

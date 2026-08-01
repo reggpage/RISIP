@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import type { Receipt } from '@/types/db';
+import type { PaymentMethod, Receipt } from '@/types/db';
 
 export type ManualReceiptInput = {
   project_id: string;
@@ -10,6 +10,7 @@ export type ManualReceiptInput = {
   category: string;
   receipt_number?: string;
   verification_code?: string;
+  payment_method?: PaymentMethod;
 };
 
 // Direct insert as 'confirmed' — no image, no AI. Duplicate guard (unique index on
@@ -36,6 +37,7 @@ export async function createManualReceipt(
       status: 'confirmed',
       low_confidence_fields: [],
       raw_ai_response: { source: 'manual_entry' },
+      payment_method: input.payment_method ?? 'cash_personal',
     })
     .select('*')
     .single();

@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Receipt, Users, FileText, Wallet } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
 import { CategoryBarSkeleton, ListItemSkeleton, MetricCardSkeleton } from '@/components/ui/Skeleton';
+import Select from '@/components/ui/Select';
 import MetricCard from '@/components/dashboard/MetricCard';
 import CategoryBar from '@/components/dashboard/CategoryBar';
 import SpendTrendChart from '@/components/dashboard/SpendTrendChart';
@@ -25,22 +27,17 @@ export default function Dashboard() {
       <div className="mb-6 flex items-end justify-between gap-3">
         <h1 className="text-2xl font-semibold text-ink">{sw.nav.dashboard}</h1>
         {activeProjects.length > 1 && (
-          <div>
-            <label className="mb-1 block text-xs font-medium text-ink-muted">
-              {sw.dashboard.filterProject}
-            </label>
-            <select
-              className="rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-role-admin/30"
+          <div className="min-w-[220px]">
+            <Select
+              label={sw.dashboard.filterProject}
               value={projectId}
-              onChange={(e) => setProjectId(e.target.value)}
-            >
-              <option value="">{sw.dashboard.allProjects}</option>
-              {activeProjects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              onChange={setProjectId}
+              placeholder={sw.dashboard.allProjects}
+              options={[
+                { value: '', label: sw.dashboard.allProjects },
+                ...activeProjects.map((p) => ({ value: p.id, label: p.name })),
+              ]}
+            />
           </div>
         )}
       </div>
@@ -108,25 +105,28 @@ export default function Dashboard() {
           </Card>
         </div>
 
+        {/* Recent activity — no outer card wrapper; the receipt cards stand on their
+            own. Show the latest 3, with a "See more" link into the full receipts page. */}
         <div className="lg:col-span-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>{sw.dashboard.recentTitle}</CardTitle>
-            </CardHeader>
-            {data.loading ? (
-              <div className="flex flex-col gap-2">
-                {Array.from({ length: 3 }).map((_, i) => <ListItemSkeleton key={i} lines={2} />)}
-              </div>
-            ) : data.recent.length === 0 ? (
-              <p className="text-sm text-ink-muted">{sw.dashboard.noReceipts}</p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                {data.recent.map((r) => (
-                  <ReceiptCard key={r.id} receipt={r} />
-                ))}
-              </div>
-            )}
-          </Card>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-base font-semibold text-ink">{sw.dashboard.recentTitle}</h3>
+            <Link to="/receipts" className="text-sm font-medium text-role-admin hover:underline">
+              See more →
+            </Link>
+          </div>
+          {data.loading ? (
+            <div className="flex flex-col gap-2">
+              {Array.from({ length: 3 }).map((_, i) => <ListItemSkeleton key={i} lines={2} />)}
+            </div>
+          ) : data.recent.length === 0 ? (
+            <p className="text-sm text-ink-muted">{sw.dashboard.noReceipts}</p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {data.recent.slice(0, 3).map((r) => (
+                <ReceiptCard key={r.id} receipt={r} />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -7,12 +7,20 @@ export function formatMoney(amount: number | null | undefined, currency = DEFAUL
   return `${prefix} ${amount.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 }
 
+// en-GB gives day-first English month abbreviations ("1 Aug 2026"). The sw-TZ
+// locale rendered August as "Ago" (Agosti), which read like "ago" and confused users.
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('sw-TZ', { year: 'numeric', month: 'short', day: 'numeric' });
+  return new Date(iso).toLocaleDateString('en-GB', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return '—';
-  return new Date(iso).toLocaleString('sw-TZ', { dateStyle: 'medium', timeStyle: 'short' });
+  return new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+// Just the clock time ("14:07") — used to show when a receipt was uploaded.
+export function formatTime(iso: string | null | undefined): string {
+  if (!iso) return '';
+  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
