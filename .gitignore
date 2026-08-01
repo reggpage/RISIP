@@ -11,3 +11,6 @@ dist-ssr
 .idea
 supabase/.branches
 supabase/.temp
+
+# Vite dev-time config cache
+vite.config.ts.timestamp-*.mjs
