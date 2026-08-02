@@ -165,9 +165,10 @@ Deno.serve(async (req) => {
   for (const addr of recipients) {
     const [local, domain] = addr.split('@');
     if (!local) continue;
-    // Accept our inbox subdomain; also accept any domain if the local part is a valid UUID
-    // (keeps us working if the customer routes a different domain to this function).
-    const looksLikeToken = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(local);
+    // Short token shape: <name-slug>.<4 hex>, e.g. mhandisi.41b6. Accept it on our inbox
+    // subdomain, or on any domain when the local part matches the token shape (keeps us
+    // working if the customer routes a different domain to this function).
+    const looksLikeToken = /^[a-z0-9]{2,15}\.[0-9a-f]{4}$/i.test(local);
     if (domain === INBOX_DOMAIN || looksLikeToken) { inboxToken = local.toLowerCase(); break; }
   }
   if (!inboxToken) {
