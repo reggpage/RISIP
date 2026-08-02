@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, Loader2, Trash2, Wallet, X, XCircle, Receipt as ReceiptGlyph,
+  AlertTriangle, CheckCircle2, Loader2, MailCheck, Trash2, Wallet, X, XCircle, Receipt as ReceiptGlyph,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
@@ -17,6 +17,7 @@ const STATUS_META = {
   confirmed: { label: 'Confirmed', tone: 'text-emerald-600', Icon: CheckCircle2, spin: false },
   duplicate: { label: 'Duplicate', tone: 'text-orange-600', Icon: AlertTriangle, spin: false },
   error: { label: 'Extraction failed', tone: 'text-red-600', Icon: XCircle, spin: false },
+  pending_review: { label: 'Pending review (scan-to-email)', tone: 'text-sky-600', Icon: MailCheck, spin: false },
 } as const;
 
 // Two-column details: portrait image on the left, metadata on the right. Stacks
@@ -44,9 +45,25 @@ export default function ReceiptDetailModal({
   const profile = auth.status === 'signed-in' ? auth.profile : null;
   const canDelete =
     profile?.id === receipt.uploaded_by || profile?.role === 'owner';
+  // Only finance roles approve scan-to-email receipts into the confirmed ledger.
+  const canReview =
+    receipt.status === 'pending_review' && (profile?.role === 'owner' || profile?.role === 'accountant');
+  const [reviewing, setReviewing] = useState(false);
 
   const meta = STATUS_META[receipt.status];
   const StatusIcon = meta.Icon;
+
+  async function approve() {
+    setReviewing(true);
+    const { error } = await supabase.from('receipts').update({ status: 'confirmed' }).eq('id', receipt.id);
+    setReviewing(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success('Receipt approved.');
+    onClose();
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -143,6 +160,32 @@ export default function ReceiptDetailModal({
               <StatusIcon className={`h-4 w-4 ${meta.spin ? 'animate-spin' : ''}`} />
               {meta.label}
             </div>
+
+            {/* Scan-to-email receipts land here for the accountant to approve or discard
+                before they count toward the project's spend. */}
+            {canReview && (
+              <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3">
+                <p className="text-xs text-sky-800">
+                  This receipt arrived by scanner email. Check the details against the image,
+                  then approve it into the ledger or discard it.
+                </p>
+                <div className="mt-3 flex gap-2">
+                  <Button tint="admin" disabled={reviewing || deleting} onClick={() => void approve()}>
+                    {reviewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    Approve
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={reviewing || deleting}
+                    onClick={() => void handleDelete()}
+                    className="!border-red-300 !text-red-600 hover:!bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Discard
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <Row label="Vendor" value={receipt.vendor_name ?? '—'} strong />
             <Row

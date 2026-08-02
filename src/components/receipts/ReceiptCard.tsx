@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, AlertTriangle, XCircle, Loader2, Receipt as ReceiptGlyph } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, Loader2, MailCheck, Receipt as ReceiptGlyph } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import { useProjects } from '@/features/projects/useProjects';
@@ -14,6 +14,8 @@ const STATUS_META = {
   confirmed: { label: sw.receipts.confirmed, icon: CheckCircle2, className: 'text-emerald-600', spin: false },
   duplicate: { label: sw.receipts.duplicate, icon: AlertTriangle, className: 'text-orange-600', spin: false },
   error: { label: sw.receipts.error, icon: XCircle, className: 'text-red-600', spin: false },
+  // Arrived via scan-to-email; awaits the accountant's approval in the details modal.
+  pending_review: { label: 'Pending review', icon: MailCheck, className: 'text-sky-600', spin: false },
 } as const;
 
 export default function ReceiptCard({

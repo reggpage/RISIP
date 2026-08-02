@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Building2, KeyRound, Languages, Lock, User, Users } from 'lucide-react';
+import { AlertTriangle, Building2, Check, Copy, KeyRound, Languages, Lock, Mail, Printer, User, Users } from 'lucide-react';
 import { getLang, setLang, LANG_OPTIONS, type LangCode } from '@/lib/lang';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -66,6 +66,11 @@ export default function SettingsPage() {
   const [sector, setSector] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileMsg, setProfileMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  // ── Scanner / inbound-email integration ─────────────────────────────────────
+  const [scannerSender, setScannerSender] = useState('');
+  const [savingScanner, setSavingScanner] = useState(false);
+  const [copiedInbox, setCopiedInbox] = useState(false);
 
   // ── Logo ───────────────────────────────────────────────────────────────────
   const logoInput = useRef<HTMLInputElement>(null);
@@ -134,6 +139,7 @@ export default function SettingsPage() {
         setHqLocation(c.hq_location);
         setSector(c.sector ?? '');
         setLogoUrl(c.logo_url ?? null);
+        setScannerSender(c.scanner_sender_email ?? '');
       });
 
     supabase.from('profiles').select('*').eq('company_id', companyId).order('role', { ascending: true })
@@ -153,6 +159,44 @@ export default function SettingsPage() {
       .eq('id', company.id);
     setSavingProfile(false);
     setProfileMsg(error ? { type: 'err', text: error.message } : { type: 'ok', text: sw.settings.saved });
+  }
+
+  // The company's unique scan-to-email inbox address. The Canon printer emails A3 scans
+  // here; the inbound-email edge function files the receipts as "pending review".
+  const scannerInbox = company ? `${company.scanner_inbox_token}@scan.risip.co` : '';
+
+  async function copyInbox() {
+    if (!scannerInbox) return;
+    // Modern async clipboard, with the hidden-textarea fallback for HTTP/Safari.
+    try {
+      await navigator.clipboard.writeText(scannerInbox);
+    } catch {
+      const el = document.createElement('textarea');
+      el.value = scannerInbox;
+      el.setAttribute('readonly', '');
+      el.style.cssText = 'position:absolute;left:-9999px;top:0;opacity:0';
+      document.body.appendChild(el);
+      el.select();
+      try { document.execCommand('copy'); } catch { /* user can long-press to copy */ }
+      document.body.removeChild(el);
+    }
+    setCopiedInbox(true);
+    window.setTimeout(() => setCopiedInbox(false), 1600);
+  }
+
+  async function saveScannerSender() {
+    if (!company || !isOwner) return;
+    setSavingScanner(true);
+    const value = scannerSender.trim().toLowerCase() || null;
+    const { error } = await supabase.from('companies')
+      .update({ scanner_sender_email: value })
+      .eq('id', company.id);
+    setSavingScanner(false);
+    if (error) toast.error(error.message);
+    else {
+      setCompany((c) => (c ? { ...c, scanner_sender_email: value } : c));
+      toast.success('Scanner settings saved.');
+    }
   }
 
   // Two-step logo flow: user picks a file → LogoCropModal opens → on Confirm we
@@ -413,6 +457,62 @@ export default function SettingsPage() {
             )}
           </Card>
         </SettingsSection>
+
+        {/* ── Scanner & Hardware Integration (owner) ──────────────────────── */}
+        {isOwner && (
+          <SettingsSection
+            icon={<Printer className="h-4 w-4" />}
+            title="Scanner & Hardware Integration"
+            description="Let your office Canon printer email A3 scans straight into Risip. Scanned receipts arrive as “pending review” for your accountant to approve."
+          >
+            <Card className="p-6 sm:p-8">
+              {/* Unique inbox address for this company's printer. */}
+              <label className="mb-2 block text-sm font-medium text-ink">Your scanner inbox address</label>
+              <div className="flex items-stretch gap-2">
+                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-surface-border bg-surface-muted px-3 py-2">
+                  <Mail className="h-4 w-4 shrink-0 text-ink-muted" />
+                  <span className="truncate font-mono text-sm text-ink" title={scannerInbox}>
+                    {scannerInbox || '—'}
+                  </span>
+                </div>
+                <Button
+                  variant="secondary"
+                  tint="admin"
+                  className="shrink-0"
+                  disabled={!scannerInbox}
+                  onClick={() => void copyInbox()}
+                >
+                  {copiedInbox ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                  {copiedInbox ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+              <p className="mt-2 text-xs text-ink-muted">
+                On your Canon printer, add this address under “Scan to Email”, set page size to A3,
+                and send the scan. Keep it private — anyone with this address can submit receipts.
+              </p>
+
+              <div className="my-6 h-px bg-surface-border" />
+
+              {/* Authorized sender — optional hardening so only the printer can submit. */}
+              <Input
+                label="Authorized Scanner Sender Email"
+                type="email"
+                value={scannerSender}
+                onChange={(e) => setScannerSender(e.target.value)}
+                placeholder="office-printer@company.com"
+              />
+              <p className="mt-2 text-xs text-ink-muted">
+                Optional. When set, Risip only accepts scans emailed from this exact address and
+                ignores everything else. Leave blank to accept from any sender.
+              </p>
+              <div className="mt-5">
+                <Button tint="admin" disabled={savingScanner} onClick={() => void saveScannerSender()}>
+                  {savingScanner ? sw.common.loading : 'Save scanner settings'}
+                </Button>
+              </div>
+            </Card>
+          </SettingsSection>
+        )}
 
         {/* ── Members ─────────────────────────────────────────────────────── */}
         <SettingsSection

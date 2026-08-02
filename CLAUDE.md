@@ -32,6 +32,12 @@ RLS enabled on every table. No policies = deny. Anon role has **no** direct tabl
 
 Helper SQL functions (`auth_company_id`, `auth_role`, `auth_can_see_project`) are `security definer` with a pinned `search_path = public`, and `execute` is granted only to `authenticated` (or `service_role` for the RPC).
 
+## Scan-to-email (inbound-email edge function)
+
+Each company has `scanner_inbox_token` (unique uuid) + `scanner_sender_email`. Its inbox address is `<scanner_inbox_token>@scan.risip.co`, shown in Settings → *Scanner & Hardware Integration*. A Canon printer's "Scan to Email" sends an A3 scan there; the email provider (Resend Inbound / SendGrid / Mailgun) POSTs the parsed message to `inbound-email` (`verify_jwt=false`). The function: resolves the company by inbox token → optionally checks `from` against `scanner_sender_email` → uploads the image to the `receipts` bucket (`<project_id>/inbound/<uuid>.jpg`, most-recent active project, owner as on-behalf uploader) → runs the same Claude A3 split as `batch-extract-receipts` → inserts receipts as `status='pending_review'`. The accountant approves/discards each from the receipt details modal.
+
+Provider setup (not code): point MX/inbound routing for `scan.risip.co` at the provider and set its inbound webhook to this function's URL. Optionally set `INBOUND_WEBHOOK_SECRET` (checked via `?secret=` or `x-webhook-secret`). Security rests on the unguessable inbox token + optional authorized-sender check. Non-actionable POSTs return `202` so the provider doesn't retry.
+
 ## Storage buckets
 
 - `receipts` (private) — path: `<project_id>/<receipt_id>.<ext>`

@@ -10,7 +10,9 @@
 
 export type UserRole = 'owner' | 'accountant' | 'worker';
 export type ProjectStatus = 'active' | 'archived';
-export type ReceiptStatus = 'processing' | 'confirmed' | 'duplicate' | 'error';
+// 'pending_review' = arrived via scan-to-email inbound and awaits the accountant's
+// approval before it counts (distinct from 'processing', which is mid-extraction).
+export type ReceiptStatus = 'processing' | 'confirmed' | 'duplicate' | 'error' | 'pending_review';
 export type InvoiceStatus =
   | 'draft'
   | 'pending_approval'
@@ -30,6 +32,10 @@ export type Company = {
   logo_url: string | null;
   currency: string;
   created_at: string;
+  // Scan-to-email: the company's unique inbound mailbox token (local part of the
+  // <token>@scan.risip.co address) and the printer address allowed to send to it.
+  scanner_inbox_token: string;
+  scanner_sender_email: string | null;
 };
 
 export type Profile = {
