@@ -16,6 +16,24 @@ import {
 } from '@/features/find/joinByCompany';
 import { sw } from '@/i18n/sw';
 
+// Company icon that shows the uploaded logo when present, else a building glyph.
+function CompanyIcon({ logoUrl, size = 'md' }: { logoUrl: string | null; size?: 'md' | 'lg' }) {
+  const box = size === 'lg' ? 'h-10 w-10' : 'h-9 w-9';
+  const icon = size === 'lg' ? 'h-5 w-5' : 'h-4 w-4';
+  if (logoUrl) {
+    return (
+      <div className={`${box} shrink-0 overflow-hidden rounded-lg border border-surface-border bg-surface`}>
+        <img src={logoUrl} alt="" className="h-full w-full object-cover" />
+      </div>
+    );
+  }
+  return (
+    <div className={`${box} flex shrink-0 items-center justify-center rounded-lg bg-role-admin/10 text-role-admin`}>
+      <Building2 className={icon} />
+    </div>
+  );
+}
+
 type Stage =
   | { name: 'search' }
   | { name: 'password'; company: CompanyHit }
@@ -105,9 +123,7 @@ function SearchPane({ onPick }: { onPick: (c: CompanyHit) => void }) {
               onClick={() => onPick(c)}
               className="flex w-full items-center gap-3 rounded-lg border border-surface-border bg-surface px-3 py-3 text-left hover:border-role-admin/40 hover:bg-surface-muted"
             >
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-role-admin/10 text-role-admin">
-                <Building2 className="h-4 w-4" />
-              </div>
+              <CompanyIcon logoUrl={c.logo_url} />
               <span className="text-sm font-medium text-ink">{c.name}</span>
             </button>
           </li>
@@ -159,9 +175,7 @@ function PasswordPane({
       </button>
 
       <Card className="mb-4 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-role-admin/10 text-role-admin">
-          <Building2 className="h-5 w-5" />
-        </div>
+        <CompanyIcon logoUrl={company.logo_url} size="lg" />
         <div className="min-w-0">
           <div className="truncate font-semibold text-ink">{company.name}</div>
           <div className="text-xs text-ink-muted">{sw.find.passwordPromptHint}</div>
@@ -211,9 +225,7 @@ function AccountPane({
       </button>
 
       <Card className="mb-4 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-role-admin/10 text-role-admin">
-          <Building2 className="h-5 w-5" />
-        </div>
+        <CompanyIcon logoUrl={company.logo_url} size="lg" />
         <div className="min-w-0">
           <div className="truncate font-semibold text-ink">{company.name}</div>
         </div>

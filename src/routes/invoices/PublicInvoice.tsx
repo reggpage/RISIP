@@ -45,12 +45,28 @@ export default function PublicInvoice() {
 
   useEffect(() => {
     if (!token) return;
+    // Log that the client opened the invoice (throttled server-side).
+    void supabase.rpc('public_invoice_log_view', { p_token: token });
     void supabase.rpc('get_public_invoice', { p_token: token }).then(({ data, error }) => {
       setLoading(false);
       if (error) return;
       setPayload(data as unknown as PublicPayload);
     });
   }, [token]);
+
+  async function disputeReceipt(receiptId: string, message: string) {
+    if (!token) return;
+    const { data, error } = await supabase.rpc('public_invoice_dispute', {
+      p_token: token,
+      p_receipt_id: receiptId,
+      p_message: message,
+    });
+    if (error || !data) {
+      toast.error('Could not submit your issue.');
+      return;
+    }
+    toast.success('Issue reported. Thank you.');
+  }
 
   const computed = useMemo(() => {
     if (!payload?.invoice || !payload.receipts) return null;
@@ -117,6 +133,7 @@ export default function PublicInvoice() {
           company={payload.company}
           project={payload.project ?? undefined}
           onRespond={(a) => void respond(a)}
+          onDisputeReceipt={(id, msg) => void disputeReceipt(id, msg)}
           authed={false}
           publicToken={token}
         />

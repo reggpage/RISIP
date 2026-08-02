@@ -120,3 +120,48 @@ export async function setInvoiceStatus(id: string, status: Invoice['status']): P
 export function invoicePublicUrl(publicToken: string): string {
   return `${window.location.origin}/public/invoices/${publicToken}`;
 }
+
+// ── Comments (disputes) + activity log ─────────────────────────────────────
+export type InvoiceComment = {
+  id: string;
+  invoice_id: string;
+  receipt_id: string | null;
+  author_type: string;
+  author_name: string | null;
+  message: string;
+  resolved: boolean;
+  created_at: string;
+};
+
+export type InvoiceActivity = {
+  id: string;
+  invoice_id: string;
+  event: string;
+  meta: unknown;
+  created_at: string;
+};
+
+export async function fetchInvoiceComments(invoiceId: string): Promise<InvoiceComment[]> {
+  const { data, error } = await supabase
+    .from('invoice_comments')
+    .select('*')
+    .eq('invoice_id', invoiceId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as InvoiceComment[];
+}
+
+export async function resolveComment(id: string): Promise<void> {
+  const { error } = await supabase.from('invoice_comments').update({ resolved: true }).eq('id', id);
+  if (error) throw error;
+}
+
+export async function fetchInvoiceActivity(invoiceId: string): Promise<InvoiceActivity[]> {
+  const { data, error } = await supabase
+    .from('invoice_activity')
+    .select('*')
+    .eq('invoice_id', invoiceId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as InvoiceActivity[];
+}

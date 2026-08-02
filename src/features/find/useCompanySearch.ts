@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
-export type CompanyHit = { id: string; name: string };
+export type CompanyHit = { id: string; name: string; logo_url: string | null };
 
 // Debounced client-side search. Calls search_companies RPC (anon) — returns id + name only.
 export function useCompanySearch(query: string, delayMs = 250) {

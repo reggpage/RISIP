@@ -224,6 +224,23 @@ export type Database = {
         Update: Partial<PettyCashTransaction>;
         Relationships: [];
       };
+      invoice_comments: {
+        Row: {
+          id: string; invoice_id: string; receipt_id: string | null;
+          author_type: string; author_name: string | null; message: string;
+          resolved: boolean; created_at: string;
+        };
+        Insert: { invoice_id: string; message: string; author_type: string;
+          receipt_id?: string | null; author_name?: string | null; resolved?: boolean };
+        Update: Partial<Database['public']['Tables']['invoice_comments']['Row']>;
+        Relationships: [];
+      };
+      invoice_activity: {
+        Row: { id: string; invoice_id: string; event: string; meta: unknown; created_at: string };
+        Insert: { invoice_id: string; event: string; meta?: unknown };
+        Update: Partial<Database['public']['Tables']['invoice_activity']['Row']>;
+        Relationships: [];
+      };
       invoices: {
         Row: Invoice;
         Insert: Partial<Invoice> & {
@@ -254,6 +271,16 @@ export type Database = {
       /** Client accepts/disputes a sent invoice from the public page (anon). */
       public_invoice_respond: {
         Args: { p_token: string; p_action: string; p_note?: string | null };
+        Returns: boolean;
+      };
+      /** Logs that the client opened the public invoice (anon, throttled). */
+      public_invoice_log_view: {
+        Args: { p_token: string };
+        Returns: undefined;
+      };
+      /** Client disputes a specific receipt (or the whole invoice) from the public page (anon). */
+      public_invoice_dispute: {
+        Args: { p_token: string; p_receipt_id: string | null; p_message: string };
         Returns: boolean;
       };
       /** Public lookup for the /join/:token page (callable by anon). */

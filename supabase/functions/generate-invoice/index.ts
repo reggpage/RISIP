@@ -87,6 +87,7 @@ Deno.serve(async (req) => {
     .from('invoices')
     .insert({
       project_id,
+      company_id: project.company_id,   // needed by the public invoice page + Excel export
       period_start,
       period_end,
       total_amount: totalAmount,
@@ -98,6 +99,8 @@ Deno.serve(async (req) => {
     .single();
   if (iErr) return bad(`insert invoice: ${iErr.message}`, 500);
   const invoiceId = invoice.id;
+  // Human-readable number so the editor/list/public page never shows a blank.
+  const invoiceNumber = 'INV-' + invoiceId.slice(0, 8).toUpperCase();
 
   const joinRows = receipts.map((r) => ({ invoice_id: invoiceId, receipt_id: r.id }));
   const { error: jErr } = await admin.from('invoice_receipts').insert(joinRows);
@@ -174,7 +177,9 @@ Deno.serve(async (req) => {
     .upload(pdfPath, pdfBytes, { contentType: 'application/pdf', upsert: true });
   if (upErr) return bad(`upload pdf: ${upErr.message}`, 500);
 
-  const { error: uErr } = await admin.from('invoices').update({ pdf_url: pdfPath }).eq('id', invoiceId);
+  const { error: uErr } = await admin.from('invoices')
+    .update({ pdf_url: pdfPath, invoice_number: invoiceNumber })
+    .eq('id', invoiceId);
   if (uErr) return bad(`patch invoice: ${uErr.message}`, 500);
 
   return json({

@@ -10,13 +10,22 @@ import InvoiceView from '@/components/invoices/InvoiceView';
 import {
   fetchInvoice,
   fetchInvoiceReceipts,
+  fetchInvoiceComments,
+  fetchInvoiceActivity,
+  resolveComment,
+  invoicePdfUrl,
   invoicePublicUrl,
   setInvoiceStatus,
   updateInvoice,
+  type InvoiceComment,
+  type InvoiceActivity,
 } from '@/features/invoices/useInvoices';
+import { exportProjectExcel } from '@/features/projects/exportExcel';
 import { useAuth } from '@/lib/auth';
+import { useCompany } from '@/features/company/useCompany';
 import { supabase } from '@/lib/supabase';
-import { formatDate, formatMoney } from '@/lib/format';
+import { formatDate, formatDateTime, formatMoney } from '@/lib/format';
+import { Building2, CheckCircle2, MessageSquare, Activity } from 'lucide-react';
 import type { Invoice, InvoiceLineItem, Receipt } from '@/types/db';
 
 type Tab = 'edit' | 'view';
@@ -29,9 +38,12 @@ export default function InvoiceEditor() {
   const auth = useAuth();
   const profile = auth.status === 'signed-in' ? auth.profile : null;
   const isOwner = profile?.role === 'owner';
+  const company = useCompany();
 
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [comments, setComments] = useState<InvoiceComment[]>([]);
+  const [activity, setActivity] = useState<InvoiceActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>('edit');
   const [busy, setBusy] = useState<string | null>(null);
@@ -49,10 +61,17 @@ export default function InvoiceEditor() {
     let cancelled = false;
     (async () => {
       try {
-        const [inv, recs] = await Promise.all([fetchInvoice(id), fetchInvoiceReceipts(id)]);
+        const [inv, recs, cmts, acts] = await Promise.all([
+          fetchInvoice(id),
+          fetchInvoiceReceipts(id),
+          fetchInvoiceComments(id).catch(() => []),
+          fetchInvoiceActivity(id).catch(() => []),
+        ]);
         if (cancelled) return;
         setInvoice(inv);
         setReceipts(recs);
+        setComments(cmts);
+        setActivity(acts);
         if (inv) {
           setInvoiceNumber(inv.invoice_number ?? '');
           setClientName(inv.client_name ?? '');
@@ -204,6 +223,40 @@ export default function InvoiceEditor() {
     }
   }
 
+  // Export fallbacks (top-right in View mode). PDF = the stored copy; Excel = the
+  // project ledger export.
+  async function exportPdf() {
+    if (!invoice?.pdf_url) {
+      toast.info('PDF not available for this invoice.');
+      return;
+    }
+    try {
+      const url = await invoicePdfUrl(invoice.pdf_url);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not open PDF');
+    }
+  }
+  async function exportExcel() {
+    if (!invoice) return;
+    try {
+      await exportProjectExcel(invoice.project_id, invoiceNumber || 'invoice');
+      toast.success('Excel downloaded.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Export failed');
+    }
+  }
+  async function markResolved(commentId: string) {
+    try {
+      await resolveComment(commentId);
+      setComments((cs) => cs.map((c) => (c.id === commentId ? { ...c, resolved: true } : c)));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed');
+    }
+  }
+
+  const openDisputes = comments.filter((c) => !c.resolved);
+
   if (loading) {
     return (
       <div className="mx-auto max-w-4xl p-6">
@@ -247,6 +300,20 @@ export default function InvoiceEditor() {
         <div className="flex flex-col gap-4">
           <Card>
             <CardHeader><CardTitle>Invoice header</CardTitle></CardHeader>
+            {/* Company logo (pulled from Settings) so the accountant sees the branding
+                that will appear on the client's copy. */}
+            <div className="mb-4 flex items-center gap-3">
+              {company?.logo_url ? (
+                <img src={company.logo_url} alt="" className="h-14 w-14 rounded-lg border border-surface-border object-contain" />
+              ) : (
+                <div className="flex h-14 w-14 items-center justify-center rounded-lg border border-surface-border bg-surface-muted text-ink-muted">
+                  <Building2 className="h-6 w-6" />
+                </div>
+              )}
+              <span className="text-xs text-ink-muted">
+                Company logo — set it in Settings.
+              </span>
+            </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <Input label="Invoice number" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} />
               <Input label="Client name" value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="e.g. Wizara ya Maji" />
@@ -327,6 +394,9 @@ export default function InvoiceEditor() {
             lineItems={lineItems}
             totals={totals}
             receipts={receipts.filter((r) => included.has(r.id))}
+            company={company ? { name: company.name, logo_url: company.logo_url, hq_location: company.hq_location } : undefined}
+            onExportPdf={() => void exportPdf()}
+            onExportExcel={() => void exportExcel()}
           />
 
           {/* Lifecycle actions in view mode */}
@@ -351,6 +421,63 @@ export default function InvoiceEditor() {
         </>
       )}
 
+      {/* ── Disputes inbox (client-reported issues) ─────────────────────────── */}
+      {comments.length > 0 && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" /> Client issues
+              {openDisputes.length > 0 && (
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                  {openDisputes.length} open
+                </span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <div className="flex flex-col gap-2">
+            {comments.map((c) => {
+              const rec = receipts.find((r) => r.id === c.receipt_id);
+              return (
+                <div key={c.id} className={`rounded-lg border p-3 ${c.resolved ? 'border-surface-border opacity-60' : 'border-red-200 bg-red-50/40'}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-xs text-ink-muted">
+                        {c.author_name ?? 'Client'} · {formatDateTime(c.created_at)}
+                        {rec && <> · re: {rec.vendor_name ?? 'receipt'}</>}
+                      </div>
+                      <p className="mt-1 text-sm text-ink">{c.message}</p>
+                    </div>
+                    {!c.resolved && (
+                      <button type="button" onClick={() => void markResolved(c.id)}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-surface-border px-2 py-1 text-xs font-medium text-ink hover:bg-surface-muted">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> Resolve
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* ── Activity log ────────────────────────────────────────────────────── */}
+      {activity.length > 0 && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2"><Activity className="h-4 w-4" /> Activity</CardTitle>
+          </CardHeader>
+          <ul className="flex flex-col gap-1.5 text-sm">
+            {activity.map((a) => (
+              <li key={a.id} className="flex items-center justify-between gap-2">
+                <span className="text-ink">{activityLabel(a.event)}</span>
+                <span className="text-xs text-ink-muted">{formatDateTime(a.created_at)}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
       {signing && (
         <SignaturePad
           busy={busy === 'sign'}
@@ -360,6 +487,16 @@ export default function InvoiceEditor() {
       )}
     </div>
   );
+}
+
+function activityLabel(event: string): string {
+  return {
+    viewed: '👁 Client opened the invoice',
+    accepted: '✅ Client accepted the invoice',
+    disputed: '⚠️ Client raised an issue',
+    signed: '✍️ Approved & signed',
+    sent: '📤 Sent to client',
+  }[event] ?? event;
 }
 
 function statusLabel(s: Invoice['status']): string {

@@ -197,6 +197,20 @@ export default function SettingsPage() {
     setPendingLogoFile(file);
   }
 
+  // "Edit" re-opens the crop modal on the CURRENT logo so the owner can re-scale/
+  // reposition without re-picking a file. We fetch the stored logo as a File.
+  async function editExistingLogo() {
+    if (!logoUrl || !isOwner) return;
+    try {
+      const res = await fetch(logoUrl);
+      const blob = await res.blob();
+      setPendingLogoFile(new File([blob], 'logo.jpg', { type: blob.type || 'image/jpeg' }));
+    } catch {
+      // Fall back to picking a new file if the fetch fails (e.g. CORS).
+      logoInput.current?.click();
+    }
+  }
+
   async function toggleDeactivation(member: Profile) {
     if (!isOwner || member.id === profile?.id) return;
     setBusyMember(member.id);
@@ -356,9 +370,23 @@ export default function SettingsPage() {
                     {isOwner && <p className="text-xs text-ink-muted">{sw.settings.logoHint}</p>}
                   </div>
                   {isOwner && (
-                    <Button variant="secondary" tint="admin" disabled={uploadingLogo} onClick={() => logoInput.current?.click()}>
-                      {uploadingLogo ? sw.common.loading : sw.settings.logoUpload}
-                    </Button>
+                    <div className="flex shrink-0 gap-2">
+                      {logoUrl ? (
+                        <>
+                          {/* Logo already set → Edit re-scales it, Change picks a new one. */}
+                          <Button variant="secondary" tint="admin" disabled={uploadingLogo} onClick={() => void editExistingLogo()}>
+                            Edit logo
+                          </Button>
+                          <Button variant="ghost" disabled={uploadingLogo} onClick={() => logoInput.current?.click()}>
+                            Change
+                          </Button>
+                        </>
+                      ) : (
+                        <Button variant="secondary" tint="admin" disabled={uploadingLogo} onClick={() => logoInput.current?.click()}>
+                          {uploadingLogo ? sw.common.loading : sw.settings.logoUpload}
+                        </Button>
+                      )}
+                    </div>
                   )}
                   <input ref={logoInput} type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
                     onChange={(e) => void handleLogoFile(e.target.files?.[0] ?? null)} />

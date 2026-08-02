@@ -16,6 +16,7 @@ export default function ReceiptAuditModal({
   onClose,
   authed = true,
   publicToken,
+  onDispute,
 }: {
   title: string;
   receipts: AuditReceipt[];
@@ -24,8 +25,13 @@ export default function ReceiptAuditModal({
   // When set, images are fetched via the anon get-public-receipt-image edge function
   // (public invoice page). Otherwise the in-app signed-URL path is used.
   publicToken?: string;
+  // When provided (public page), each receipt gets a "Report an issue" affordance.
+  onDispute?: (receiptId: string, message: string) => void | Promise<void>;
 }) {
   const [images, setImages] = useState<Record<string, string>>({});
+  const [disputing, setDisputing] = useState<string | null>(null);
+  const [disputeText, setDisputeText] = useState('');
+  const [sent, setSent] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +102,52 @@ export default function ReceiptAuditModal({
                   </div>
                 )}
               </div>
+
+              {/* Per-receipt dispute (public page only). */}
+              {onDispute && (
+                <div className="mt-3">
+                  {sent.has(r.id) ? (
+                    <p className="text-xs font-medium text-emerald-600">Issue reported. The accountant will review it.</p>
+                  ) : disputing === r.id ? (
+                    <div className="flex flex-col gap-2">
+                      <textarea
+                        value={disputeText}
+                        onChange={(e) => setDisputeText(e.target.value)}
+                        rows={2}
+                        placeholder="e.g. This image is unreadable, please re-upload."
+                        className="w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-role-admin/30"
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          disabled={!disputeText.trim()}
+                          onClick={async () => {
+                            await onDispute(r.id, disputeText.trim());
+                            setSent((s) => new Set(s).add(r.id));
+                            setDisputing(null);
+                            setDisputeText('');
+                          }}
+                          className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500 disabled:opacity-50"
+                        >
+                          Submit issue
+                        </button>
+                        <button type="button" onClick={() => { setDisputing(null); setDisputeText(''); }}
+                          className="rounded-lg px-3 py-1.5 text-xs text-ink-muted hover:text-ink">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setDisputing(r.id)}
+                      className="text-xs font-medium text-red-600 hover:underline"
+                    >
+                      Report an issue with this receipt
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Building2, FileSpreadsheet, FileText } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import ReceiptAuditModal from '@/components/invoices/ReceiptAuditModal';
 import { formatDate, formatMoney } from '@/lib/format';
@@ -16,6 +17,9 @@ export default function InvoiceView({
   company,
   project,
   onRespond,
+  onDisputeReceipt,
+  onExportPdf,
+  onExportExcel,
   authed = true,
   publicToken,
 }: {
@@ -26,6 +30,9 @@ export default function InvoiceView({
   company?: { name: string; logo_url: string | null; hq_location?: string };
   project?: { name: string; site_location?: string | null };
   onRespond?: (action: 'accept' | 'dispute') => void;
+  onDisputeReceipt?: (receiptId: string, message: string) => void | Promise<void>;
+  onExportPdf?: () => void;
+  onExportExcel?: () => void;
   authed?: boolean;
   publicToken?: string;
 }) {
@@ -33,22 +40,44 @@ export default function InvoiceView({
 
   return (
     <Card className="p-6 sm:p-8">
-      {/* Header */}
+      {/* Header: company logo + name top-LEFT, invoice number + export buttons top-right. */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           {company?.logo_url ? (
-            <img src={company.logo_url} alt="" className="h-12 w-12 rounded-lg object-contain" />
-          ) : null}
+            <img src={company.logo_url} alt="" className="h-14 w-14 shrink-0 rounded-lg border border-surface-border object-contain" />
+          ) : (
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-surface-border bg-surface-muted text-ink-muted">
+              <Building2 className="h-6 w-6" />
+            </div>
+          )}
           <div>
             <div className="text-lg font-semibold text-ink">{company?.name ?? 'Invoice'}</div>
             {company?.hq_location && <div className="text-xs text-ink-muted">{company.hq_location}</div>}
           </div>
         </div>
-        <div className="text-right">
-          <div className="font-display text-lg font-semibold text-ink">{invoice.invoice_number ?? '—'}</div>
-          <div className="text-xs text-ink-muted">
-            {formatDate(invoice.period_start)} — {formatDate(invoice.period_end)}
+        <div className="flex flex-col items-end gap-2">
+          <div className="text-right">
+            <div className="font-display text-lg font-semibold text-ink">{invoice.invoice_number ?? '—'}</div>
+            <div className="text-xs text-ink-muted">
+              {formatDate(invoice.period_start)} — {formatDate(invoice.period_end)}
+            </div>
           </div>
+          {(onExportPdf || onExportExcel) && (
+            <div className="flex gap-1.5">
+              {onExportPdf && (
+                <button type="button" onClick={onExportPdf}
+                  className="inline-flex items-center gap-1 rounded-lg border border-surface-border px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface-muted">
+                  <FileText className="h-3.5 w-3.5" /> PDF
+                </button>
+              )}
+              {onExportExcel && (
+                <button type="button" onClick={onExportExcel}
+                  className="inline-flex items-center gap-1 rounded-lg border border-surface-border px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface-muted">
+                  <FileSpreadsheet className="h-3.5 w-3.5" /> Excel
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -147,6 +176,7 @@ export default function InvoiceView({
           onClose={() => setAuditCategory(null)}
           authed={authed}
           publicToken={publicToken}
+          onDispute={onDisputeReceipt}
         />
       )}
     </Card>
