@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, Loader2, MailCheck, Trash2, Wallet, X, XCircle, Receipt as ReceiptGlyph,
+  AlertTriangle, CheckCircle2, Loader2, MailCheck, Pencil, Sparkles, Trash2, Wallet, X, XCircle,
+  Receipt as ReceiptGlyph,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import ImageLightbox from '@/components/ui/ImageLightbox';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { useProjects } from '@/features/projects/useProjects';
@@ -20,8 +22,14 @@ const STATUS_META = {
   pending_review: { label: 'Pending review (scan-to-email)', tone: 'text-sky-600', Icon: MailCheck, spin: false },
 } as const;
 
-// Two-column details: portrait image on the left, metadata on the right. Stacks
-// on mobile. Owner or the uploader can delete via the trash button in the header.
+const CATEGORIES = [
+  'Fuel', 'Materials', 'Labor', 'Food', 'Transport',
+  'Equipment', 'Office', 'Utilities', 'Rent', 'Communication', 'Consulting', 'Other',
+];
+
+// Two-column details: portrait image on the left, metadata on the right. Stacks on mobile.
+// Owner/uploader can delete; finance roles (owner/accountant) can correct AI mistakes and
+// re-run extraction with the high-accuracy model.
 export default function ReceiptDetailModal({
   receipt,
   onClose,
@@ -34,33 +42,96 @@ export default function ReceiptDetailModal({
   const toast = useToast();
   const confirm = useConfirm();
   const auth = useAuth();
+  // Local copy so edits/approvals reflect immediately without waiting for a refetch.
+  const [data, setData] = useState<Receipt>(receipt);
   const [uploader, setUploader] = useState<string | null>(null);
   const [imgUrl, setImgUrl] = useState<string | null>(null);
+  const [zoomOpen, setZoomOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [reanalyzing, setReanalyzing] = useState(false);
   const { state: projectsState } = useProjects();
   const project = projectsState.status === 'ready'
-    ? projectsState.projects.find((p) => p.id === receipt.project_id) ?? null
+    ? projectsState.projects.find((p) => p.id === data.project_id) ?? null
     : null;
 
   const profile = auth.status === 'signed-in' ? auth.profile : null;
-  const canDelete =
-    profile?.id === receipt.uploaded_by || profile?.role === 'owner';
-  // Only finance roles approve scan-to-email receipts into the confirmed ledger.
-  const canReview =
-    receipt.status === 'pending_review' && (profile?.role === 'owner' || profile?.role === 'accountant');
-  const [reviewing, setReviewing] = useState(false);
+  const isFinance = profile?.role === 'owner' || profile?.role === 'accountant';
+  const canDelete = profile?.id === data.uploaded_by || profile?.role === 'owner';
+  const canReview = data.status === 'pending_review' && isFinance;
 
-  const meta = STATUS_META[receipt.status];
-  const StatusIcon = meta.Icon;
+  // ── Edit mode (finance only) ──────────────────────────────────────────────
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    vendor_name: '', total_amount: '', tax_amount: '', category: '',
+    receipt_date: '', receipt_number: '', verification_code: '', vendor_tin: '', vendor_vrn: '',
+  });
 
-  async function approve() {
-    setReviewing(true);
-    const { error } = await supabase.from('receipts').update({ status: 'confirmed' }).eq('id', receipt.id);
-    setReviewing(false);
+  function startEdit() {
+    setForm({
+      vendor_name: data.vendor_name ?? '',
+      total_amount: data.total_amount != null ? String(data.total_amount) : '',
+      tax_amount: data.tax_amount != null ? String(data.tax_amount) : '',
+      category: data.category ?? '',
+      receipt_date: data.receipt_date ?? '',
+      receipt_number: data.receipt_number ?? '',
+      verification_code: data.verification_code ?? '',
+      vendor_tin: data.vendor_tin ?? '',
+      vendor_vrn: data.vendor_vrn ?? '',
+    });
+    setEditing(true);
+  }
+
+  async function saveEdits() {
+    const total = form.total_amount.trim() ? Number(form.total_amount.replace(/[^\d.]/g, '')) : null;
+    const tax = form.tax_amount.trim() ? Number(form.tax_amount.replace(/[^\d.]/g, '')) : null;
+    if (tax != null && total != null && tax > total) {
+      toast.error('VAT cannot be greater than the total.');
+      return;
+    }
+    setSaving(true);
+    const updates = {
+      vendor_name: form.vendor_name.trim() || null,
+      total_amount: total,
+      tax_amount: tax,
+      category: form.category || null,
+      receipt_date: form.receipt_date || null,
+      receipt_number: form.receipt_number.trim() || null,
+      verification_code: form.verification_code.trim() || null,
+      vendor_tin: form.vendor_tin.trim() || null,
+      vendor_vrn: form.vendor_vrn.trim() || null,
+    };
+    const { error } = await supabase.from('receipts').update(updates).eq('id', data.id);
+    setSaving(false);
     if (error) {
       toast.error(error.message);
       return;
     }
+    setData((d) => ({ ...d, ...updates }));
+    setEditing(false);
+    toast.success('Receipt updated.');
+  }
+
+  // Re-run extraction with the high-accuracy model for hard-to-read photos.
+  async function reanalyze() {
+    if (!data.image_url) { toast.error('This receipt has no image to analyse.'); return; }
+    setReanalyzing(true);
+    // Flip to processing so the list shows the spinner while Claude re-reads it.
+    await supabase.from('receipts').update({ status: 'processing' }).eq('id', data.id);
+    void supabase.functions.invoke('extract-receipt', {
+      body: { receipt_id: data.id, storage_path: data.image_url, model: 'claude-sonnet-5' },
+    });
+    setReanalyzing(false);
+    toast.success('Re-analysing with high accuracy… the result updates shortly.');
+    onClose();
+  }
+
+  async function approve() {
+    setReviewing(true);
+    const { error } = await supabase.from('receipts').update({ status: 'confirmed' }).eq('id', data.id);
+    setReviewing(false);
+    if (error) { toast.error(error.message); return; }
     toast.success('Receipt approved.');
     onClose();
   }
@@ -72,17 +143,15 @@ export default function ReceiptDetailModal({
       .select('full_name')
       .eq('id', receipt.uploaded_by)
       .maybeSingle()
-      .then(({ data }) => {
-        if (!cancelled) setUploader((data?.full_name as string | null) ?? null);
+      .then(({ data: p }) => {
+        if (!cancelled) setUploader((p?.full_name as string | null) ?? null);
       });
     if (receipt.image_url) {
       receiptImageUrl(receipt.image_url)
         .then((u) => !cancelled && setImgUrl(u))
         .catch(() => !cancelled && setImgUrl(null));
     }
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [receipt.uploaded_by, receipt.image_url]);
 
   async function handleDelete() {
@@ -94,16 +163,16 @@ export default function ReceiptDetailModal({
     });
     if (!ok) return;
     setDeleting(true);
-    const { error } = await supabase.from('receipts').delete().eq('id', receipt.id);
+    const { error } = await supabase.from('receipts').delete().eq('id', data.id);
     setDeleting(false);
-    if (error) {
-      toast.error(error.message);
-      return;
-    }
+    if (error) { toast.error(error.message); return; }
     toast.success('Receipt deleted.');
-    onDeleted?.(receipt.id);
+    onDeleted?.(data.id);
     onClose();
   }
+
+  const meta = STATUS_META[data.status];
+  const StatusIcon = meta.Icon;
 
   return (
     <div
@@ -119,7 +188,7 @@ export default function ReceiptDetailModal({
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-surface-border bg-surface px-5 py-3">
           <h2 className="text-base font-semibold text-ink">Receipt details</h2>
           <div className="flex items-center gap-1">
-            {canDelete && (
+            {canDelete && !editing && (
               <button
                 type="button"
                 onClick={() => void handleDelete()}
@@ -144,26 +213,51 @@ export default function ReceiptDetailModal({
 
         {/* Two-column body: portrait image left, details right. Stacks on mobile. */}
         <div className="grid gap-5 p-5 sm:grid-cols-[minmax(0,240px)_1fr]">
-          <div className="mx-auto flex aspect-[3/4] w-full max-w-[240px] items-center justify-center overflow-hidden rounded-xl bg-surface-muted">
-            {imgUrl ? (
-              <img src={imgUrl} alt="" className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex flex-col items-center gap-2 text-ink-muted">
-                <ReceiptGlyph className="h-10 w-10" />
-                <span className="text-xs">Manual entry</span>
-              </div>
+          <div>
+            <button
+              type="button"
+              onClick={() => imgUrl && setZoomOpen(true)}
+              disabled={!imgUrl}
+              className="group mx-auto flex aspect-[3/4] w-full max-w-[240px] items-center justify-center overflow-hidden rounded-xl bg-surface-muted disabled:cursor-default"
+            >
+              {imgUrl ? (
+                <img src={imgUrl} alt="" className="h-full w-full object-cover transition group-hover:opacity-90" />
+              ) : (
+                <div className="flex flex-col items-center gap-2 text-ink-muted">
+                  <ReceiptGlyph className="h-10 w-10" />
+                  <span className="text-xs">Manual entry</span>
+                </div>
+              )}
+            </button>
+            {imgUrl && (
+              <p className="mt-2 text-center text-xs text-ink-muted">Tap the image to zoom</p>
             )}
           </div>
 
           <div className="min-w-0">
-            <div className={`mb-3 inline-flex items-center gap-1.5 text-sm font-medium ${meta.tone}`}>
-              <StatusIcon className={`h-4 w-4 ${meta.spin ? 'animate-spin' : ''}`} />
-              {meta.label}
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div className={`inline-flex items-center gap-1.5 text-sm font-medium ${meta.tone}`}>
+                <StatusIcon className={`h-4 w-4 ${meta.spin ? 'animate-spin' : ''}`} />
+                {meta.label}
+              </div>
+              {/* Finance actions: correct AI mistakes or re-read with the strong model. */}
+              {isFinance && !editing && data.status !== 'processing' && (
+                <div className="flex gap-1">
+                  <Button variant="ghost" onClick={startEdit} className="!px-2 !py-1 text-xs">
+                    <Pencil className="h-3.5 w-3.5" /> Edit
+                  </Button>
+                  {data.image_url && (
+                    <Button variant="ghost" onClick={() => void reanalyze()} disabled={reanalyzing}
+                      className="!px-2 !py-1 text-xs">
+                      {reanalyzing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                      Re-analyse
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Scan-to-email receipts land here for the accountant to approve or discard
-                before they count toward the project's spend. */}
-            {canReview && (
+            {canReview && !editing && (
               <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3">
                 <p className="text-xs text-sky-800">
                   This receipt arrived by scanner email. Check the details against the image,
@@ -187,60 +281,123 @@ export default function ReceiptDetailModal({
               </div>
             )}
 
-            <Row label="Vendor" value={receipt.vendor_name ?? '—'} strong />
-            <Row
-              label="Amount"
-              value={<span className="font-display font-semibold">{formatMoney(receipt.total_amount)}</span>}
-            />
-            <Row label="Tax / VAT" value={formatMoney(receipt.tax_amount)} />
-            <Row label="Category" value={receipt.category ?? '—'} />
-            <Row label="Date" value={formatDate(receipt.receipt_date ?? receipt.created_at)} />
-            <Row label="Receipt #" value={receipt.receipt_number ?? '—'} mono />
-            <Row label="Verification code" value={receipt.verification_code ?? '—'} mono />
-            <Row label="TIN" value={receipt.vendor_tin ?? '—'} mono />
-            <Row label="VRN" value={receipt.vendor_vrn ?? '—'} mono />
-
-            <div className="my-4 h-px bg-surface-border" />
-
-            <Row
-              label="Payment method"
-              value={
-                <span className="inline-flex items-center gap-1 text-sm text-ink">
-                  {receipt.payment_method === 'petty_cash' && (
-                    <Wallet className="h-3.5 w-3.5 text-role-admin" />
-                  )}
-                  {receipt.payment_method === 'petty_cash' ? 'Petty cash' : 'Cash / Personal'}
-                </span>
-              }
-            />
-            <Row label="Project" value={project?.name ?? '—'} />
-            <Row label="Uploaded by" value={<span className="font-semibold">{uploader ?? '—'}</span>} />
-            <Row label="Uploaded at" value={formatDateTime(receipt.created_at)} />
-
-            {receipt.low_confidence_fields.length > 0 && (
-              <div className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                <span className="font-medium">Needs review:</span>{' '}
-                {receipt.low_confidence_fields.join(', ')}
+            {editing ? (
+              // ── Edit form ──────────────────────────────────────────────
+              <div className="flex flex-col gap-3">
+                <Field label="Vendor">
+                  <input value={form.vendor_name} onChange={(e) => setForm((f) => ({ ...f, vendor_name: e.target.value }))} className={inputCls} />
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Amount (total)">
+                    <input inputMode="decimal" value={form.total_amount} onChange={(e) => setForm((f) => ({ ...f, total_amount: e.target.value }))} className={inputCls} />
+                  </Field>
+                  <Field label="Tax / VAT">
+                    <input inputMode="decimal" value={form.tax_amount} onChange={(e) => setForm((f) => ({ ...f, tax_amount: e.target.value }))} className={inputCls} />
+                  </Field>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Category">
+                    <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} className={inputCls}>
+                      <option value="">—</option>
+                      {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </Field>
+                  <Field label="Date">
+                    <input type="date" value={form.receipt_date} onChange={(e) => setForm((f) => ({ ...f, receipt_date: e.target.value }))} className={inputCls} />
+                  </Field>
+                </div>
+                <Field label="Receipt #">
+                  <input value={form.receipt_number} onChange={(e) => setForm((f) => ({ ...f, receipt_number: e.target.value }))} className={inputCls} />
+                </Field>
+                <Field label="Verification code">
+                  <input value={form.verification_code} onChange={(e) => setForm((f) => ({ ...f, verification_code: e.target.value }))} className={inputCls} />
+                </Field>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="TIN">
+                    <input value={form.vendor_tin} onChange={(e) => setForm((f) => ({ ...f, vendor_tin: e.target.value }))} className={inputCls} />
+                  </Field>
+                  <Field label="VRN">
+                    <input value={form.vendor_vrn} onChange={(e) => setForm((f) => ({ ...f, vendor_vrn: e.target.value }))} className={inputCls} />
+                  </Field>
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <Button tint="admin" disabled={saving} onClick={() => void saveEdits()}>
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    Save changes
+                  </Button>
+                  <Button variant="ghost" disabled={saving} onClick={() => setEditing(false)}>Cancel</Button>
+                </div>
               </div>
-            )}
+            ) : (
+              // ── Read-only view ─────────────────────────────────────────
+              <>
+                <Row label="Vendor" value={data.vendor_name ?? '—'} strong />
+                <Row label="Amount" value={<span className="font-display font-semibold">{formatMoney(data.total_amount)}</span>} />
+                <Row label="Tax / VAT" value={formatMoney(data.tax_amount)} />
+                <Row label="Category" value={data.category ?? '—'} />
+                <Row label="Date" value={formatDate(data.receipt_date ?? data.created_at)} />
+                <Row label="Receipt #" value={data.receipt_number ?? '—'} mono />
+                <Row label="Verification code" value={data.verification_code ?? '—'} mono />
+                <Row label="TIN" value={data.vendor_tin ?? '—'} mono />
+                <Row label="VRN" value={data.vendor_vrn ?? '—'} mono />
 
-            {canDelete && (
-              <div className="mt-5 sm:hidden">
-                <Button
-                  variant="secondary"
-                  onClick={() => void handleDelete()}
-                  disabled={deleting}
-                  className="!border-red-300 !text-red-600 hover:!bg-red-50"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  {deleting ? 'Deleting…' : 'Delete receipt'}
-                </Button>
-              </div>
+                <div className="my-4 h-px bg-surface-border" />
+
+                <Row
+                  label="Payment method"
+                  value={
+                    <span className="inline-flex items-center gap-1 text-sm text-ink">
+                      {data.payment_method === 'petty_cash' && <Wallet className="h-3.5 w-3.5 text-role-admin" />}
+                      {data.payment_method === 'petty_cash' ? 'Petty cash' : 'Cash / Personal'}
+                    </span>
+                  }
+                />
+                <Row label="Project" value={project?.name ?? '—'} />
+                <Row label="Uploaded by" value={<span className="font-semibold">{uploader ?? '—'}</span>} />
+                <Row label="Uploaded at" value={formatDateTime(data.created_at)} />
+
+                {data.low_confidence_fields.length > 0 && (
+                  <div className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    <span className="font-medium">Needs review:</span>{' '}
+                    {data.low_confidence_fields.join(', ')}
+                    {isFinance && <span className="block mt-1 text-amber-700">Tap “Edit” to correct, or “Re-analyse” for a fresh high-accuracy read.</span>}
+                  </div>
+                )}
+
+                {canDelete && (
+                  <div className="mt-5 sm:hidden">
+                    <Button
+                      variant="secondary"
+                      onClick={() => void handleDelete()}
+                      disabled={deleting}
+                      className="!border-red-300 !text-red-600 hover:!bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      {deleting ? 'Deleting…' : 'Delete receipt'}
+                    </Button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
       </div>
+
+      {zoomOpen && imgUrl && (
+        <ImageLightbox src={imgUrl} alt={data.vendor_name ?? 'Receipt'} onClose={() => setZoomOpen(false)} />
+      )}
     </div>
+  );
+}
+
+const inputCls = 'w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-role-admin/30';
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs uppercase tracking-wide text-ink-muted">{label}</span>
+      {children}
+    </label>
   );
 }
 
