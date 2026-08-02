@@ -65,8 +65,10 @@ Deno.serve(async (req) => {
   if (userErr || !userData.user) return json({ error: 'invalid session' }, 401);
   const uid = userData.user.id;
 
+  // Any company member (incl. staff) may extract — it only reads the image and returns
+  // JSON; the actual receipts are inserted client-side under the caller's own RLS.
   const { data: profile } = await admin.from('profiles').select('role').eq('id', uid).maybeSingle();
-  if (!profile || (profile.role !== 'owner' && profile.role !== 'accountant')) return json({ error: 'forbidden' }, 403);
+  if (!profile) return json({ error: 'forbidden' }, 403);
 
   let body: { storage_path?: string; model?: string };
   try { body = await req.json(); } catch { return json({ error: 'invalid json' }, 400); }

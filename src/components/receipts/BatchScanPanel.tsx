@@ -60,10 +60,13 @@ export default function BatchScanPanel({
   const toast = useToast();
   const auth = useAuth();
   const companyId = auth.status === 'signed-in' ? auth.profile.company_id : null;
+  // The live scanner-email listener is a company-wide feature; staff just upload a page.
+  const isFinance = auth.status === 'signed-in' && (auth.profile.role === 'owner' || auth.profile.role === 'accountant');
   const fileInput = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>('config');
   const [sources, setSources] = useState<ScannerSource[]>([]);
   const [sourceId, setSourceId] = useState<string>('');
+  const [pageSize, setPageSize] = useState<'A4' | 'A3'>('A4');
   const [dpi, setDpi] = useState<'400' | '600'>('600');
   const [busy, setBusy] = useState(false);
 
@@ -235,23 +238,30 @@ export default function BatchScanPanel({
           {phase === 'config' && (
             <div className="flex flex-col gap-4">
               <p className="text-sm text-ink-muted">
-                Place up to ~15 receipts on the A3 flatbed glass, then scan. The AI reads
-                the whole page and splits it into individual receipts for review.
+                Upload one A4 or A3 page printed or scanned with several receipts. The AI
+                reads the whole page and splits it into individual receipts for review.
               </p>
 
               <div className="rounded-lg border border-surface-border p-4">
                 <div className="mb-3 flex items-center gap-2 text-sm font-medium text-ink">
-                  <Printer className="h-4 w-4 text-ink-muted" /> Scanner settings
+                  <Printer className="h-4 w-4 text-ink-muted" /> Page settings
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className={`grid gap-3 ${sdkAvailable ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+                  {sdkAvailable && (
+                    <Select
+                      label="Source"
+                      value={sourceId}
+                      onChange={setSourceId}
+                      placeholder="Select scanner"
+                      options={sources.map((s) => ({ value: s.id, label: s.name }))}
+                    />
+                  )}
                   <Select
-                    label="Source"
-                    value={sourceId}
-                    onChange={setSourceId}
-                    placeholder={sdkAvailable ? 'Select scanner' : 'No scanner detected'}
-                    options={sources.map((s) => ({ value: s.id, label: s.name }))}
+                    label="Page size"
+                    value={pageSize}
+                    onChange={(v) => setPageSize(v as 'A4' | 'A3')}
+                    options={[{ value: 'A4', label: 'A4' }, { value: 'A3', label: 'A3' }]}
                   />
-                  <Select label="Page size" value="A3" onChange={() => {}} options={[{ value: 'A3', label: 'A3' }]} disabled />
                   <Select
                     label="Resolution"
                     value={dpi}
@@ -268,9 +278,9 @@ export default function BatchScanPanel({
               </div>
 
               <div className="flex flex-col gap-2 sm:flex-row">
-                {/* Live listener — the primary path. Sits open and waits for the printer to
-                    email an A3 scan, which lands here automatically. */}
-                {!isListening ? (
+                {/* Live listener — finance only. Sits open and waits for the printer to
+                    email a scan, which lands here automatically. */}
+                {isFinance && (!isListening ? (
                   <Button tint="admin" fullWidth disabled={busy} onClick={() => setIsListening(true)}>
                     <Radio className="h-4 w-4" /> 📡 Listen to Scanner
                   </Button>
@@ -282,9 +292,15 @@ export default function BatchScanPanel({
                   >
                     <Radio className="h-4 w-4" /> 📡 Waiting for scans…
                   </Button>
-                )}
-                <Button variant="secondary" tint="admin" fullWidth disabled={busy} onClick={() => fileInput.current?.click()}>
-                  <Upload className="h-4 w-4" /> Upload A3 image
+                ))}
+                <Button
+                  variant={isFinance ? 'secondary' : 'primary'}
+                  tint="admin"
+                  fullWidth
+                  disabled={busy}
+                  onClick={() => fileInput.current?.click()}
+                >
+                  <Upload className="h-4 w-4" /> Upload {pageSize} image
                 </Button>
               </div>
 

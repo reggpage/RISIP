@@ -11,7 +11,7 @@
 
 const DEFAULT_MAX_KB = 300;
 const DEFAULT_MAX_DIM = 2000;
-const QUALITY_START = 0.85;
+const QUALITY_START = 0.9;
 const QUALITY_MIN = 0.4;
 const QUALITY_STEP = 0.1;
 
@@ -38,11 +38,13 @@ function canvasToBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob>
 
 export async function compressImage(
   file: File,
-  opts: { maxKB?: number; maxDim?: number } = {},
+  opts: { maxKB?: number; maxDim?: number; minQuality?: number } = {},
 ): Promise<File> {
   // Skip work for files that are already small enough — no need to touch pixels.
   const maxKB = opts.maxKB ?? DEFAULT_MAX_KB;
   const maxDim = opts.maxDim ?? DEFAULT_MAX_DIM;
+  // For OCR we'd rather keep detail than hit a tiny size, so callers can raise the floor.
+  const minQuality = opts.minQuality ?? QUALITY_MIN;
   if (file.size <= maxKB * 1024 && /^image\/jpe?g$/i.test(file.type)) return file;
 
   const { img, revoke } = await loadImage(file);
@@ -60,8 +62,8 @@ export async function compressImage(
 
     let quality = QUALITY_START;
     let blob = await canvasToBlob(canvas, quality);
-    while (blob.size > maxKB * 1024 && quality > QUALITY_MIN) {
-      quality = Math.max(QUALITY_MIN, quality - QUALITY_STEP);
+    while (blob.size > maxKB * 1024 && quality > minQuality) {
+      quality = Math.max(minQuality, quality - QUALITY_STEP);
       blob = await canvasToBlob(canvas, quality);
     }
 

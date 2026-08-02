@@ -15,8 +15,9 @@ export async function uploadReceipt(
 ): Promise<Receipt> {
   const receiptId = uuidv4();
 
-  // Compress before upload. compressImage no-ops for already-small JPEGs.
-  const compressed = await compressImage(file).catch(() => file);
+  // Compress before upload, but keep it high-fidelity: receipt OCR needs the small
+  // print to survive, so we allow a larger file + higher resolution + a quality floor.
+  const compressed = await compressImage(file, { maxKB: 1500, maxDim: 3200, minQuality: 0.7 }).catch(() => file);
   const ext = 'jpg'; // Compressor always emits jpeg; safe to fix the extension.
   const path = `${ctx.project_id}/${receiptId}.${ext}`;
 
