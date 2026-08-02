@@ -3,6 +3,7 @@ import AppShell from '@/components/layout/AppShell';
 import RequireAuth from '@/guards/RequireAuth';
 import RequireRole from '@/guards/RequireRole';
 import Login from '@/routes/auth/Login';
+import ForgotPassword from '@/routes/auth/ForgotPassword';
 import SignupCompany from '@/routes/auth/SignupCompany';
 import JoinPage from '@/routes/join/JoinPage';
 import FindCompany from '@/routes/find/FindCompany';
@@ -26,6 +27,7 @@ export default function App() {
       {/* Public routes */}
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/signup" element={<SignupCompany />} />
       <Route path="/find-company" element={<FindCompany />} />
       <Route path="/join/:token" element={<JoinPage />} />

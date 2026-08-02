@@ -6,7 +6,7 @@
 //
 // Env vars (set with `supabase secrets set ...`):
 //   RESEND_API_KEY           — from https://resend.com/api-keys
-//   RESEND_FROM              — verified From address, e.g. "Risip <noreply@risip.co.tz>"
+//   RESEND_FROM              — verified From address, e.g. "Risip <noreply@risip.online>"
 //                              Fallback: "Risip <onboarding@resend.dev>" (Resend sandbox — only
 //                              delivers to the Resend account owner's inbox; use for smoke tests).
 //   SEND_EMAIL_HOOK_SECRET   — the "v1,whsec_..." string Supabase gave when you created the hook.
@@ -70,36 +70,54 @@ function renderEmail(payload: HookPayload): { subject: string; html: string } {
   const html = `
     <!doctype html>
     <html lang="sw">
-      <body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;color:#0f172a">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:40px 16px">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Lora:wght@600;700&display=swap" rel="stylesheet" />
+      </head>
+      <body style="margin:0;padding:0;background:#f6f7f9;font-family:'Outfit',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#0f172a">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px">
           <tr>
             <td align="center">
-              <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
+              <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#ffffff;border:1px solid #e8ebef;border-radius:16px;overflow:hidden">
+                <!-- Brand header: logo badge + wordmark -->
                 <tr>
-                  <td style="padding:28px 32px 8px">
-                    <div style="font-size:20px;font-weight:600;color:#DD2D4A">Risip</div>
+                  <td style="padding:28px 32px 20px">
+                    <table role="presentation" cellpadding="0" cellspacing="0">
+                      <tr>
+                        <td style="vertical-align:middle">
+                          <div style="width:40px;height:40px;border-radius:10px;background:#DD2D4A;color:#ffffff;font-family:'Lora',Georgia,serif;font-weight:700;font-size:22px;text-align:center;line-height:40px">R</div>
+                        </td>
+                        <td style="vertical-align:middle;padding-left:12px">
+                          <div style="font-family:'Outfit',sans-serif;font-size:22px;font-weight:700;color:#DD2D4A;letter-spacing:-0.3px">Risip</div>
+                        </td>
+                      </tr>
+                    </table>
                   </td>
                 </tr>
+                <tr><td style="height:3px;background:#DD2D4A;line-height:3px;font-size:0">&nbsp;</td></tr>
+                <!-- Body -->
                 <tr>
-                  <td style="padding:8px 32px 24px">
-                    <h1 style="margin:0 0 8px;font-size:20px;color:#0f172a">${heading}</h1>
-                    <p style="margin:0 0 16px;font-size:14px;color:#475569;line-height:1.5">${preface}</p>
-                    <div style="margin:24px auto;padding:16px 24px;background:#f1f5f9;border-radius:10px;text-align:center">
-                      <div style="font-size:32px;letter-spacing:8px;font-weight:700;color:#0f172a;font-family:'SF Mono',ui-monospace,Menlo,Consolas,monospace">
-                        ${token}
-                      </div>
+                  <td style="padding:28px 32px 8px">
+                    <h1 style="margin:0 0 8px;font-family:'Outfit',sans-serif;font-size:20px;font-weight:600;color:#0f172a">${heading}</h1>
+                    <p style="margin:0 0 20px;font-size:14px;color:#475569;line-height:1.6">${preface}</p>
+                    <div style="margin:0 auto 20px;padding:18px 24px;background:#fdf2f4;border:1px solid #f6c9d2;border-radius:12px;text-align:center">
+                      <div style="font-family:'Outfit',sans-serif;font-size:34px;letter-spacing:10px;font-weight:700;color:#DD2D4A">${token}</div>
                     </div>
-                    <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.5">
+                    <p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.6">
                       Msimbo huu unaisha muda baada ya dakika chache. Kama hukuomba, puuza barua pepe hii.
                     </p>
                   </td>
                 </tr>
+                <!-- Footer -->
                 <tr>
-                  <td style="padding:16px 32px;border-top:1px solid #e2e8f0;font-size:11px;color:#94a3b8">
-                    Risip · scan risiti, tengeneza ankara.
+                  <td style="padding:20px 32px;border-top:1px solid #eef1f4;font-size:11px;color:#94a3b8;line-height:1.6">
+                    <strong style="color:#64748b">Risip</strong> · Scan risiti, tengeneza ankara.<br />
+                    <span style="color:#cbd5e1">risip.online</span>
                   </td>
                 </tr>
               </table>
+              <div style="margin-top:16px;font-size:11px;color:#cbd5e1;font-family:'Outfit',sans-serif">© Risip · Tanzania</div>
             </td>
           </tr>
         </table>

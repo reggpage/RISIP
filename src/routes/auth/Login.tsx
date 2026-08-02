@@ -55,7 +55,12 @@ export default function Login() {
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-ink-muted">
+      <p className="mt-4 text-center text-sm">
+        <Link to="/forgot-password" className="font-medium text-ink-muted hover:text-ink hover:underline">
+          Umesahau nenosiri?
+        </Link>
+      </p>
+      <p className="mt-2 text-center text-sm text-ink-muted">
         <Link to="/signup" className="font-medium text-role-admin hover:underline">
           {sw.auth.signupCompany}
         </Link>
