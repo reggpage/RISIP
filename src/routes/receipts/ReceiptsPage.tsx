@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Plus, Search } from 'lucide-react';
+import { Plus, ScanLine, Search } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
@@ -8,6 +8,7 @@ import { ListItemSkeleton } from '@/components/ui/Skeleton';
 import ReceiptCard from '@/components/receipts/ReceiptCard';
 import ReceiptDetailModal from '@/components/receipts/ReceiptDetailModal';
 import AddReceiptSheet from '@/components/receipts/AddReceiptSheet';
+import BatchScanPanel from '@/components/receipts/BatchScanPanel';
 import StaffBalanceCard from '@/components/pettyCash/StaffBalanceCard';
 import { useReceipts } from '@/features/receipts/useReceipts';
 import { useProjects } from '@/features/projects/useProjects';
@@ -29,6 +30,7 @@ export default function ReceiptsPage() {
   const { state: projectsState } = useProjects();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
   const [openReceipt, setOpenReceipt] = useState<Receipt | null>(null);
 
   // Search + filter state — client-side over the current stream (up to 50 rows).
@@ -108,16 +110,30 @@ export default function ReceiptsPage() {
 
   return (
     <div className="mx-auto max-w-4xl p-4 sm:p-6">
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold text-ink">{sw.nav.receipts}</h1>
-        <Button
-          tint="admin"
-          disabled={!effectiveProjectId || !profile}
-          onClick={() => setSheetOpen(true)}
-        >
-          <Plus className="h-4 w-4" />
-          Add receipt
-        </Button>
+        <div className="flex gap-2">
+          {/* Batch Scan is an office feature for finance roles. */}
+          {(profile?.role === 'owner' || profile?.role === 'accountant') && (
+            <Button
+              variant="secondary"
+              tint="admin"
+              disabled={!effectiveProjectId || !profile}
+              onClick={() => setBatchOpen(true)}
+            >
+              <ScanLine className="h-4 w-4" />
+              Connect Scanner / Batch Scan
+            </Button>
+          )}
+          <Button
+            tint="admin"
+            disabled={!effectiveProjectId || !profile}
+            onClick={() => setSheetOpen(true)}
+          >
+            <Plus className="h-4 w-4" />
+            Add receipt
+          </Button>
+        </div>
       </div>
 
       <StaffBalanceCard />
@@ -236,6 +252,14 @@ export default function ReceiptsPage() {
           projectId={effectiveProjectId}
           userId={profile.id}
           onClose={() => setSheetOpen(false)}
+        />
+      )}
+      {batchOpen && effectiveProjectId && profile && (
+        <BatchScanPanel
+          projectId={effectiveProjectId}
+          userId={profile.id}
+          onClose={() => setBatchOpen(false)}
+          onImported={() => { /* realtime refreshes the list automatically */ }}
         />
       )}
       {openReceipt && (

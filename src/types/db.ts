@@ -112,8 +112,18 @@ export type Receipt = {
   category: string | null;
   status: ReceiptStatus;
   payment_method: PaymentMethod;
+  scanned_doc_id: string | null;
   raw_ai_response: unknown;
   low_confidence_fields: string[];
+  created_at: string;
+};
+
+export type ScannedDocument = {
+  id: string;
+  company_id: string;
+  project_id: string;
+  file_url: string;
+  created_by: string;
   created_at: string;
 };
 
@@ -239,6 +249,12 @@ export type Database = {
         Row: { id: string; invoice_id: string; event: string; meta: unknown; created_at: string };
         Insert: { invoice_id: string; event: string; meta?: unknown };
         Update: Partial<Database['public']['Tables']['invoice_activity']['Row']>;
+        Relationships: [];
+      };
+      scanned_documents: {
+        Row: ScannedDocument;
+        Insert: Partial<ScannedDocument> & { project_id: string; company_id: string; file_url: string; created_by: string };
+        Update: Partial<ScannedDocument>;
         Relationships: [];
       };
       invoices: {
