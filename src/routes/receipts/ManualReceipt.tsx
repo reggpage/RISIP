@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { ArrowLeft } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
@@ -89,10 +88,6 @@ export default function ManualReceipt() {
 
   return (
     <div className="mx-auto max-w-xl p-4 sm:p-6">
-      <Link to="/receipts" className="mb-4 inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink">
-        <ArrowLeft className="h-4 w-4" /> Back
-      </Link>
-
       <Card>
         <h1 className="mb-1 text-xl font-semibold text-ink">{sw.receipts.manualTitle}</h1>
         <p className="mb-5 text-sm text-ink-muted">{sw.receipts.manualHint}</p>

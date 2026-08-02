@@ -20,7 +20,7 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...corsHeaders } });
 }
 
-const PROMPT = `This image or PDF is a single A4 or A3 page containing one or more TANZANIAN TRA fiscal receipts laid out or printed together. Scan the entire page carefully and identify every distinct receipt present.
+const PROMPT = `This image or PDF is a single A4 or A3 page (portrait OR landscape) containing one or more TANZANIAN TRA fiscal receipts laid out or printed together. Individual receipts may be rotated (90°, 180°, or sideways) relative to the page — mentally rotate each one and read it in its correct orientation. Scan the entire page carefully and identify every distinct receipt present, however it is oriented.
 
 For EACH distinct receipt found, extract:
 1. vendor (Merchant name)

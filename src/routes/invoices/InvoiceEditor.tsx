@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Eye, Loader2, Send, Signature } from 'lucide-react';
+import { Eye, Loader2, Send, Signature } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
@@ -273,10 +273,6 @@ export default function InvoiceEditor() {
 
   return (
     <div className="mx-auto max-w-4xl p-4 sm:p-6">
-      <Link to="/invoices" className="mb-4 inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink">
-        <ArrowLeft className="h-4 w-4" /> Back to invoices
-      </Link>
-
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-ink">

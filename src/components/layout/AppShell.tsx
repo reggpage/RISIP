@@ -30,7 +30,7 @@ export default function AppShell() {
         />
         {/* Bottom tab bar removed — the hamburger drawer now holds the full nav, so
             content no longer needs padding to clear a fixed bar. */}
-        <main className="min-h-0 flex-1 overflow-y-auto">
+        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
           <Outlet />
         </main>
       </div>

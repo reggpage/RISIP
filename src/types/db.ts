@@ -335,6 +335,8 @@ export type Database = {
         Args: { p_user_id: string; p_token: string; p_full_name: string; p_phone: string };
         Returns: Array<{ project_id: string; role: UserRole }>;
       };
+      /** Count of company invoices this month — callable by staff (no row exposure). */
+      invoices_this_month_count: { Args: { p_project?: string | null }; Returns: number };
       auth_company_id: { Args: Record<string, never>; Returns: string };
       auth_role: { Args: Record<string, never>; Returns: UserRole };
       auth_can_see_project: { Args: { pid: string }; Returns: boolean };

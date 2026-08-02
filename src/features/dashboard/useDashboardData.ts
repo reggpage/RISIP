@@ -41,17 +41,11 @@ export function useDashboardData(projectId?: string): DashboardData {
       setActiveWorkers(count ?? 0);
     })();
 
-    // Invoices generated this calendar month (any status).
+    // Invoices generated this calendar month. Via an RPC so staff (who can't SELECT
+    // invoices under RLS) still get the count without seeing any invoice rows.
     void (async () => {
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      let q = supabase
-        .from('invoices')
-        .select('id', { count: 'exact', head: true })
-        .gte('created_at', monthStart);
-      if (projectId) q = q.eq('project_id', projectId);
-      const { count } = await q;
-      setInvoicesThisMonth(count ?? 0);
+      const { data } = await supabase.rpc('invoices_this_month_count', { p_project: projectId ?? null });
+      setInvoicesThisMonth((data as number | null) ?? 0);
     })();
   }, [projectId]);
 

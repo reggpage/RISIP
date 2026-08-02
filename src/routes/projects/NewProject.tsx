@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { ArrowLeft } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
@@ -35,10 +34,6 @@ export default function NewProject() {
 
   return (
     <div className="mx-auto max-w-xl p-6">
-      <Link to="/projects" className="mb-4 inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink">
-        <ArrowLeft className="h-4 w-4" /> {sw.projects.detailBack}
-      </Link>
-
       <Card>
         <h1 className="mb-4 text-xl font-semibold text-ink">{sw.projects.create}</h1>
 

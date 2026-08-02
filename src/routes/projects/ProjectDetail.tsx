@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, FileSpreadsheet, Loader2, Plus, Receipt as ReceiptIcon, Wallet } from 'lucide-react';
+import { FileSpreadsheet, Loader2, Plus, Receipt as ReceiptIcon, UserPlus, Wallet, X } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
@@ -32,6 +32,7 @@ export default function ProjectDetail() {
   const [busy, setBusy] = useState<InviteRole | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const toast = useToast();
 
   const isOwner = auth.status === 'signed-in' && auth.profile?.role === 'owner';
@@ -122,10 +123,6 @@ export default function ProjectDetail() {
 
   return (
     <div className="mx-auto max-w-4xl p-6">
-      <Link to="/projects" className="mb-4 inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink">
-        <ArrowLeft className="h-4 w-4" /> {sw.projects.detailBack}
-      </Link>
-
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="mb-1 flex items-center gap-3">
@@ -148,6 +145,11 @@ export default function ProjectDetail() {
         </div>
 
         <div className="flex items-center gap-2">
+          {canSeeLinks && (
+            <Button variant="secondary" tint="admin" onClick={() => setInviteOpen(true)}>
+              <UserPlus className="h-4 w-4" /> Invite
+            </Button>
+          )}
           {canSeeLinks && (
             <Button
               variant="secondary"
@@ -212,18 +214,22 @@ export default function ProjectDetail() {
         )}
       </section>
 
-      {canSeeLinks && (
-        <section className="mb-8">
-          {/* Section header — plain, no wrapping Card. Individual link cards below
-              stand on their own for a cleaner look, especially on mobile. */}
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-ink">{sw.projects.inviteLinksTitle}</h2>
-            <p className="mt-1 text-sm text-ink-muted">{sw.projects.inviteLinksHint}</p>
-          </div>
+      {/* Invite links live in a modal reachable from the top "Invite" button, so they
+          stay accessible even when the receipts list is long. */}
+      {canSeeLinks && inviteOpen && (
+        <div className="fixed inset-0 z-[150] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" onClick={() => setInviteOpen(false)}>
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-surface shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 flex items-center justify-between border-b border-surface-border bg-surface px-5 py-3">
+              <h2 className="text-base font-semibold text-ink">{sw.projects.inviteLinksTitle}</h2>
+              <button type="button" onClick={() => setInviteOpen(false)} className="rounded p-1 text-ink-muted hover:bg-surface-muted hover:text-ink" aria-label="Close">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-5">
+              <p className="mb-4 text-sm text-ink-muted">{sw.projects.inviteLinksHint}</p>
+              {actionError && <p className="mb-3 text-sm text-red-600">{actionError}</p>}
 
-          {actionError && <p className="mb-3 text-sm text-red-600">{actionError}</p>}
-
-          <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-3 sm:grid-cols-2">
             {INVITE_ROLES.map((role) => {
               const link = linksByRole.get(role);
               if (link) {
@@ -261,8 +267,10 @@ export default function ProjectDetail() {
                 </Card>
               );
             })}
+              </div>
+            </div>
           </div>
-        </section>
+        </div>
       )}
     </div>
   );
