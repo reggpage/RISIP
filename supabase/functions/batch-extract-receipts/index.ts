@@ -1,5 +1,5 @@
 // batch-extract-receipts · POST { storage_path, model? }
-// Sends one A3 flatbed scan (containing many receipts) to Claude vision and returns a
+// Sends one A4/A3 page (image OR PDF) containing many receipts to Claude and returns a
 // JSON ARRAY — one object per receipt detected. Does NOT insert anything; the client
 // shows a Batch Review Panel first, then bulk-inserts on approval.
 //
@@ -20,20 +20,20 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...corsHeaders } });
 }
 
-const PROMPT = `This image is a large flatbed scanner page (A3 size) containing a high density of multiple physical receipts laid out together. Scan the entire A3 surface area carefully and identify every distinct receipt present in this document.
+const PROMPT = `This image or PDF is a single A4 or A3 page containing one or more TANZANIAN TRA fiscal receipts laid out or printed together. Scan the entire page carefully and identify every distinct receipt present.
 
-For EACH distinct receipt found, extract the following information:
+For EACH distinct receipt found, extract:
 1. vendor (Merchant name)
-2. vendor_tin (Taxpayer Identification Number)
-3. vendor_vrn (VAT Registration Number)
-4. receipt_date (YYYY-MM-DD format)
+2. vendor_tin (TIN — EXACTLY 9 digits, e.g. 101327036; keep the leading 1, digits only)
+3. vendor_vrn (VRN — digits ending in a letter, e.g. 10015084M)
+4. receipt_date (YYYY-MM-DD)
 5. category (one of: Materials, Fuel, Food, Transport, Equipment, Office, Utilities, Rent, Communication, Consulting, Labor, Other)
-6. verification_code (TRA Verification signature/code)
+6. verification_code (alphanumeric TRA code near a QR; distinguish B/8, I/1, O/0, S/5, Z/2 — do not add or repeat characters)
 7. net_amount (number)
-8. tax_amount (VAT, number)
-9. total_amount (number)
+8. tax_amount (VAT only; null if none)
+9. total_amount (grand total INCL of VAT — the "TOTAL INCL OF TAX" / "TOTAL … TZS" line)
 
-Return the response STRICTLY as a raw JSON array of objects, where each object represents one receipt. Do not wrap it in markdown codeblocks. If a field cannot be read, use null. Example: [{"vendor":"RealBlocks Limited","vendor_tin":null,"vendor_vrn":null,"receipt_date":"2026-08-01","category":"Materials","verification_code":null,"net_amount":100000,"tax_amount":18000,"total_amount":118000}]`;
+Read every digit carefully; never invent, drop, or duplicate a digit. Return the response STRICTLY as a raw JSON array of objects, one per receipt. Do not wrap it in markdown codeblocks. If a field cannot be read, use null. Example: [{"vendor":"RealBlocks Limited","vendor_tin":null,"vendor_vrn":null,"receipt_date":"2026-08-01","category":"Materials","verification_code":null,"net_amount":100000,"tax_amount":18000,"total_amount":118000}]`;
 
 function parseArray(text: string): unknown[] | null {
   const stripped = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/, '');
@@ -65,8 +65,8 @@ Deno.serve(async (req) => {
   if (userErr || !userData.user) return json({ error: 'invalid session' }, 401);
   const uid = userData.user.id;
 
-  // Any company member (incl. staff) may extract — it only reads the image and returns
-  // JSON; the actual receipts are inserted client-side under the caller's own RLS.
+  // Any company member (incl. staff) may extract — it only reads the page and returns JSON;
+  // the actual receipts are inserted client-side under the caller's own RLS.
   const { data: profile } = await admin.from('profiles').select('role').eq('id', uid).maybeSingle();
   if (!profile) return json({ error: 'forbidden' }, 403);
 
@@ -78,12 +78,18 @@ Deno.serve(async (req) => {
 
   const { data: fileBlob, error: dlErr } = await admin.storage.from('receipts').download(storagePath);
   if (dlErr || !fileBlob) return json({ error: 'download failed: ' + (dlErr?.message ?? 'no data') }, 500);
-  const mediaType = fileBlob.type || 'image/jpeg';
+  const rawType = (fileBlob.type || '').toLowerCase();
+  const isPdf = rawType.includes('pdf') || storagePath.toLowerCase().endsWith('.pdf');
   const bytes = new Uint8Array(await fileBlob.arrayBuffer());
   let binary = '';
   const chunk = 0x8000;
   for (let i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   const b64 = btoa(binary);
+
+  // PDFs go in as a `document` block (Claude reads every page); images as an `image` block.
+  const contentBlock = isPdf
+    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } }
+    : { type: 'image', source: { type: 'base64', media_type: rawType || 'image/jpeg', data: b64 } };
 
   const claudeRes = await fetch(ANTHROPIC_URL, {
     method: 'POST',
@@ -91,13 +97,7 @@ Deno.serve(async (req) => {
     body: JSON.stringify({
       model,
       max_tokens: 4096,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mediaType, data: b64 } },
-          { type: 'text', text: PROMPT },
-        ],
-      }],
+      messages: [{ role: 'user', content: [contentBlock, { type: 'text', text: PROMPT }] }],
     }),
   });
   const claudeJson = await claudeRes.json();

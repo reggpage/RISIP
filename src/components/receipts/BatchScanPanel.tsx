@@ -1,15 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { Loader2, Printer, Radio, ScanLine, Trash2, Upload, X } from 'lucide-react';
+import { FileText, Loader2, Radio, ScanLine, Trash2, Upload, X } from 'lucide-react';
 import Button from '@/components/ui/Button';
-import Select from '@/components/ui/Select';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
-import {
-  isScannerSdkAvailable,
-  listScannerSources,
-  type ScannerSource,
-} from '@/features/batchScan/scannerService';
 import {
   importBatch,
   scanA3AndExtract,
@@ -44,8 +38,9 @@ function toReviewRow(rc: Receipt): ReviewRow {
   };
 }
 
-// A3 batch panel. Two ways in: (1) Listen live for scans emailed from the office printer,
-// or (2) Upload an A3 image directly. Both land in the same Batch Review table.
+// Batch panel. Upload one A4/A3 page (image or PDF) with several receipts; the AI splits
+// it into individual receipts for review. Finance roles can also listen live for scans
+// emailed from the office printer.
 export default function BatchScanPanel({
   projectId,
   userId,
@@ -60,14 +55,10 @@ export default function BatchScanPanel({
   const toast = useToast();
   const auth = useAuth();
   const companyId = auth.status === 'signed-in' ? auth.profile.company_id : null;
-  // The live scanner-email listener is a company-wide feature; staff just upload a page.
   const isFinance = auth.status === 'signed-in' && (auth.profile.role === 'owner' || auth.profile.role === 'accountant');
-  const fileInput = useRef<HTMLInputElement>(null);
+  const imageInput = useRef<HTMLInputElement>(null);
+  const pdfInput = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>('config');
-  const [sources, setSources] = useState<ScannerSource[]>([]);
-  const [sourceId, setSourceId] = useState<string>('');
-  const [pageSize, setPageSize] = useState<'A4' | 'A3'>('A4');
-  const [dpi, setDpi] = useState<'400' | '600'>('600');
   const [busy, setBusy] = useState(false);
 
   // Live listener state.
@@ -75,23 +66,11 @@ export default function BatchScanPanel({
   const channelId = useRef(`batch-listen-${Math.random().toString(36).slice(2)}`);
   const debounceRef = useRef<number | null>(null);
 
-  // Where the review rows came from decides what "Approve" does: insert (upload) vs
-  // confirm-existing (inbound email).
   const [reviewSource, setReviewSource] = useState<'upload' | 'inbound'>('upload');
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [scannedDocId, setScannedDocId] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
 
-  const sdkAvailable = isScannerSdkAvailable();
-
-  useEffect(() => {
-    void listScannerSources().then((s) => {
-      setSources(s);
-      if (s[0]) setSourceId(s[0].id);
-    });
-  }, []);
-
-  // Pull the whole batch that shares a scanned_doc_id and drop it into the review table.
   async function loadInboundBatch(docId: string) {
     const { data, error } = await supabase
       .from('receipts')
@@ -111,8 +90,7 @@ export default function BatchScanPanel({
   }
 
   // Realtime: while listening, watch for pending_review receipts arriving via scan-to-email
-  // for this company. Debounce so all rows of one A3 page (a single INSERT batch) collect
-  // before we load them together.
+  // for this company. Debounce so all rows of one page collect before we load them.
   useEffect(() => {
     if (!isListening || !companyId) return;
     const channel = supabase
@@ -142,16 +120,12 @@ export default function BatchScanPanel({
     setPhase('processing');
     setBusy(true);
     try {
-      const result = await scanA3AndExtract(file, {
-        project_id: projectId,
-        user_id: userId,
-        model: dpi === '600' ? 'claude-sonnet-5' : undefined, // higher-effort model for dense pages
-      });
+      const result = await scanA3AndExtract(file, { project_id: projectId, user_id: userId });
       setScannedDocId(result.scannedDocId);
       setImageUrl(result.storagePath);
       setRows(result.receipts);
       if (result.receipts.length === 0) {
-        toast.info('No receipts were detected on the scan.');
+        toast.info('No receipts were detected on the page.');
       }
       setPhase('review');
     } catch (err) {
@@ -163,7 +137,6 @@ export default function BatchScanPanel({
   }
 
   async function importAll() {
-    // Guard: VAT must not exceed total on any row (matches the DB trigger).
     const bad = rows.find((r) => (r.tax_amount ?? 0) > (r.total_amount ?? 0));
     if (bad) {
       toast.error('One row has VAT greater than its total. Please fix it before importing.');
@@ -172,7 +145,6 @@ export default function BatchScanPanel({
     setBusy(true);
     try {
       if (reviewSource === 'inbound') {
-        // Rows already exist as pending_review — confirm them in place.
         for (const r of rows) {
           if (!r.id) continue;
           const { error } = await supabase
@@ -213,7 +185,6 @@ export default function BatchScanPanel({
   }
   async function removeRow(i: number) {
     const r = rows[i];
-    // Inbound rows are persisted — discarding one deletes it from the ledger.
     if (reviewSource === 'inbound' && r.id) {
       const { error } = await supabase.from('receipts').delete().eq('id', r.id);
       if (error) { toast.error(error.message); return; }
@@ -238,48 +209,13 @@ export default function BatchScanPanel({
           {phase === 'config' && (
             <div className="flex flex-col gap-4">
               <p className="text-sm text-ink-muted">
-                Upload one A4 or A3 page printed or scanned with several receipts. The AI
-                reads the whole page and splits it into individual receipts for review.
+                Upload one A4 or A3 page (image or PDF) printed or scanned with several
+                receipts. The AI reads the whole page and splits it into individual
+                receipts for review.
               </p>
 
-              <div className="rounded-lg border border-surface-border p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-medium text-ink">
-                  <Printer className="h-4 w-4 text-ink-muted" /> Page settings
-                </div>
-                <div className={`grid gap-3 ${sdkAvailable ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
-                  {sdkAvailable && (
-                    <Select
-                      label="Source"
-                      value={sourceId}
-                      onChange={setSourceId}
-                      placeholder="Select scanner"
-                      options={sources.map((s) => ({ value: s.id, label: s.name }))}
-                    />
-                  )}
-                  <Select
-                    label="Page size"
-                    value={pageSize}
-                    onChange={(v) => setPageSize(v as 'A4' | 'A3')}
-                    options={[{ value: 'A4', label: 'A4' }, { value: 'A3', label: 'A3' }]}
-                  />
-                  <Select
-                    label="Resolution"
-                    value={dpi}
-                    onChange={(v) => setDpi(v as '400' | '600')}
-                    options={[{ value: '400', label: '400 DPI' }, { value: '600', label: '600 DPI (best)' }]}
-                  />
-                </div>
-                {!sdkAvailable && (
-                  <p className="mt-3 text-xs text-sky-700">
-                    No TWAIN scanner service detected on this computer. You can still scan on
-                    your office printer, save the A3 page as an image/PDF, and upload it below.
-                  </p>
-                )}
-              </div>
-
               <div className="flex flex-col gap-2 sm:flex-row">
-                {/* Live listener — finance only. Sits open and waits for the printer to
-                    email a scan, which lands here automatically. */}
+                {/* Live listener — finance only. Waits for the printer to email a scan. */}
                 {isFinance && (!isListening ? (
                   <Button tint="admin" fullWidth disabled={busy} onClick={() => setIsListening(true)}>
                     <Radio className="h-4 w-4" /> 📡 Listen to Scanner
@@ -298,13 +234,15 @@ export default function BatchScanPanel({
                   tint="admin"
                   fullWidth
                   disabled={busy}
-                  onClick={() => fileInput.current?.click()}
+                  onClick={() => imageInput.current?.click()}
                 >
-                  <Upload className="h-4 w-4" /> Upload {pageSize} image
+                  <Upload className="h-4 w-4" /> Upload image
+                </Button>
+                <Button variant="secondary" tint="admin" fullWidth disabled={busy} onClick={() => pdfInput.current?.click()}>
+                  <FileText className="h-4 w-4" /> Upload PDF
                 </Button>
               </div>
 
-              {/* Listener status card. */}
               {isListening && (
                 <div className="flex gap-3 rounded-lg border border-sky-200 bg-sky-50 p-4">
                   <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-sky-600" />
@@ -318,20 +256,17 @@ export default function BatchScanPanel({
                 </div>
               )}
 
-              <input
-                ref={fileInput}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) void processFile(f); }}
-              />
+              <input ref={imageInput} type="file" accept="image/*" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) void processFile(f); e.target.value = ''; }} />
+              <input ref={pdfInput} type="file" accept="application/pdf" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) void processFile(f); e.target.value = ''; }} />
             </div>
           )}
 
           {phase === 'processing' && (
             <div className="flex flex-col items-center gap-3 py-16 text-ink-muted">
               <Loader2 className="h-8 w-8 animate-spin text-role-admin" />
-              <p className="text-sm">Reading the A3 page and splitting receipts…</p>
+              <p className="text-sm">Reading the page and splitting receipts…</p>
             </div>
           )}
 

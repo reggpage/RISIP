@@ -24,34 +24,36 @@ export default function ImageLightbox({ src, alt = '', onClose }: { src: string;
   function clampScale(s: number) { return Math.min(5, Math.max(1, s)); }
 
   function onWheel(e: React.WheelEvent) {
-    e.preventDefault();
+    e.stopPropagation();
     const next = clampScale(scale * (e.deltaY < 0 ? 1.15 : 0.87));
     if (next === 1) reset();
     else setScale(next);
   }
 
   function onPointerDown(e: React.PointerEvent) {
-    if (scale === 1) return; // only pan when zoomed
+    e.stopPropagation();
+    if (scale === 1) { drag.current = { x: e.clientX, y: e.clientY, tx, ty, moved: false }; return; }
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
     drag.current = { x: e.clientX, y: e.clientY, tx, ty, moved: false };
     setDragging(true);
   }
   function onPointerMove(e: React.PointerEvent) {
-    if (!drag.current) return;
+    if (!drag.current || scale === 1) return;
     const dx = e.clientX - drag.current.x;
     const dy = e.clientY - drag.current.y;
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) drag.current.moved = true;
     setTx(drag.current.tx + dx);
     setTy(drag.current.ty + dy);
   }
-  function onPointerUp() {
+  function onPointerUp(e: React.PointerEvent) {
+    e.stopPropagation();
     setDragging(false);
+    // Treat a no-move press as a click → toggle zoom centred on the point.
+    if (drag.current && !drag.current.moved) toggleZoom(e);
     drag.current = null;
   }
 
-  // Click (without dragging) toggles zoom centred on the click point.
-  function onImgClick(e: React.MouseEvent) {
-    if (drag.current?.moved) return;
+  function toggleZoom(e: React.PointerEvent | React.MouseEvent) {
     if (scale > 1) { reset(); return; }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const cx = e.clientX - rect.left - rect.width / 2;
@@ -67,11 +69,12 @@ export default function ImageLightbox({ src, alt = '', onClose }: { src: string;
       className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 select-none"
       role="dialog"
       aria-modal="true"
-      onClick={onClose}
+      // Clicking the dark backdrop closes the lightbox only — stop it reaching the modal behind.
+      onClick={(e) => { e.stopPropagation(); onClose(); }}
     >
       {/* Controls */}
       <div className="absolute right-3 top-3 z-10 flex gap-2" onClick={(e) => e.stopPropagation()}>
-        <button type="button" onClick={() => setScale((s) => clampScale(s - 0.5))}
+        <button type="button" onClick={() => setScale((s) => { const n = clampScale(s - 0.5); if (n === 1) reset(); return n; })}
           className="rounded-lg bg-white/10 p-2 text-white hover:bg-white/20" aria-label="Zoom out">
           <ZoomOut className="h-5 w-5" />
         </button>
@@ -89,7 +92,7 @@ export default function ImageLightbox({ src, alt = '', onClose }: { src: string;
         src={src}
         alt={alt}
         draggable={false}
-        onClick={onImgClick}
+        onClick={(e) => e.stopPropagation()}
         onWheel={onWheel}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -98,6 +101,7 @@ export default function ImageLightbox({ src, alt = '', onClose }: { src: string;
           transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
           transition: dragging ? 'none' : 'transform 150ms ease-out',
           cursor: scale > 1 ? (dragging ? 'grabbing' : 'grab') : 'zoom-in',
+          touchAction: 'none',
         }}
         className="max-h-[92vh] max-w-[92vw] object-contain"
       />

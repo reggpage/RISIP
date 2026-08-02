@@ -22,14 +22,16 @@ export async function scanA3AndExtract(
   file: File,
   ctx: { project_id: string; user_id: string; model?: string },
 ): Promise<{ scannedDocId: string; storagePath: string; receipts: ExtractedReceipt[] }> {
-  // A3 scans are large; compress a bit but keep resolution high enough for tiny text.
-  const compressed = await compressImage(file, { maxKB: 1500, maxDim: 4000 }).catch(() => file);
+  // Scanners often produce PDFs; keep those as-is (Claude reads them page by page).
+  // Images get compressed a bit but stay high-res enough for tiny text.
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
   const docId = uuidv4();
-  const path = `${ctx.project_id}/batch/${docId}.jpg`;
+  const path = `${ctx.project_id}/batch/${docId}.${isPdf ? 'pdf' : 'jpg'}`;
+  const payload = isPdf ? file : await compressImage(file, { maxKB: 1500, maxDim: 4000 }).catch(() => file);
 
   const { error: upErr } = await supabase.storage
     .from('receipts')
-    .upload(path, compressed, { contentType: 'image/jpeg', upsert: false });
+    .upload(path, payload, { contentType: isPdf ? 'application/pdf' : 'image/jpeg', upsert: false });
   if (upErr) throw upErr;
 
   const { data: doc, error: docErr } = await supabase
@@ -59,12 +61,15 @@ export async function importBatch(
   rows: ExtractedReceipt[],
   ctx: { project_id: string; user_id: string; scanned_doc_id: string; image_url: string },
 ): Promise<number> {
+  // PDFs won't render as an <img> thumbnail, so leave image_url null for those (the
+  // source doc is still linked via scanned_doc_id); images keep their path.
+  const sharedImage = ctx.image_url && !ctx.image_url.toLowerCase().endsWith('.pdf') ? ctx.image_url : null;
   const payload = rows.map((r) => ({
     id: uuidv4(),
     project_id: ctx.project_id,
     company_id: '00000000-0000-0000-0000-000000000000', // trigger fills
     uploaded_by: ctx.user_id,
-    image_url: ctx.image_url,
+    image_url: sharedImage,
     scanned_doc_id: ctx.scanned_doc_id,
     vendor_name: r.vendor,
     vendor_tin: r.vendor_tin,
