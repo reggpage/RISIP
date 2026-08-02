@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, Loader2, MailCheck, Pencil, Sparkles, Trash2, Wallet, X, XCircle,
+  AlertTriangle, CheckCircle2, FileText, Loader2, MailCheck, Pencil, Sparkles, Trash2, Wallet, X, XCircle,
   Receipt as ReceiptGlyph,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
@@ -46,6 +46,7 @@ export default function ReceiptDetailModal({
   const [data, setData] = useState<Receipt>(receipt);
   const [uploader, setUploader] = useState<string | null>(null);
   const [imgUrl, setImgUrl] = useState<string | null>(null);
+  const [docPdfUrl, setDocPdfUrl] = useState<string | null>(null);
   const [zoomOpen, setZoomOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [reviewing, setReviewing] = useState(false);
@@ -149,12 +150,29 @@ export default function ReceiptDetailModal({
         if (!cancelled) setUploader((p?.full_name as string | null) ?? null);
       });
     if (receipt.image_url) {
+      // An image page → show inline; a stored PDF → offer to open it.
+      const isPdf = receipt.image_url.toLowerCase().endsWith('.pdf');
       receiptImageUrl(receipt.image_url)
-        .then((u) => !cancelled && setImgUrl(u))
+        .then((u) => { if (!cancelled) (isPdf ? setDocPdfUrl : setImgUrl)(u); })
         .catch(() => !cancelled && setImgUrl(null));
+    } else if (receipt.scanned_doc_id) {
+      // Batch/inbound receipts with no own image: fall back to the scanned source page.
+      void supabase
+        .from('scanned_documents')
+        .select('file_url')
+        .eq('id', receipt.scanned_doc_id)
+        .maybeSingle()
+        .then(async ({ data: doc }) => {
+          const path = doc?.file_url as string | undefined;
+          if (!path || cancelled) return;
+          const signed = await receiptImageUrl(path).catch(() => null);
+          if (!signed || cancelled) return;
+          if (path.toLowerCase().endsWith('.pdf')) setDocPdfUrl(signed);
+          else setImgUrl(signed);
+        });
     }
     return () => { cancelled = true; };
-  }, [receipt.uploaded_by, receipt.image_url]);
+  }, [receipt.uploaded_by, receipt.image_url, receipt.scanned_doc_id]);
 
   async function handleDelete() {
     const ok = await confirm({
@@ -216,24 +234,32 @@ export default function ReceiptDetailModal({
         {/* Two-column body: portrait image left, details right. Stacks on mobile. */}
         <div className="grid gap-5 p-5 sm:grid-cols-[minmax(0,240px)_1fr]">
           <div>
-            <button
-              type="button"
-              onClick={() => imgUrl && setZoomOpen(true)}
-              disabled={!imgUrl}
-              className="group mx-auto flex aspect-[3/4] w-full max-w-[240px] items-center justify-center overflow-hidden rounded-xl bg-surface-muted disabled:cursor-default"
-            >
-              {imgUrl ? (
+            {imgUrl ? (
+              <button
+                type="button"
+                onClick={() => setZoomOpen(true)}
+                className="group mx-auto flex aspect-[3/4] w-full max-w-[240px] items-center justify-center overflow-hidden rounded-xl bg-surface-muted"
+              >
                 <img src={imgUrl} alt="" className="h-full w-full object-cover transition group-hover:opacity-90" />
-              ) : (
-                <div className="flex flex-col items-center gap-2 text-ink-muted">
-                  <ReceiptGlyph className="h-10 w-10" />
-                  <span className="text-xs">Manual entry</span>
-                </div>
-              )}
-            </button>
-            {imgUrl && (
-              <p className="mt-2 text-center text-xs text-ink-muted">Tap the image to zoom</p>
+              </button>
+            ) : docPdfUrl ? (
+              <a
+                href={docPdfUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mx-auto flex aspect-[3/4] w-full max-w-[240px] flex-col items-center justify-center gap-2 rounded-xl bg-surface-muted text-role-admin transition hover:bg-role-admin/5"
+              >
+                <FileText className="h-10 w-10" />
+                <span className="text-xs font-medium">View scanned PDF</span>
+              </a>
+            ) : (
+              <div className="mx-auto flex aspect-[3/4] w-full max-w-[240px] flex-col items-center justify-center gap-2 rounded-xl bg-surface-muted text-ink-muted">
+                <ReceiptGlyph className="h-10 w-10" />
+                <span className="text-xs">Manual entry</span>
+              </div>
             )}
+            {imgUrl && <p className="mt-2 text-center text-xs text-ink-muted">Tap the image to zoom</p>}
+            {docPdfUrl && !imgUrl && <p className="mt-2 text-center text-xs text-ink-muted">Batch-scanned page</p>}
           </div>
 
           <div className="min-w-0">
