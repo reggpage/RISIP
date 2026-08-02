@@ -58,6 +58,8 @@ export default function ReceiptDetailModal({
   const profile = auth.status === 'signed-in' ? auth.profile : null;
   const isFinance = profile?.role === 'owner' || profile?.role === 'accountant';
   const canDelete = profile?.id === data.uploaded_by || profile?.role === 'owner';
+  // Finance can edit any company receipt; the uploader can fix AI mistakes on their own.
+  const canEdit = isFinance || profile?.id === data.uploaded_by;
   const canReview = data.status === 'pending_review' && isFinance;
 
   // ── Edit mode (finance only) ──────────────────────────────────────────────
@@ -240,8 +242,8 @@ export default function ReceiptDetailModal({
                 <StatusIcon className={`h-4 w-4 ${meta.spin ? 'animate-spin' : ''}`} />
                 {meta.label}
               </div>
-              {/* Finance actions: correct AI mistakes or re-read with the strong model. */}
-              {isFinance && !editing && data.status !== 'processing' && (
+              {/* Correct AI mistakes or re-read with the strong model. */}
+              {canEdit && !editing && data.status !== 'processing' && (
                 <div className="flex gap-1">
                   <Button variant="ghost" onClick={startEdit} className="!px-2 !py-1 text-xs">
                     <Pencil className="h-3.5 w-3.5" /> Edit
@@ -360,7 +362,7 @@ export default function ReceiptDetailModal({
                   <div className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                     <span className="font-medium">Needs review:</span>{' '}
                     {data.low_confidence_fields.join(', ')}
-                    {isFinance && <span className="block mt-1 text-amber-700">Tap “Edit” to correct, or “Re-analyse” for a fresh high-accuracy read.</span>}
+                    {canEdit && <span className="block mt-1 text-amber-700">Tap “Edit” to correct, or “Re-analyse” for a fresh high-accuracy read.</span>}
                   </div>
                 )}
 
