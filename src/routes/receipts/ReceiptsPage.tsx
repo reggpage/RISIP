@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plus, ScanLine, Search } from 'lucide-react';
 import Button from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
 import Select from '@/components/ui/Select';
 import { ListItemSkeleton } from '@/components/ui/Skeleton';
@@ -137,49 +136,46 @@ export default function ReceiptsPage() {
 
       <StaffBalanceCard />
 
-      {/* Simple segmented control — "All receipts" vs "My receipts". Handy when
-          admins want to isolate what they personally uploaded vs the team's. */}
-      <div className="mb-3 inline-flex rounded-lg border border-surface-border bg-surface p-0.5 text-sm">
-        <button
-          type="button"
-          onClick={() => setUploaderFilter('all')}
-          className={
-            'rounded-md px-3 py-1.5 font-medium transition ' +
-            (uploaderFilter === 'all'
-              ? 'bg-role-admin/10 text-role-admin'
-              : 'text-ink-muted hover:text-ink')
-          }
-        >
-          All receipts
-        </button>
-        <button
-          type="button"
-          onClick={() => setUploaderFilter('mine')}
-          className={
-            'rounded-md px-3 py-1.5 font-medium transition ' +
-            (uploaderFilter === 'mine'
-              ? 'bg-role-admin/10 text-role-admin'
-              : 'text-ink-muted hover:text-ink')
-          }
-        >
-          My receipts
-        </button>
-      </div>
+      {/* Toolbar row: All/My segmented control + a Projects dropdown to filter the list
+          down to one project. */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="inline-flex rounded-lg border border-surface-border bg-surface p-0.5 text-sm">
+          <button
+            type="button"
+            onClick={() => setUploaderFilter('all')}
+            className={
+              'rounded-md px-3 py-1.5 font-medium transition ' +
+              (uploaderFilter === 'all' ? 'bg-role-admin/10 text-role-admin' : 'text-ink-muted hover:text-ink')
+            }
+          >
+            All receipts
+          </button>
+          <button
+            type="button"
+            onClick={() => setUploaderFilter('mine')}
+            className={
+              'rounded-md px-3 py-1.5 font-medium transition ' +
+              (uploaderFilter === 'mine' ? 'bg-role-admin/10 text-role-admin' : 'text-ink-muted hover:text-ink')
+            }
+          >
+            My receipts
+          </button>
+        </div>
 
-      {activeProjects.length > 1 && (
-        <Card className="mb-4">
-          <Select
-            label={sw.receipts.chooseProject}
-            value={selectedProjectId ?? ''}
-            onChange={(v) => setSelectedProjectId(v || null)}
-            placeholder="All projects"
-            options={[
-              { value: '', label: 'All projects' },
-              ...activeProjects.map((p) => ({ value: p.id, label: p.name })),
-            ]}
-          />
-        </Card>
-      )}
+        {activeProjects.length > 1 && (
+          <div className="min-w-[180px]">
+            <Select
+              value={selectedProjectId ?? ''}
+              onChange={(v) => setSelectedProjectId(v || null)}
+              placeholder="All projects"
+              options={[
+                { value: '', label: 'All projects' },
+                ...activeProjects.map((p) => ({ value: p.id, label: p.name })),
+              ]}
+            />
+          </div>
+        )}
+      </div>
 
       {/* Search + filters — tightly grouped so the receipts list stays the focus. */}
       <div className="mb-4 grid gap-2 sm:grid-cols-[1fr_180px_180px]">

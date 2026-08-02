@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { FileSpreadsheet, Loader2, Plus, Receipt as ReceiptIcon, UserPlus, Users, Wallet, X } from 'lucide-react';
+import { Plus, Receipt as ReceiptIcon, UserPlus, Users, Wallet, X } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
@@ -16,7 +16,6 @@ import {
   useInviteLinks,
 } from '@/features/projects/useInviteLinks';
 import { useProject } from '@/features/projects/useProjects';
-import { exportProjectExcel } from '@/features/projects/exportExcel';
 import { useReceipts } from '@/features/receipts/useReceipts';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
@@ -33,7 +32,6 @@ export default function ProjectDetail() {
   const { state: linksState, refresh: refreshLinks } = useInviteLinks(id);
   const [busy, setBusy] = useState<InviteRole | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [exporting, setExporting] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
   const [myIsLeader, setMyIsLeader] = useState(false);
@@ -63,19 +61,6 @@ export default function ProjectDetail() {
       count: confirmed.length,
     };
   }, [receiptsState]);
-
-  async function handleExport() {
-    if (projectState.status !== 'ready' || !projectState.project) return;
-    setExporting(true);
-    try {
-      await exportProjectExcel(projectState.project.id, projectState.project.name);
-      toast.success('Excel downloaded.');
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Export failed');
-    } finally {
-      setExporting(false);
-    }
-  }
 
   if (projectState.status === 'loading') {
     return (
@@ -169,17 +154,6 @@ export default function ProjectDetail() {
           {canSeeLinks && (
             <Button variant="secondary" tint="admin" onClick={() => setInviteOpen(true)}>
               <UserPlus className="h-4 w-4" /> Invite
-            </Button>
-          )}
-          {canSeeLinks && (
-            <Button
-              variant="secondary"
-              tint="admin"
-              disabled={exporting}
-              onClick={() => void handleExport()}
-            >
-              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-              {exporting ? 'Exporting…' : 'Export to Excel'}
             </Button>
           )}
           {isOwner && (

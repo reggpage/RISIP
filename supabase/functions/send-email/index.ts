@@ -77,7 +77,7 @@ function renderEmail(payload: HookPayload): { subject: string; html: string } {
               <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden">
                 <tr>
                   <td style="padding:28px 32px 8px">
-                    <div style="font-size:20px;font-weight:600;color:#7c3aed">Risip</div>
+                    <div style="font-size:20px;font-weight:600;color:#DD2D4A">Risip</div>
                   </td>
                 </tr>
                 <tr>

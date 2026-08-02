@@ -163,7 +163,7 @@ export default function SettingsPage() {
 
   // The company's unique scan-to-email inbox address. The Canon printer emails A3 scans
   // here; the inbound-email edge function files the receipts as "pending review".
-  const scannerInbox = company ? `${company.scanner_inbox_token}@scan.risip.co` : '';
+  const scannerInbox = company ? `${company.scanner_inbox_token}@scan.risip.online` : '';
 
   async function copyInbox() {
     if (!scannerInbox) return;

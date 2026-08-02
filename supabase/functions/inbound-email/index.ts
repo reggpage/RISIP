@@ -20,7 +20,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 const MODEL = 'claude-haiku-4-5-20251001';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 // The subdomain we accept scanner mail on. Local part of the address = inbox token.
-const INBOX_DOMAIN = 'scan.risip.co';
+const INBOX_DOMAIN = 'scan.risip.online';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
