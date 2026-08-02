@@ -21,19 +21,19 @@ export default function ForgotPassword() {
 
   async function requestCode(e: FormEvent) {
     e.preventDefault();
-    if (!email.trim()) { setError('Weka barua pepe.'); return; }
+    if (!email.trim()) { setError('Enter your email.'); return; }
     setBusy(true); setError(null);
     const { error: reqErr } = await supabase.auth.resetPasswordForEmail(email.trim());
     setBusy(false);
     if (reqErr) { setError(reqErr.message); return; }
-    setInfo('Tumekutumia msimbo wa tarakimu 6 kwenye barua pepe yako. (Kagua na Spam.)');
+    setInfo("We've sent a 6-digit code to your email. (Check your Spam folder too.)");
     setStep('reset');
   }
 
   async function resetPassword(e: FormEvent) {
     e.preventDefault();
-    if (code.trim().length !== 6) { setError('Weka msimbo wa tarakimu 6.'); return; }
-    if (password.length < 8) { setError('Nenosiri liwe na herufi 8 au zaidi.'); return; }
+    if (code.trim().length !== 6) { setError('Enter the 6-digit code.'); return; }
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return; }
     setBusy(true); setError(null);
     const { error: vErr } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'recovery' });
     if (vErr) { setBusy(false); setError(vErr.message); return; }
@@ -46,42 +46,42 @@ export default function ForgotPassword() {
   return (
     <AuthShell>
       <div className="mb-6 text-center">
-        <h1 className="text-2xl font-semibold text-ink">Weka nenosiri jipya</h1>
+        <h1 className="text-2xl font-semibold text-ink">Set a new password</h1>
         <p className="mt-1 text-sm text-ink-muted">
-          {step === 'request' ? 'Weka barua pepe yako tukutumie msimbo.' : 'Weka msimbo na nenosiri jipya.'}
+          {step === 'request' ? "Enter your email and we'll send you a code." : 'Enter the code and your new password.'}
         </p>
       </div>
 
       {step === 'request' ? (
         <form onSubmit={requestCode} className="flex flex-col gap-4">
-          <Input type="email" label="Barua pepe" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <Input type="email" label="Email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           {error && <p className="text-sm text-red-600">{error}</p>}
-          <Button type="submit" tint="admin" fullWidth disabled={busy}>{busy ? 'Inatuma…' : 'Nitumie msimbo'}</Button>
+          <Button type="submit" tint="admin" fullWidth disabled={busy}>{busy ? 'Sending…' : 'Send code'}</Button>
         </form>
       ) : (
         <form onSubmit={resetPassword} className="flex flex-col gap-4">
           {info && <p className="text-sm text-emerald-700">{info}</p>}
           <div>
-            <label className="mb-2 block text-sm font-medium text-ink">Msimbo (tarakimu 6)</label>
+            <label className="mb-2 block text-sm font-medium text-ink">Code (6 digits)</label>
             <OtpInput value={code} onChange={setCode} error={!!error} />
           </div>
           <PasswordField
-            label="Nenosiri jipya"
+            label="New password"
             autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            hint="Angalau herufi 8"
+            hint="At least 8 characters"
           />
           {error && <p className="text-sm text-red-600">{error}</p>}
-          <Button type="submit" tint="admin" fullWidth disabled={busy}>{busy ? 'Inahifadhi…' : 'Hifadhi nenosiri'}</Button>
+          <Button type="submit" tint="admin" fullWidth disabled={busy}>{busy ? 'Saving…' : 'Save password'}</Button>
           <button type="button" onClick={() => setStep('request')} className="text-center text-sm text-ink-muted hover:text-ink">
-            Tuma tena msimbo
+            Resend code
           </button>
         </form>
       )}
 
       <p className="mt-6 text-center text-sm text-ink-muted">
-        <Link to="/login" className="font-medium text-role-admin hover:underline">Rudi kuingia</Link>
+        <Link to="/login" className="font-medium text-role-admin hover:underline">Back to login</Link>
       </p>
     </AuthShell>
   );

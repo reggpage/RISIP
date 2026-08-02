@@ -141,7 +141,8 @@ Deno.serve(async (req) => {
   const rawBody = await req.text();
   let payload: HookPayload;
   try {
-    const wh = new Webhook(hookSecret);
+    // Supabase gives the secret as "v1,whsec_<base64>"; standardwebhooks wants the base64 part.
+    const wh = new Webhook(hookSecret.replace('v1,whsec_', ''));
     payload = wh.verify(rawBody, Object.fromEntries(req.headers)) as HookPayload;
   } catch (err) {
     console.error('signature verification failed', err);

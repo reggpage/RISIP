@@ -21,11 +21,11 @@ export default function Landing() {
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link to="/" className="text-xl font-bold tracking-tight text-role-admin">Risip</Link>
           <nav className="flex items-center gap-1 sm:gap-2">
-            <a href="#features" className="hidden rounded-lg px-3 py-2 text-sm font-medium text-ink-muted hover:text-ink sm:block">Vipengele</a>
-            <a href="#pricing" className="hidden rounded-lg px-3 py-2 text-sm font-medium text-ink-muted hover:text-ink sm:block">Bei</a>
+            <a href="#features" className="hidden rounded-lg px-3 py-2 text-sm font-medium text-ink-muted hover:text-ink sm:block">Features</a>
+            <a href="#pricing" className="hidden rounded-lg px-3 py-2 text-sm font-medium text-ink-muted hover:text-ink sm:block">Pricing</a>
             <Link to="/login"><Button variant="ghost">{sw.auth.login}</Button></Link>
             <Link to="/signup" className="hidden sm:block">
-              <Button tint="admin">Fungua kampuni</Button>
+              <Button tint="admin">Create company</Button>
             </Link>
           </nav>
         </div>
@@ -35,7 +35,7 @@ export default function Landing() {
       <section className="pt-32 pb-16 sm:pt-40 sm:pb-20">
         <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
           <div className="mx-auto mb-5 inline-flex items-center gap-2 rounded-full border border-role-admin/20 bg-role-admin/5 px-3 py-1 text-xs font-medium text-role-admin">
-            <ShieldCheck className="h-3.5 w-3.5" /> Inasoma risiti za TRA kwa AI · Tanzania
+            <ShieldCheck className="h-3.5 w-3.5" /> AI-powered TRA receipt reading · Tanzania
           </div>
           <h1 className="mx-auto max-w-3xl text-4xl font-bold leading-tight text-ink sm:text-5xl md:text-6xl">
             {sw.landing.heroTitle}{' '}
@@ -49,25 +49,25 @@ export default function Landing() {
               <Button tint="admin" className="px-6 py-3 text-base">{sw.landing.ctaPrimary}</Button>
             </Link>
             <Link to="/signup" className="hidden sm:block">
-              <Button variant="secondary" tint="admin" className="px-6 py-3 text-base">Fungua kampuni mpya</Button>
+              <Button variant="secondary" tint="admin" className="px-6 py-3 text-base">Create a new company</Button>
             </Link>
           </div>
-          <p className="mt-6 text-sm text-ink-muted">Jaribu bure kwa siku 4 · Hakuna kadi inayohitajika</p>
+          <p className="mt-6 text-sm text-ink-muted">Free 4-day trial · No card required</p>
         </div>
       </section>
 
       {/* How it works */}
       <section className="bg-surface py-16 sm:py-20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <h2 className="mb-3 text-center text-2xl font-bold text-ink sm:text-3xl">Jinsi inavyofanya kazi</h2>
-          <p className="mx-auto mb-12 max-w-2xl text-center text-ink-muted">Kutoka risiti ya karatasi hadi ripoti na ankara — hatua tatu tu.</p>
+          <h2 className="mb-3 text-center text-2xl font-bold text-ink sm:text-3xl">How it works</h2>
+          <p className="mx-auto mb-12 max-w-2xl text-center text-ink-muted">From a paper receipt to reports and invoices — in three steps.</p>
           <div className="grid gap-8 md:grid-cols-3">
-            <Step n="1" icon={<Camera className="h-6 w-6" />} title="Piga picha au scan"
-              body="Staff wanapiga picha risiti kwa simu, au unaupload ukurasa wa A4/A3/PDF wenye risiti nyingi." />
-            <Step n="2" icon={<Sparkles className="h-6 w-6" />} title="AI inaisoma"
-              body="AI inasoma vendor, tarehe, VAT, TIN, VRN na verification code — ikijua muundo wa risiti za TRA." />
-            <Step n="3" icon={<FileText className="h-6 w-6" />} title="Ripoti + ankara"
-              body="Matumizi yanafuatiliwa moja kwa moja, na unaweza kutengeneza ankara ya kidijitali kwa mteja." />
+            <Step n="1" icon={<Camera className="h-6 w-6" />} title="Snap or scan"
+              body="Staff photograph receipts on their phone, or you upload an A4/A3/PDF page holding several receipts." />
+            <Step n="2" icon={<Sparkles className="h-6 w-6" />} title="AI reads it"
+              body="The AI extracts vendor, date, VAT, TIN, VRN and the verification code — trained on Tanzanian TRA receipts." />
+            <Step n="3" icon={<FileText className="h-6 w-6" />} title="Reports & invoices"
+              body="Spend is tracked automatically, and you can generate a digital invoice to send to your client." />
           </div>
         </div>
       </section>
@@ -77,18 +77,18 @@ export default function Landing() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <h2 className="mb-10 text-center text-2xl font-bold text-ink sm:text-3xl">{sw.landing.featuresTitle}</h2>
           <div className="grid gap-6 md:grid-cols-3">
-            <FeatureCard icon={<Sparkles className="h-6 w-6" />} title="AI OCR ya risiti za TRA"
-              body="Inasoma risiti za Tanzania kwa usahihi — TIN ya tarakimu 9, VRN, verification code na VAT 18%." />
-            <FeatureCard icon={<FileText className="h-6 w-6" />} title="Ankara za kidijitali"
-              body="Tengeneza ankara, tuma link ya moja kwa moja kwa mteja, akubali au aulize — pamoja na ukaguzi." />
+            <FeatureCard icon={<Sparkles className="h-6 w-6" />} title="TRA receipt OCR"
+              body="Reads Tanzanian receipts accurately — 9-digit TIN, VRN, verification code and 18% VAT." />
+            <FeatureCard icon={<FileText className="h-6 w-6" />} title="Digital invoices"
+              body="Create invoices, send a live link to your client, get accepted or disputed — with a full audit trail." />
             <FeatureCard icon={<Wallet className="h-6 w-6" />} title="Petty cash"
-              body="Gawa fedha za matumizi kwa staff, fuatilia salio, na zuia matumizi kupita bajeti." />
+              body="Allocate spending money to staff, track balances, and block spending beyond budget." />
             <FeatureCard icon={<ScanLine className="h-6 w-6" />} title="Batch scan (A4/A3/PDF)"
-              body="Scan ukurasa mmoja wenye risiti nyingi — AI inazitenganisha zote mara moja kwa review." />
+              body="Scan one page holding many receipts — the AI splits them all at once for review." />
             <FeatureCard icon={<Mail className="h-6 w-6" />} title="Scan-to-email"
-              body="Printa yako ya ofisi inaweza kutuma scan moja kwa moja kwenye Risip kwa barua pepe ya kampuni." />
+              body="Your office printer can email scans straight into Risip via your company inbox." />
             <FeatureCard icon={<BarChart3 className="h-6 w-6" />} title="Dashboard + Excel"
-              body="Ona matumizi kwa mchoro (siku/wiki/mwezi/mwaka), gawanya kwa kategoria, na export kwa Excel." />
+              body="See spend by day/week/month/year, break it down by category, and export to Excel." />
           </div>
         </div>
       </section>
@@ -96,47 +96,47 @@ export default function Landing() {
       {/* Compliance strip */}
       <section className="bg-surface py-12">
         <div className="mx-auto flex max-w-5xl flex-col items-center gap-6 px-4 text-center sm:flex-row sm:justify-around sm:text-left">
-          <Trust icon={<ShieldCheck className="h-5 w-5" />} title="TRA verification" body="Inahifadhi verification code na TIN/VRN" />
-          <Trust icon={<Check className="h-5 w-5" />} title="VAT 18%" body="Inazuia VAT kuzidi jumla (uzingatiaji)" />
-          <Trust icon={<FileText className="h-5 w-5" />} title="Audit trail" body="Kila risiti ina ushahidi wa picha chanzo" />
+          <Trust icon={<ShieldCheck className="h-5 w-5" />} title="TRA verification" body="Stores the verification code and TIN/VRN" />
+          <Trust icon={<Check className="h-5 w-5" />} title="18% VAT" body="Blocks VAT exceeding the total (compliance)" />
+          <Trust icon={<FileText className="h-5 w-5" />} title="Audit trail" body="Every receipt links to its source image" />
         </div>
       </section>
 
       {/* Pricing */}
       <section id="pricing" className="py-16 sm:py-20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <h2 className="mb-3 text-center text-2xl font-bold text-ink sm:text-3xl">Bei rahisi na wazi</h2>
+          <h2 className="mb-3 text-center text-2xl font-bold text-ink sm:text-3xl">Simple, transparent pricing</h2>
           <p className="mx-auto mb-12 max-w-2xl text-center text-ink-muted">
-            Jaribu bure kwa siku 4. Lipa kwa M-Pesa, Tigo Pesa au Airtel Money. Ghairi wakati wowote.
+            Free 4-day trial. Pay with M-Pesa, Tigo Pesa or Airtel Money. Cancel anytime.
           </p>
           <div className="grid gap-6 lg:grid-cols-3">
             <PriceCard
-              name="Mwanzo"
+              name="Starter"
               price="TSh 39,000"
-              period="/ mwezi"
-              blurb="Kwa biashara ndogo zinazoanza."
-              features={['Watumiaji 5', 'Miradi 2', 'Risiti 300 / mwezi', 'AI OCR + ankara', 'Petty cash', 'Dashboard + Excel']}
-              cta="Anza sasa" to="/signup"
+              period="/ month"
+              blurb="For small businesses getting started."
+              features={['5 users', '2 projects', '300 receipts / month', 'AI OCR + invoices', 'Petty cash', 'Dashboard + Excel']}
+              cta="Get started" to="/signup"
             />
             <PriceCard
-              name="Biashara"
+              name="Business"
               price="TSh 99,000"
-              period="/ mwezi"
-              blurb="Kwa makampuni ya kati yanayokua."
-              features={['Watumiaji 20', 'Miradi 15', 'Risiti 1,500 / mwezi', 'Batch scan (A4/A3/PDF)', 'Scan-to-email', 'Priority support']}
-              cta="Anza sasa" to="/signup" popular
+              period="/ month"
+              blurb="For growing mid-size companies."
+              features={['20 users', '15 projects', '1,500 receipts / month', 'Batch scan (A4/A3/PDF)', 'Scan-to-email', 'Priority support']}
+              cta="Get started" to="/signup" popular
             />
             <PriceCard
               name="Enterprise"
               price="Custom"
               period=""
-              blurb="Kwa makampuni makubwa."
-              features={['Bila kikomo cha watumiaji/miradi', 'Risiti bila kikomo', 'Support ya kipaumbele', 'Onboarding ya kampuni', 'Mahitaji maalum']}
-              cta="Wasiliana nasi" to="/signup"
+              blurb="For large firms."
+              features={['Unlimited users/projects', 'Unlimited receipts', 'Priority support', 'Company onboarding', 'Custom requirements']}
+              cta="Contact us" to="/signup"
             />
           </div>
           <p className="mt-8 text-center text-xs text-ink-muted">
-            Bei ni kwa kila kampuni kwa mwezi. Miamala ya mobile money inaweza kuwa na ada ndogo ya mtoa huduma.
+            Prices are per company, per month. Mobile-money transactions may carry a small provider fee.
           </p>
         </div>
       </section>
@@ -215,7 +215,7 @@ function PriceCard({
     }>
       {popular && (
         <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-role-admin px-3 py-1 text-xs font-semibold text-white">
-          Maarufu
+          Popular
         </span>
       )}
       <h3 className="text-lg font-semibold text-ink">{name}</h3>

@@ -148,7 +148,7 @@ export default function ProjectDetail() {
         <div className="flex items-center gap-2">
           {canManageTeam && (
             <Button variant="secondary" tint="admin" onClick={() => setTeamOpen(true)}>
-              <Users className="h-4 w-4" /> Timu &amp; pesa
+              <Users className="h-4 w-4" /> Team &amp; funds
             </Button>
           )}
           {canSeeLinks && (

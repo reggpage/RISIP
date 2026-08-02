@@ -156,7 +156,7 @@ export default function SpendTrendChart({ receipts }: { receipts: Receipt[] }) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <div className="inline-flex rounded-lg border border-surface-border bg-surface p-0.5">
             <button type="button" onClick={() => setView('bar')} title="Bars"
               className={'rounded-md p-1.5 transition ' + (view === 'bar' ? 'bg-role-admin/10 text-role-admin' : 'text-ink-muted hover:text-ink')}>
