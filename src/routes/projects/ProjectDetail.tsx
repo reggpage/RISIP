@@ -1,11 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { FileSpreadsheet, Loader2, Plus, Receipt as ReceiptIcon, UserPlus, Wallet, X } from 'lucide-react';
+import { FileSpreadsheet, Loader2, Plus, Receipt as ReceiptIcon, UserPlus, Users, Wallet, X } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
 import { ListItemSkeleton } from '@/components/ui/Skeleton';
 import InviteLinkCard from '@/components/projects/InviteLinkCard';
+import ProjectTeamPanel from '@/components/projects/ProjectTeamPanel';
+import { supabase } from '@/lib/supabase';
 import ReceiptCard from '@/components/receipts/ReceiptCard';
 import MetricCard from '@/components/dashboard/MetricCard';
 import {
@@ -33,11 +35,25 @@ export default function ProjectDetail() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [teamOpen, setTeamOpen] = useState(false);
+  const [myIsLeader, setMyIsLeader] = useState(false);
   const toast = useToast();
 
-  const isOwner = auth.status === 'signed-in' && auth.profile?.role === 'owner';
-  const canSeeLinks = auth.status === 'signed-in' && (auth.profile?.role === 'owner' || auth.profile?.role === 'accountant');
+  const profile = auth.status === 'signed-in' ? auth.profile : null;
+  const isOwner = profile?.role === 'owner';
+  const canSeeLinks = profile?.role === 'owner' || profile?.role === 'accountant';
+  const canManageTeam = isOwner || myIsLeader;
   const { state: receiptsState } = useReceipts(id);
+
+  // Am I a leader of this project? (per-project role lives in project_members)
+  useEffect(() => {
+    if (!id || !profile) { setMyIsLeader(false); return; }
+    let cancelled = false;
+    void supabase.from('project_members').select('role')
+      .eq('project_id', id).eq('profile_id', profile.id).maybeSingle()
+      .then(({ data }) => { if (!cancelled) setMyIsLeader((data?.role as string | undefined) === 'leader'); });
+    return () => { cancelled = true; };
+  }, [id, profile]);
 
   const summary = useMemo(() => {
     if (receiptsState.status !== 'ready') return { total: 0, count: 0 };
@@ -145,6 +161,11 @@ export default function ProjectDetail() {
         </div>
 
         <div className="flex items-center gap-2">
+          {canManageTeam && (
+            <Button variant="secondary" tint="admin" onClick={() => setTeamOpen(true)}>
+              <Users className="h-4 w-4" /> Timu &amp; pesa
+            </Button>
+          )}
           {canSeeLinks && (
             <Button variant="secondary" tint="admin" onClick={() => setInviteOpen(true)}>
               <UserPlus className="h-4 w-4" /> Invite
@@ -271,6 +292,16 @@ export default function ProjectDetail() {
             </div>
           </div>
         </div>
+      )}
+
+      {teamOpen && profile && (
+        <ProjectTeamPanel
+          projectId={project.id}
+          projectName={project.name}
+          isOwner={!!isOwner}
+          myUserId={profile.id}
+          onClose={() => setTeamOpen(false)}
+        />
       )}
     </div>
   );

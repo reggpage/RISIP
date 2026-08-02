@@ -57,13 +57,17 @@ export type Project = {
   start_date: string | null;
   description: string | null;
   status: ProjectStatus;
+  petty_cash_budget: number;
   created_by: string;
   created_at: string;
 };
 
+export type ProjectMemberRole = 'member' | 'leader';
+
 export type ProjectMember = {
   project_id: string;
   profile_id: string;
+  role: ProjectMemberRole;
 };
 
 export type InviteLink = {
@@ -95,6 +99,7 @@ export type PettyCashTransaction = {
   amount: number;
   type: PettyCashTxnType;
   receipt_id: string | null;
+  project_id: string | null;
   description: string | null;
   created_by: string;
   created_at: string;
@@ -196,7 +201,7 @@ export type Database = {
       };
       project_members: {
         Row: ProjectMember;
-        Insert: ProjectMember;
+        Insert: Partial<ProjectMember> & { project_id: string; profile_id: string };
         Update: Partial<ProjectMember>;
         Relationships: [];
       };
@@ -337,6 +342,11 @@ export type Database = {
       };
       /** Count of company invoices this month — callable by staff (no row exposure). */
       invoices_this_month_count: { Args: { p_project?: string | null }; Returns: number };
+      /** Leader (capped by project budget) or owner allocates petty cash to a project member. */
+      allocate_project_petty_cash: {
+        Args: { p_project: string; p_user: string; p_amount: number; p_description?: string | null };
+        Returns: string;
+      };
       auth_company_id: { Args: Record<string, never>; Returns: string };
       auth_role: { Args: Record<string, never>; Returns: UserRole };
       auth_can_see_project: { Args: { pid: string }; Returns: boolean };
