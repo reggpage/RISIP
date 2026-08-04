@@ -286,12 +286,14 @@ function LoginForm({
     e.preventDefault();
     setError(null);
     setBusy(true);
+    let success = false;
     try {
       const { role } = await loginByCompany({
         company_id: company.id,
         name,
         company_password: companyPassword,
       });
+      success = true;
       setHandoff(true);
       onDone(role);
     } catch (err) {
@@ -301,7 +303,7 @@ function LoginForm({
         setError(err instanceof Error ? err.message : sw.common.error);
       }
     } finally {
-      if (!handoff) setBusy(false);
+      if (!success) setBusy(false);
     }
   }
 
@@ -368,6 +370,7 @@ function RegisterForm({
       return;
     }
     setBusy(true);
+    let success = false;
     try {
       const { role } = await registerByCompany({
         company_id: company.id,
@@ -377,12 +380,13 @@ function RegisterForm({
         email: values.email,
         password: values.password,
       });
+      success = true;
       setHandoff(true);
       onDone(role);
     } catch (err) {
       setError(err instanceof Error ? err.message : sw.common.error);
     } finally {
-      if (!handoff) setBusy(false);
+      if (!success) setBusy(false);
     }
   }
 
