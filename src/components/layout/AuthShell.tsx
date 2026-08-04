@@ -14,9 +14,9 @@ export default function AuthShell({
   return (
     <div className="min-h-screen bg-gradient-to-br from-role-admin/5 via-surface-muted to-role-worker/5">
       <header className="fixed top-0 left-0 right-0 z-40 border-b border-surface-border/60 bg-surface/80 backdrop-blur-sm">
-        <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link to="/" className="flex items-center text-role-admin" aria-label="Risip">
-            <RisipLogo className="h-8 w-auto" />
+            <RisipLogo className="h-12 w-auto" />
           </Link>
           {footer}
         </div>

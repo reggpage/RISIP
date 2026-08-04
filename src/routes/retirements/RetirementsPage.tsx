@@ -37,7 +37,7 @@ const statusClass: Record<StaffRetirementStatus, string> = {
   submitted: 'bg-amber-50 text-amber-700',
   viewed: 'bg-sky-50 text-sky-700',
   approved: 'bg-emerald-50 text-emerald-700',
-  changes_requested: 'bg-orange-50 text-orange-700',
+  changes_requested: 'bg-surface-muted text-ink-muted',
   paid: 'bg-role-admin/10 text-role-admin',
   received_confirmed: 'bg-emerald-100 text-emerald-800',
   cancelled: 'bg-surface-muted text-ink-muted',
@@ -488,7 +488,7 @@ function RetirementDetailModal({
           </div>
           {bundle.notes && <p className="mb-4 rounded-lg bg-surface-muted p-3 text-sm text-ink-muted">{bundle.notes}</p>}
           {bundle.status === 'changes_requested' && bundle.change_request_note && (
-            <div className="mb-4 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
+            <div className="mb-4 rounded-lg border border-surface-border bg-surface-muted p-3 text-sm text-ink-muted">
               <p className="font-semibold">Changes requested</p>
               <p className="mt-1">{bundle.change_request_note}</p>
             </div>

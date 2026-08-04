@@ -17,7 +17,7 @@ import {
 import { sw } from '@/i18n/sw';
 
 // Company icon that shows the uploaded logo when present, else a building glyph.
-function CompanyIcon({ logoUrl, size = 'md' }: { logoUrl: string | null; size?: 'md' | 'lg' }) {
+export function CompanyIcon({ logoUrl, size = 'md' }: { logoUrl: string | null; size?: 'md' | 'lg' }) {
   const box = size === 'lg' ? 'h-10 w-10' : 'h-9 w-9';
   const icon = size === 'lg' ? 'h-5 w-5' : 'h-4 w-4';
   if (logoUrl) {
@@ -85,7 +85,7 @@ export default function FindCompany() {
   );
 }
 
-function SearchPane({ onPick }: { onPick: (c: CompanyHit) => void }) {
+export function SearchPane({ onPick }: { onPick: (c: CompanyHit) => void }) {
   const [q, setQ] = useState('');
   const { results, loading, error } = useCompanySearch(q);
 
@@ -104,10 +104,6 @@ function SearchPane({ onPick }: { onPick: (c: CompanyHit) => void }) {
       </div>
 
       {error && <p className="text-sm text-red-600">{error}</p>}
-
-      {q.trim().length < 2 && (
-        <p className="py-8 text-center text-sm text-ink-muted">{sw.find.typeToSearch}</p>
-      )}
 
       {loading && <p className="py-4 text-center text-sm text-ink-muted">{sw.common.loading}</p>}
 
@@ -133,7 +129,7 @@ function SearchPane({ onPick }: { onPick: (c: CompanyHit) => void }) {
   );
 }
 
-function PasswordPane({
+export function PasswordPane({
   company,
   onBack,
   onVerified,
@@ -199,7 +195,7 @@ function PasswordPane({
   );
 }
 
-function AccountPane({
+export function AccountPane({
   company,
   companyPassword,
   tab,
