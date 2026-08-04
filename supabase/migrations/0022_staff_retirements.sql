@@ -72,29 +72,29 @@ drop policy if exists staff_retirements_select on staff_retirements;
 create policy staff_retirements_select on staff_retirements
   for select to authenticated
   using (
-    company_id = auth_company_id()
-    and (staff_id = auth.uid() or auth_role() in ('owner', 'accountant'))
+    company_id = private.auth_company_id()
+    and (staff_id = auth.uid() or private.auth_role() in ('owner', 'accountant'))
   );
 
 drop policy if exists staff_retirements_insert_own on staff_retirements;
 create policy staff_retirements_insert_own on staff_retirements
   for insert to authenticated
   with check (
-    company_id = auth_company_id()
+    company_id = private.auth_company_id()
     and staff_id = auth.uid()
-    and auth_can_see_project(project_id)
+    and private.auth_can_see_project(project_id)
   );
 
 drop policy if exists staff_retirements_update_participants on staff_retirements;
 create policy staff_retirements_update_participants on staff_retirements
   for update to authenticated
   using (
-    company_id = auth_company_id()
-    and (staff_id = auth.uid() or auth_role() in ('owner', 'accountant'))
+    company_id = private.auth_company_id()
+    and (staff_id = auth.uid() or private.auth_role() in ('owner', 'accountant'))
   )
   with check (
-    company_id = auth_company_id()
-    and (staff_id = auth.uid() or auth_role() in ('owner', 'accountant'))
+    company_id = private.auth_company_id()
+    and (staff_id = auth.uid() or private.auth_role() in ('owner', 'accountant'))
   );
 
 drop policy if exists staff_retirement_receipts_select on staff_retirement_receipts;
@@ -104,8 +104,8 @@ create policy staff_retirement_receipts_select on staff_retirement_receipts
     exists (
       select 1 from staff_retirements sr
       where sr.id = retirement_id
-        and sr.company_id = auth_company_id()
-        and (sr.staff_id = auth.uid() or auth_role() in ('owner', 'accountant'))
+        and sr.company_id = private.auth_company_id()
+        and (sr.staff_id = auth.uid() or private.auth_role() in ('owner', 'accountant'))
     )
   );
 
@@ -130,8 +130,8 @@ create policy staff_retirement_documents_select on staff_retirement_documents
     exists (
       select 1 from staff_retirements sr
       where sr.id = retirement_id
-        and sr.company_id = auth_company_id()
-        and (sr.staff_id = auth.uid() or auth_role() in ('owner', 'accountant'))
+        and sr.company_id = private.auth_company_id()
+        and (sr.staff_id = auth.uid() or private.auth_role() in ('owner', 'accountant'))
     )
   );
 
@@ -139,7 +139,7 @@ drop policy if exists staff_retirement_documents_insert on staff_retirement_docu
 create policy staff_retirement_documents_insert on staff_retirement_documents
   for insert to authenticated
   with check (
-    company_id = auth_company_id()
+    company_id = private.auth_company_id()
     and created_by = auth.uid()
     and exists (
       select 1 from staff_retirements sr
