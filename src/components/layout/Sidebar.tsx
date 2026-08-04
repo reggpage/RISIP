@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, FolderKanban, Receipt, FileText, Settings, Wallet, X, LogOut, Handshake, Bell,
+  Home, LayoutDashboard, FolderKanban, Receipt, FileText, Settings, Wallet, X, LogOut, Handshake, Bell,
 } from 'lucide-react';
 import RisipLogo from '@/components/ui/RisipLogo';
 import { useNotifications } from '@/features/notifications/notifications';
@@ -11,6 +11,7 @@ import { sw } from '@/i18n/sw';
 type Item = { to: string; label: string; icon: React.ComponentType<{ className?: string }>; allowed: readonly UserRole[] };
 
 const desktopItems: Item[] = [
+  { to: '/', label: 'Home', icon: Home, allowed: ['owner', 'accountant', 'worker'] },
   { to: '/dashboard', label: sw.nav.dashboard, icon: LayoutDashboard, allowed: ['owner', 'accountant', 'worker'] },
   { to: '/projects', label: sw.nav.projects, icon: FolderKanban, allowed: ['owner', 'accountant', 'worker'] },
   { to: '/receipts', label: sw.nav.receipts, icon: Receipt, allowed: ['worker', 'accountant', 'owner'] },
@@ -53,7 +54,7 @@ export default function Sidebar({
         {/* Brand mark — logo only, sized like the wordmarks in Vercel/Linear/Stripe: big
             enough to anchor the sidebar, generous headroom above the nav. */}
         <div className="mb-10 flex justify-center">
-          <RisipLogo className="h-16 w-16" />
+          <RisipLogo className="h-20 w-20" />
         </div>
         <nav className="flex flex-1 flex-col gap-2">
           {desktop.map(({ to, label, icon: Icon }) => (
@@ -99,7 +100,7 @@ export default function Sidebar({
         }
       >
         <div className="mb-8 flex items-center justify-between">
-          <RisipLogo className="h-12 w-12" />
+          <RisipLogo className="h-14 w-14" />
           <button
             type="button"
             onClick={onClose}

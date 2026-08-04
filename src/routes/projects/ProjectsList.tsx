@@ -13,15 +13,16 @@ export default function ProjectsList() {
   const auth = useAuth();
   const { state } = useProjects();
   const canCreate = auth.status === 'signed-in' && auth.profile?.role === 'owner';
+  const pageClass = 'p-4 sm:p-6 lg:p-8';
 
   if (state.status === 'loading') {
     return (
-      <div className="p-6">
+      <div className={pageClass}>
         <div className="mb-6 flex items-center justify-between">
           <div className="h-8 w-28 animate-pulse rounded-lg bg-surface-muted" />
           <div className="h-9 w-28 animate-pulse rounded-lg bg-surface-muted" />
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => <ProjectCardSkeleton key={i} />)}
         </div>
       </div>
@@ -56,7 +57,7 @@ export default function ProjectsList() {
   }
 
   return (
-    <div className="p-6">
+    <div className={pageClass}>
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-ink">{sw.nav.projects}</h1>
         {canCreate && (
@@ -69,7 +70,7 @@ export default function ProjectsList() {
         )}
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {state.projects.map((p) => (
           <Link key={p.id} to={`/projects/${p.id}`}>
             <Card className="h-full transition hover:border-role-admin/40 hover:shadow-md">

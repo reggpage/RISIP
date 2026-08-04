@@ -1,6 +1,7 @@
 import { Bell, CheckCircle2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { ListItemSkeleton, Skeleton } from '@/components/ui/Skeleton';
 import { markNotificationRead, useNotifications } from '@/features/notifications/notifications';
 import { useAuth } from '@/lib/auth';
 import { formatDateTime } from '@/lib/format';
@@ -39,7 +40,20 @@ export default function NotificationsPage() {
       </header>
 
       {state.status === 'loading' ? (
-        <div className="h-40 animate-pulse rounded-xl bg-surface-muted" />
+        <div className="flex flex-col gap-3">
+          <Card>
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0 flex-1 space-y-2">
+                <Skeleton className="h-4 w-44" />
+                <Skeleton className="h-3 w-3/4" />
+                <Skeleton className="h-3 w-28" />
+              </div>
+              <Skeleton className="h-8 w-24 rounded-lg" />
+            </div>
+          </Card>
+          <ListItemSkeleton lines={3} />
+          <ListItemSkeleton lines={2} />
+        </div>
       ) : notifications.length === 0 ? (
         <Card className="flex min-h-56 flex-col items-center justify-center text-center">
           <Bell className="h-10 w-10 text-ink-muted" />

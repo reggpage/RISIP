@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { ArrowLeft, Building2, Search } from 'lucide-react';
+import { ArrowLeft, Building2, Loader2, Search } from 'lucide-react';
 import AuthShell from '@/components/layout/AuthShell';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -59,7 +59,7 @@ export default function FindCompany() {
           company={stage.company}
           onBack={() => setStage({ name: 'search' })}
           onVerified={(pw) =>
-            setStage({ name: 'account', company: stage.company, companyPassword: pw, tab: 'register' })
+            setStage({ name: 'account', company: stage.company, companyPassword: pw, tab: 'login' })
           }
         />
       )}
@@ -283,6 +283,7 @@ function LoginForm({
 }) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [handoff, setHandoff] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit(e: React.FormEvent) {
@@ -295,6 +296,7 @@ function LoginForm({
         name,
         company_password: companyPassword,
       });
+      setHandoff(true);
       onDone(role);
     } catch (err) {
       if (err instanceof CompanyAuthError && err.reason === 'user_not_found') {
@@ -303,8 +305,12 @@ function LoginForm({
         setError(err instanceof Error ? err.message : sw.common.error);
       }
     } finally {
-      setBusy(false);
+      if (!handoff) setBusy(false);
     }
+  }
+
+  if (busy || handoff) {
+    return <AuthHandoffCard title="Signing you in" body="Preparing your company workspace." />;
   }
 
   return (
@@ -347,6 +353,7 @@ function RegisterForm({
     formState: { errors },
   } = useForm<FormFields>({ mode: 'onTouched' });
   const [busy, setBusy] = useState(false);
+  const [handoff, setHandoff] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const password = watch('password', '');
@@ -374,12 +381,17 @@ function RegisterForm({
         email: values.email,
         password: values.password,
       });
+      setHandoff(true);
       onDone(role);
     } catch (err) {
       setError(err instanceof Error ? err.message : sw.common.error);
     } finally {
-      setBusy(false);
+      if (!handoff) setBusy(false);
     }
+  }
+
+  if (busy || handoff) {
+    return <AuthHandoffCard title="Creating your account" body="Preparing your company workspace." />;
   }
 
   return (
@@ -432,5 +444,19 @@ function RegisterForm({
         {busy ? sw.common.loading : sw.find.registerSubmit}
       </Button>
     </form>
+  );
+}
+
+function AuthHandoffCard({ title, body }: { title: string; body: string }) {
+  return (
+    <Card className="flex items-center gap-3">
+      <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-role-admin/10 text-role-admin">
+        <Loader2 className="h-5 w-5 animate-spin" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-ink">{title}</span>
+        <span className="block text-sm text-ink-muted">{body}</span>
+      </span>
+    </Card>
   );
 }

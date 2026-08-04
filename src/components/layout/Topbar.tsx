@@ -19,11 +19,11 @@ export default function Topbar({
   const company = useCompany();
 
   return (
-    <header className="flex h-14 items-center justify-between border-b border-surface-border bg-surface px-3 sm:px-4">
+    <header className="flex h-16 items-center justify-between border-b border-surface-border bg-surface px-3 sm:px-5">
       {/* Left: company identity */}
-      <div className="flex min-w-0 items-center gap-2.5">
+      <div className="flex min-w-0 items-center gap-3">
         <CompanyBadge logoUrl={company?.logo_url ?? null} />
-        <span className="truncate text-sm font-semibold text-ink sm:text-base">
+        <span className="truncate text-base font-semibold text-ink sm:text-lg">
           {titleCase(company?.name) || '—'}
         </span>
       </div>
@@ -50,7 +50,7 @@ export default function Topbar({
 function CompanyBadge({ logoUrl }: { logoUrl: string | null }) {
   // Bumped from h-8 to h-10 so the logo carries more weight in the header, matching
   // the sidebar mark and the "standard website logo" size the user asked for.
-  const base = 'flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full';
+  const base = 'flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full sm:h-14 sm:w-14';
   if (logoUrl) {
     return (
       <div className={`${base} border border-surface-border bg-surface`}>
@@ -60,7 +60,7 @@ function CompanyBadge({ logoUrl }: { logoUrl: string | null }) {
   }
   return (
     <div className={`${base} bg-role-admin/10 text-role-admin`}>
-      <Building2 className="h-5 w-5" />
+      <Building2 className="h-6 w-6" />
     </div>
   );
 }
