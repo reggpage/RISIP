@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CheckCircle2,
   Clock3,
@@ -30,6 +30,7 @@ import { receiptImageUrl } from '@/features/receipts/uploadReceipt';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth, type Profile as AuthProfile } from '@/lib/auth';
 import { formatDate, formatDateTime, formatMoney } from '@/lib/format';
+import { supabase } from '@/lib/supabase';
 import type { Receipt } from '@/types/db';
 
 const statusClass: Record<StaffRetirementStatus, string> = {
@@ -51,6 +52,7 @@ export default function RetirementsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<RetirementBundle | null>(null);
+  const [query, setQuery] = useState('');
 
   async function refresh() {
     if (!profile) return;
@@ -70,6 +72,22 @@ export default function RetirementsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id]);
 
+  useEffect(() => {
+    if (!profile?.company_id) return;
+    const channel = supabase
+      .channel(`staff-retirements-${profile.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'staff_retirements', filter: `company_id=eq.${profile.company_id}` },
+        () => void refresh(),
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.company_id, profile?.id]);
+
   const totals = useMemo(() => {
     const pending = bundles.filter((b) => !['paid', 'received_confirmed', 'cancelled'].includes(b.status));
     return {
@@ -79,10 +97,29 @@ export default function RetirementsPage() {
     };
   }, [bundles]);
 
-  async function setStatus(bundle: RetirementBundle, status: StaffRetirementStatus) {
+  const filteredBundles = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return bundles;
+    return bundles.filter((b) => {
+      const haystack = [
+        b.title,
+        b.staff?.full_name,
+        b.status,
+        b.notes,
+        ...b.receipts.map((r) => r.vendor_name ?? ''),
+      ].join(' ').toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [bundles, query]);
+
+  async function setStatus(
+    bundle: RetirementBundle,
+    status: StaffRetirementStatus,
+    options?: { note?: string; receiptIds?: string[] },
+  ) {
     if (!profile) return;
     try {
-      await updateRetirementStatus(bundle, profile, status);
+      await updateRetirementStatus(bundle, profile, status, options);
       toast.success('Retirement updated.');
       await refresh();
       setOpen((prev) => (prev?.id === bundle.id ? { ...prev, status } : prev));
@@ -94,7 +131,7 @@ export default function RetirementsPage() {
   if (!profile) return null;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="mx-auto w-full max-w-7xl p-4 sm:p-6 lg:p-8">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-ink">Retirements</h1>
@@ -127,6 +164,16 @@ export default function RetirementsPage() {
               </div>
             )}
 
+            <div className="relative">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={isFinance ? 'Search staff, status, vendor...' : 'Search your retirements...'}
+                className="w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted/70 focus:outline-none focus:ring-2 focus:ring-role-admin/30"
+              />
+            </div>
+
             {bundles.length === 0 ? (
               <EmptyState
                 icon={<HandCoins className="h-10 w-10" />}
@@ -138,8 +185,8 @@ export default function RetirementsPage() {
                 }
               />
             ) : (
-              <div className="grid gap-4 lg:grid-cols-2">
-                {bundles.map((bundle) => (
+              <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+                {filteredBundles.map((bundle) => (
                   <button
                     key={bundle.id}
                     type="button"
@@ -175,7 +222,7 @@ export default function RetirementsPage() {
             )}
           </section>
 
-          <aside>
+          <aside className="min-w-0">
             <SubmitRetirementCard profile={profile} onCreated={() => void refresh()} />
           </aside>
         </div>
@@ -186,7 +233,7 @@ export default function RetirementsPage() {
           bundle={open}
           isFinance={!!isFinance}
           onClose={() => setOpen(null)}
-          onStatus={(status) => void setStatus(open, status)}
+          onStatus={(status, note, receiptIds) => void setStatus(open, status, { note, receiptIds })}
         />
       )}
     </div>
@@ -219,6 +266,7 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
   const [busy, setBusy] = useState(false);
   const [loadingReceipts, setLoadingReceipts] = useState(false);
   const [receiptError, setReceiptError] = useState<string | null>(null);
+  const [receiptQuery, setReceiptQuery] = useState('');
 
   useEffect(() => {
     if (projectsState.status === 'ready' && !projectId && projectsState.projects[0]) {
@@ -253,6 +301,16 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
 
   const selectedReceipts = receipts.filter((r) => selected.has(r.id));
   const total = selectedReceipts.reduce((sum, r) => sum + Number(r.total_amount || 0), 0);
+  const visibleReceipts = useMemo(() => {
+    const q = receiptQuery.trim().toLowerCase();
+    if (!q) return receipts;
+    return receipts.filter((r) =>
+      [r.vendor_name, r.category, r.receipt_number, r.verification_code]
+        .join(' ')
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [receiptQuery, receipts]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -283,7 +341,7 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
   }
 
   return (
-    <Card className="sticky top-6">
+    <Card className="w-full min-w-0 xl:sticky xl:top-6">
       <h2 className="text-base font-semibold text-ink">Submit retirement</h2>
       <p className="mt-1 text-sm text-ink-muted">Attach receipts and a signed voucher/form.</p>
 
@@ -333,6 +391,15 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
           <div className="border-b border-surface-border px-3 py-2 text-sm font-semibold text-ink">
             Receipts · {formatMoney(total)}
           </div>
+          <div className="border-b border-surface-border p-2">
+            <input
+              type="search"
+              value={receiptQuery}
+              onChange={(e) => setReceiptQuery(e.target.value)}
+              placeholder="Search receipts..."
+              className="w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted/70 focus:outline-none focus:ring-2 focus:ring-role-admin/30"
+            />
+          </div>
           <div className="max-h-64 overflow-auto p-2">
             {loadingReceipts ? (
               <div className="flex items-center gap-2 p-3 text-sm text-ink-muted">
@@ -343,7 +410,7 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
             ) : receipts.length === 0 ? (
               <p className="p-3 text-sm text-ink-muted">No confirmed receipts for this project yet.</p>
             ) : (
-              receipts.map((r) => (
+              visibleReceipts.map((r) => (
                 <label key={r.id} className="flex items-start gap-2 rounded-lg p-2 text-sm hover:bg-surface-muted">
                   <input
                     type="checkbox"
@@ -393,13 +460,16 @@ function RetirementDetailModal({
   bundle: RetirementBundle;
   isFinance: boolean;
   onClose: () => void;
-  onStatus: (status: StaffRetirementStatus) => void;
+  onStatus: (status: StaffRetirementStatus, note?: string, receiptIds?: string[]) => void;
 }) {
   const canConfirmReceived = !isFinance && bundle.status === 'paid';
+  const canResubmit = !isFinance && bundle.status === 'changes_requested';
+  const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
+  const [changeOpen, setChangeOpen] = useState(false);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="max-h-[90vh] w-full max-w-3xl overflow-hidden rounded-xl bg-surface shadow-xl">
-        <header className="flex items-start justify-between gap-3 border-b border-surface-border p-4">
+      <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-surface shadow-xl">
+        <header className="shrink-0 flex items-start justify-between gap-3 border-b border-surface-border p-4">
           <div>
             <h2 className="text-lg font-semibold text-ink">{bundle.title}</h2>
             <p className="text-sm text-ink-muted">
@@ -411,12 +481,18 @@ function RetirementDetailModal({
           </button>
         </header>
 
-        <div className="max-h-[calc(90vh-8rem)] overflow-auto p-4">
+        <div className="min-h-0 flex-1 overflow-auto p-4">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <StatusPill status={bundle.status} />
             <div className="text-xl font-semibold text-ink">{formatMoney(bundle.total_amount)}</div>
           </div>
           {bundle.notes && <p className="mb-4 rounded-lg bg-surface-muted p-3 text-sm text-ink-muted">{bundle.notes}</p>}
+          {bundle.status === 'changes_requested' && bundle.change_request_note && (
+            <div className="mb-4 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-800">
+              <p className="font-semibold">Changes requested</p>
+              <p className="mt-1">{bundle.change_request_note}</p>
+            </div>
+          )}
 
           <section className="mb-5">
             <h3 className="mb-2 text-sm font-semibold text-ink">Voucher/forms</h3>
@@ -424,7 +500,13 @@ function RetirementDetailModal({
               <p className="text-sm text-ink-muted">No voucher/form attached.</p>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
-                {bundle.documents.map((doc) => <DocumentCard key={doc.id} doc={doc} />)}
+                {bundle.documents.map((doc) => (
+                  <DocumentCard
+                    key={doc.id}
+                    doc={doc}
+                    onView={(src) => setZoom({ src, alt: doc.file_name })}
+                  />
+                ))}
               </div>
             )}
           </section>
@@ -445,7 +527,7 @@ function RetirementDetailModal({
                         type="button"
                         variant="ghost"
                         className="!px-2 !py-1"
-                        onClick={() => void openReceiptImage(r.image_url!)}
+                        onClick={() => void openReceiptImage(r.image_url!, (src) => setZoom({ src, alt: r.vendor_name ?? 'Receipt' }))}
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
@@ -457,10 +539,11 @@ function RetirementDetailModal({
           </section>
         </div>
 
-        <footer className="flex flex-wrap justify-end gap-2 border-t border-surface-border p-4">
+        <footer className="shrink-0 border-t border-surface-border bg-surface p-3 sm:p-4">
+          <div className="flex flex-wrap justify-end gap-2">
           {isFinance && bundle.status !== 'paid' && bundle.status !== 'received_confirmed' && (
             <>
-              <Button variant="secondary" tint="neutral" onClick={() => onStatus('changes_requested')}>
+              <Button variant="secondary" tint="neutral" onClick={() => setChangeOpen(true)}>
                 Request changes
               </Button>
               <Button variant="secondary" tint="accountant" onClick={() => onStatus('approved')}>
@@ -476,14 +559,31 @@ function RetirementDetailModal({
               <CheckCircle2 className="h-4 w-4" /> I have received
             </Button>
           )}
+          {canResubmit && (
+            <Button tint="admin" onClick={() => onStatus('submitted')}>
+              Submit again
+            </Button>
+          )}
           <Button variant="ghost" onClick={onClose}>Close</Button>
+          </div>
         </footer>
       </div>
+      {zoom && <ZoomModal src={zoom.src} alt={zoom.alt} onClose={() => setZoom(null)} />}
+      {changeOpen && (
+        <RequestChangesModal
+          bundle={bundle}
+          onClose={() => setChangeOpen(false)}
+          onSubmit={(note, receiptIds) => {
+            setChangeOpen(false);
+            onStatus('changes_requested', note, receiptIds);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function DocumentCard({ doc }: { doc: RetirementDocument }) {
+function DocumentCard({ doc, onView }: { doc: RetirementDocument; onView: (src: string) => void }) {
   const [url, setUrl] = useState<string | null>(null);
   const isImage = doc.file_type?.startsWith('image/');
 
@@ -503,7 +603,8 @@ function DocumentCard({ doc }: { doc: RetirementDocument }) {
   async function openDoc() {
     const signed = url ?? await retirementDocumentUrl(doc.storage_path);
     setUrl(signed);
-    window.open(signed, '_blank', 'noopener,noreferrer');
+    if (isImage) onView(signed);
+    else window.open(signed, '_blank', 'noopener,noreferrer');
   }
 
   return (
@@ -530,7 +631,111 @@ function DocumentCard({ doc }: { doc: RetirementDocument }) {
   );
 }
 
-async function openReceiptImage(path: string) {
+async function openReceiptImage(path: string, onView: (src: string) => void) {
   const signed = await receiptImageUrl(path);
-  window.open(signed, '_blank', 'noopener,noreferrer');
+  onView(signed);
+}
+
+function ZoomModal({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
+  const [scale, setScale] = useState(1);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const drag = useRef<{ x: number; y: number; startX: number; startY: number } | null>(null);
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-3" onClick={onClose}>
+      <div className="absolute right-3 top-3 flex gap-2">
+        <Button type="button" variant="secondary" tint="neutral" onClick={(e) => { e.stopPropagation(); setScale((s) => Math.max(0.5, s - 0.25)); }}>
+          -
+        </Button>
+        <Button type="button" variant="secondary" tint="neutral" onClick={(e) => { e.stopPropagation(); setScale((s) => Math.min(4, s + 0.25)); }}>
+          +
+        </Button>
+        <Button type="button" variant="secondary" tint="neutral" onClick={(e) => { e.stopPropagation(); setScale(1); setPos({ x: 0, y: 0 }); }}>
+          Reset
+        </Button>
+        <Button type="button" variant="secondary" tint="neutral" onClick={(e) => { e.stopPropagation(); onClose(); }}>
+          Close
+        </Button>
+      </div>
+      <img
+        src={src}
+        alt={alt}
+        draggable={false}
+        className="max-h-[86vh] max-w-[92vw] cursor-grab select-none object-contain active:cursor-grabbing"
+        style={{ transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})` }}
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => {
+          drag.current = { x: e.clientX, y: e.clientY, startX: pos.x, startY: pos.y };
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          if (!drag.current) return;
+          setPos({
+            x: drag.current.startX + e.clientX - drag.current.x,
+            y: drag.current.startY + e.clientY - drag.current.y,
+          });
+        }}
+        onPointerUp={() => {
+          drag.current = null;
+        }}
+      />
+    </div>
+  );
+}
+
+function RequestChangesModal({
+  bundle,
+  onClose,
+  onSubmit,
+}: {
+  bundle: RetirementBundle;
+  onClose: () => void;
+  onSubmit: (note: string, receiptIds: string[]) => void;
+}) {
+  const [note, setNote] = useState('');
+  const [receiptIds, setReceiptIds] = useState<Set<string>>(new Set());
+
+  return (
+    <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/40 p-4">
+      <Card className="w-full max-w-lg">
+        <h3 className="text-base font-semibold text-ink">Request changes</h3>
+        <p className="mt-1 text-sm text-ink-muted">Add a note and mark receipts that need correction.</p>
+        <label className="mt-4 flex flex-col gap-1 text-sm font-medium text-ink">
+          Note
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={4}
+            className="w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-role-admin/30"
+            placeholder="Example: Please attach clearer image for the fuel receipt and correct VAT."
+          />
+        </label>
+        <div className="mt-4 max-h-48 overflow-auto rounded-lg border border-surface-border p-2">
+          {bundle.receipts.map((r) => (
+            <label key={r.id} className="flex items-center gap-2 rounded-lg p-2 text-sm hover:bg-surface-muted">
+              <input
+                type="checkbox"
+                checked={receiptIds.has(r.id)}
+                onChange={(e) => {
+                  const next = new Set(receiptIds);
+                  if (e.target.checked) next.add(r.id);
+                  else next.delete(r.id);
+                  setReceiptIds(next);
+                }}
+                className="accent-role-admin"
+              />
+              <span className="min-w-0 flex-1 truncate text-ink">{r.vendor_name ?? 'Receipt'}</span>
+              <span className="shrink-0 text-ink-muted">{formatMoney(r.total_amount)}</span>
+            </label>
+          ))}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button tint="admin" disabled={!note.trim()} onClick={() => onSubmit(note, Array.from(receiptIds))}>
+            Send request
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
 }

@@ -12,12 +12,27 @@ export default function AppShell() {
   const navigate = useNavigate();
   const toast = useToast();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [notificationToasts, setNotificationToasts] = useState(() =>
+    window.localStorage.getItem('risip:notificationToasts') !== 'off',
+  );
   const profile = auth.status === 'signed-in' ? auth.profile : null;
 
   // Close the drawer whenever the route changes so it doesn't linger over the new page.
   useEffect(() => {
     setMobileNavOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    function sync() {
+      setNotificationToasts(window.localStorage.getItem('risip:notificationToasts') !== 'off');
+    }
+    window.addEventListener('storage', sync);
+    window.addEventListener('risip:notificationToastsChanged', sync);
+    return () => {
+      window.removeEventListener('storage', sync);
+      window.removeEventListener('risip:notificationToastsChanged', sync);
+    };
+  }, []);
 
   useEffect(() => {
     if (auth.status !== 'signed-in') return;
@@ -33,6 +48,28 @@ export default function AppShell() {
     });
     return () => { cancelled = true; };
   }, [auth.status, navigate, toast]);
+
+  useEffect(() => {
+    if (!profile?.id) return;
+    if (!notificationToasts) return;
+    const channel = supabase
+      .channel(`app-shell-notification-toasts-${profile.id}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'app_notifications', filter: `recipient_id=eq.${profile.id}` },
+        (payload) => {
+          const row = payload.new as { title?: string; body?: string | null };
+          toast.info(row.body ? `${row.title}: ${row.body}` : row.title ?? 'New notification', {
+            label: 'Open',
+            onClick: () => navigate('/notifications'),
+          });
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [navigate, notificationToasts, profile?.id, toast]);
 
   return (
     <div className="flex h-full">

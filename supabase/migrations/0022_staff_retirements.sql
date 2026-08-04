@@ -36,6 +36,10 @@ create index if not exists staff_retirements_company_status_idx
 create index if not exists staff_retirements_staff_idx
   on staff_retirements(staff_id, created_at desc);
 
+alter table staff_retirements
+  add column if not exists change_request_note text,
+  add column if not exists change_request_receipt_ids uuid[] not null default '{}'::uuid[];
+
 create table if not exists staff_retirement_receipts (
   id uuid primary key default gen_random_uuid(),
   retirement_id uuid not null references staff_retirements(id) on delete cascade,

@@ -27,6 +27,8 @@ export type StaffRetirement = {
   approved_at: string | null;
   paid_at: string | null;
   received_confirmed_at: string | null;
+  change_request_note: string | null;
+  change_request_receipt_ids: string[];
   created_at: string;
   updated_at: string;
 };
@@ -186,6 +188,7 @@ export async function updateRetirementStatus(
   bundle: StaffRetirement,
   actor: RetirementProfile,
   status: StaffRetirementStatus,
+  options?: { note?: string; receiptIds?: string[] },
 ) {
   const now = new Date().toISOString();
   const patch: Partial<StaffRetirement> = { status, updated_at: now };
@@ -193,6 +196,14 @@ export async function updateRetirementStatus(
   if (status === 'approved') patch.approved_at = now;
   if (status === 'paid') patch.paid_at = now;
   if (status === 'received_confirmed') patch.received_confirmed_at = now;
+  if (status === 'changes_requested') {
+    patch.change_request_note = options?.note?.trim() || null;
+    patch.change_request_receipt_ids = options?.receiptIds ?? [];
+  }
+  if (status === 'submitted') {
+    patch.change_request_note = null;
+    patch.change_request_receipt_ids = [];
+  }
 
   const { error } = await (supabase as any).from('staff_retirements').update(patch).eq('id', bundle.id);
   if (error) throw error;
@@ -204,14 +215,18 @@ export async function updateRetirementStatus(
       actor_id: actor.id,
       type: `retirement_${status}`,
       title: retirementStatusTitle(status),
-      body: `Your retirement "${bundle.title}" is now ${status.replace(/_/g, ' ')}.`,
-      metadata: { retirement_id: bundle.id },
+      body: status === 'changes_requested' && options?.note
+        ? options.note
+        : `Your retirement "${bundle.title}" is now ${status.replace(/_/g, ' ')}.`,
+      metadata: { retirement_id: bundle.id, receipt_ids: options?.receiptIds ?? [] },
     }]);
-  } else if (status === 'received_confirmed') {
+  } else if (status === 'received_confirmed' || status === 'submitted') {
     await notifyFinance(bundle.company_id, actor.id, {
-      type: 'retirement_received_confirmed',
-      title: 'Staff confirmed payment received',
-      body: `${actor.full_name} confirmed receiving payment for "${bundle.title}".`,
+      type: status === 'submitted' ? 'retirement_resubmitted' : 'retirement_received_confirmed',
+      title: status === 'submitted' ? 'Staff resubmitted retirement' : 'Staff confirmed payment received',
+      body: status === 'submitted'
+        ? `${actor.full_name} resubmitted "${bundle.title}" after changes.`
+        : `${actor.full_name} confirmed receiving payment for "${bundle.title}".`,
       metadata: { retirement_id: bundle.id },
     });
   }

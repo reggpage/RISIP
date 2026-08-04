@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Building2, Check, Copy, KeyRound, Languages, Lock, Mail, Printer, User, Users } from 'lucide-react';
+import { AlertTriangle, Bell, Building2, Check, Copy, KeyRound, Languages, Lock, Mail, Printer, User, Users } from 'lucide-react';
 import { getLang, setLang, LANG_OPTIONS, type LangCode } from '@/lib/lang';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -62,6 +62,9 @@ export default function SettingsPage() {
   const [savingMe, setSavingMe] = useState(false);
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
   const emailSectionRef = useRef<HTMLElement | null>(null);
+  const [notificationToasts, setNotificationToasts] = useState(() =>
+    window.localStorage.getItem('risip:notificationToasts') !== 'off',
+  );
 
   // ── Company profile ────────────────────────────────────────────────────────
   const [company, setCompany] = useState<Company | null>(null);
@@ -449,6 +452,36 @@ export default function SettingsPage() {
             </Card>
           </SettingsSection>
         </section>
+
+        {/* ── Language (any role) ─────────────────────────────────────────── */}
+        <SettingsSection
+          icon={<Bell className="h-4 w-4" />}
+          title="Notification pop-ups"
+          description="Choose whether new company notifications appear as toast pop-ups while you are using the app."
+        >
+          <Card className="p-6 sm:p-8">
+            <label className="flex items-center justify-between gap-4">
+              <span>
+                <span className="block text-sm font-semibold text-ink">Realtime toast alerts</span>
+                <span className="mt-1 block text-sm text-ink-muted">
+                  Notifications still appear on the Notifications page even when pop-ups are off.
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={notificationToasts}
+                onChange={(e) => {
+                  const enabled = e.target.checked;
+                  setNotificationToasts(enabled);
+                  window.localStorage.setItem('risip:notificationToasts', enabled ? 'on' : 'off');
+                  window.dispatchEvent(new Event('risip:notificationToastsChanged'));
+                  toast.success(enabled ? 'Notification pop-ups enabled.' : 'Notification pop-ups disabled.');
+                }}
+                className="h-5 w-5 accent-role-admin"
+              />
+            </label>
+          </Card>
+        </SettingsSection>
 
         {/* ── Language (any role) ─────────────────────────────────────────── */}
         <SettingsSection
