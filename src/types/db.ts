@@ -174,6 +174,19 @@ export type InvoiceReceipt = {
   receipt_id: string;
 };
 
+export type AppNotification = {
+  id: string;
+  company_id: string;
+  recipient_id: string;
+  actor_id: string | null;
+  type: string;
+  title: string;
+  body: string | null;
+  metadata: unknown;
+  read_at: string | null;
+  created_at: string;
+};
+
 // ─── Database shape for the typed Supabase client ──────────────────────────────
 // supabase-js requires the schema to satisfy GenericSchema (Tables, Views, Functions).
 // GenericTable requires Row, Insert, Update, AND Relationships (even if empty []).
@@ -285,6 +298,18 @@ export type Database = {
         Row: InvoiceReceipt;
         Insert: InvoiceReceipt;
         Update: Partial<InvoiceReceipt>;
+        Relationships: [];
+      };
+      app_notifications: {
+        Row: AppNotification;
+        Insert: Partial<AppNotification> & {
+          company_id: string;
+          recipient_id: string;
+          actor_id?: string | null;
+          type: string;
+          title: string;
+        };
+        Update: Partial<AppNotification>;
         Relationships: [];
       };
     };

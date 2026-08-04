@@ -43,6 +43,7 @@ export default function AppShell() {
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
+          userId={profile?.id}
           fullName={profile?.full_name ?? '—'}
           role={profile?.role}
           onOpenMenu={() => setMobileNavOpen(true)}

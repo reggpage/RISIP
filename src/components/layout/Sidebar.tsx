@@ -16,7 +16,7 @@ const desktopItems: Item[] = [
   { to: '/claims', label: 'Claims', icon: Handshake, allowed: ['owner', 'accountant'] },
   { to: '/invoices', label: sw.nav.invoices, icon: FileText, allowed: ['owner', 'accountant'] },
   { to: '/petty-cash', label: 'Petty cash', icon: Wallet, allowed: ['owner', 'accountant'] },
-  { to: '/settings', label: sw.nav.settings, icon: Settings, allowed: ['owner'] },
+  { to: '/settings', label: sw.nav.settings, icon: Settings, allowed: ['owner', 'accountant', 'worker'] },
 ];
 
 // Mobile drawer now carries the FULL nav (the bottom tab bar was removed), so it

@@ -6,9 +6,11 @@ import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
 import PasswordField from '@/components/ui/PasswordField';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { CompanyProfileSkeleton, MemberRowSkeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
 import LogoCropModal from '@/components/settings/LogoCropModal';
+import { createNotifications } from '@/features/notifications/notifications';
 import { useAuth, signOut } from '@/lib/auth';
 import { roleLabel } from '@/lib/roles';
 import { supabase } from '@/lib/supabase';
@@ -50,6 +52,7 @@ export default function SettingsPage() {
   const auth = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
+  const confirm = useConfirm();
   const profile = auth.status === 'signed-in' ? auth.profile : null;
   const isOwner = profile?.role === 'owner';
 
@@ -100,6 +103,7 @@ export default function SettingsPage() {
   const [deleteInput, setDeleteInput] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [leavingCompany, setLeavingCompany] = useState(false);
 
   // Hydrate the "Your profile" form fields whenever the auth profile changes.
   useEffect(() => {
@@ -327,6 +331,61 @@ export default function SettingsPage() {
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : sw.common.error);
       setDeleting(false);
+    }
+  }
+
+  async function leaveCompany() {
+    if (!profile || isOwner) return;
+    const ok = await confirm({
+      title: 'Leave this company?',
+      message: 'Your account will be removed from this company and an admin will be notified. You will be signed out immediately.',
+      confirmLabel: 'Leave company',
+      danger: true,
+    });
+    if (!ok) return;
+
+    setLeavingCompany(true);
+    try {
+      const { data: admins } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('company_id', profile.company_id)
+        .in('role', ['owner', 'accountant'])
+        .is('deactivated_at', null);
+
+      const recipients = new Set<string>([profile.id]);
+      for (const admin of admins ?? []) {
+        if (admin.id !== profile.id) recipients.add(admin.id);
+      }
+
+      await createNotifications(
+        Array.from(recipients).map((recipientId) => ({
+          company_id: profile.company_id,
+          recipient_id: recipientId,
+          actor_id: profile.id,
+          type: 'company_member_left',
+          title: recipientId === profile.id ? 'You left the company' : `${profile.full_name} left the company`,
+          body: recipientId === profile.id
+            ? 'Your company access has been closed. Contact an admin if this was a mistake.'
+            : `${profile.full_name} has left ${company?.name ?? 'the company'} and their profile was deactivated.`,
+          metadata: { member_id: profile.id, member_name: profile.full_name },
+        })),
+      ).catch((err) => {
+        console.warn('Could not create leave-company notifications', err);
+      });
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ deactivated_at: new Date().toISOString() })
+        .eq('id', profile.id);
+      if (error) throw error;
+
+      toast.success('You have left the company. Admins have been notified.');
+      await signOut();
+      navigate('/login', { replace: true });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : sw.common.error);
+      setLeavingCompany(false);
     }
   }
 
@@ -670,6 +729,36 @@ export default function SettingsPage() {
               <div className="mt-6">
                 <Button tint="admin" disabled={settingStaffPw || staffPw.length < 6} onClick={() => void setStaffPassword()}>
                   {settingStaffPw ? sw.common.loading : sw.settings.setPassword}
+                </Button>
+              </div>
+            </Card>
+          </SettingsSection>
+        )}
+
+        {/* ── Leave company (non-owner) ───────────────────────────────────── */}
+        {!isOwner && profile && (
+          <SettingsSection
+            icon={<AlertTriangle className="h-4 w-4" />}
+            title="Leave company"
+            description="Close your access to this company. Admins will be notified so they know you are no longer active."
+            danger
+          >
+            <Card className="border-red-200 bg-red-50 p-6 sm:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm font-semibold text-red-900">
+                    Leave {company?.name ?? 'this company'}
+                  </div>
+                  <p className="mt-1 text-sm text-red-700">
+                    You will be signed out and your staff profile will be marked inactive.
+                  </p>
+                </div>
+                <Button
+                  variant="danger"
+                  disabled={leavingCompany}
+                  onClick={() => void leaveCompany()}
+                >
+                  {leavingCompany ? sw.common.loading : 'Leave company'}
                 </Button>
               </div>
             </Card>

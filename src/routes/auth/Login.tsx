@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { Building2, Search } from 'lucide-react';
 import AuthShell from '@/components/layout/AuthShell';
@@ -7,6 +7,7 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import PasswordField from '@/components/ui/PasswordField';
 import { useCompanySearch } from '@/features/find/useCompanySearch';
+import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { sw } from '@/i18n/sw';
 
@@ -14,6 +15,7 @@ type FormValues = { email: string; password: string };
 
 export default function Login() {
   const navigate = useNavigate();
+  const auth = useAuth();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [tab, setTab] = useState<'admin' | 'company'>('admin');
   const {
@@ -30,6 +32,10 @@ export default function Login() {
       return;
     }
     navigate('/dashboard', { replace: true });
+  }
+
+  if (auth.status === 'signed-in' && auth.profile) {
+    return <Navigate to={auth.profile.role === 'worker' ? '/receipts' : '/dashboard'} replace />;
   }
 
   return (
