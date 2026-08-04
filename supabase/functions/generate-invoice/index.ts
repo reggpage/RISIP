@@ -18,6 +18,14 @@ function fmtMoney(n) {
   return 'TSh ' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
+function safeTax(receipt) {
+  const tax = Number(receipt.tax_amount || 0);
+  const total = Number(receipt.total_amount || 0);
+  if (!Number.isFinite(tax) || tax < 0) return 0;
+  if (total > 0 && tax > total) return 0;
+  return tax;
+}
+
 Deno.serve(async (req) => {
   const pre = preflight(req);
   if (pre) return pre;
@@ -70,14 +78,14 @@ Deno.serve(async (req) => {
 
   // Aggregate.
   const totalAmount = receipts.reduce((s, r) => s + Number(r.total_amount || 0), 0);
-  const taxAmount = receipts.reduce((s, r) => s + Number(r.tax_amount || 0), 0);
+  const taxAmount = receipts.reduce((s, r) => s + safeTax(r), 0);
   const byCat = new Map();
   for (const r of receipts) {
     const key = r.category || 'Other';
     const cur = byCat.get(key) || { count: 0, total: 0, tax: 0 };
     cur.count += 1;
     cur.total += Number(r.total_amount || 0);
-    cur.tax += Number(r.tax_amount || 0);
+    cur.tax += safeTax(r);
     byCat.set(key, cur);
   }
   const catRows = Array.from(byCat.entries()).sort((a, b) => b[1].total - a[1].total);

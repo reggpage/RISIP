@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
-import type { Invoice } from '@/types/db';
+import type { Invoice, InvoiceLineItem, Receipt } from '@/types/db';
 
 type State =
   | { status: 'loading' }
@@ -67,6 +67,11 @@ export async function markInvoiceSent(id: string) {
   if (error) throw error;
 }
 
+export async function deleteInvoice(id: string): Promise<void> {
+  const { error } = await supabase.from('invoices').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function invoicePdfUrl(path: string, expiresIn = 60 * 10): Promise<string> {
   const { data, error } = await supabase.storage.from('invoices').createSignedUrl(path, expiresIn);
   if (error) throw error;
@@ -74,7 +79,6 @@ export async function invoicePdfUrl(path: string, expiresIn = 60 * 10): Promise<
 }
 
 // ── Digital-first invoice editing ──────────────────────────────────────────
-import type { InvoiceLineItem, Receipt } from '@/types/db';
 
 export async function fetchInvoice(id: string): Promise<Invoice | null> {
   const { data, error } = await supabase.from('invoices').select('*').eq('id', id).maybeSingle();
@@ -114,6 +118,14 @@ export async function setInvoiceStatus(id: string, status: Invoice['status']): P
     status === 'sent' ? { sent_at: new Date().toISOString() } : {};
   const { error } = await supabase.from('invoices').update({ status, ...stamp }).eq('id', id);
   if (error) throw error;
+}
+
+export function safeReceiptTax(receipt: Pick<Receipt, 'tax_amount' | 'total_amount'>): number {
+  const tax = Number(receipt.tax_amount || 0);
+  const total = Number(receipt.total_amount || 0);
+  if (!Number.isFinite(tax) || tax < 0) return 0;
+  if (total > 0 && tax > total) return 0;
+  return tax;
 }
 
 // Public share URL a client opens without logging in.

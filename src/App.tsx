@@ -7,6 +7,8 @@ import ForgotPassword from '@/routes/auth/ForgotPassword';
 import SignupCompany from '@/routes/auth/SignupCompany';
 import JoinPage from '@/routes/join/JoinPage';
 import FindCompany from '@/routes/find/FindCompany';
+import SupplierPortal from '@/routes/claims/SupplierPortal';
+import ClaimsInbox from '@/routes/claims/ClaimsInbox';
 import Landing from '@/routes/marketing/Landing';
 import ProjectsList from '@/routes/projects/ProjectsList';
 import NewProject from '@/routes/projects/NewProject';
@@ -30,6 +32,7 @@ export default function App() {
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/signup" element={<SignupCompany />} />
       <Route path="/find-company" element={<FindCompany />} />
+      <Route path="/supplier-claims" element={<SupplierPortal />} />
       <Route path="/join/:token" element={<JoinPage />} />
       {/* Public, no-login invoice view opened by the client via secure token. */}
       <Route path="/public/invoices/:token" element={<PublicInvoice />} />
@@ -65,6 +68,14 @@ export default function App() {
 
         <Route path="/receipts" element={<ReceiptsPage />} />
         <Route path="/receipts/new" element={<ManualReceipt />} />
+        <Route
+          path="/claims"
+          element={
+            <RequireRole allowed={['owner', 'accountant']}>
+              <ClaimsInbox />
+            </RequireRole>
+          }
+        />
 
         <Route
           path="/invoices"

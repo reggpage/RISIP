@@ -38,6 +38,7 @@ function bad(msg: string, status = 400) {
 function renderEmail(payload: HookPayload): { subject: string; html: string } {
   const { token } = payload.email_data;
   const action = payload.email_data.email_action_type;
+  const digitLabel = /^\d+$/.test(token) ? `${token.length}-digit ` : '';
 
   const heading =
     action === 'recovery' ? 'Set a new password'
@@ -47,12 +48,12 @@ function renderEmail(payload: HookPayload): { subject: string; html: string } {
 
   const preface =
     action === 'recovery'
-      ? 'Use this code to reset your password:'
+      ? `Use this ${digitLabel}code to reset your password:`
       : action === 'invite'
-        ? 'Use this code to finish your registration:'
+        ? `Use this ${digitLabel}code to finish your registration:`
         : action === 'reauthentication'
-          ? 'Use this code to confirm the action:'
-          : 'Use this 6-digit code to verify your email:';
+          ? `Use this ${digitLabel}code to confirm the action:`
+          : `Use this ${digitLabel}code to verify your email:`;
 
   const subject =
     action === 'recovery' ? 'Risip · Password reset code'

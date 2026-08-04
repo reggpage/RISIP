@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import InvoiceView from '@/components/invoices/InvoiceView';
 import { useToast } from '@/components/ui/Toast';
+import { safeReceiptTax } from '@/features/invoices/useInvoices';
 import type { InvoiceLineItem } from '@/types/db';
 
 type PublicPayload = {
@@ -74,7 +75,7 @@ export default function PublicInvoice() {
     const items = (payload.invoice.line_items ?? []).map((li) => {
       const recs = li.receiptIds.map((id) => recById.get(id)).filter(Boolean) as NonNullable<PublicPayload['receipts']>;
       const total = recs.reduce((s, r) => s + Number(r.total_amount || 0), 0);
-      const tax = recs.reduce((s, r) => s + Number(r.tax_amount || 0), 0);
+      const tax = recs.reduce((s, r) => s + safeReceiptTax(r), 0);
       return { ...li, total, tax, net: total - tax };
     });
     const total = items.reduce((s, i) => s + i.total, 0);

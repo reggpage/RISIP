@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 
-const LENGTH = 6;
+const LENGTH = 8;
 
 export default function OtpInput({
   value,
@@ -8,29 +8,31 @@ export default function OtpInput({
   onComplete,
   disabled,
   error,
+  length = LENGTH,
 }: {
   value: string;
   onChange: (next: string) => void;
   onComplete?: (code: string) => void;
   disabled?: boolean;
   error?: boolean;
+  length?: number;
 }) {
   const inputs = useRef<Array<HTMLInputElement | null>>([]);
   const [focused, setFocused] = useState(0);
 
   // Keep the tracked value length at exactly LENGTH so per-cell rendering is stable.
-  const cells = value.padEnd(LENGTH, ' ').slice(0, LENGTH).split('');
+  const cells = value.padEnd(length, ' ').slice(0, length).split('');
 
   useEffect(() => {
-    if (value.length === LENGTH) onComplete?.(value);
-  }, [value, onComplete]);
+    if (value.length === length) onComplete?.(value);
+  }, [value, length, onComplete]);
 
   function writeDigit(idx: number, digit: string) {
     const clean = digit.replace(/\D/g, '').slice(0, 1);
     if (!clean) return;
-    const next = (value.slice(0, idx) + clean + value.slice(idx + 1)).slice(0, LENGTH);
+    const next = (value.slice(0, idx) + clean + value.slice(idx + 1)).slice(0, length);
     onChange(next);
-    if (idx < LENGTH - 1) inputs.current[idx + 1]?.focus();
+    if (idx < length - 1) inputs.current[idx + 1]?.focus();
   }
 
   function handleKey(idx: number, e: KeyboardEvent<HTMLInputElement>) {
@@ -44,17 +46,17 @@ export default function OtpInput({
       }
     } else if (e.key === 'ArrowLeft' && idx > 0) {
       inputs.current[idx - 1]?.focus();
-    } else if (e.key === 'ArrowRight' && idx < LENGTH - 1) {
+    } else if (e.key === 'ArrowRight' && idx < length - 1) {
       inputs.current[idx + 1]?.focus();
     }
   }
 
   function handlePaste(e: ClipboardEvent<HTMLInputElement>) {
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, LENGTH);
+    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, length);
     if (!pasted) return;
     e.preventDefault();
     onChange(pasted);
-    inputs.current[Math.min(pasted.length, LENGTH - 1)]?.focus();
+    inputs.current[Math.min(pasted.length, length - 1)]?.focus();
   }
 
   return (

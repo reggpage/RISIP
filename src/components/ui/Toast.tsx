@@ -2,9 +2,10 @@ import { createContext, useCallback, useContext, useState, type ReactNode } from
 import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
 
 type ToastKind = 'success' | 'error' | 'info';
-type Toast = { id: number; kind: ToastKind; message: string };
+type ToastAction = { label: string; onClick: () => void };
+type Toast = { id: number; kind: ToastKind; message: string; action?: ToastAction };
 
-const ToastContext = createContext<((kind: ToastKind, message: string) => void) | null>(null);
+const ToastContext = createContext<((kind: ToastKind, message: string, action?: ToastAction) => void) | null>(null);
 
 const AUTO_DISMISS_MS = 4000;
 let nextId = 1;
@@ -12,12 +13,12 @@ let nextId = 1;
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const push = useCallback((kind: ToastKind, message: string) => {
+  const push = useCallback((kind: ToastKind, message: string, action?: ToastAction) => {
     const id = nextId++;
-    setToasts((prev) => [...prev, { id, kind, message }]);
+    setToasts((prev) => [...prev, { id, kind, message, action }]);
     window.setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, AUTO_DISMISS_MS);
+    }, action ? AUTO_DISMISS_MS * 2 : AUTO_DISMISS_MS);
   }, []);
 
   const dismiss = (id: number) => setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -49,7 +50,21 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 {t.kind === 'error' && <AlertTriangle className="h-4 w-4" />}
                 {t.kind === 'info' && <Info className="h-4 w-4" />}
               </span>
-              <span className="flex-1 leading-snug text-ink">{t.message}</span>
+              <span className="flex-1 leading-snug text-ink">
+                {t.message}
+                {t.action && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      t.action?.onClick();
+                      dismiss(t.id);
+                    }}
+                    className="ml-2 font-semibold text-role-admin hover:underline"
+                  >
+                    {t.action.label}
+                  </button>
+                )}
+              </span>
               <button
                 type="button"
                 onClick={() => dismiss(t.id)}
@@ -75,8 +90,8 @@ export function useToast() {
     return { success() {}, error() {}, info() {} };
   }
   return {
-    success: (msg: string) => push('success', msg),
-    error: (msg: string) => push('error', msg),
-    info: (msg: string) => push('info', msg),
+    success: (msg: string, action?: ToastAction) => push('success', msg, action),
+    error: (msg: string, action?: ToastAction) => push('error', msg, action),
+    info: (msg: string, action?: ToastAction) => push('info', msg, action),
   };
 }

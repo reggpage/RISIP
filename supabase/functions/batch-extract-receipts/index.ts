@@ -6,6 +6,7 @@
 // Env: ANTHROPIC_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { normalizeTanzaniaReceipt } from '../_shared/tanzaniaReceiptKnowledge.ts';
 
 const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 const ALLOWED = new Set([DEFAULT_MODEL, 'claude-sonnet-5']);
@@ -32,8 +33,18 @@ For EACH distinct receipt found, extract:
 7. net_amount (number)
 8. tax_amount (VAT only; null if none)
 9. total_amount (grand total INCL of VAT — the "TOTAL INCL OF TAX" / "TOTAL … TZS" line)
+10. crop_box (for image inputs only: normalized page coordinates { "x": 0..1, "y": 0..1, "width": 0..1, "height": 0..1 } tightly around that receipt; use null if uncertain)
+11. merchant_hint (short text/brand/logo evidence you used for the vendor; e.g. "SHOPPERS SUPERMARKET LTD" or "TotalEnergies logo")
+12. raw_text_excerpt (one or two key lines around the merchant/TIN/date/total; do not include the full receipt)
 
-Read every digit carefully; never invent, drop, or duplicate a digit. Return the response STRICTLY as a raw JSON array of objects, one per receipt. Do not wrap it in markdown codeblocks. If a field cannot be read, use null. Example: [{"vendor":"RealBlocks Limited","vendor_tin":null,"vendor_vrn":null,"receipt_date":"2026-08-01","category":"Materials","verification_code":null,"net_amount":100000,"tax_amount":18000,"total_amount":118000}]`;
+Tanzania merchant context:
+- The words "START OF LEGAL RECEIPT", "START OF UCON RECEIPT", "START OF LEON RECEIPT" and similar headers are NOT merchant names. Read the merchant printed below/near the logo/TIN.
+- TotalEnergies, Total Energy, Total, TokiEnergy/TokiEnergies/TokroEnergies OCR variants, Oilcom, Puma Energy, Oryx Energies, Engen, Lake Oil, GBP, Camel Oil, MOIL, GAPCO, Vivo Energy/Shell, Hass Petroleum, Star Oil, Mogas, Acer Petroleum, Mount Meru, Petro Africa, Petrofuel, Sahara Energy, Dalbit, Olympic Petroleum, Natoil, Afroil, General Petroleum, World Oil, TIPER, and petrol/service/filling stations are fuel merchants. Categorize them as Fuel, not Utilities.
+- If a receipt sells petrol, diesel, kerosene, lubricant, or station fuel, category must be Fuel.
+- If OCR is noisy but the logo/brand clearly says TotalEnergies, return vendor "TotalEnergies" exactly.
+- If the first line is only a legal receipt header, look below it. For the left receipts in this example shape, the merchant line can be "SHOPPERS SUPERMARKET LTD." even when the header says "START OF LEGAL RECEIPT".
+
+Read every digit carefully; never invent, drop, or duplicate a digit. Return the response STRICTLY as a raw JSON array of objects, one per receipt. Do not wrap it in markdown codeblocks. If a field cannot be read, use null. Example: [{"vendor":"RealBlocks Limited","vendor_tin":null,"vendor_vrn":null,"receipt_date":"2026-08-01","category":"Materials","verification_code":null,"net_amount":100000,"tax_amount":18000,"total_amount":118000,"crop_box":{"x":0.1,"y":0.1,"width":0.35,"height":0.4},"merchant_hint":"RealBlocks Limited","raw_text_excerpt":"TIN ... TOTAL ..."}]`;
 
 function parseArray(text: string): unknown[] | null {
   const stripped = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/, '');
@@ -107,5 +118,9 @@ Deno.serve(async (req) => {
   const arr = parseArray(text);
   if (!arr) return json({ error: 'could not parse model output as a JSON array', raw: text.slice(0, 500) }, 502);
 
-  return json({ receipts: arr, count: arr.length });
+  const receipts = arr.map((row) => row && typeof row === 'object'
+    ? normalizeTanzaniaReceipt(row as Record<string, unknown>)
+    : row);
+
+  return json({ receipts, count: receipts.length });
 });

@@ -57,6 +57,8 @@ export default function SettingsPage() {
   const [myName, setMyName] = useState('');
   const [myPhone, setMyPhone] = useState('');
   const [savingMe, setSavingMe] = useState(false);
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
+  const emailSectionRef = useRef<HTMLElement | null>(null);
 
   // ── Company profile ────────────────────────────────────────────────────────
   const [company, setCompany] = useState<Company | null>(null);
@@ -105,6 +107,22 @@ export default function SettingsPage() {
     setMyName(profile.full_name ?? '');
     setMyPhone(profile.phone ?? '');
   }, [profile]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void supabase.auth.getUser().then(({ data }) => {
+      if (cancelled) return;
+      setEmailVerified(Boolean(data.user?.email_confirmed_at));
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('verify') !== 'email') return;
+    window.setTimeout(() => {
+      emailSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 150);
+  }, []);
 
   async function saveMyProfile() {
     if (!profile) return;
@@ -330,6 +348,41 @@ export default function SettingsPage() {
       </header>
 
       <div className="divide-y divide-surface-border">
+        <section ref={emailSectionRef}>
+          <SettingsSection
+            icon={<Mail className="h-4 w-4" />}
+            title="Email verification"
+            description="Verify your email so password resets, security notices, and supplier claim updates can reach the right person."
+          >
+            <Card className="p-6 sm:p-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-ink">
+                    {emailVerified ? 'Your email is verified' : 'Your email is not verified yet'}
+                  </div>
+                  <p className="mt-1 text-sm text-ink-muted">
+                    Verification protects account recovery and confirms where claim/payment notifications should be sent.
+                  </p>
+                </div>
+                {emailVerified ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700">
+                    <Check className="h-4 w-4" /> Verified
+                  </span>
+                ) : (
+                  <Button
+                    tint="admin"
+                    onClick={() => {
+                      toast.info('Use the verification email from Risip, or request a fresh code from login/signup.');
+                    }}
+                  >
+                    Why verify?
+                  </Button>
+                )}
+              </div>
+            </Card>
+          </SettingsSection>
+        </section>
+
         {/* ── Language (any role) ─────────────────────────────────────────── */}
         <SettingsSection
           icon={<Languages className="h-4 w-4" />}

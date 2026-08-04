@@ -1,15 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { json, preflight } from '../_shared/cors.ts';
+import { CATEGORIES, normalizeTanzaniaReceipt } from '../_shared/tanzaniaReceiptKnowledge.ts';
 
 const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 const ALLOWED_MODELS = new Set([DEFAULT_MODEL, 'claude-sonnet-5']);
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-
-const CATEGORIES = [
-  'Fuel', 'Materials', 'Labor', 'Food', 'Transport',
-  'Equipment', 'Office', 'Utilities', 'Rent',
-  'Communication', 'Consulting', 'Other',
-];
 
 // Domain-aware prompt. These are Tanzanian TRA fiscal receipts, so we tell the model the
 // exact field formats and the common OCR confusions (B/8, I/1, O/0, dropped leading 1) so
@@ -29,7 +24,9 @@ Return ONLY a single JSON object matching this exact schema. No prose, no markdo
   "total_amount": number | null,
   "tax_amount": number | null,
   "category": one of ${JSON.stringify(CATEGORIES)} | null,
-  "low_confidence_fields": string[]
+  "low_confidence_fields": string[],
+  "merchant_hint": string | null,
+  "raw_text_excerpt": string | null
 }
 
 TANZANIA TRA FIELD RULES — follow exactly:
@@ -40,6 +37,13 @@ TANZANIA TRA FIELD RULES — follow exactly:
 - tax_amount: the VAT portion only — the "TAX A – 18%" / "TOTAL TAX" line. If the receipt shows no VAT, set null and add "tax_amount" to low_confidence_fields.
 - receipt_number: the receipt/ticket number (e.g. "RECEIPT NO", "TICKET NO").
 - Read all amounts digit-by-digit; never invent, drop, or duplicate a digit.
+
+Tanzania merchant context:
+- "START OF LEGAL RECEIPT", "START OF UCON RECEIPT", "START OF LEON RECEIPT" and similar headers are NOT merchant names. Read the merchant printed below/near the logo/TIN.
+- TotalEnergies, Total Energy, Total, TokiEnergy/TokiEnergies/TokroEnergies OCR variants, Oilcom, Puma Energy, Oryx Energies, Engen, Lake Oil, GBP, Camel Oil, MOIL, GAPCO, Vivo Energy/Shell, Hass Petroleum, Star Oil, Mogas, Acer Petroleum, Mount Meru, Petro Africa, Petrofuel, Sahara Energy, Dalbit, Olympic Petroleum, Natoil, Afroil, General Petroleum, World Oil, TIPER, and petrol/service/filling stations are fuel merchants. Categorize them as Fuel, not Utilities.
+- If a receipt sells petrol, diesel, kerosene, lubricant, or station fuel, category must be Fuel.
+- If OCR is noisy but the logo/brand clearly says TotalEnergies, return vendor "TotalEnergies" exactly.
+- If the first line is only a legal receipt header, look below it. For supermarket receipts, the merchant may be "SHOPPERS SUPERMARKET LTD." even when the header says "START OF LEGAL RECEIPT".
 
 General rules:
 - If a field cannot be read confidently, set it to null AND add its name to low_confidence_fields.
@@ -152,18 +156,19 @@ Deno.serve(async (req) => {
     return bad('unable to parse model output as JSON', 502);
   }
 
-  const category = parsed.category && CATEGORIES.includes(parsed.category) ? parsed.category : null;
+  const normalized = normalizeTanzaniaReceipt(parsed);
+  const category = normalized.category && CATEGORIES.includes(normalized.category) ? normalized.category : null;
 
   const updates = {
-    vendor_name: parsed.vendor_name,
-    vendor_tin: parsed.vendor_tin,
-    vendor_vrn: parsed.vendor_vrn,
-    receipt_number: parsed.receipt_number,
-    verification_code: parsed.verification_code,
-    receipt_date: parsed.receipt_date,
-    receipt_time: parsed.receipt_time,
-    total_amount: parsed.total_amount,
-    tax_amount: parsed.tax_amount,
+    vendor_name: normalized.vendor_name,
+    vendor_tin: normalized.vendor_tin,
+    vendor_vrn: normalized.vendor_vrn,
+    receipt_number: normalized.receipt_number,
+    verification_code: normalized.verification_code,
+    receipt_date: normalized.receipt_date,
+    receipt_time: normalized.receipt_time,
+    total_amount: normalized.total_amount,
+    tax_amount: normalized.tax_amount,
     category,
     low_confidence_fields: parsed.low_confidence_fields ?? [],
     raw_ai_response: claudeJson,

@@ -78,7 +78,7 @@ const english = {
     finish: 'Finish signup',
     otp: {
       title: 'Verify your email',
-      subtitle: 'We sent a 6-digit code to',
+      subtitle: 'We sent a code to',
       resend: 'Resend code',
       resendIn: (s: number) => `Resend in ${s}s`,
       invalid: "That code isn't right. Try again.",

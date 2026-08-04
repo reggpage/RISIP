@@ -1,0 +1,178 @@
+export const CATEGORIES = [
+  'Fuel', 'Materials', 'Labor', 'Food', 'Transport',
+  'Equipment', 'Office', 'Utilities', 'Rent',
+  'Communication', 'Consulting', 'Other',
+] as const;
+
+type ReceiptLike = Record<string, unknown>;
+
+type KnownMerchant = {
+  canonical: string;
+  category: string;
+  aliases: string[];
+  tins?: string[];
+};
+
+const FUEL_KEYWORDS = [
+  'fuel', 'petrol', 'diesel', 'kerosene', 'kerosine', 'lubricant', 'lubricants',
+  'engine oil', 'service station', 'filling station', 'client ticket', 'station',
+  'pms', 'ago', 'ik', 'jet a-1',
+];
+
+const KNOWN_MERCHANTS: KnownMerchant[] = [
+  {
+    canonical: 'TotalEnergies',
+    category: 'Fuel',
+    aliases: [
+      'totalenergies', 'total energies', 'total energy', 'total tanzania', 'total',
+      'tokienergies', 'tokienergy', 'tokroenergies', 'tokrienergies', 'toki energies',
+      'totalenergies dodoma service station', 'dodoma service station',
+    ],
+  },
+  { canonical: 'Puma Energy', category: 'Fuel', aliases: ['puma energy', 'puma'] },
+  { canonical: 'Oryx Energies', category: 'Fuel', aliases: ['oryx energies', 'oryx energy', 'oryx'] },
+  { canonical: 'Oilcom', category: 'Fuel', aliases: ['oilcom', 'oil com', 'oilcom t ltd'] },
+  { canonical: 'Lake Oil', category: 'Fuel', aliases: ['lake oil', 'lakeoil'] },
+  { canonical: 'Augusta Energy', category: 'Fuel', aliases: ['augusta energy', 'augusta'] },
+  { canonical: 'GBP Tanzania', category: 'Fuel', aliases: ['gbp', 'gbp t ltd', 'gbp tanzania'] },
+  { canonical: 'Camel Oil', category: 'Fuel', aliases: ['camel oil', 'cameloil'] },
+  { canonical: 'MOIL', category: 'Fuel', aliases: ['moil', 'mansoor industries', 'moil tanzania'] },
+  { canonical: 'GAPCO', category: 'Fuel', aliases: ['gapco', 'gapco t ltd'] },
+  { canonical: 'Vivo Energy', category: 'Fuel', aliases: ['vivo energy', 'shell', 'vivo energy tanzania'] },
+  { canonical: 'Hass Petroleum', category: 'Fuel', aliases: ['hass petroleum', 'hass'] },
+  { canonical: 'Star Oil', category: 'Fuel', aliases: ['star oil', 'staroil'] },
+  { canonical: 'Mogas', category: 'Fuel', aliases: ['mogas', 'mogas international'] },
+  { canonical: 'Acer Petroleum', category: 'Fuel', aliases: ['acer petroleum', 'acer'] },
+  { canonical: 'Mount Meru Petroleum', category: 'Fuel', aliases: ['mount meru', 'mt meru', 'mount meru petroleum'] },
+  { canonical: 'Petro Africa', category: 'Fuel', aliases: ['petro africa', 'petroafrica'] },
+  { canonical: 'Petrofuel', category: 'Fuel', aliases: ['petrofuel', 'petro fuel', 'petrol fuel'] },
+  { canonical: 'Engen', category: 'Fuel', aliases: ['engen'] },
+  { canonical: 'Sahara Energy', category: 'Fuel', aliases: ['sahara energy', 'sahara'] },
+  { canonical: 'Dalbit Petroleum', category: 'Fuel', aliases: ['dalbit petroleum', 'dalbit'] },
+  { canonical: 'Olympic Petroleum', category: 'Fuel', aliases: ['olympic petroleum', 'olympic'] },
+  { canonical: 'ATN Petroleum', category: 'Fuel', aliases: ['atn petroleum', 'atn'] },
+  { canonical: 'Natoil', category: 'Fuel', aliases: ['natoil', 'nat oil'] },
+  { canonical: 'Afroil', category: 'Fuel', aliases: ['afroil', 'afro oil'] },
+  { canonical: 'General Petroleum', category: 'Fuel', aliases: ['general petroleum', 'gm petroleum', 'g m petroleum'] },
+  { canonical: 'G.M & Company', category: 'Fuel', aliases: ['g m company', 'gm company', 'g.m company', 'g.m & company'] },
+  { canonical: 'World Oil', category: 'Fuel', aliases: ['world oil', 'world oil terminal'] },
+  { canonical: 'TIPER', category: 'Fuel', aliases: ['tiper', 'tanzania international petroleum reserves'] },
+  { canonical: 'Shoppers Supermarket Ltd', category: 'Other', aliases: ['shoppers supermarket', 'shoppers super market'], tins: ['101327036'] },
+];
+
+function cleanText(value: unknown): string {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function compact(value: unknown): string {
+  return cleanText(value).replace(/\s+/g, '');
+}
+
+function editDistance(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  const curr = Array.from({ length: b.length + 1 }, () => 0);
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      curr[j] = Math.min(
+        prev[j] + 1,
+        curr[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
+  }
+  return prev[b.length];
+}
+
+function similarity(a: string, b: string): number {
+  if (!a || !b) return 0;
+  if (a.includes(b) || b.includes(a)) return 1;
+  return 1 - editDistance(a, b) / Math.max(a.length, b.length);
+}
+
+function normalizeTin(value: unknown): string | null {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  if (digits.length === 9) return digits;
+  if (digits.length === 8) return `1${digits}`;
+  return digits || null;
+}
+
+function vendorLooksLikeReceiptHeader(vendor: string): boolean {
+  return /start\s+of.*receipt|legal\s+receipt|ucon\s+receipt|leon\s+receipt|official\s+receipt/i.test(cleanText(vendor));
+}
+
+function findMerchant(row: ReceiptLike): KnownMerchant | null {
+  const vendor = cleanText(row.vendor ?? row.vendor_name);
+  const vendorCompact = compact(row.vendor ?? row.vendor_name);
+  const category = cleanText(row.category);
+  const context = [
+    vendor,
+    category,
+    row.description,
+    row.raw_text,
+    row.raw_text_excerpt,
+    row.merchant_hint,
+    row.vendor_evidence,
+    Array.isArray(row.line_items) ? row.line_items.join(' ') : '',
+  ].map(cleanText).join(' ');
+  const tin = normalizeTin(row.vendor_tin);
+
+  for (const merchant of KNOWN_MERCHANTS) {
+    if (tin && merchant.tins?.includes(tin)) return merchant;
+  }
+
+  let best: { merchant: KnownMerchant; score: number } | null = null;
+  for (const merchant of KNOWN_MERCHANTS) {
+    for (const alias of merchant.aliases) {
+      const aliasClean = cleanText(alias);
+      const aliasCompact = compact(alias);
+      const score = Math.max(
+        similarity(vendor, aliasClean),
+        similarity(vendorCompact, aliasCompact),
+        context.includes(aliasClean) ? 0.98 : 0,
+      );
+      if (!best || score > best.score) best = { merchant, score };
+    }
+  }
+
+  return best && best.score >= 0.72 ? best.merchant : null;
+}
+
+function isFuelContext(row: ReceiptLike, merchant: KnownMerchant | null): boolean {
+  if (merchant?.category === 'Fuel') return true;
+  const context = cleanText([
+    row.vendor,
+    row.vendor_name,
+    row.category,
+    row.description,
+    row.raw_text,
+    row.raw_text_excerpt,
+    row.merchant_hint,
+    row.vendor_evidence,
+    Array.isArray(row.line_items) ? row.line_items.join(' ') : '',
+  ].join(' '));
+  return FUEL_KEYWORDS.some((term) => context.includes(term));
+}
+
+export function normalizeTanzaniaReceipt<T extends ReceiptLike>(row: T): T {
+  const merchant = findMerchant(row);
+  const rawVendor = String(row.vendor ?? row.vendor_name ?? '');
+  const vendorKey = 'vendor_name' in row ? 'vendor_name' : 'vendor';
+  const normalizedTin = normalizeTin(row.vendor_tin);
+  const shouldReplaceVendor = merchant && (!rawVendor || vendorLooksLikeReceiptHeader(rawVendor) || merchant.category === 'Fuel');
+  const category = isFuelContext(row, merchant) ? 'Fuel' : row.category ?? merchant?.category;
+
+  return {
+    ...row,
+    [vendorKey]: shouldReplaceVendor ? merchant.canonical : row[vendorKey],
+    vendor_tin: normalizedTin,
+    category,
+    raw_ai_response: row.raw_ai_response,
+  };
+}

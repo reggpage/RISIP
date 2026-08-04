@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Receipt, Users, FileText, Wallet } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
-import EmptyState from '@/components/ui/EmptyState';
 import { CategoryBarSkeleton, ListItemSkeleton, MetricCardSkeleton } from '@/components/ui/Skeleton';
 import Select from '@/components/ui/Select';
 import MetricCard from '@/components/dashboard/MetricCard';

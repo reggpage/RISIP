@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, FolderKanban, Receipt, FileText, Settings, Wallet, X, LogOut,
+  LayoutDashboard, FolderKanban, Receipt, FileText, Settings, Wallet, X, LogOut, Handshake,
 } from 'lucide-react';
 import RisipLogo from '@/components/ui/RisipLogo';
 import { signOut } from '@/lib/auth';
@@ -13,6 +13,7 @@ const desktopItems: Item[] = [
   { to: '/dashboard', label: sw.nav.dashboard, icon: LayoutDashboard, allowed: ['owner', 'accountant', 'worker'] },
   { to: '/projects', label: sw.nav.projects, icon: FolderKanban, allowed: ['owner', 'accountant', 'worker'] },
   { to: '/receipts', label: sw.nav.receipts, icon: Receipt, allowed: ['worker', 'accountant', 'owner'] },
+  { to: '/claims', label: 'Claims', icon: Handshake, allowed: ['owner', 'accountant'] },
   { to: '/invoices', label: sw.nav.invoices, icon: FileText, allowed: ['owner', 'accountant'] },
   { to: '/petty-cash', label: 'Petty cash', icon: Wallet, allowed: ['owner', 'accountant'] },
   { to: '/settings', label: sw.nav.settings, icon: Settings, allowed: ['owner'] },

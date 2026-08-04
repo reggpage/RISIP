@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, Plus, Pencil, Link as LinkIcon } from 'lucide-react';
+import { FileText, Plus, Pencil, Link as LinkIcon, Loader2, Trash2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
@@ -8,7 +8,9 @@ import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import { ListItemSkeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import {
+  deleteInvoice,
   generateInvoice,
   GenerateInvoiceError,
   invoicePublicUrl,
@@ -48,6 +50,7 @@ export default function InvoicesPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const { state: invoicesState, refresh } = useInvoices(projectId || undefined);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const authReady = auth.status !== 'loading';
   const canGenerate =
@@ -78,6 +81,7 @@ export default function InvoicesPage() {
   }
 
   const toast = useToast();
+  const confirm = useConfirm();
 
   // "Send to Client" from the list: mark sent (if not already) and copy the public link.
   async function shareLink(inv: Invoice) {
@@ -95,6 +99,26 @@ export default function InvoicesPage() {
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : sw.common.error);
+    }
+  }
+
+  async function removeInvoice(inv: Invoice) {
+    const ok = await confirm({
+      title: 'Delete this invoice?',
+      message: 'This removes the invoice card and its receipt links. The original receipts stay in the project.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+    setDeletingId(inv.id);
+    try {
+      await deleteInvoice(inv.id);
+      toast.success('Invoice deleted.');
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : sw.common.error);
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -209,6 +233,15 @@ export default function InvoicesPage() {
                     {inv.status === 'sent' ? 'Copy live link' : 'Send to Client'}
                   </Button>
                 )}
+                <Button
+                  variant="secondary"
+                  disabled={deletingId === inv.id}
+                  onClick={() => void removeInvoice(inv)}
+                  className="!border-red-300 !text-red-600 hover:!bg-red-50"
+                >
+                  {deletingId === inv.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  Delete
+                </Button>
               </div>
             </Card>
           ))}

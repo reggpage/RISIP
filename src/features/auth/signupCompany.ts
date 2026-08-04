@@ -10,7 +10,7 @@ export type CompanyDetails = {
   company_password: string;
 };
 
-// Step 1 → send a 6-digit OTP to email. Delivered by the send-email Auth hook (Resend).
+// Step 1 → send an OTP to email. Delivered by the send-email Auth hook (Resend).
 export async function sendSignupOtp(email: string, fullName: string) {
   const { error } = await supabase.auth.signInWithOtp({
     email,

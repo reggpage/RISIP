@@ -30,5 +30,14 @@ enable_confirmations = false
 enabled = true
 file_size_limit = "10MiB"
 
-[functions]
+[functions.batch-extract-receipts]
 verify_jwt = true
+
+[functions.extract-receipt]
+verify_jwt = true
+
+[functions.inbound-email]
+verify_jwt = false
+
+[functions.send-email]
+verify_jwt = false

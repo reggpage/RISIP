@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X, Receipt as ReceiptGlyph } from 'lucide-react';
+import ImageLightbox from '@/components/ui/ImageLightbox';
 import { receiptImageUrl } from '@/features/receipts/uploadReceipt';
 import { supabase } from '@/lib/supabase';
 import { formatDate, formatMoney } from '@/lib/format';
@@ -32,12 +33,12 @@ export default function ReceiptAuditModal({
   const [disputing, setDisputing] = useState<string | null>(null);
   const [disputeText, setDisputeText] = useState('');
   const [sent, setSent] = useState<Set<string>>(new Set());
+  const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       for (const r of receipts) {
-        if (!r.image_url) continue;
         try {
           if (publicToken) {
             const { data } = await supabase.functions.invoke<{ signed_url: string | null }>(
@@ -47,8 +48,18 @@ export default function ReceiptAuditModal({
             if (!cancelled && data?.signed_url) {
               setImages((prev) => ({ ...prev, [r.id]: data.signed_url! }));
             }
-          } else if (authed) {
+          } else if (authed && r.image_url) {
             const url = await receiptImageUrl(r.image_url);
+            if (!cancelled) setImages((prev) => ({ ...prev, [r.id]: url }));
+          } else if (authed && r.scanned_doc_id) {
+            const { data: doc } = await supabase
+              .from('scanned_documents')
+              .select('file_url')
+              .eq('id', r.scanned_doc_id)
+              .maybeSingle();
+            const path = doc?.file_url as string | undefined;
+            if (!path || path.toLowerCase().endsWith('.pdf')) continue;
+            const url = await receiptImageUrl(path);
             if (!cancelled) setImages((prev) => ({ ...prev, [r.id]: url }));
           }
         } catch {
@@ -63,7 +74,7 @@ export default function ReceiptAuditModal({
 
   return (
     <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-surface shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-surface shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="sticky top-0 flex items-center justify-between border-b border-surface-border bg-surface px-5 py-3">
           <h2 className="text-base font-semibold text-ink">{title}</h2>
           <button type="button" onClick={onClose} className="rounded p-1 text-ink-muted hover:bg-surface-muted hover:text-ink">
@@ -73,39 +84,48 @@ export default function ReceiptAuditModal({
 
         <div className="flex flex-col gap-4 p-5">
           {receipts.map((r) => (
-            <div key={r.id} className="rounded-xl border border-surface-border p-3">
-              <div className="mb-2 flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-ink">{r.vendor_name ?? '—'}</div>
-                  <div className="text-xs text-ink-muted">{formatDate(r.receipt_date)}</div>
-                </div>
-                <div className="text-right">
-                  <div className="font-display font-semibold text-ink">{formatMoney(r.total_amount ?? null)}</div>
-                  <div className="text-xs text-ink-muted">VAT {formatMoney(r.tax_amount ?? null)}</div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                <Meta label="TIN" value={r.vendor_tin ?? '—'} />
-                <Meta label="VRN" value={r.vendor_vrn ?? '—'} />
-                <Meta label="Verification code" value={r.verification_code ?? '—'} />
-                <Meta label="Category" value={r.category ?? '—'} />
-              </div>
-
-              <div className="mt-3 h-40 overflow-hidden rounded-lg bg-surface-muted">
+            <div key={r.id} className="grid gap-3 rounded-xl border border-surface-border p-3 sm:grid-cols-[150px_1fr]">
+              <div className="overflow-hidden rounded-lg bg-surface-muted">
                 {images[r.id] ? (
-                  <img src={images[r.id]} alt="" className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => setZoom({ src: images[r.id], alt: r.vendor_name ?? 'Receipt' })}
+                    className="group block aspect-[3/4] w-full"
+                    aria-label="View receipt image"
+                    title="View image"
+                  >
+                    <img src={images[r.id]} alt="" className="h-full w-full object-cover transition group-hover:opacity-90" />
+                  </button>
                 ) : (
-                  <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-ink-muted">
+                  <div className="flex aspect-[3/4] w-full flex-col items-center justify-center gap-1 text-ink-muted">
                     <ReceiptGlyph className="h-7 w-7" />
                     <span className="text-xs">No image</span>
                   </div>
                 )}
               </div>
 
-              {/* Per-receipt dispute (public page only). */}
-              {onDispute && (
-                <div className="mt-3">
+              <div className="min-w-0">
+                <div className="mb-2 flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-ink">{r.vendor_name ?? '—'}</div>
+                    <div className="text-xs text-ink-muted">{formatDate(r.receipt_date)}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-display font-semibold text-ink">{formatMoney(r.total_amount ?? null)}</div>
+                    <div className="text-xs text-ink-muted">VAT {formatMoney(r.tax_amount ?? null)}</div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                  <Meta label="TIN" value={r.vendor_tin ?? '—'} />
+                  <Meta label="VRN" value={r.vendor_vrn ?? '—'} />
+                  <Meta label="Verification code" value={r.verification_code ?? '—'} />
+                  <Meta label="Category" value={r.category ?? '—'} />
+                </div>
+
+                {/* Per-receipt dispute (public page only). */}
+                {onDispute && (
+                  <div className="mt-3">
                   {sent.has(r.id) ? (
                     <p className="text-xs font-medium text-emerald-600">Issue reported. The accountant will review it.</p>
                   ) : disputing === r.id ? (
@@ -146,12 +166,14 @@ export default function ReceiptAuditModal({
                       Report an issue with this receipt
                     </button>
                   )}
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>
       </div>
+      {zoom && <ImageLightbox src={zoom.src} alt={zoom.alt} onClose={() => setZoom(null)} />}
     </div>
   );
 }

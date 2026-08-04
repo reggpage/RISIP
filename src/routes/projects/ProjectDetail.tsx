@@ -18,7 +18,6 @@ import {
 import { useProject } from '@/features/projects/useProjects';
 import { useReceipts } from '@/features/receipts/useReceipts';
 import { useAuth } from '@/lib/auth';
-import { useToast } from '@/components/ui/Toast';
 import { formatDate, formatMoney } from '@/lib/format';
 import { sw } from '@/i18n/sw';
 import type { InviteLink, InviteRole } from '@/types/db';
@@ -35,7 +34,6 @@ export default function ProjectDetail() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
   const [myIsLeader, setMyIsLeader] = useState(false);
-  const toast = useToast();
 
   const profile = auth.status === 'signed-in' ? auth.profile : null;
   const isOwner = profile?.role === 'owner';
@@ -280,4 +278,3 @@ export default function ProjectDetail() {
     </div>
   );
 }
-

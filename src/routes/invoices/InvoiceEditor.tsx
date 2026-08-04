@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { Eye, Loader2, Send, Signature } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -15,6 +15,7 @@ import {
   resolveComment,
   invoicePdfUrl,
   invoicePublicUrl,
+  safeReceiptTax,
   setInvoiceStatus,
   updateInvoice,
   type InvoiceComment,
@@ -105,7 +106,7 @@ export default function InvoiceEditor() {
     let gTax = 0;
     for (const [category, recs] of byCat) {
       const total = recs.reduce((s, r) => s + Number(r.total_amount || 0), 0);
-      const tax = recs.reduce((s, r) => s + Number(r.tax_amount || 0), 0);
+      const tax = recs.reduce((s, r) => s + safeReceiptTax(r), 0);
       gTotal += total;
       gTax += tax;
       items.push({

@@ -16,6 +16,7 @@
 // Env: ANTHROPIC_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, INBOUND_WEBHOOK_SECRET?
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { normalizeTanzaniaReceipt } from '../_shared/tanzaniaReceiptKnowledge.ts';
 
 const MODEL = 'claude-haiku-4-5-20251001';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -43,8 +44,17 @@ For EACH distinct receipt found, extract the following information:
 7. net_amount (number)
 8. tax_amount (VAT, number)
 9. total_amount (number)
+10. merchant_hint (short text/brand/logo evidence you used for the vendor)
+11. raw_text_excerpt (one or two key lines around merchant/TIN/date/total)
 
-Return the response STRICTLY as a raw JSON array of objects, where each object represents one receipt. Do not wrap it in markdown codeblocks. If a field cannot be read, use null. Example: [{"vendor":"RealBlocks Limited","vendor_tin":null,"vendor_vrn":null,"receipt_date":"2026-08-01","category":"Materials","verification_code":null,"net_amount":100000,"tax_amount":18000,"total_amount":118000}]`;
+Tanzania merchant context:
+- The words "START OF LEGAL RECEIPT", "START OF UCON RECEIPT", "START OF LEON RECEIPT" and similar headers are NOT merchant names. Read the merchant printed below/near the logo/TIN.
+- TotalEnergies, Total Energy, Total, TokiEnergy/TokiEnergies/TokroEnergies OCR variants, Oilcom, Puma Energy, Oryx Energies, Engen, Lake Oil, GBP, Camel Oil, MOIL, GAPCO, Vivo Energy/Shell, Hass Petroleum, Star Oil, Mogas, Acer Petroleum, Mount Meru, Petro Africa, Petrofuel, Sahara Energy, Dalbit, Olympic Petroleum, Natoil, Afroil, General Petroleum, World Oil, TIPER, and petrol/service/filling stations are fuel merchants. Categorize them as Fuel, not Utilities.
+- If a receipt sells petrol, diesel, kerosene, lubricant, or station fuel, category must be Fuel.
+- If OCR is noisy but the logo/brand clearly says TotalEnergies, return vendor "TotalEnergies" exactly.
+- If the first line is only a legal receipt header, look below it. For supermarket receipts, the merchant may be "SHOPPERS SUPERMARKET LTD." even when the header says "START OF LEGAL RECEIPT".
+
+Return the response STRICTLY as a raw JSON array of objects, where each object represents one receipt. Do not wrap it in markdown codeblocks. If a field cannot be read, use null. Example: [{"vendor":"RealBlocks Limited","vendor_tin":null,"vendor_vrn":null,"receipt_date":"2026-08-01","category":"Materials","verification_code":null,"net_amount":100000,"tax_amount":18000,"total_amount":118000,"merchant_hint":"RealBlocks Limited","raw_text_excerpt":"TIN ... TOTAL ..."}]`;
 
 type ExtractedReceipt = {
   vendor: string | null;
@@ -256,7 +266,7 @@ Deno.serve(async (req) => {
   const claudeJson = await claudeRes.json();
   if (!claudeRes.ok) return json({ error: 'claude rejected: ' + claudeRes.status, detail: claudeJson }, 502);
 
-  const rows = parseArray(claudeJson?.content?.[0]?.text ?? '');
+  const rows = parseArray(claudeJson?.content?.[0]?.text ?? '')?.map(normalizeTanzaniaReceipt);
   if (!rows || rows.length === 0) {
     return json({ ok: true, company_id: company.id, scanned_doc_id: doc.id, imported: 0, reason: 'no receipts detected' });
   }

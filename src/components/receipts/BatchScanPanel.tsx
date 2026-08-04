@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { FileText, Loader2, Radio, ScanLine, Trash2, Upload, X } from 'lucide-react';
+import { Eye, FileText, Loader2, Pencil, Radio, Save, ScanLine, Trash2, Upload, X } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import {
   importBatch,
+  normalizeExtractedReceipt,
   scanA3AndExtract,
   type ExtractedReceipt,
 } from '@/features/batchScan/batchScan';
+import { receiptImageUrl } from '@/features/receipts/uploadReceipt';
 import { formatMoney } from '@/lib/format';
+import ImageLightbox from '@/components/ui/ImageLightbox';
 import type { Receipt } from '@/types/db';
 
 const CATEGORIES = [
@@ -22,9 +25,12 @@ type Phase = 'config' | 'processing' | 'review';
 // A review row is an extracted receipt; when it carries an `id` it's an already-persisted
 // inbound (scan-to-email) receipt we approve in place, not a new one we insert.
 type ReviewRow = ExtractedReceipt & { id?: string };
+type MerchantCorrection = { vendor: string | null; category: string | null };
+
+const MERCHANT_MEMORY_KEY = 'risip:batchMerchantMemory:v1';
 
 function toReviewRow(rc: Receipt): ReviewRow {
-  return {
+  return normalizeExtractedReceipt({
     id: rc.id,
     vendor: rc.vendor_name,
     vendor_tin: rc.vendor_tin,
@@ -35,6 +41,43 @@ function toReviewRow(rc: Receipt): ReviewRow {
     net_amount: null,
     tax_amount: rc.tax_amount,
     total_amount: rc.total_amount,
+    image_url: rc.image_url,
+    image_preview_url: null,
+  });
+}
+
+function memoryKey(value: unknown): string {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function readMerchantMemory(): Record<string, MerchantCorrection> {
+  try {
+    return JSON.parse(window.localStorage.getItem(MERCHANT_MEMORY_KEY) ?? '{}') as Record<string, MerchantCorrection>;
+  } catch {
+    return {};
+  }
+}
+
+function rememberMerchantCorrection(before: ReviewRow, after: ReviewRow) {
+  const key = memoryKey(before.vendor);
+  if (!key || key === memoryKey(after.vendor)) return;
+  const memory = readMerchantMemory();
+  memory[key] = { vendor: after.vendor, category: after.category };
+  window.localStorage.setItem(MERCHANT_MEMORY_KEY, JSON.stringify(memory));
+}
+
+function applyMerchantMemory(row: ReviewRow): ReviewRow {
+  const remembered = readMerchantMemory()[memoryKey(row.vendor)];
+  if (!remembered) return row;
+  return {
+    ...row,
+    vendor: remembered.vendor ?? row.vendor,
+    category: remembered.category ?? row.category,
   };
 }
 
@@ -54,8 +97,9 @@ export default function BatchScanPanel({
 }) {
   const toast = useToast();
   const auth = useAuth();
-  const companyId = auth.status === 'signed-in' ? auth.profile.company_id : null;
-  const isFinance = auth.status === 'signed-in' && (auth.profile.role === 'owner' || auth.profile.role === 'accountant');
+  const profile = auth.status === 'signed-in' ? auth.profile : null;
+  const companyId = profile?.company_id ?? null;
+  const isFinance = profile?.role === 'owner' || profile?.role === 'accountant';
   const imageInput = useRef<HTMLInputElement>(null);
   const pdfInput = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>('config');
@@ -70,6 +114,14 @@ export default function BatchScanPanel({
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [scannedDocId, setScannedDocId] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [detailDraft, setDetailDraft] = useState<ReviewRow | null>(null);
+  const [detailEditing, setDetailEditing] = useState(false);
+  const [detailImageUrl, setDetailImageUrl] = useState<string | null>(null);
+  const [detailImageLoading, setDetailImageLoading] = useState(false);
+  const [detailZoomOpen, setDetailZoomOpen] = useState(false);
+
+  const selectedRow = selectedIndex === null ? null : rows[selectedIndex] ?? null;
 
   async function loadInboundBatch(docId: string) {
     const { data, error } = await supabase
@@ -80,7 +132,7 @@ export default function BatchScanPanel({
       .order('created_at', { ascending: true });
     if (error || !data || data.length === 0) return;
     const receipts = data as Receipt[];
-    setRows(receipts.map(toReviewRow));
+    setRows(receipts.map((receipt) => applyMerchantMemory(toReviewRow(receipt))));
     setScannedDocId(docId);
     setImageUrl(receipts[0].image_url ?? null);
     setReviewSource('inbound');
@@ -123,7 +175,7 @@ export default function BatchScanPanel({
       const result = await scanA3AndExtract(file, { project_id: projectId, user_id: userId });
       setScannedDocId(result.scannedDocId);
       setImageUrl(result.storagePath);
-      setRows(result.receipts);
+      setRows(result.receipts.map((receipt) => applyMerchantMemory(normalizeExtractedReceipt(receipt))));
       if (result.receipts.length === 0) {
         toast.info('No receipts were detected on the page.');
       }
@@ -151,8 +203,11 @@ export default function BatchScanPanel({
             .from('receipts')
             .update({
               vendor_name: r.vendor,
+              vendor_tin: r.vendor_tin,
+              vendor_vrn: r.vendor_vrn,
               receipt_date: r.receipt_date,
               category: r.category,
+              verification_code: r.verification_code,
               tax_amount: r.tax_amount,
               total_amount: r.total_amount,
               status: 'confirmed',
@@ -183,6 +238,25 @@ export default function BatchScanPanel({
   function patchRow(i: number, patch: Partial<ReviewRow>) {
     setRows((rs) => rs.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   }
+  function openDetails(i: number) {
+    setSelectedIndex(i);
+    setDetailDraft({ ...rows[i] });
+    setDetailEditing(false);
+    setDetailZoomOpen(false);
+  }
+  function closeDetails() {
+    setSelectedIndex(null);
+    setDetailDraft(null);
+    setDetailEditing(false);
+    setDetailImageUrl(null);
+    setDetailZoomOpen(false);
+  }
+  function saveDetails() {
+    if (selectedIndex === null || !detailDraft) return;
+    rememberMerchantCorrection(rows[selectedIndex], detailDraft);
+    patchRow(selectedIndex, detailDraft);
+    setDetailEditing(false);
+  }
   async function removeRow(i: number) {
     const r = rows[i];
     if (reviewSource === 'inbound' && r.id) {
@@ -191,6 +265,34 @@ export default function BatchScanPanel({
     }
     setRows((rs) => rs.filter((_, idx) => idx !== i));
   }
+
+  useEffect(() => {
+    if (detailDraft?.image_preview_url) {
+      setDetailImageUrl(detailDraft.image_preview_url);
+      setDetailImageLoading(false);
+      return;
+    }
+    const path = detailDraft?.image_url ?? imageUrl;
+    if (!path || path.toLowerCase().endsWith('.pdf')) {
+      setDetailImageUrl(null);
+      return;
+    }
+    let alive = true;
+    setDetailImageLoading(true);
+    void receiptImageUrl(path)
+      .then((url) => {
+        if (!alive) return;
+        setDetailImageUrl(url);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setDetailImageUrl(null);
+      })
+      .finally(() => {
+        if (alive) setDetailImageLoading(false);
+      });
+    return () => { alive = false; };
+  }, [detailDraft?.image_preview_url, detailDraft?.image_url, imageUrl]);
 
   return (
     <div className="fixed inset-0 z-[150] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true">
@@ -274,7 +376,7 @@ export default function BatchScanPanel({
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-ink">Batch review · {rows.length} receipts</h3>
-                <span className="text-xs text-ink-muted">Edit any field, then approve.</span>
+                <span className="text-xs text-ink-muted">View details, edit inside the card, then approve.</span>
               </div>
 
               <div className="overflow-x-auto">
@@ -286,36 +388,29 @@ export default function BatchScanPanel({
                       <th className="py-2 pr-2">Category</th>
                       <th className="py-2 pr-2 text-right">VAT</th>
                       <th className="py-2 pr-2 text-right">Total</th>
-                      <th className="py-2" />
+                      <th className="py-2 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.map((r, i) => (
                       <tr key={r.id ?? i} className="border-b border-surface-border/60">
-                        <td className="py-1.5 pr-2">
-                          <input value={r.vendor ?? ''} onChange={(e) => patchRow(i, { vendor: e.target.value })}
-                            className="w-full rounded border border-surface-border bg-surface px-2 py-1 text-sm" />
+                        <td className="max-w-[210px] py-2 pr-2 font-medium text-ink">
+                          <span className="block truncate">{r.vendor ?? 'Unknown vendor'}</span>
                         </td>
-                        <td className="py-1.5 pr-2">
-                          <input type="date" value={r.receipt_date ?? ''} onChange={(e) => patchRow(i, { receipt_date: e.target.value })}
-                            className="w-full rounded border border-surface-border bg-surface px-2 py-1 text-sm" />
-                        </td>
-                        <td className="py-1.5 pr-2">
-                          <select value={r.category ?? 'Other'} onChange={(e) => patchRow(i, { category: e.target.value })}
-                            className="w-full rounded border border-surface-border bg-surface px-2 py-1 text-sm">
-                            {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                          </select>
-                        </td>
-                        <td className="py-1.5 pr-2">
-                          <input inputMode="numeric" value={r.tax_amount ?? ''} onChange={(e) => patchRow(i, { tax_amount: e.target.value ? Number(e.target.value.replace(/[^\d.]/g, '')) : null })}
-                            className="w-24 rounded border border-surface-border bg-surface px-2 py-1 text-right text-sm tabular-nums" />
-                        </td>
-                        <td className="py-1.5 pr-2">
-                          <input inputMode="numeric" value={r.total_amount ?? ''} onChange={(e) => patchRow(i, { total_amount: e.target.value ? Number(e.target.value.replace(/[^\d.]/g, '')) : null })}
-                            className="w-28 rounded border border-surface-border bg-surface px-2 py-1 text-right text-sm tabular-nums" />
-                        </td>
-                        <td className="py-1.5 text-right">
-                          <button type="button" onClick={() => void removeRow(i)} className="rounded p-1 text-ink-muted hover:bg-red-50 hover:text-red-600">
+                        <td className="py-2 pr-2 text-ink-muted">{r.receipt_date ?? '—'}</td>
+                        <td className="py-2 pr-2 text-ink-muted">{r.category ?? 'Other'}</td>
+                        <td className="py-2 pr-2 text-right tabular-nums text-ink-muted">{r.tax_amount ?? '—'}</td>
+                        <td className="py-2 pr-2 text-right font-medium tabular-nums text-ink">{r.total_amount ?? '—'}</td>
+                        <td className="py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => openDetails(i)}
+                            className="mr-1 rounded p-1 text-ink-muted hover:bg-surface-muted hover:text-ink"
+                            aria-label="View receipt details"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button type="button" onClick={() => void removeRow(i)} className="rounded p-1 text-ink-muted hover:bg-red-50 hover:text-red-600" aria-label="Remove receipt">
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </td>
@@ -349,6 +444,121 @@ export default function BatchScanPanel({
           </div>
         )}
       </div>
+
+      {selectedRow && detailDraft && (
+        <div className="fixed inset-0 z-[160] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-t-2xl bg-surface shadow-2xl sm:rounded-2xl">
+            <div className="flex items-center justify-between border-b border-surface-border px-5 py-3">
+              <div>
+                <h3 className="text-base font-semibold text-ink">Receipt details</h3>
+                <p className="text-xs text-ink-muted">{detailDraft.vendor ?? 'Unknown vendor'}</p>
+              </div>
+              <button type="button" onClick={closeDetails} className="rounded p-1 text-ink-muted hover:bg-surface-muted hover:text-ink">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="max-h-[70vh] overflow-y-auto p-5">
+              <div className="grid gap-4 md:grid-cols-[220px_1fr]">
+                <div className="overflow-hidden rounded-lg border border-surface-border bg-surface-muted">
+                  {detailImageLoading ? (
+                    <div className="flex h-56 items-center justify-center text-ink-muted">
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    </div>
+                  ) : detailImageUrl ? (
+                    <button
+                      type="button"
+                      onClick={() => setDetailZoomOpen(true)}
+                      className="group relative block h-56 w-full"
+                      aria-label="View receipt image"
+                    >
+                      <img src={detailImageUrl} alt="Receipt crop" className="h-full w-full object-contain transition group-hover:opacity-90" />
+                      <span className="absolute bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-black/70 px-3 py-1 text-xs font-medium text-white opacity-0 transition group-hover:opacity-100">
+                        View image
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="flex h-56 items-center justify-center px-4 text-center text-xs text-ink-muted">
+                      Receipt crop preview is unavailable for this scan.
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="sm:col-span-2 text-xs font-medium text-ink-muted">
+                    Vendor
+                    <input disabled={!detailEditing} value={detailDraft.vendor ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, vendor: e.target.value })}
+                      className="mt-1 w-full rounded border border-surface-border bg-surface px-2 py-2 text-sm text-ink disabled:bg-surface-muted" />
+                  </label>
+                  <label className="text-xs font-medium text-ink-muted">
+                    Date
+                    <input disabled={!detailEditing} type="date" value={detailDraft.receipt_date ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, receipt_date: e.target.value })}
+                      className="mt-1 w-full rounded border border-surface-border bg-surface px-2 py-2 text-sm text-ink disabled:bg-surface-muted" />
+                  </label>
+                  <label className="text-xs font-medium text-ink-muted">
+                    Category
+                    <select disabled={!detailEditing} value={detailDraft.category ?? 'Other'} onChange={(e) => setDetailDraft({ ...detailDraft, category: e.target.value })}
+                      className="mt-1 w-full rounded border border-surface-border bg-surface px-2 py-2 text-sm text-ink disabled:bg-surface-muted">
+                      {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </label>
+                  <label className="text-xs font-medium text-ink-muted">
+                    TIN
+                    <input disabled={!detailEditing} value={detailDraft.vendor_tin ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, vendor_tin: e.target.value })}
+                      className="mt-1 w-full rounded border border-surface-border bg-surface px-2 py-2 text-sm text-ink disabled:bg-surface-muted" />
+                  </label>
+                  <label className="text-xs font-medium text-ink-muted">
+                    VRN
+                    <input disabled={!detailEditing} value={detailDraft.vendor_vrn ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, vendor_vrn: e.target.value })}
+                      className="mt-1 w-full rounded border border-surface-border bg-surface px-2 py-2 text-sm text-ink disabled:bg-surface-muted" />
+                  </label>
+                  <label className="sm:col-span-2 text-xs font-medium text-ink-muted">
+                    Verification code
+                    <input disabled={!detailEditing} value={detailDraft.verification_code ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, verification_code: e.target.value })}
+                      className="mt-1 w-full rounded border border-surface-border bg-surface px-2 py-2 text-sm text-ink disabled:bg-surface-muted" />
+                  </label>
+                  <label className="text-xs font-medium text-ink-muted">
+                    Net
+                    <input disabled={!detailEditing} inputMode="numeric" value={detailDraft.net_amount ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, net_amount: e.target.value ? Number(e.target.value.replace(/[^\d.]/g, '')) : null })}
+                      className="mt-1 w-full rounded border border-surface-border bg-surface px-2 py-2 text-sm text-ink disabled:bg-surface-muted" />
+                  </label>
+                  <label className="text-xs font-medium text-ink-muted">
+                    VAT
+                    <input disabled={!detailEditing} inputMode="numeric" value={detailDraft.tax_amount ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, tax_amount: e.target.value ? Number(e.target.value.replace(/[^\d.]/g, '')) : null })}
+                      className="mt-1 w-full rounded border border-surface-border bg-surface px-2 py-2 text-sm text-ink disabled:bg-surface-muted" />
+                  </label>
+                  <label className="sm:col-span-2 text-xs font-medium text-ink-muted">
+                    Total
+                    <input disabled={!detailEditing} inputMode="numeric" value={detailDraft.total_amount ?? ''} onChange={(e) => setDetailDraft({ ...detailDraft, total_amount: e.target.value ? Number(e.target.value.replace(/[^\d.]/g, '')) : null })}
+                      className="mt-1 w-full rounded border border-surface-border bg-surface px-2 py-2 text-sm font-semibold text-ink disabled:bg-surface-muted" />
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-surface-border px-5 py-3">
+              <Button variant="ghost" onClick={closeDetails}>Close</Button>
+              {detailEditing ? (
+                <Button tint="admin" onClick={saveDetails}>
+                  <Save className="h-4 w-4" /> Save
+                </Button>
+              ) : (
+                <Button tint="admin" onClick={() => setDetailEditing(true)}>
+                  <Pencil className="h-4 w-4" /> Edit
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {detailZoomOpen && detailImageUrl && (
+        <ImageLightbox
+          src={detailImageUrl}
+          alt={detailDraft?.vendor ?? 'Receipt'}
+          onClose={() => setDetailZoomOpen(false)}
+        />
+      )}
     </div>
   );
 }

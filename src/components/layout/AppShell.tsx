@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
+import { useToast } from '@/components/ui/Toast';
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 
 export default function AppShell() {
   const auth = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+  const toast = useToast();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const profile = auth.status === 'signed-in' ? auth.profile : null;
 
@@ -14,6 +18,21 @@ export default function AppShell() {
   useEffect(() => {
     setMobileNavOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (auth.status !== 'signed-in') return;
+    if (window.localStorage.getItem('risip:emailVerifyNoticeShown') === '1') return;
+    let cancelled = false;
+    void supabase.auth.getUser().then(({ data }) => {
+      if (cancelled || data.user?.email_confirmed_at) return;
+      window.localStorage.setItem('risip:emailVerifyNoticeShown', '1');
+      toast.info('Verify your email for password recovery and claim notifications.', {
+        label: 'Open settings',
+        onClick: () => navigate('/settings?verify=email'),
+      });
+    });
+    return () => { cancelled = true; };
+  }, [auth.status, navigate, toast]);
 
   return (
     <div className="flex h-full">
