@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import type { AppNotification } from '@/types/db';
 
@@ -9,6 +9,7 @@ type State =
 
 export function useNotifications(userId?: string) {
   const [state, setState] = useState<State>({ status: 'loading', notifications: [] });
+  const channelSuffix = useRef(Math.random().toString(36).slice(2));
 
   const refresh = useCallback(async () => {
     if (!userId) {
@@ -35,7 +36,7 @@ export function useNotifications(userId?: string) {
   useEffect(() => {
     if (!userId) return;
     const channel = supabase
-      .channel(`notifications-${userId}`)
+      .channel(`notifications-${userId}-${channelSuffix.current}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'app_notifications', filter: `recipient_id=eq.${userId}` },

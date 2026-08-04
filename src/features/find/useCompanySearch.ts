@@ -19,11 +19,16 @@ export function useCompanySearch(query: string, delayMs = 250) {
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       setLoading(true);
-      const { data, error } = await supabase.rpc('search_companies', { q });
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 8000);
+      const { data, error } = await supabase
+        .rpc('search_companies', { q })
+        .abortSignal(controller.signal);
+      window.clearTimeout(timeout);
       if (cancelled) return;
       setLoading(false);
       if (error) {
-        setError(error.message);
+        setError(error.name === 'AbortError' ? 'Company search timed out. Check your connection and try again.' : error.message);
         setResults([]);
       } else {
         setError(null);
