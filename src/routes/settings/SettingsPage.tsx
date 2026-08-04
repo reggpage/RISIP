@@ -417,13 +417,21 @@ export default function SettingsPage() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold text-ink">
-                    {emailVerified ? 'Your email is verified' : 'Your email is not verified yet'}
+                    {emailVerified === null
+                      ? 'Checking email verification...'
+                      : emailVerified
+                        ? 'Your email is verified'
+                        : 'Your email is not verified yet'}
                   </div>
                   <p className="mt-1 text-sm text-ink-muted">
                     Verification protects account recovery and confirms where claim/payment notifications should be sent.
                   </p>
                 </div>
-                {emailVerified ? (
+                {emailVerified === null ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-surface-muted px-3 py-1 text-sm font-medium text-ink-muted">
+                    Checking...
+                  </span>
+                ) : emailVerified ? (
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700">
                     <Check className="h-4 w-4" /> Verified
                   </span>
