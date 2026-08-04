@@ -22,6 +22,7 @@ import InvoiceEditor from '@/routes/invoices/InvoiceEditor';
 import PublicInvoice from '@/routes/invoices/PublicInvoice';
 import PettyCashPage from '@/routes/pettyCash/PettyCashPage';
 import SettingsPage from '@/routes/settings/SettingsPage';
+import NotificationsPage from '@/routes/notifications/NotificationsPage';
 
 export default function App() {
   return (
@@ -68,6 +69,7 @@ export default function App() {
 
         <Route path="/receipts" element={<ReceiptsPage />} />
         <Route path="/receipts/new" element={<ManualReceipt />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
         <Route
           path="/claims"
           element={

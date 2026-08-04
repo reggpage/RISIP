@@ -1,8 +1,9 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, FolderKanban, Receipt, FileText, Settings, Wallet, X, LogOut, Handshake,
+  LayoutDashboard, FolderKanban, Receipt, FileText, Settings, Wallet, X, LogOut, Handshake, Bell,
 } from 'lucide-react';
 import RisipLogo from '@/components/ui/RisipLogo';
+import { useNotifications } from '@/features/notifications/notifications';
 import { signOut } from '@/lib/auth';
 import { hasAnyRole, type UserRole } from '@/lib/roles';
 import { sw } from '@/i18n/sw';
@@ -13,6 +14,7 @@ const desktopItems: Item[] = [
   { to: '/dashboard', label: sw.nav.dashboard, icon: LayoutDashboard, allowed: ['owner', 'accountant', 'worker'] },
   { to: '/projects', label: sw.nav.projects, icon: FolderKanban, allowed: ['owner', 'accountant', 'worker'] },
   { to: '/receipts', label: sw.nav.receipts, icon: Receipt, allowed: ['worker', 'accountant', 'owner'] },
+  { to: '/notifications', label: 'Notifications', icon: Bell, allowed: ['owner', 'accountant', 'worker'] },
   { to: '/claims', label: 'Claims', icon: Handshake, allowed: ['owner', 'accountant'] },
   { to: '/invoices', label: sw.nav.invoices, icon: FileText, allowed: ['owner', 'accountant'] },
   { to: '/petty-cash', label: 'Petty cash', icon: Wallet, allowed: ['owner', 'accountant'] },
@@ -31,15 +33,18 @@ const mobileItems: Item[] = desktopItems;
 //   - Wider padding/gaps so the nav breathes instead of feeling cramped.
 export default function Sidebar({
   role,
+  userId,
   mobileOpen,
   onClose,
 }: {
   role: UserRole | undefined;
+  userId: string | undefined;
   mobileOpen: boolean;
   onClose: () => void;
 }) {
   const desktop = desktopItems.filter((i) => hasAnyRole(role, i.allowed));
   const mobile = mobileItems.filter((i) => hasAnyRole(role, i.allowed));
+  const { unreadCount } = useNotifications(userId);
 
   return (
     <>
@@ -63,7 +68,12 @@ export default function Sidebar({
               }
             >
               <Icon className="h-4 w-4" />
-              {label}
+              <span className="min-w-0 flex-1 truncate">{label}</span>
+              {to === '/notifications' && unreadCount > 0 && (
+                <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] font-semibold leading-none text-sidebar">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>
@@ -112,7 +122,12 @@ export default function Sidebar({
               }
             >
               <Icon className="h-4 w-4" />
-              {label}
+              <span className="min-w-0 flex-1 truncate">{label}</span>
+              {to === '/notifications' && unreadCount > 0 && (
+                <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] font-semibold leading-none text-sidebar">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>
