@@ -218,6 +218,7 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [loadingReceipts, setLoadingReceipts] = useState(false);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
 
   useEffect(() => {
     if (projectsState.status === 'ready' && !projectId && projectsState.projects[0]) {
@@ -227,15 +228,28 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
 
   useEffect(() => {
     if (!projectId) return;
+    let cancelled = false;
     setLoadingReceipts(true);
+    setReceiptError(null);
     void fetchRetirableReceipts(profile, projectId)
       .then((rows) => {
+        if (cancelled) return;
         setReceipts(rows);
-        setSelected(new Set(rows.map((r) => r.id)));
+        setSelected(new Set());
       })
-      .catch((err) => toast.error(err instanceof Error ? err.message : 'Could not load receipts.'))
-      .finally(() => setLoadingReceipts(false));
-  }, [profile, projectId, toast]);
+      .catch((err) => {
+        if (cancelled) return;
+        setReceipts([]);
+        setSelected(new Set());
+        setReceiptError(err instanceof Error ? err.message : 'Could not load receipts.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingReceipts(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile.id, projectId]);
 
   const selectedReceipts = receipts.filter((r) => selected.has(r.id));
   const total = selectedReceipts.reduce((sum, r) => sum + Number(r.total_amount || 0), 0);
@@ -324,6 +338,8 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
               <div className="flex items-center gap-2 p-3 text-sm text-ink-muted">
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading receipts
               </div>
+            ) : receiptError ? (
+              <div className="p-3 text-sm text-red-600">{receiptError}</div>
             ) : receipts.length === 0 ? (
               <p className="p-3 text-sm text-ink-muted">No confirmed receipts for this project yet.</p>
             ) : (
