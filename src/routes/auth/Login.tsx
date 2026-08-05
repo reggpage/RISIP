@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
+import { Loader2 } from 'lucide-react';
 import AuthShell from '@/components/layout/AuthShell';
 import Button from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
 import PasswordField from '@/components/ui/PasswordField';
 import type { CompanyHit } from '@/features/find/useCompanySearch';
@@ -40,6 +42,22 @@ export default function Login() {
 
   if (auth.status === 'signed-in' && auth.profile) {
     return <Navigate to={auth.profile.role === 'worker' ? '/receipts' : '/dashboard'} replace />;
+  }
+
+  if (auth.status === 'loading' || auth.status === 'signed-in') {
+    return (
+      <AuthShell>
+        <Card className="flex items-center gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-role-admin/10 text-role-admin">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </span>
+          <span>
+            <span className="block text-sm font-semibold text-ink">Preparing your workspace</span>
+            <span className="block text-sm text-ink-muted">Signing you in securely.</span>
+          </span>
+        </Card>
+      </AuthShell>
+    );
   }
 
   return (

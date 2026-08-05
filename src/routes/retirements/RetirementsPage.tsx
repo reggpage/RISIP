@@ -18,7 +18,6 @@ import { ListItemSkeleton, MetricCardSkeleton } from '@/components/ui/Skeleton';
 import { useProjects } from '@/features/projects/useProjects';
 import {
   createStaffRetirement,
-  fetchReceiptsByIds,
   fetchRetirableReceipts,
   fetchRetirementBundles,
   retirementDocumentUrl,
@@ -28,7 +27,6 @@ import {
   type StaffRetirementStatus,
 } from '@/features/retirements/retirements';
 import { receiptImageUrl } from '@/features/receipts/uploadReceipt';
-import { uploadReceipt } from '@/features/receipts/uploadReceipt';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth, type Profile as AuthProfile } from '@/lib/auth';
 import { formatDate, formatDateTime, formatMoney } from '@/lib/format';
@@ -269,8 +267,6 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
   const [loadingReceipts, setLoadingReceipts] = useState(false);
   const [receiptError, setReceiptError] = useState<string | null>(null);
   const [receiptQuery, setReceiptQuery] = useState('');
-  const receiptUploadRef = useRef<HTMLInputElement>(null);
-  const [uploadingReceipts, setUploadingReceipts] = useState(false);
 
   useEffect(() => {
     if (projectsState.status === 'ready' && !projectId && projectsState.projects[0]) {
@@ -305,7 +301,6 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
 
   const selectedReceipts = receipts.filter((r) => selected.has(r.id));
   const total = selectedReceipts.reduce((sum, r) => sum + Number(r.total_amount || 0), 0);
-  const selectedPendingCount = selectedReceipts.filter((r) => r.status !== 'confirmed').length;
   const visibleReceipts = useMemo(() => {
     const q = receiptQuery.trim().toLowerCase();
     if (!q) return receipts;
@@ -321,10 +316,6 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
     e.preventDefault();
     if (!projectId || selectedReceipts.length === 0) {
       toast.error('Choose at least one receipt.');
-      return;
-    }
-    if (selectedPendingCount > 0) {
-      toast.error('Wait for uploaded receipts to finish scanning before submitting.');
       return;
     }
     setBusy(true);
@@ -346,53 +337,6 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
       toast.error(err instanceof Error ? err.message : 'Could not submit retirement.');
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function uploadNewReceipts(files: FileList | null) {
-    if (!profile || !projectId || !files?.length) return;
-    const chosen = Array.from(files).slice(0, 5);
-    if (files.length > 5) toast.info('Only the first 5 receipt images were added.');
-    setUploadingReceipts(true);
-    try {
-      const uploaded: Receipt[] = [];
-      for (const file of chosen) {
-        const receipt = await uploadReceipt(file, {
-          project_id: projectId,
-          user_id: profile.id,
-          payment_method: 'cash_personal',
-        });
-        uploaded.push(receipt);
-      }
-      setReceipts((current) => [...uploaded, ...current]);
-      setSelected((current) => {
-        const next = new Set(current);
-        uploaded.forEach((receipt) => next.add(receipt.id));
-        return next;
-      });
-      toast.success(`${uploaded.length} receipt image${uploaded.length === 1 ? '' : 's'} uploaded. Scanning now.`);
-      window.setTimeout(() => void refreshUploadedReceipts(uploaded.map((r) => r.id)), 2500);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not upload receipts.');
-    } finally {
-      setUploadingReceipts(false);
-    }
-  }
-
-  async function refreshUploadedReceipts(ids: string[], attempt = 1) {
-    try {
-      const fresh = await fetchReceiptsByIds(ids);
-      setReceipts((current) => {
-        const byId = new Map(current.map((r) => [r.id, r]));
-        fresh.forEach((receipt) => byId.set(receipt.id, receipt));
-        return Array.from(byId.values()).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-      });
-      const stillProcessing = fresh.some((r) => r.status === 'processing');
-      if (stillProcessing && attempt < 8) {
-        window.setTimeout(() => void refreshUploadedReceipts(ids, attempt + 1), 2500);
-      }
-    } catch {
-      // The list can still be refreshed by changing project or reopening the page.
     }
   }
 
@@ -443,27 +387,6 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
           </ul>
         )}
 
-        <button
-          type="button"
-          onClick={() => receiptUploadRef.current?.click()}
-          disabled={uploadingReceipts || !projectId}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-role-admin/30 bg-role-admin/5 px-3 py-4 text-sm font-medium text-role-admin transition hover:bg-role-admin/10 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {uploadingReceipts ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
-          Upload receipt images · up to 5
-        </button>
-        <input
-          ref={receiptUploadRef}
-          type="file"
-          multiple
-          accept="image/*"
-          className="sr-only"
-          onChange={(e) => {
-            void uploadNewReceipts(e.target.files);
-            e.target.value = '';
-          }}
-        />
-
         <div className="rounded-lg border border-surface-border">
           <div className="border-b border-surface-border px-3 py-2 text-sm font-semibold text-ink">
             Receipts · {formatMoney(total)}
@@ -502,26 +425,16 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
                   />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium text-ink">{r.vendor_name ?? 'Receipt'}</span>
-                    <span className="text-xs text-ink-muted">
-                      {r.status === 'processing' ? 'Scanning...' : formatDate(r.receipt_date ?? r.created_at)}
-                    </span>
+                    <span className="text-xs text-ink-muted">{formatDate(r.receipt_date ?? r.created_at)}</span>
                   </span>
-                  <span className="shrink-0 font-medium text-ink">
-                    {r.status === 'processing' ? <Loader2 className="h-4 w-4 animate-spin text-ink-muted" /> : formatMoney(r.total_amount)}
-                  </span>
+                  <span className="shrink-0 font-medium text-ink">{formatMoney(r.total_amount)}</span>
                 </label>
               ))
             )}
           </div>
         </div>
 
-        {selectedPendingCount > 0 && (
-          <p className="text-xs text-ink-muted">
-            {selectedPendingCount} selected receipt{selectedPendingCount === 1 ? '' : 's'} still scanning. Submit will unlock after AI confirms them.
-          </p>
-        )}
-
-        <Button type="submit" tint="admin" fullWidth disabled={busy || selectedReceipts.length === 0 || selectedPendingCount > 0}>
+        <Button type="submit" tint="admin" fullWidth disabled={busy || selectedReceipts.length === 0}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <HandCoins className="h-4 w-4" />}
           Submit
         </Button>

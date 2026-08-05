@@ -7,11 +7,13 @@ import { Card } from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
 import PasswordField, { PasswordStrengthBar, scorePassword } from '@/components/ui/PasswordField';
 import { useInviteInfo } from '@/features/join/getInviteInfo';
-import { joinWithPassword } from '@/features/join/joinProject';
+import { joinExistingWithInvite, joinWithPassword } from '@/features/join/joinProject';
+import { checkCompanyPassword } from '@/features/find/joinByCompany';
 import { roleColorClass, roleLabel } from '@/lib/roles';
 import { sw } from '@/i18n/sw';
 
 type FormFields = {
+  company_password: string;
   full_name: string;
   phone?: string;
   email: string;
@@ -25,6 +27,7 @@ export default function JoinPage() {
   const inviteState = useInviteInfo(token);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [mode, setMode] = useState<'login' | 'register'>('login');
 
   const {
     register,
@@ -78,19 +81,35 @@ export default function JoinPage() {
   async function onSubmit(values: FormFields) {
     if (!token) return;
     setSubmitError(null);
-    if (values.password !== values.password_confirm) {
+    if (mode === 'register' && values.password !== values.password_confirm) {
       setSubmitError(sw.auth.passwordMismatch);
       return;
     }
     setSubmitting(true);
     try {
-      await joinWithPassword({
-        token,
-        full_name: values.full_name,
-        phone: values.phone,
-        email: values.email,
-        password: values.password,
-      });
+      if (!info.company_id) throw new Error(sw.common.error);
+      const ok = await checkCompanyPassword(info.company_id, values.company_password);
+      if (!ok) {
+        setSubmitError('Invalid company password.');
+        return;
+      }
+      if (mode === 'login') {
+        await joinExistingWithInvite({
+          token,
+          company_password: values.company_password,
+          email: values.email,
+          password: values.password,
+        });
+      } else {
+        await joinWithPassword({
+          token,
+          company_password: values.company_password,
+          full_name: values.full_name,
+          phone: values.phone,
+          email: values.email,
+          password: values.password,
+        });
+      }
       navigate(role === 'worker' ? '/receipts' : '/dashboard', { replace: true });
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : sw.common.error);
@@ -110,13 +129,41 @@ export default function JoinPage() {
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
-        <Input
-          label={sw.auth.fullName}
-          autoComplete="name"
-          {...register('full_name', { required: true })}
-          error={errors.full_name && sw.common.error}
+        <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface-muted p-1 text-sm">
+          <button
+            type="button"
+            onClick={() => setMode('login')}
+            className={`rounded-md px-3 py-2 font-medium transition ${mode === 'login' ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted hover:text-ink'}`}
+          >
+            I already have an account
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('register')}
+            className={`rounded-md px-3 py-2 font-medium transition ${mode === 'register' ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted hover:text-ink'}`}
+          >
+            Create account
+          </button>
+        </div>
+
+        <PasswordField
+          label="Company password"
+          autoComplete="off"
+          hint="Enter the shared password for this company."
+          {...register('company_password', { required: true, minLength: 6 })}
+          error={errors.company_password && sw.common.error}
         />
-        <Input label={sw.auth.phone} autoComplete="tel" {...register('phone')} />
+        {mode === 'register' && (
+          <>
+            <Input
+              label={sw.auth.fullName}
+              autoComplete="name"
+              {...register('full_name', { required: mode === 'register' })}
+              error={errors.full_name && sw.common.error}
+            />
+            <Input label={sw.auth.phone} autoComplete="tel" {...register('phone')} />
+          </>
+        )}
         <Input
           type="email"
           label={sw.auth.email}
@@ -127,27 +174,29 @@ export default function JoinPage() {
 
         <PasswordField
           label={sw.auth.password}
-          autoComplete="new-password"
-          hint={sw.auth.passwordHint}
-          {...register('password', { required: true, minLength: 8 })}
-          error={errors.password && sw.auth.passwordHint}
+          autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+          hint={mode === 'register' ? sw.auth.passwordHint : undefined}
+          {...register('password', { required: true, minLength: mode === 'register' ? 8 : 6 })}
+          error={errors.password && (mode === 'register' ? sw.auth.passwordHint : sw.common.error)}
         />
-        {password.length > 0 && (
+        {mode === 'register' && password.length > 0 && (
           <div className="-mt-2 flex flex-col gap-1">
             <PasswordStrengthBar score={pwScore} />
             <span className="text-xs text-ink-muted">{strengthLabel}</span>
           </div>
         )}
-        <PasswordField
-          label={sw.auth.passwordConfirm}
-          autoComplete="new-password"
-          {...register('password_confirm', { required: true })}
-          error={
-            passwordConfirm.length > 0 && password !== passwordConfirm
-              ? sw.auth.passwordMismatch
-              : undefined
-          }
-        />
+        {mode === 'register' && (
+          <PasswordField
+            label={sw.auth.passwordConfirm}
+            autoComplete="new-password"
+            {...register('password_confirm', { required: mode === 'register' })}
+            error={
+              passwordConfirm.length > 0 && password !== passwordConfirm
+                ? sw.auth.passwordMismatch
+                : undefined
+            }
+          />
+        )}
 
         {submitError && <p className="text-sm text-red-600">{submitError}</p>}
 
@@ -155,12 +204,11 @@ export default function JoinPage() {
           type="submit"
           tint="admin"
           fullWidth
-          disabled={submitting || password.length < 8 || password !== passwordConfirm}
+          disabled={submitting || (mode === 'register' && (password.length < 8 || password !== passwordConfirm))}
         >
-          {submitting ? sw.common.loading : sw.join.finish}
+          {submitting ? sw.common.loading : mode === 'login' ? 'Log in and join' : sw.join.finish}
         </Button>
       </form>
     </AuthShell>
   );
 }
-

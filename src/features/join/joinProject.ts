@@ -8,6 +8,7 @@ import type { UserRole } from '@/types/db';
 //    the profile + (for workers) project_members row atomically.
 export async function joinWithPassword(input: {
   token: string;
+  company_password: string;
   full_name: string;
   phone?: string;
   email: string;
@@ -30,8 +31,35 @@ export async function joinWithPassword(input: {
     {
       body: {
         token: input.token,
+        company_password: input.company_password,
         full_name: input.full_name,
         phone: input.phone,
+      },
+    },
+  );
+  if (error) throw error;
+  if (!data?.project_id) throw new Error('join-project returned no project_id');
+  return data;
+}
+
+export async function joinExistingWithInvite(input: {
+  token: string;
+  company_password: string;
+  email: string;
+  password: string;
+}): Promise<{ project_id: string; role: UserRole }> {
+  const { error: signInErr } = await supabase.auth.signInWithPassword({
+    email: input.email,
+    password: input.password,
+  });
+  if (signInErr) throw signInErr;
+
+  const { data, error } = await supabase.functions.invoke<{ project_id: string; role: UserRole }>(
+    'join-project',
+    {
+      body: {
+        token: input.token,
+        company_password: input.company_password,
       },
     },
   );

@@ -124,17 +124,6 @@ export async function fetchRetirableReceipts(profile: RetirementProfile, project
   return (data ?? []) as Receipt[];
 }
 
-export async function fetchReceiptsByIds(ids: string[]): Promise<Receipt[]> {
-  if (ids.length === 0) return [];
-  const { data, error } = await supabase
-    .from('receipts')
-    .select('*')
-    .in('id', ids)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as Receipt[];
-}
-
 export async function createStaffRetirement(input: {
   profile: RetirementProfile;
   project_id: string;
