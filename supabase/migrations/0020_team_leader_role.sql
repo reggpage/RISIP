@@ -10,6 +10,92 @@ alter table project_members
 alter table projects
   add column if not exists petty_cash_budget numeric(14,2) not null default 0;
 
+create table if not exists petty_cash_accounts (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references companies(id) on delete cascade,
+  user_id uuid not null references profiles(id) on delete cascade,
+  current_balance numeric(14,2) not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(company_id, user_id)
+);
+
+create table if not exists petty_cash_transactions (
+  id uuid primary key default gen_random_uuid(),
+  account_id uuid not null references petty_cash_accounts(id) on delete cascade,
+  amount numeric(14,2) not null,
+  type text not null check (type in ('allocation', 'expense', 'adjustment')),
+  receipt_id uuid references receipts(id) on delete set null,
+  description text,
+  created_by uuid not null references profiles(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists petty_cash_accounts_company_idx on petty_cash_accounts(company_id);
+create index if not exists petty_cash_transactions_account_idx on petty_cash_transactions(account_id, created_at desc);
+
+create or replace function petty_cash_apply_transaction() returns trigger
+language plpgsql as $$
+begin
+  update petty_cash_accounts
+     set current_balance = current_balance + new.amount,
+         updated_at = now()
+   where id = new.account_id;
+  return new;
+end $$;
+
+drop trigger if exists petty_cash_apply_transaction_ai on petty_cash_transactions;
+create trigger petty_cash_apply_transaction_ai
+  after insert on petty_cash_transactions
+  for each row execute function petty_cash_apply_transaction();
+
+alter table petty_cash_accounts enable row level security;
+alter table petty_cash_transactions enable row level security;
+
+drop policy if exists petty_cash_accounts_select on petty_cash_accounts;
+create policy petty_cash_accounts_select on petty_cash_accounts
+  for select to authenticated
+  using (
+    user_id = auth.uid()
+    or (company_id = private.auth_company_id() and private.auth_role() in ('owner', 'accountant'))
+  );
+
+drop policy if exists petty_cash_accounts_insert_finance on petty_cash_accounts;
+create policy petty_cash_accounts_insert_finance on petty_cash_accounts
+  for insert to authenticated
+  with check (company_id = private.auth_company_id() and private.auth_role() in ('owner', 'accountant'));
+
+drop policy if exists petty_cash_accounts_update_finance on petty_cash_accounts;
+create policy petty_cash_accounts_update_finance on petty_cash_accounts
+  for update to authenticated
+  using (company_id = private.auth_company_id() and private.auth_role() in ('owner', 'accountant'))
+  with check (company_id = private.auth_company_id() and private.auth_role() in ('owner', 'accountant'));
+
+drop policy if exists petty_cash_transactions_select on petty_cash_transactions;
+create policy petty_cash_transactions_select on petty_cash_transactions
+  for select to authenticated
+  using (exists (
+    select 1 from petty_cash_accounts a
+    where a.id = account_id
+      and (
+        a.user_id = auth.uid()
+        or (a.company_id = private.auth_company_id() and private.auth_role() in ('owner', 'accountant'))
+      )
+  ));
+
+drop policy if exists petty_cash_transactions_insert_finance on petty_cash_transactions;
+create policy petty_cash_transactions_insert_finance on petty_cash_transactions
+  for insert to authenticated
+  with check (
+    created_by = auth.uid()
+    and exists (
+      select 1 from petty_cash_accounts a
+      where a.id = account_id
+        and a.company_id = private.auth_company_id()
+        and private.auth_role() in ('owner', 'accountant')
+    )
+  );
+
 alter table petty_cash_transactions
   add column if not exists project_id uuid references projects(id) on delete set null;
 

@@ -127,7 +127,7 @@ export default function ClaimsInbox() {
         <Card className="border-amber-200 bg-amber-50 text-sm text-amber-900">
           <div className="font-semibold">Supplier claims database tables are not installed yet.</div>
           <p className="mt-2">
-            Apply migration <span className="font-mono">0020_supplier_claims.sql</span>, then refresh this page.
+            Apply migration <span className="font-mono">0021_supplier_claims.sql</span>, then refresh this page.
             Until that is done Supabase returns 404 for <span className="font-mono">supplier_claims</span> and{' '}
             <span className="font-mono">supplier_connections</span>.
           </p>

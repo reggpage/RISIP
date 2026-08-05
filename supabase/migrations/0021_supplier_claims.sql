@@ -19,6 +19,8 @@ begin
   end if;
 end $$;
 
+create extension if not exists pgcrypto;
+
 create table if not exists supplier_connections (
   id uuid primary key default gen_random_uuid(),
   target_company_id uuid not null references companies(id) on delete cascade,
@@ -29,7 +31,7 @@ create table if not exists supplier_connections (
   supplier_tin text,
   note text,
   status supplier_connection_status not null default 'pending',
-  public_token text not null unique default encode(gen_random_bytes(18), 'hex'),
+  public_token text not null unique default replace(gen_random_uuid()::text, '-', ''),
   approved_by uuid references profiles(id),
   approved_at timestamptz,
   created_at timestamptz not null default now(),
@@ -45,7 +47,7 @@ create table if not exists supplier_claims (
   claim_note text,
   amount numeric(14,2),
   status supplier_claim_status not null default 'submitted',
-  public_token text not null unique default encode(gen_random_bytes(18), 'hex'),
+  public_token text not null unique default replace(gen_random_uuid()::text, '-', ''),
   viewed_at timestamptz,
   paid_at timestamptz,
   received_confirmed_at timestamptz,
