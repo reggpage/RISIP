@@ -51,7 +51,11 @@ Deno.serve(async (req) => {
 
   const token = body.token?.trim();
   const companyPassword = body.company_password;
-  const full_name = body.full_name?.trim();
+  const metadataName = typeof userData.user.user_metadata?.full_name === 'string'
+    ? userData.user.user_metadata.full_name.trim()
+    : '';
+  const emailName = userData.user.email?.split('@')[0]?.replace(/[._-]+/g, ' ').trim() ?? '';
+  const full_name = body.full_name?.trim() || metadataName || emailName || 'Team member';
   if (!token) return bad('token required');
   if (!companyPassword) return bad('company_password required');
 
@@ -90,8 +94,6 @@ Deno.serve(async (req) => {
     }
     return json({ project_id: invite.project_id, role: existingProfile.role }, { status: 200 });
   }
-
-  if (!full_name) return bad('full_name required');
 
   const { data, error } = await admin.rpc('join_by_invite_v1', {
     p_user_id: userData.user.id,
