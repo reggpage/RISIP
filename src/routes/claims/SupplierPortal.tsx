@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Building2, CheckCircle2, Search } from 'lucide-react';
+import { Building2, CheckCircle2, Copy, FileUp, Plus, Search, Trash2 } from 'lucide-react';
 import AuthShell from '@/components/layout/AuthShell';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -8,6 +8,19 @@ import { useCompanySearch, type CompanyHit } from '@/features/find/useCompanySea
 import { createSupplierKnock, submitSupplierClaim } from '@/features/supplierClaims/supplierClaims';
 
 type Mode = 'knock' | 'claim';
+type ReceiptDraft = {
+  id: string;
+  vendor_name: string;
+  receipt_date: string;
+  total_amount: string;
+  tax_amount: string;
+  category: string;
+  verification_code: string;
+  note: string;
+  file: File | null;
+};
+
+const categories = ['Fuel', 'Food', 'Transport', 'Materials', 'Utilities', 'Other'];
 
 export default function SupplierPortal() {
   const toast = useToast();
@@ -35,10 +48,15 @@ export default function SupplierPortal() {
     amount: '',
     note: '',
   });
+  const [receipts, setReceipts] = useState<ReceiptDraft[]>([emptyReceipt()]);
 
   const canKnock = useMemo(
     () => !!selectedCompany && knock.supplier_name.trim() && knock.contact_name.trim(),
     [selectedCompany, knock.supplier_name, knock.contact_name],
+  );
+  const canClaim = useMemo(
+    () => connectionToken.trim() && claim.title.trim() && receipts.some((receipt) => receipt.vendor_name.trim() || receipt.total_amount.trim() || receipt.file),
+    [claim.title, connectionToken, receipts],
   );
 
   async function sendKnock() {
@@ -50,6 +68,7 @@ export default function SupplierPortal() {
         ...knock,
       });
       setKnockToken(token);
+      setConnectionToken(token ?? '');
       toast.success('Request sent.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could not send request');
@@ -67,6 +86,22 @@ export default function SupplierPortal() {
         title: claim.title,
         claim_note: claim.note,
         amount,
+        receipts: await Promise.all(
+          receipts
+            .filter((receipt) => receipt.vendor_name.trim() || receipt.total_amount.trim() || receipt.file)
+            .map(async (receipt) => ({
+              vendor_name: receipt.vendor_name,
+              receipt_date: receipt.receipt_date,
+              total_amount: toAmount(receipt.total_amount),
+              tax_amount: toAmount(receipt.tax_amount),
+              category: receipt.category,
+              verification_code: receipt.verification_code,
+              note: receipt.note,
+              file_name: receipt.file?.name,
+              file_type: receipt.file?.type,
+              file_base64: receipt.file ? await fileToBase64(receipt.file) : undefined,
+            })),
+        ),
       });
       setClaimToken(token);
       toast.success('Claim submitted.');
@@ -75,6 +110,14 @@ export default function SupplierPortal() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function updateReceipt(id: string, patch: Partial<ReceiptDraft>) {
+    setReceipts((current) => current.map((receipt) => receipt.id === id ? { ...receipt, ...patch } : receipt));
+  }
+
+  function removeReceipt(id: string) {
+    setReceipts((current) => current.length === 1 ? current : current.filter((receipt) => receipt.id !== id));
   }
 
   return (
@@ -110,6 +153,20 @@ export default function SupplierPortal() {
               </div>
               Save this access token. Once the company approves you, use it in “Submit claim”.
               <div className="mt-2 rounded bg-white px-3 py-2 font-mono text-ink">{knockToken}</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(knockToken);
+                    toast.success('Token copied.');
+                  }}
+                >
+                  <Copy className="h-4 w-4" /> Copy token
+                </Button>
+                <Button tint="admin" onClick={() => setMode('claim')}>
+                  Use token to submit claim
+                </Button>
+              </div>
             </div>
           ) : (
             <>
@@ -193,7 +250,66 @@ export default function SupplierPortal() {
                   className="rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-role-admin/30"
                 />
               </label>
-              <Button tint="admin" fullWidth disabled={busy || !connectionToken.trim() || !claim.title.trim()} onClick={() => void sendClaim()}>
+              <div className="rounded-xl border border-surface-border">
+                <div className="flex items-center justify-between gap-3 border-b border-surface-border px-4 py-3">
+                  <div>
+                    <div className="font-semibold text-ink">Receipts</div>
+                    <div className="text-xs text-ink-muted">Add up to 5 receipt images or details.</div>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    disabled={receipts.length >= 5}
+                    onClick={() => setReceipts((current) => [...current, emptyReceipt()])}
+                  >
+                    <Plus className="h-4 w-4" /> Add
+                  </Button>
+                </div>
+                <div className="flex flex-col gap-4 p-4">
+                  {receipts.map((receipt, index) => (
+                    <div key={receipt.id} className="rounded-lg border border-surface-border bg-surface-muted p-3">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div className="text-sm font-semibold text-ink">Receipt {index + 1}</div>
+                        <button
+                          type="button"
+                          onClick={() => removeReceipt(receipt.id)}
+                          className="rounded-md p-1 text-ink-muted hover:bg-surface hover:text-role-admin"
+                          aria-label="Remove receipt"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <label className="mb-3 flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-surface-border bg-surface px-3 py-3 text-sm font-medium text-ink hover:border-role-admin">
+                        <FileUp className="h-4 w-4" />
+                        <span>{receipt.file ? receipt.file.name : 'Receipt image or PDF'}</span>
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          className="hidden"
+                          onChange={(event) => updateReceipt(receipt.id, { file: event.target.files?.[0] ?? null })}
+                        />
+                      </label>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Input label="Vendor" value={receipt.vendor_name} onChange={(e) => updateReceipt(receipt.id, { vendor_name: e.target.value })} />
+                        <Input label="Date" type="date" value={receipt.receipt_date} onChange={(e) => updateReceipt(receipt.id, { receipt_date: e.target.value })} />
+                        <label className="flex flex-col gap-1 text-sm font-medium text-ink">
+                          Category
+                          <select
+                            value={receipt.category}
+                            onChange={(e) => updateReceipt(receipt.id, { category: e.target.value })}
+                            className="rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-role-admin/30"
+                          >
+                            {categories.map((category) => <option key={category}>{category}</option>)}
+                          </select>
+                        </label>
+                        <Input label="Total" inputMode="decimal" value={receipt.total_amount} onChange={(e) => updateReceipt(receipt.id, { total_amount: e.target.value })} />
+                        <Input label="VAT" inputMode="decimal" value={receipt.tax_amount} onChange={(e) => updateReceipt(receipt.id, { tax_amount: e.target.value })} />
+                        <Input label="Verification code" value={receipt.verification_code} onChange={(e) => updateReceipt(receipt.id, { verification_code: e.target.value })} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <Button tint="admin" fullWidth disabled={busy || !canClaim} onClick={() => void sendClaim()}>
                 {busy ? 'Submitting...' : 'Submit claim'}
               </Button>
             </>
@@ -202,4 +318,32 @@ export default function SupplierPortal() {
       )}
     </AuthShell>
   );
+}
+
+function emptyReceipt(): ReceiptDraft {
+  return {
+    id: crypto.randomUUID(),
+    vendor_name: '',
+    receipt_date: '',
+    total_amount: '',
+    tax_amount: '',
+    category: 'Other',
+    verification_code: '',
+    note: '',
+    file: null,
+  };
+}
+
+function toAmount(value: string): number | null {
+  const amount = Number(value.replace(/[^\d.]/g, ''));
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }

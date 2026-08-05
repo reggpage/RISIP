@@ -40,6 +40,34 @@ export type SupplierClaim = {
   received_confirmed_at: string | null;
   created_at: string;
   updated_at: string;
+  supplier_claim_receipts?: SupplierClaimReceipt[];
+};
+
+export type SupplierClaimReceipt = {
+  id: string;
+  claim_id: string;
+  vendor_name: string | null;
+  receipt_date: string | null;
+  total_amount: number | null;
+  tax_amount: number | null;
+  category: string | null;
+  verification_code: string | null;
+  image_url: string | null;
+  note: string | null;
+  created_at: string;
+};
+
+export type SupplierClaimReceiptInput = {
+  vendor_name?: string;
+  receipt_date?: string;
+  total_amount?: number | null;
+  tax_amount?: number | null;
+  category?: string;
+  verification_code?: string;
+  note?: string;
+  file_name?: string;
+  file_type?: string;
+  file_base64?: string;
 };
 
 export async function createSupplierKnock(input: {
@@ -69,15 +97,23 @@ export async function submitSupplierClaim(input: {
   title: string;
   claim_note?: string;
   amount?: number | null;
+  receipts?: SupplierClaimReceiptInput[];
 }) {
-  const { data, error } = await (supabase as any).rpc('public_supplier_submit_claim', {
-    p_connection_token: input.connection_token,
-    p_title: input.title,
-    p_claim_note: input.claim_note ?? null,
-    p_amount: input.amount ?? null,
+  const { data, error } = await (supabase as any).functions.invoke('supplier-submit-claim', {
+    body: {
+      connection_token: input.connection_token,
+      title: input.title,
+      claim_note: input.claim_note ?? null,
+      amount: input.amount ?? null,
+      receipts: input.receipts ?? [],
+    },
   });
-  if (error) throw error;
-  return (data?.[0]?.claim_token ?? null) as string | null;
+  if (error) {
+    const context = (error as { context?: { json?: () => Promise<{ error?: string }> } }).context;
+    const payload = await context?.json?.().catch(() => null);
+    throw new Error(payload?.error ?? error.message ?? 'Could not submit claim');
+  }
+  return (data?.claim_token ?? null) as string | null;
 }
 
 export async function fetchSupplierConnections(companyId: string) {
@@ -93,7 +129,7 @@ export async function fetchSupplierConnections(companyId: string) {
 export async function fetchSupplierClaims(companyId: string) {
   const { data, error } = await (supabase as any)
     .from('supplier_claims')
-    .select('*')
+    .select('*, supplier_claim_receipts(*)')
     .eq('target_company_id', companyId)
     .order('created_at', { ascending: false });
   if (error) throw error;

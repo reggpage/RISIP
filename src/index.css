@@ -26,6 +26,18 @@ body {
   @apply bg-surface-muted text-ink font-sans antialiased;
 }
 
+input[type='password']::-ms-reveal,
+input[type='password']::-ms-clear {
+  display: none;
+}
+
+input[type='password']::-webkit-credentials-auto-fill-button,
+input[type='password']::-webkit-contacts-auto-fill-button {
+  display: none !important;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* Toast slide-in — used by Toaster. Standard cubic-bezier ease-out, 200ms. */
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(-8px) scale(0.98); }

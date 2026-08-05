@@ -190,6 +190,26 @@ export default function ClaimsInbox() {
                   </div>
                   {claim.claim_note && <p className="mt-3 text-sm text-ink">{claim.claim_note}</p>}
                   <div className="mt-3 text-sm font-semibold text-ink">{formatMoney(claim.amount)}</div>
+                  {claim.supplier_claim_receipts && claim.supplier_claim_receipts.length > 0 && (
+                    <div className="mt-3 rounded-lg border border-surface-border bg-surface-muted p-3">
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                        {claim.supplier_claim_receipts.length} receipt(s)
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        {claim.supplier_claim_receipts.map((receipt) => (
+                          <div key={receipt.id} className="flex items-start justify-between gap-3 text-sm">
+                            <div>
+                              <div className="font-medium text-ink">{receipt.vendor_name || 'Receipt'}</div>
+                              <div className="text-xs text-ink-muted">
+                                {[receipt.receipt_date, receipt.category, receipt.image_url ? 'image attached' : null].filter(Boolean).join(' · ')}
+                              </div>
+                            </div>
+                            <div className="font-semibold text-ink">{formatMoney(receipt.total_amount)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="mt-4 flex flex-wrap gap-2">
                     <Button variant="secondary" disabled={busy === claim.id} onClick={() => void setClaimStatus(claim, 'viewed')}>
                       Mark viewed
