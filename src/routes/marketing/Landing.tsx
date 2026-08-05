@@ -6,6 +6,7 @@ import {
 import Button from '@/components/ui/Button';
 import { useAuth } from '@/lib/auth';
 import { sw } from '@/i18n/sw';
+import receiptScanImage from '@/assets/landing-receipt-scan.jpg';
 
 export default function Landing() {
   const auth = useAuth();
@@ -75,21 +76,7 @@ export default function Landing() {
       {/* Features */}
       <section id="features" className="py-16 sm:py-20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <h2 className="mb-10 text-center text-2xl font-bold text-ink sm:text-3xl">{sw.landing.featuresTitle}</h2>
-          <div className="grid gap-6 md:grid-cols-3">
-            <FeatureCard icon={<Sparkles className="h-6 w-6" />} title="TRA receipt OCR"
-              body="Reads Tanzanian receipts accurately — 9-digit TIN, VRN, verification code and 18% VAT." />
-            <FeatureCard icon={<FileText className="h-6 w-6" />} title="Digital invoices"
-              body="Create invoices, send a live link to your client, get accepted or disputed — with a full audit trail." />
-            <FeatureCard icon={<Wallet className="h-6 w-6" />} title="Petty cash"
-              body="Allocate spending money to staff, track balances, and block spending beyond budget." />
-            <FeatureCard icon={<ScanLine className="h-6 w-6" />} title="Batch scan (A4/A3/PDF)"
-              body="Scan one page holding many receipts — the AI splits them all at once for review." />
-            <FeatureCard icon={<Mail className="h-6 w-6" />} title="Scan-to-email"
-              body="Your office printer can email scans straight into Risip via your company inbox." />
-            <FeatureCard icon={<BarChart3 className="h-6 w-6" />} title="Dashboard + Excel"
-              body="See spend by day/week/month/year, break it down by category, and export to Excel." />
-          </div>
+          <FeatureOrbitSection />
         </div>
       </section>
 
@@ -170,14 +157,171 @@ function Step({ icon, title, body }: { icon: React.ReactNode; title: string; bod
   );
 }
 
-function FeatureCard({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
+const orbitFeatures = [
+  {
+    icon: <Sparkles className="h-5 w-5" />,
+    title: 'TRA receipt OCR',
+    body: 'Reads Tanzanian receipts accurately — TIN, VRN, verification code and VAT.',
+    slot: 'one',
+  },
+  {
+    icon: <FileText className="h-5 w-5" />,
+    title: 'Digital invoices',
+    body: 'Create invoices, send a live link, and keep a full approval history.',
+    slot: 'two',
+  },
+  {
+    icon: <Wallet className="h-5 w-5" />,
+    title: 'Petty cash',
+    body: 'Allocate staff spending money, track balances, and prevent overspending.',
+    slot: 'three',
+  },
+  {
+    icon: <ScanLine className="h-5 w-5" />,
+    title: 'Batch scan',
+    body: 'Upload A4, A3, or PDF pages and split multiple receipts for review.',
+    slot: 'four',
+  },
+  {
+    icon: <Mail className="h-5 w-5" />,
+    title: 'Scan-to-email',
+    body: 'Let office scanners email receipts straight into the company inbox.',
+    slot: 'five',
+  },
+  {
+    icon: <BarChart3 className="h-5 w-5" />,
+    title: 'Dashboard + Excel',
+    body: 'Track spend by period, category, project, staff, and export to Excel.',
+    slot: 'six',
+  },
+];
+
+function FeatureOrbitSection() {
   return (
-    <div className="rounded-xl border border-surface-border bg-surface p-6 transition hover:-translate-y-0.5 hover:shadow-md">
-      <div className="mb-4 text-role-admin">{icon}</div>
-      <h3 className="mb-2 text-lg font-semibold text-ink">{title}</h3>
-      <p className="text-sm leading-relaxed text-ink-muted">{body}</p>
-    </div>
+    <>
+      <style>{`
+        @keyframes risipOrbit {
+          to { transform: rotate(360deg); }
+        }
+
+        @keyframes risipCounterOrbit {
+          to { transform: rotate(-360deg); }
+        }
+
+        @keyframes risipPulseLine {
+          0%, 100% { opacity: .18; transform: scaleX(.82); }
+          45%, 65% { opacity: .7; transform: scaleX(1); }
+        }
+
+        @keyframes risipCardReveal {
+          0%, 100% { opacity: .72; transform: translateY(6px); }
+          45%, 65% { opacity: 1; transform: translateY(0); }
+        }
+
+        .risip-orbit-wheel {
+          animation: risipOrbit 34s linear infinite;
+        }
+
+        .risip-orbit-pill {
+          animation: risipCounterOrbit 34s linear infinite;
+        }
+
+        .risip-feature-line {
+          animation: risipPulseLine 8s ease-in-out infinite;
+          transform-origin: left center;
+        }
+
+        .risip-feature-card {
+          animation: risipCardReveal 8s ease-in-out infinite;
+        }
+
+        .risip-delay-1 { animation-delay: 0s; }
+        .risip-delay-2 { animation-delay: 1.2s; }
+        .risip-delay-3 { animation-delay: 2.4s; }
+        .risip-delay-4 { animation-delay: 3.6s; }
+        .risip-delay-5 { animation-delay: 4.8s; }
+        .risip-delay-6 { animation-delay: 6s; }
+
+        @media (prefers-reduced-motion: reduce) {
+          .risip-orbit-wheel,
+          .risip-orbit-pill,
+          .risip-feature-line,
+          .risip-feature-card {
+            animation: none;
+          }
+        }
+      `}</style>
+
+      <div className="mb-12 text-center">
+        <h2 className="text-2xl font-bold text-ink sm:text-3xl">{sw.landing.featuresTitle}</h2>
+        <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-ink-muted sm:text-base">
+          A receipt enters once, then Risip connects the scan to projects, staff, claims, petty cash, invoices, and reports.
+        </p>
+      </div>
+
+      <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+        <div className="relative mx-auto aspect-square w-full max-w-[34rem]">
+          <div className="absolute inset-6 rounded-full border border-role-admin/20 bg-surface shadow-xl shadow-role-admin/5" />
+          <div className="absolute inset-[13%] overflow-hidden rounded-full border border-white/80 bg-surface shadow-2xl">
+            <img
+              src={receiptScanImage}
+              alt="Receipt scanning on a phone"
+              className="h-full w-full object-cover"
+            />
+          </div>
+          <div className="risip-orbit-wheel absolute inset-0 rounded-full">
+            {orbitFeatures.map((feature, index) => (
+              <span
+                key={feature.title}
+                className={[
+                  'risip-orbit-pill absolute flex items-center gap-2 rounded-full border border-surface-border bg-surface px-3 py-2 text-xs font-semibold text-ink shadow-md',
+                  orbitPositionClass(feature.slot),
+                  `risip-delay-${index + 1}`,
+                ].join(' ')}
+              >
+                <span className="text-role-admin">{feature.icon}</span>
+                <span className="hidden sm:inline">{feature.title}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          {orbitFeatures.map((feature, index) => (
+            <div
+              key={feature.title}
+              className={[
+                'risip-feature-card rounded-xl border border-surface-border bg-surface p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md',
+                `risip-delay-${index + 1}`,
+              ].join(' ')}
+            >
+              <div className="mb-4 flex items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-role-admin/10 text-role-admin">
+                  {feature.icon}
+                </span>
+                <span className="risip-feature-line h-px flex-1 rounded-full bg-role-admin/50" />
+              </div>
+              <h3 className="mb-2 text-base font-semibold text-ink">{feature.title}</h3>
+              <p className="text-sm leading-relaxed text-ink-muted">{feature.body}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
   );
+}
+
+function orbitPositionClass(slot: string) {
+  const classes: Record<string, string> = {
+    one: 'left-1/2 top-0 -translate-x-1/2',
+    two: 'right-2 top-1/4',
+    three: 'bottom-1/4 right-2',
+    four: 'bottom-0 left-1/2 -translate-x-1/2',
+    five: 'bottom-1/4 left-2',
+    six: 'left-2 top-1/4',
+  };
+
+  return classes[slot] ?? '';
 }
 
 function PriceCard({
