@@ -62,11 +62,11 @@ export default function Landing() {
           <h2 className="mb-3 text-center text-2xl font-bold text-ink sm:text-3xl">How it works</h2>
           <p className="mx-auto mb-12 max-w-2xl text-center text-ink-muted">From a paper receipt to reports and invoices — in three steps.</p>
           <div className="grid gap-8 md:grid-cols-3">
-            <Step n="1" icon={<Camera className="h-6 w-6" />} title="Snap or scan"
+            <Step icon={<Camera className="h-6 w-6" />} title="Snap or scan"
               body="Staff photograph receipts on their phone, or you upload an A4/A3/PDF page holding several receipts." />
-            <Step n="2" icon={<Sparkles className="h-6 w-6" />} title="AI reads it"
+            <Step icon={<Sparkles className="h-6 w-6" />} title="AI reads it"
               body="The AI extracts vendor, date, VAT, TIN, VRN and the verification code — trained on Tanzanian TRA receipts." />
-            <Step n="3" icon={<FileText className="h-6 w-6" />} title="Reports & invoices"
+            <Step icon={<FileText className="h-6 w-6" />} title="Reports & invoices"
               body="Spend is tracked automatically, and you can generate a digital invoice to send to your client." />
           </div>
         </div>
@@ -90,15 +90,6 @@ export default function Landing() {
             <FeatureCard icon={<BarChart3 className="h-6 w-6" />} title="Dashboard + Excel"
               body="See spend by day/week/month/year, break it down by category, and export to Excel." />
           </div>
-        </div>
-      </section>
-
-      {/* Compliance strip */}
-      <section className="bg-surface py-12">
-        <div className="mx-auto flex max-w-5xl flex-col items-center gap-6 px-4 text-center sm:flex-row sm:justify-around sm:text-left">
-          <Trust icon={<ShieldCheck className="h-5 w-5" />} title="TRA verification" body="Stores the verification code and TIN/VRN" />
-          <Trust icon={<Check className="h-5 w-5" />} title="18% VAT" body="Blocks VAT exceeding the total (compliance)" />
-          <Trust icon={<FileText className="h-5 w-5" />} title="Audit trail" body="Every receipt links to its source image" />
         </div>
       </section>
 
@@ -167,11 +158,10 @@ export default function Landing() {
   );
 }
 
-function Step({ n, icon, title, body }: { n: string; icon: React.ReactNode; title: string; body: string }) {
+function Step({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
   return (
     <div className="relative rounded-xl border border-surface-border bg-surface p-6">
       <div className="mb-4 flex items-center gap-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-role-admin/10 text-sm font-bold text-role-admin">{n}</span>
         <span className="text-role-admin">{icon}</span>
       </div>
       <h3 className="mb-2 text-lg font-semibold text-ink">{title}</h3>
@@ -186,18 +176,6 @@ function FeatureCard({ icon, title, body }: { icon: React.ReactNode; title: stri
       <div className="mb-4 text-role-admin">{icon}</div>
       <h3 className="mb-2 text-lg font-semibold text-ink">{title}</h3>
       <p className="text-sm leading-relaxed text-ink-muted">{body}</p>
-    </div>
-  );
-}
-
-function Trust({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-role-admin/10 text-role-admin">{icon}</span>
-      <div>
-        <div className="text-sm font-semibold text-ink">{title}</div>
-        <div className="text-xs text-ink-muted">{body}</div>
-      </div>
     </div>
   );
 }
