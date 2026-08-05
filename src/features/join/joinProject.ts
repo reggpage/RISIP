@@ -37,7 +37,7 @@ export async function joinWithPassword(input: {
       },
     },
   );
-  if (error) throw error;
+  if (error) throw await readableFunctionError(error);
   if (!data?.project_id) throw new Error('join-project returned no project_id');
   return data;
 }
@@ -63,7 +63,28 @@ export async function joinExistingWithInvite(input: {
       },
     },
   );
-  if (error) throw error;
+  if (error) throw await readableFunctionError(error);
   if (!data?.project_id) throw new Error('join-project returned no project_id');
   return data;
+}
+
+async function readableFunctionError(error: unknown): Promise<Error> {
+  const message = error instanceof Error ? error.message : 'Could not join project';
+  const context = error && typeof error === 'object'
+    ? (error as { context?: { json?: () => Promise<{ error?: string; message?: string }> } }).context
+    : null;
+  const payload = await context?.json?.().catch(() => null);
+  const code = payload?.error ?? payload?.message ?? message;
+
+  const friendly: Record<string, string> = {
+    company_password_not_set: 'Company password is not set yet. Ask the admin to set it in Settings.',
+    invalid_company_password: 'Invalid company password.',
+    'token required': 'Invite token is missing.',
+    'company_password required': 'Company password is required.',
+    'missing bearer token': 'Please log in again before joining this project.',
+    'invalid session': 'Your login session expired. Please log in again.',
+    'account belongs to another company': 'This email already belongs to another company.',
+  };
+
+  return new Error(friendly[code] ?? code);
 }
