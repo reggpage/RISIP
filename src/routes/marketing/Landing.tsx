@@ -1,6 +1,6 @@
 import { Link, Navigate } from 'react-router-dom';
 import {
-  Camera, Sparkles, FileText, Wallet, ScanLine, Mail, BarChart3,
+  Camera, Sparkles, FileText, Wallet, ScanLine,
   ShieldCheck, Check, ArrowRight,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
@@ -53,7 +53,6 @@ export default function Landing() {
               <Button variant="secondary" tint="admin" className="px-6 py-3 text-base">Create a new company</Button>
             </Link>
           </div>
-          <p className="mt-6 text-sm text-ink-muted">Free 4-day trial · No card required</p>
         </div>
       </section>
 
@@ -85,7 +84,7 @@ export default function Landing() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <h2 className="mb-3 text-center text-2xl font-bold text-ink sm:text-3xl">Simple, transparent pricing</h2>
           <p className="mx-auto mb-12 max-w-2xl text-center text-ink-muted">
-            Free 4-day trial. Pay with M-Pesa, Tigo Pesa or Airtel Money. Cancel anytime.
+            Pay with M-Pesa, Tigo Pesa or Airtel Money. Cancel anytime.
           </p>
           <div className="grid gap-6 lg:grid-cols-3">
             <PriceCard
@@ -182,35 +181,15 @@ const orbitFeatures = [
     body: 'Upload A4, A3, or PDF pages and split multiple receipts for review.',
     slot: 'four',
   },
-  {
-    icon: <Mail className="h-5 w-5" />,
-    title: 'Scan-to-email',
-    body: 'Let office scanners email receipts straight into the company inbox.',
-    slot: 'five',
-  },
-  {
-    icon: <BarChart3 className="h-5 w-5" />,
-    title: 'Dashboard + Excel',
-    body: 'Track spend by period, category, project, staff, and export to Excel.',
-    slot: 'six',
-  },
 ];
 
 function FeatureOrbitSection() {
   return (
     <>
       <style>{`
-        @keyframes risipOrbit {
-          to { transform: rotate(360deg); }
-        }
-
-        @keyframes risipCounterOrbit {
-          to { transform: rotate(-360deg); }
-        }
-
         @keyframes risipPulseLine {
-          0%, 100% { opacity: .18; transform: scaleX(.82); }
-          45%, 65% { opacity: .7; transform: scaleX(1); }
+          0%, 100% { opacity: .22; }
+          45%, 65% { opacity: .75; }
         }
 
         @keyframes risipCardReveal {
@@ -218,17 +197,8 @@ function FeatureOrbitSection() {
           45%, 65% { opacity: 1; transform: translateY(0); }
         }
 
-        .risip-orbit-wheel {
-          animation: risipOrbit 34s linear infinite;
-        }
-
-        .risip-orbit-pill {
-          animation: risipCounterOrbit 34s linear infinite;
-        }
-
-        .risip-feature-line {
+        .risip-source-line {
           animation: risipPulseLine 8s ease-in-out infinite;
-          transform-origin: left center;
         }
 
         .risip-feature-card {
@@ -243,9 +213,7 @@ function FeatureOrbitSection() {
         .risip-delay-6 { animation-delay: 6s; }
 
         @media (prefers-reduced-motion: reduce) {
-          .risip-orbit-wheel,
-          .risip-orbit-pill,
-          .risip-feature-line,
+          .risip-source-line,
           .risip-feature-card {
             animation: none;
           }
@@ -261,7 +229,7 @@ function FeatureOrbitSection() {
 
       <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
         <div className="relative mx-auto aspect-square w-full max-w-[34rem]">
-          <div className="absolute inset-6 rounded-full border border-role-admin/20 bg-surface shadow-xl shadow-role-admin/5" />
+          <div className="absolute inset-6 rounded-full border-[3px] border-dotted border-role-admin/30 bg-surface shadow-xl shadow-role-admin/5" />
           <div className="absolute inset-[13%] overflow-hidden rounded-full border border-white/80 bg-surface shadow-2xl">
             <img
               src={receiptScanImage}
@@ -269,21 +237,10 @@ function FeatureOrbitSection() {
               className="h-full w-full object-cover"
             />
           </div>
-          <div className="risip-orbit-wheel absolute inset-0 rounded-full">
-            {orbitFeatures.map((feature, index) => (
-              <span
-                key={feature.title}
-                className={[
-                  'risip-orbit-pill absolute flex items-center gap-2 rounded-full border border-surface-border bg-surface px-3 py-2 text-xs font-semibold text-ink shadow-md',
-                  orbitPositionClass(feature.slot),
-                  `risip-delay-${index + 1}`,
-                ].join(' ')}
-              >
-                <span className="text-role-admin">{feature.icon}</span>
-                <span className="hidden sm:inline">{feature.title}</span>
-              </span>
-            ))}
-          </div>
+          <span className="risip-source-line absolute left-[78%] top-[23%] hidden h-[3px] w-[32%] border-t-[3px] border-dotted border-role-admin/55 lg:block" />
+          <span className="risip-source-line risip-delay-2 absolute left-[82%] top-[44%] hidden h-[3px] w-[28%] border-t-[3px] border-dotted border-role-admin/55 lg:block" />
+          <span className="risip-source-line risip-delay-3 absolute left-[82%] top-[60%] hidden h-[3px] w-[28%] border-t-[3px] border-dotted border-role-admin/55 lg:block" />
+          <span className="risip-source-line risip-delay-4 absolute left-[74%] top-[78%] hidden h-[3px] w-[36%] border-t-[3px] border-dotted border-role-admin/55 lg:block" />
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -296,10 +253,10 @@ function FeatureOrbitSection() {
               ].join(' ')}
             >
               <div className="mb-4 flex items-center gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-role-admin/10 text-role-admin">
+                <span className="text-role-admin">
                   {feature.icon}
                 </span>
-                <span className="risip-feature-line h-px flex-1 rounded-full bg-role-admin/50" />
+                <span className="h-px flex-1 rounded-full bg-role-admin/20" />
               </div>
               <h3 className="mb-2 text-base font-semibold text-ink">{feature.title}</h3>
               <p className="text-sm leading-relaxed text-ink-muted">{feature.body}</p>
@@ -309,19 +266,6 @@ function FeatureOrbitSection() {
       </div>
     </>
   );
-}
-
-function orbitPositionClass(slot: string) {
-  const classes: Record<string, string> = {
-    one: 'left-1/2 top-0 -translate-x-1/2',
-    two: 'right-2 top-1/4',
-    three: 'bottom-1/4 right-2',
-    four: 'bottom-0 left-1/2 -translate-x-1/2',
-    five: 'bottom-1/4 left-2',
-    six: 'left-2 top-1/4',
-  };
-
-  return classes[slot] ?? '';
 }
 
 function PriceCard({

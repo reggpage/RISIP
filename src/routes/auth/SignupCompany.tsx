@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { ArrowLeft } from 'lucide-react';
 import AuthShell from '@/components/layout/AuthShell';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -224,14 +223,19 @@ export default function SignupCompany() {
 
             {submitError && <p className="text-center text-sm text-red-600">{submitError}</p>}
 
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="mx-auto flex items-center gap-1 text-sm text-ink-muted hover:text-ink"
-              disabled={submitting}
-            >
-              <ArrowLeft className="h-4 w-4" /> {sw.auth.back}
-            </button>
+            <div className="flex items-center justify-between text-sm">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="font-medium text-ink-muted hover:text-ink disabled:opacity-50"
+                disabled={submitting}
+              >
+                {sw.auth.back}
+              </button>
+              <Link to="/login" className="font-medium text-role-admin hover:underline">
+                {sw.auth.login}
+              </Link>
+            </div>
           </div>
         )}
 
