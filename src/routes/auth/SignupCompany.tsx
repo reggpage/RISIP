@@ -67,7 +67,8 @@ export default function SignupCompany() {
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [verifiedAccessToken, setVerifiedAccessToken] = useState<string | null>(null);
-  const [needsCompanyPassword, setNeedsCompanyPassword] = useState(false);
+  const [resumedSetup, setResumedSetup] = useState(false);
+  const [companyPasswordConfirm, setCompanyPasswordConfirm] = useState('');
 
   const {
     register,
@@ -87,7 +88,7 @@ export default function SignupCompany() {
       const session = data.session;
       if (!session?.user.email_confirmed_at || session.user.email?.toLowerCase() !== draft.email.toLowerCase()) return;
       setVerifiedAccessToken(session.access_token);
-      setNeedsCompanyPassword(true);
+      setResumedSetup(true);
       setStep(2);
     });
   }, [reset]);
@@ -134,7 +135,7 @@ export default function SignupCompany() {
       const session = await verifySignupOtp(v.email, code);
       setVerifiedAccessToken(session.access_token);
       saveSignupDraft(v);
-      setNeedsCompanyPassword(true);
+      setCompanyPasswordConfirm('');
     } catch (err) {
       const message = err instanceof Error ? err.message : sw.auth.otp.invalid;
       setOtpError(message.includes('Invalid') || message.includes('expired') ? sw.auth.otp.invalid : null);
@@ -147,9 +148,16 @@ export default function SignupCompany() {
   async function finishCompanySetup(accessToken = verifiedAccessToken) {
     const v = getValues();
     if (!accessToken) throw new Error('Your verified session is missing. Please verify the email again.');
-    if (!v.company_password?.trim()) {
-      setNeedsCompanyPassword(true);
-      throw new Error('Enter your company access password to finish setup.');
+    const companyPassword = v.company_password?.trim() ?? '';
+    if (companyPassword.length < 6) {
+      setResumedSetup(true);
+      throw new Error('Enter a company access password of at least 6 characters.');
+    }
+    if (!companyPasswordConfirm) {
+      throw new Error('Confirm your company access password to finish setup.');
+    }
+    if (companyPassword !== companyPasswordConfirm) {
+      throw new Error('Company access passwords do not match.');
     }
     await createCompanyAfterVerification({
         full_name: v.full_name,
@@ -157,9 +165,10 @@ export default function SignupCompany() {
         company_name: v.company_name,
         hq_location: v.hq_location,
         sector: v.sector,
-        company_password: v.company_password,
+        company_password: companyPassword,
       }, accessToken);
     window.localStorage.removeItem(SIGNUP_DRAFT_KEY);
+    await supabase.auth.refreshSession();
     navigate('/dashboard', { replace: true });
   }
 
@@ -270,9 +279,7 @@ export default function SignupCompany() {
               <h2 className="text-lg font-semibold text-ink">
                 {verifiedAccessToken ? 'Finish setting up your company' : sw.auth.otp.title}
               </h2>
-              {verifiedAccessToken ? (
-                <p className="mt-3 text-sm text-emerald-700">Email verified. Finish setup when you are ready.</p>
-              ) : (
+              {!verifiedAccessToken && (
                 <p className="mt-1 text-sm text-ink-muted">
                   {sw.auth.otp.subtitle}{' '}
                   <span className="font-medium text-ink">{getValues('email')}</span>
@@ -314,15 +321,25 @@ export default function SignupCompany() {
 
             {verifiedAccessToken && (
               <>
-                {needsCompanyPassword && (
+                {resumedSetup && (
                   <PasswordField
-                    label={sw.auth.companyAccessPassword}
+                    label="Set company access password"
                     autoComplete="new-password"
-                    hint="Re-enter the shared password to finish setting up this company."
+                    hint="Use at least 6 characters."
                     {...register('company_password', { required: true, minLength: 6 })}
                     error={errors.company_password && sw.auth.companyPasswordHint}
                   />
                 )}
+                <PasswordField
+                  label="Confirm company access password"
+                  autoComplete="new-password"
+                  value={companyPasswordConfirm}
+                  onChange={(e) => setCompanyPasswordConfirm(e.target.value)}
+                  hint={resumedSetup ? 'Enter it again to confirm.' : 'Re-enter the password you chose for this company.'}
+                  error={companyPasswordConfirm.length > 0 && companyPasswordConfirm !== getValues('company_password')
+                    ? 'Company access passwords do not match.'
+                    : undefined}
+                />
                 <Button
                   type="button"
                   tint="admin"

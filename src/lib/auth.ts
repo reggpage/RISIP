@@ -55,7 +55,10 @@ async function hydrate(session: Session | null) {
     return;
   }
 
-  if (lastProfileUserId === session.user.id) {
+  // A newly completed signup can create the profile after the auth session was
+  // first hydrated. Re-query when the cached profile is still null so the app
+  // does not keep treating a completed signup as an unlinked account.
+  if (lastProfileUserId === session.user.id && lastProfile) {
     publish({ status: 'signed-in', session, profile: lastProfile });
     return;
   }
