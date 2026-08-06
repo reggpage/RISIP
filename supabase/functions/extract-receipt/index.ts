@@ -2,7 +2,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { json, preflight } from '../_shared/cors.ts';
 import { CATEGORIES, normalizeTanzaniaReceipt } from '../_shared/tanzaniaReceiptKnowledge.ts';
 
-const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
+// Use the higher-accuracy model for the first pass too. Re-analysis used to be
+// better simply because it was the only path using Sonnet, which made the same
+// receipt produce inconsistent totals.
+const DEFAULT_MODEL = 'claude-sonnet-5';
 const ALLOWED_MODELS = new Set([DEFAULT_MODEL, 'claude-sonnet-5']);
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 
@@ -33,8 +36,8 @@ TANZANIA TRA FIELD RULES — follow exactly:
 - vendor_tin: labelled "TIN". It is EXACTLY 9 digits (e.g. 101327036). It very often starts with a leading 1 — do NOT drop the first digit. Return digits only, no spaces.
 - vendor_vrn: labelled "VRN". Format is digits ending in a letter, e.g. "10015084M" or "40-XXXXXX-X". Keep the trailing letter. Do not confuse with the TIN.
 - verification_code: near the bottom, labelled "RECEIPT VERIFICATION CODE", usually just above a QR code (e.g. 8F9CDB204130). It is alphanumeric — read each character carefully and DISTINGUISH letters from digits: B vs 8, I vs 1, O vs 0, S vs 5, Z vs 2. Do not add or repeat characters.
-- total_amount: the grand total INCLUDING VAT — the line "TOTAL INCL OF TAX" or "TOTAL". For fuel "Client Ticket" statements the total is the "TOTAL … TZS" line (ignore BALANCE, GLOBAL, REMAINDER, tank capacity — those are not the purchase amount).
-- tax_amount: the VAT portion only — the "TAX A – 18%" / "TOTAL TAX" line. If the receipt shows no VAT, set null and add "tax_amount" to low_confidence_fields.
+- total_amount: the grand total INCLUDING VAT — the line "TOTAL INCL OF TAX" or "TOTAL". For fuel "Client Ticket" statements the total is the "TOTAL … TZS" line (ignore BALANCE, GLOBAL, REMAINDER, tank capacity — those are not the purchase amount). Return a JSON number in TZS with no separators: 176,018, 176.018, and 176 018 all mean 176018; a decimal is allowed only when the receipt clearly shows one or two fractional digits.
+- tax_amount: the VAT portion only — the "TAX A – 18%" / "TOTAL TAX" line. If the receipt shows no VAT, set null and add "tax_amount" to low_confidence_fields. Apply the same TZS separator rule.
 - receipt_number: the receipt/ticket number (e.g. "RECEIPT NO", "TICKET NO").
 - Read all amounts digit-by-digit; never invent, drop, or duplicate a digit.
 

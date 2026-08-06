@@ -103,6 +103,36 @@ function normalizeTin(value: unknown): string | null {
   return digits || null;
 }
 
+// Tanzanian receipts commonly print TZS thousands as `176,018`, while OCR may
+// turn the separator into a dot (`176.018`) or a space. JSON numbers can also
+// arrive as 176.018 after the model has already interpreted the punctuation as
+// a decimal. For TZS, three digits after a separator are a thousands group;
+// only one or two trailing digits are treated as decimal cents.
+function normalizeMoney(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  const raw = String(value).trim().replace(/[^0-9,.'\s-]/g, '');
+  if (!raw) return null;
+
+  const negative = raw.startsWith('-');
+  const unsigned = raw.replace(/^-/, '').replace(/[\s']/g, '');
+  const separators = [...unsigned].filter((char) => char === ',' || char === '.');
+  let normalized = unsigned;
+
+  if (separators.length > 0) {
+    const lastSeparator = Math.max(unsigned.lastIndexOf(','), unsigned.lastIndexOf('.'));
+    const fractionalDigits = unsigned.length - lastSeparator - 1;
+    if (fractionalDigits === 1 || fractionalDigits === 2) {
+      normalized = unsigned.slice(0, lastSeparator).replace(/[,.]/g, '') + '.' + unsigned.slice(lastSeparator + 1);
+    } else {
+      normalized = unsigned.replace(/[,.]/g, '');
+    }
+  }
+
+  const parsed = Number(`${negative ? '-' : ''}${normalized}`);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.round(parsed * 100) / 100;
+}
+
 function vendorLooksLikeReceiptHeader(vendor: string): boolean {
   return /start\s+of.*receipt|legal\s+receipt|ucon\s+receipt|leon\s+receipt|official\s+receipt/i.test(cleanText(vendor));
 }
@@ -172,6 +202,11 @@ export function normalizeTanzaniaReceipt<T extends ReceiptLike>(row: T): T {
     ...row,
     [vendorKey]: shouldReplaceVendor ? merchant.canonical : row[vendorKey],
     vendor_tin: normalizedTin,
+    total_amount: normalizeMoney(row.total_amount),
+    tax_amount: normalizeMoney(row.tax_amount),
+    ...(Object.prototype.hasOwnProperty.call(row, 'net_amount')
+      ? { net_amount: normalizeMoney(row.net_amount) }
+      : {}),
     category,
     raw_ai_response: row.raw_ai_response,
   };
