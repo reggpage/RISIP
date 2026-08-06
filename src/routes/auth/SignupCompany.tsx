@@ -206,8 +206,9 @@ export default function SignupCompany() {
               error={errors.hq_location && sw.common.error}
             />
             <Input label={sw.auth.sector} {...register('sector')} />
-            <Input
+            <PasswordField
               label={sw.auth.companyAccessPassword}
+              autoComplete="new-password"
               hint={sw.auth.companyPasswordHint}
               {...register('company_password', { required: true, minLength: 6 })}
               error={errors.company_password && sw.auth.companyPasswordHint}
@@ -311,8 +312,9 @@ export default function SignupCompany() {
             {verifiedAccessToken && (
               <>
                 {needsCompanyPassword && (
-                  <Input
+                  <PasswordField
                     label={sw.auth.companyAccessPassword}
+                    autoComplete="new-password"
                     hint="Re-enter the shared password to finish setting up this company."
                     {...register('company_password', { required: true, minLength: 6 })}
                     error={errors.company_password && sw.auth.companyPasswordHint}
