@@ -7,6 +7,7 @@ import EmptyState from '@/components/ui/EmptyState';
 import { ListItemSkeleton } from '@/components/ui/Skeleton';
 import InviteLinkCard from '@/components/projects/InviteLinkCard';
 import ProjectTeamPanel from '@/components/projects/ProjectTeamPanel';
+import EditProjectModal from '@/components/projects/EditProjectModal';
 import { supabase } from '@/lib/supabase';
 import ReceiptCard from '@/components/receipts/ReceiptCard';
 import MetricCard from '@/components/dashboard/MetricCard';
@@ -20,7 +21,7 @@ import { useReceipts } from '@/features/receipts/useReceipts';
 import { useAuth } from '@/lib/auth';
 import { formatDate, formatMoney } from '@/lib/format';
 import { sw } from '@/i18n/sw';
-import type { InviteLink, InviteRole } from '@/types/db';
+import type { InviteLink, InviteRole, Project } from '@/types/db';
 
 const INVITE_ROLES: InviteRole[] = ['worker', 'accountant'];
 
@@ -33,6 +34,8 @@ export default function ProjectDetail() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [projectOverride, setProjectOverride] = useState<Project | null>(null);
   const [myIsLeader, setMyIsLeader] = useState(false);
 
   const profile = auth.status === 'signed-in' ? auth.profile : null;
@@ -62,13 +65,18 @@ export default function ProjectDetail() {
 
   if (projectState.status === 'loading') {
     return (
-      <div className="mx-auto max-w-4xl p-6">
-        <div className="mb-4 h-4 w-32 animate-pulse rounded bg-surface-muted" />
-        <div className="mb-2 h-8 w-64 animate-pulse rounded-lg bg-surface-muted" />
-        <div className="mb-8 h-4 w-48 animate-pulse rounded bg-surface-muted" />
+      <div className="mx-auto w-full max-w-4xl px-4 pb-8 pt-4 sm:px-6 sm:pt-6">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex-1 space-y-3">
+            <div className="h-3 w-24 animate-pulse rounded bg-surface-border" />
+            <div className="h-8 w-2/3 max-w-sm animate-pulse rounded-lg bg-surface-border" />
+            <div className="h-3 w-1/2 max-w-xs animate-pulse rounded bg-surface-border" />
+          </div>
+          <div className="h-10 w-28 animate-pulse rounded-lg bg-surface-border" />
+        </div>
         <div className="mb-4 grid gap-3 sm:grid-cols-2">
-          <div className="h-28 animate-pulse rounded-xl bg-surface-muted" />
-          <div className="h-28 animate-pulse rounded-xl bg-surface-muted" />
+          <div className="h-28 animate-pulse rounded-xl bg-surface-border" />
+          <div className="h-28 animate-pulse rounded-xl bg-surface-border" />
         </div>
         <div className="flex flex-col gap-3">
           {Array.from({ length: 3 }).map((_, i) => <ListItemSkeleton key={i} lines={3} />)}
@@ -82,7 +90,7 @@ export default function ProjectDetail() {
   if (!projectState.project) {
     return <div className="p-8 text-ink-muted">{sw.common.empty}</div>;
   }
-  const project = projectState.project;
+  const project = projectOverride ?? projectState.project;
 
   const linksByRole = new Map<InviteRole, InviteLink | null>();
   if (linksState.status === 'ready') {
@@ -143,7 +151,7 @@ export default function ProjectDetail() {
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {canManageTeam && (
             <Button variant="secondary" tint="admin" onClick={() => setTeamOpen(true)}>
               <Users className="h-4 w-4" /> Team &amp; funds
@@ -155,11 +163,9 @@ export default function ProjectDetail() {
             </Button>
           )}
           {isOwner && (
-            <Link to={`/projects/${project.id}/edit`}>
-              <Button variant="secondary" tint="admin">
-                {sw.projects.edit}
-              </Button>
-            </Link>
+            <Button variant="secondary" tint="admin" onClick={() => setEditOpen(true)}>
+              {sw.projects.edit}
+            </Button>
           )}
         </div>
       </div>
@@ -273,6 +279,13 @@ export default function ProjectDetail() {
           isOwner={!!isOwner}
           myUserId={profile.id}
           onClose={() => setTeamOpen(false)}
+        />
+      )}
+      {editOpen && isOwner && (
+        <EditProjectModal
+          project={project}
+          onClose={() => setEditOpen(false)}
+          onSaved={(updated) => { setProjectOverride(updated); setEditOpen(false); }}
         />
       )}
     </div>

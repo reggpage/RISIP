@@ -81,6 +81,10 @@ export default function JoinPage() {
   async function onSubmit(values: FormFields) {
     if (!token) return;
     setSubmitError(null);
+    if (!values.company_password.trim()) {
+      setSubmitError('Enter the company password to continue.');
+      return;
+    }
     if (mode === 'register' && values.password !== values.password_confirm) {
       setSubmitError(sw.auth.passwordMismatch);
       return;

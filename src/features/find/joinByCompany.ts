@@ -42,6 +42,7 @@ async function bodyErrorMessage(err: unknown): Promise<string> {
 
 // Quick password check without side effects — used to decide which pane to show next.
 export async function checkCompanyPassword(companyId: string, password: string): Promise<boolean> {
+  if (!password.trim()) return false;
   const { data, error } = await supabase.rpc('verify_company_password', {
     p_company_id: companyId,
     p_password: password,

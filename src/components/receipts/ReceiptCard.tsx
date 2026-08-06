@@ -21,9 +21,11 @@ const STATUS_META = {
 export default function ReceiptCard({
   receipt,
   onOpen,
+  nickname,
 }: {
   receipt: Receipt;
   onOpen?: (r: Receipt) => void;
+  nickname?: string | null;
 }) {
   const [thumb, setThumb] = useState<string | null>(null);
   const [uploader, setUploader] = useState<string | null>(null);
@@ -80,8 +82,9 @@ export default function ReceiptCard({
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="truncate text-sm font-semibold text-ink">
-              {receipt.vendor_name ?? '—'}
+              {nickname || receipt.vendor_name || '—'}
             </div>
+            {nickname && <div className="truncate text-xs text-ink-muted">{receipt.vendor_name ?? 'Receipt name'}</div>}
             <div className="text-xs text-ink-muted">
               {formatDate(receipt.receipt_date ?? receipt.created_at)}
               {/* Upload clock time so the team can see exactly when it came in. */}

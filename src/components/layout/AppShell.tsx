@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
@@ -16,10 +16,12 @@ export default function AppShell() {
     window.localStorage.getItem('risip:notificationToasts') !== 'off',
   );
   const profile = auth.status === 'signed-in' ? auth.profile : null;
+  const mainRef = useRef<HTMLElement | null>(null);
 
   // Close the drawer whenever the route changes so it doesn't linger over the new page.
   useEffect(() => {
     setMobileNavOpen(false);
+    mainRef.current?.scrollTo(0, 0);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -88,7 +90,7 @@ export default function AppShell() {
         />
         {/* Bottom tab bar removed — the hamburger drawer now holds the full nav, so
             content no longer needs padding to clear a fixed bar. */}
-        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <main ref={mainRef} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
           <Outlet />
         </main>
       </div>

@@ -129,6 +129,15 @@ export type Receipt = {
   created_at: string;
 };
 
+export type ReceiptAlias = {
+  id: string;
+  receipt_id: string;
+  user_id: string;
+  nickname: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ScannedDocument = {
   id: string;
   company_id: string;
@@ -239,6 +248,12 @@ export type Database = {
           status: ReceiptStatus;
         };
         Update: Partial<Receipt>;
+        Relationships: [];
+      };
+      receipt_aliases: {
+        Row: ReceiptAlias;
+        Insert: Partial<ReceiptAlias> & { receipt_id: string; user_id: string; nickname: string };
+        Update: Partial<ReceiptAlias>;
         Relationships: [];
       };
       petty_cash_accounts: {

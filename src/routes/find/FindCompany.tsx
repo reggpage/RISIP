@@ -145,6 +145,10 @@ export function PasswordPane({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!password.trim()) {
+      setError('Enter the company password to continue.');
+      return;
+    }
     setBusy(true);
     try {
       const ok = await checkCompanyPassword(company.id, password);

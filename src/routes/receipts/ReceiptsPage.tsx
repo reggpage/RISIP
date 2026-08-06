@@ -52,6 +52,7 @@ export default function ReceiptsPage() {
   // Uploader name cache so search-by-name works against the full name, not just uid.
   // Lazy-populated as receipts come in.
   const [uploaderNames, setUploaderNames] = useState<Record<string, string>>({});
+  const [myReceiptNames, setMyReceiptNames] = useState<Record<string, string>>({});
   useEffect(() => {
     if (receiptsState.status !== 'ready') return;
     const missing = Array.from(
@@ -73,6 +74,29 @@ export default function ReceiptsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receiptsState]);
 
+  // Aliases are deliberately fetched from their private table. They are only
+  // attached to receipts uploaded by the current user, never to the shared
+  // company receipt data shown to teammates.
+  useEffect(() => {
+    if (receiptsState.status !== 'ready' || !profile?.id) return;
+    const ids = receiptsState.receipts.map((r) => r.id);
+    if (ids.length === 0) {
+      setMyReceiptNames({});
+      return;
+    }
+    void supabase
+      .from('receipt_aliases')
+      .select('receipt_id, nickname')
+      .eq('user_id', profile.id)
+      .in('receipt_id', ids)
+      .then(({ data }) => {
+        if (!data) return;
+        const next: Record<string, string> = {};
+        for (const row of data) next[row.receipt_id as string] = row.nickname as string;
+        setMyReceiptNames(next);
+      });
+  }, [profile?.id, receiptsState]);
+
   const filtered = useMemo(() => {
     if (receiptsState.status !== 'ready') return [];
     const q = query.trim().toLowerCase();
@@ -83,11 +107,12 @@ export default function ReceiptsPage() {
       if (q) {
         const vendor = (r.vendor_name ?? '').toLowerCase();
         const uploader = (uploaderNames[r.uploaded_by] ?? '').toLowerCase();
-        if (!vendor.includes(q) && !uploader.includes(q)) return false;
+        const nickname = r.uploaded_by === profile?.id ? (myReceiptNames[r.id] ?? '').toLowerCase() : '';
+        if (!vendor.includes(q) && !uploader.includes(q) && !nickname.includes(q)) return false;
       }
       return true;
     });
-  }, [receiptsState, query, categoryFilter, paymentFilter, uploaderFilter, uploaderNames, profile?.id]);
+  }, [receiptsState, query, categoryFilter, paymentFilter, uploaderFilter, uploaderNames, myReceiptNames, profile?.id]);
 
   if (projectsState.status === 'loading') {
     return (
@@ -183,7 +208,7 @@ export default function ReceiptsPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-ink-muted" />
           <input
             type="search"
-            placeholder="Search vendor or uploader…"
+            placeholder="Search vendor, uploader or receipt name…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="w-full rounded-lg border border-surface-border bg-surface pl-9 pr-3 py-2 text-sm text-ink placeholder:text-ink-muted/70 focus:outline-none focus:ring-2 focus:ring-role-admin/30"
@@ -236,7 +261,12 @@ export default function ReceiptsPage() {
         {receiptsState.status === 'ready' && filtered.length > 0 && (
           <div className="flex flex-col gap-3">
             {filtered.map((r) => (
-              <ReceiptCard key={r.id} receipt={r} onOpen={setOpenReceipt} />
+              <ReceiptCard
+                key={r.id}
+                receipt={r}
+                nickname={r.uploaded_by === profile?.id ? myReceiptNames[r.id] : null}
+                onOpen={setOpenReceipt}
+              />
             ))}
           </div>
         )}
@@ -261,6 +291,14 @@ export default function ReceiptsPage() {
         <ReceiptDetailModal
           receipt={openReceipt}
           onClose={() => setOpenReceipt(null)}
+          onAliasChanged={(receiptId, nickname) => {
+            setMyReceiptNames((prev) => {
+              const next = { ...prev };
+              if (nickname) next[receiptId] = nickname;
+              else delete next[receiptId];
+              return next;
+            });
+          }}
           // Realtime already patches the list on DELETE, but nudge state now so
           // the modal closes onto a clean page even if the socket is slow.
           onDeleted={() => setOpenReceipt(null)}

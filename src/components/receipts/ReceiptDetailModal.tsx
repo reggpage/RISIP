@@ -34,10 +34,12 @@ export default function ReceiptDetailModal({
   receipt,
   onClose,
   onDeleted,
+  onAliasChanged,
 }: {
   receipt: Receipt;
   onClose: () => void;
   onDeleted?: (id: string) => void;
+  onAliasChanged?: (receiptId: string, nickname: string | null) => void;
 }) {
   const toast = useToast();
   const confirm = useConfirm();
@@ -51,6 +53,8 @@ export default function ReceiptDetailModal({
   const [deleting, setDeleting] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
+  const [nickname, setNickname] = useState('');
+  const [savingNickname, setSavingNickname] = useState(false);
   const { state: projectsState } = useProjects();
   const project = projectsState.status === 'ready'
     ? projectsState.projects.find((p) => p.id === data.project_id) ?? null
@@ -62,6 +66,7 @@ export default function ReceiptDetailModal({
   // Finance can edit any company receipt; the uploader can fix AI mistakes on their own.
   const canEdit = isFinance || profile?.id === data.uploaded_by;
   const canReview = data.status === 'pending_review' && isFinance;
+  const canName = profile?.id === data.uploaded_by;
 
   // ── Edit mode (finance only) ──────────────────────────────────────────────
   const [editing, setEditing] = useState(false);
@@ -114,6 +119,28 @@ export default function ReceiptDetailModal({
     setData((d) => ({ ...d, ...updates }));
     setEditing(false);
     toast.success('Receipt updated.');
+  }
+
+  async function saveNickname() {
+    if (!profile?.id || !canName) return;
+    const value = nickname.trim();
+    setSavingNickname(true);
+    const result = value
+      ? await supabase.from('receipt_aliases').upsert(
+        { receipt_id: data.id, user_id: profile.id, nickname: value },
+        { onConflict: 'receipt_id,user_id' },
+      )
+      : await supabase.from('receipt_aliases').delete()
+        .eq('receipt_id', data.id)
+        .eq('user_id', profile.id);
+    setSavingNickname(false);
+    if (result.error) {
+      toast.error(result.error.message);
+      return;
+    }
+    setNickname(value);
+    onAliasChanged?.(data.id, value || null);
+    toast.success(value ? 'Receipt name saved.' : 'Receipt name removed.');
   }
 
   // Re-run extraction with the high-accuracy model for hard-to-read photos.
@@ -179,10 +206,21 @@ export default function ReceiptDetailModal({
           if (!signed || cancelled) return;
           if (path.toLowerCase().endsWith('.pdf')) setDocPdfUrl(signed);
           else setImgUrl(signed);
+      });
+    }
+    if (profile?.id) {
+      void supabase
+        .from('receipt_aliases')
+        .select('nickname')
+        .eq('receipt_id', receipt.id)
+        .eq('user_id', profile.id)
+        .maybeSingle()
+        .then(({ data: alias }) => {
+          if (!cancelled) setNickname((alias?.nickname as string | null) ?? '');
         });
     }
     return () => { cancelled = true; };
-  }, [receipt.uploaded_by, receipt.image_url, receipt.scanned_doc_id]);
+  }, [profile?.id, receipt.id, receipt.uploaded_by, receipt.image_url, receipt.scanned_doc_id]);
 
   async function handleDelete() {
     const ok = await confirm({
@@ -369,6 +407,33 @@ export default function ReceiptDetailModal({
             ) : (
               // ── Read-only view ─────────────────────────────────────────
               <>
+                {canName && (
+                  <div className="mb-4 rounded-lg border border-surface-border bg-surface-muted/40 p-3">
+                    <label className="flex flex-col gap-2">
+                      <span className="text-xs font-medium uppercase tracking-wide text-ink-muted">My receipt name</span>
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <input
+                          value={nickname}
+                          onChange={(e) => setNickname(e.target.value)}
+                          maxLength={120}
+                          placeholder="e.g. Fuel for Dodoma site"
+                          className={`${inputCls} flex-1 bg-surface`}
+                        />
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          tint="admin"
+                          onClick={() => void saveNickname()}
+                          disabled={savingNickname || nickname.trim().length > 120}
+                          className="shrink-0"
+                        >
+                          {savingNickname ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save name'}
+                        </Button>
+                      </div>
+                      <span className="text-xs text-ink-muted">Only you can see and search this name.</span>
+                    </label>
+                  </div>
+                )}
                 <Row label="Vendor" value={data.vendor_name ?? '—'} strong />
                 <Row label="Amount" value={<span className="font-display font-semibold">{formatMoney(data.total_amount)}</span>} />
                 <Row label="Tax / VAT" value={formatMoney(data.tax_amount)} />
@@ -395,10 +460,10 @@ export default function ReceiptDetailModal({
                 <Row label="Uploaded at" value={formatDateTime(data.created_at)} />
 
                 {data.low_confidence_fields.length > 0 && (
-                  <div className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                    <span className="font-medium">Needs review:</span>{' '}
+                  <div className="mt-4 rounded-lg border border-surface-border bg-surface-muted px-3 py-2 text-xs text-ink-muted">
+                    <span className="font-medium text-ink">Needs review:</span>{' '}
                     {data.low_confidence_fields.join(', ')}
-                    {canEdit && <span className="block mt-1 text-amber-700">Tap “Edit” to correct, or “Re-analyse” for a fresh high-accuracy read.</span>}
+                    {canEdit && <span className="mt-1 block text-ink-muted">Tap “Edit” to correct, or “Re-analyse” for a fresh high-accuracy read.</span>}
                   </div>
                 )}
 
