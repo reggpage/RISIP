@@ -152,16 +152,34 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
   const action = payload.email_data.email_action_type;
   const isEmailChange = action === 'email_change' || action === 'email_change_current' || action === 'email_change_new';
-  const emails: Array<{ to: string; token: string; tokenHash?: string }> = isEmailChange
-    ? [
-        ...(payload.user.email && (payload.email_data.token_hash_new || payload.email_data.token)
-          ? [{ to: payload.user.email, token: payload.email_data.token, tokenHash: payload.email_data.token_hash_new }]
-          : []),
-        ...(payload.user.new_email && (payload.email_data.token_hash || payload.email_data.token_new)
-          ? [{ to: payload.user.new_email, token: payload.email_data.token_new ?? payload.email_data.token, tokenHash: payload.email_data.token_hash }]
-          : []),
-      ]
-    : [{ to: payload.user.email, token: payload.email_data.token }];
+  const emails: Array<{ to: string; token: string; tokenHash?: string }> = [];
+  if (isEmailChange) {
+    // Supabase reverses the `_new` suffix for backwards compatibility:
+    // token_hash_new belongs to the current email, while token_hash belongs
+    // to the new email. With Secure Email Change disabled only the latter is
+    // present, so never send that one-token flow to the current address.
+    if (payload.user.email && payload.email_data.token && payload.email_data.token_hash_new) {
+      emails.push({ to: payload.user.email, token: payload.email_data.token, tokenHash: payload.email_data.token_hash_new });
+    }
+    if (payload.user.new_email && payload.email_data.token_hash) {
+      emails.push({
+        to: payload.user.new_email,
+        token: payload.email_data.token_new ?? payload.email_data.token,
+        tokenHash: payload.email_data.token_hash,
+      });
+    }
+    // Be tolerant of a provider payload that contains a single pair but
+    // omits user.new_email; this still sends exactly one confirmation.
+    if (emails.length === 0) {
+      const to = payload.user.new_email ?? payload.user.email;
+      const tokenHash = payload.email_data.token_hash ?? payload.email_data.token_hash_new;
+      if (to && tokenHash) {
+        emails.push({ to, token: payload.email_data.token_new ?? payload.email_data.token, tokenHash });
+      }
+    }
+  } else {
+    emails.push({ to: payload.user.email, token: payload.email_data.token });
+  }
 
   if (emails.length === 0) return bad('email change payload is missing recipients or tokens', 400);
 

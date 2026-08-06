@@ -19,6 +19,20 @@ type CompanyLoginStage =
   | { name: 'password'; company: CompanyHit }
   | { name: 'account'; company: CompanyHit; companyPassword: string; tab: 'login' | 'register' };
 
+const SIGNUP_DRAFT_KEY = 'risip:companySignupDraft';
+
+function hasPendingCompanySignup(email?: string) {
+  try {
+    const raw = window.localStorage.getItem(SIGNUP_DRAFT_KEY);
+    if (!raw) return false;
+    const draft = JSON.parse(raw) as { email?: string; saved_at?: number };
+    if (!draft.email || (draft.saved_at && Date.now() - draft.saved_at > 24 * 60 * 60 * 1000)) return false;
+    return !email || draft.email.toLowerCase() === email.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
 function withTimeout<T>(promise: PromiseLike<T>, ms: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = window.setTimeout(() => reject(new Error(message)), ms);
@@ -72,6 +86,10 @@ export default function Login() {
       );
 
       if (profileError || !profile) {
+        if (data.user.email_confirmed_at && hasPendingCompanySignup(data.user.email)) {
+          navigate('/signup', { replace: true });
+          return;
+        }
         await supabase.auth.signOut();
         setSubmitError('This login is valid, but it is not linked to a company profile yet.');
         return;
@@ -105,6 +123,26 @@ export default function Login() {
   }
 
   if (auth.status === 'signed-in' && !auth.profile) {
+    if (auth.session.user.email_confirmed_at && hasPendingCompanySignup(auth.session.user.email)) {
+      return (
+        <AuthShell>
+          <Card className="flex flex-col gap-4">
+            <div>
+              <p className="text-sm font-semibold text-ink">Your company setup is waiting</p>
+              <p className="mt-1 text-sm text-ink-muted">
+                Your email is verified. Continue where you left off to create your company profile.
+              </p>
+            </div>
+            <Button tint="admin" onClick={() => navigate('/signup')} fullWidth>
+              Resume company setup
+            </Button>
+            <Button variant="ghost" onClick={() => void supabase.auth.signOut()} fullWidth>
+              {sw.common.logout}
+            </Button>
+          </Card>
+        </AuthShell>
+      );
+    }
     return (
       <AuthShell>
         <Card className="flex flex-col gap-4">
