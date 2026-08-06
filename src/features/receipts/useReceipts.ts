@@ -69,11 +69,22 @@ export function useReceipts(projectId?: string, limit = 50) {
           });
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        // Realtime is an optimisation. If a browser, proxy, or Supabase
+        // Realtime temporarily drops the socket, the polling fallback below
+        // keeps the receipt list correct without requiring a hard refresh.
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          void refresh();
+        }
+      });
+    const fallbackRefresh = window.setInterval(() => {
+      void refresh();
+    }, 15000);
     return () => {
+      window.clearInterval(fallbackRefresh);
       void supabase.removeChannel(channel);
     };
-  }, [projectId, limit]);
+  }, [projectId, limit, refresh]);
 
   return { state, refresh };
 }

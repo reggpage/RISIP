@@ -54,17 +54,48 @@ General rules:
 - category must be one from the enum. Choose the best fit based on vendor and line items; if unclear, use "Other".`;
 
 function bad(msg, status = 400) { return json({ error: msg }, { status }); }
-function safeParseJson(text) {
-  const stripped = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/, '');
-  try { return JSON.parse(stripped); } catch {}
+function extractBalancedObject(text) {
+  const start = text.indexOf('{');
+  if (start < 0) return null;
 
-  // Claude normally follows the JSON-only instruction, but if it adds one
-  // sentence before/after the object, recover the object instead of marking a
-  // perfectly usable receipt as failed.
-  const start = stripped.indexOf('{');
-  const end = stripped.lastIndexOf('}');
-  if (start >= 0 && end > start) {
-    try { return JSON.parse(stripped.slice(start, end + 1)); } catch {}
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const character = text[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') inString = true;
+    else if (character === '{') depth += 1;
+    else if (character === '}') {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, index + 1);
+    }
+  }
+  return null;
+}
+
+function safeParseJson(text) {
+  const stripped = String(text || '')
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .replace(/^<json>\s*/i, '')
+    .replace(/\s*<\/json>$/i, '')
+    .trim();
+  const candidates = [stripped, extractBalancedObject(stripped)].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try { return JSON.parse(candidate); } catch {}
+
+    // Be tolerant of a trailing comma if the model returned an otherwise
+    // complete object. Do not attempt broad text rewriting that could change
+    // receipt amounts or identifiers.
+    try { return JSON.parse(candidate.replace(/,\s*([}\]])/g, '$1')); } catch {}
   }
   return null;
 }
@@ -185,7 +216,12 @@ Deno.serve(async (req) => {
     }, { status: 502 });
   }
 
-  const text = claudeJson?.content?.[0]?.text ?? '';
+  const text = Array.isArray(claudeJson?.content)
+    ? claudeJson.content
+      .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+      .map((block) => block.text)
+      .join('\n')
+    : '';
   const parsed = safeParseJson(text);
   if (!parsed) {
     console.error('unable to parse model output', text.slice(0, 300));
