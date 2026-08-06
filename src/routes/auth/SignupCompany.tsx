@@ -267,35 +267,38 @@ export default function SignupCompany() {
         {step === 2 && (
           <div className="flex flex-col gap-5">
             <div className="text-center">
-              <h2 className="text-lg font-semibold text-ink">{sw.auth.otp.title}</h2>
-              <p className="mt-1 text-sm text-ink-muted">
-                {sw.auth.otp.subtitle}{' '}
-                <span className="font-medium text-ink">{getValues('email')}</span>
-              </p>
+              <h2 className="text-lg font-semibold text-ink">
+                {verifiedAccessToken ? 'Finish setting up your company' : sw.auth.otp.title}
+              </h2>
+              {verifiedAccessToken ? (
+                <p className="mt-3 text-sm text-emerald-700">Email verified. Finish setup when you are ready.</p>
+              ) : (
+                <p className="mt-1 text-sm text-ink-muted">
+                  {sw.auth.otp.subtitle}{' '}
+                  <span className="font-medium text-ink">{getValues('email')}</span>
+                </p>
+              )}
             </div>
 
-            <OtpInput
-              value={otp}
-              onChange={(v) => {
-                setOtp(v);
-                if (v.length === OTP_LENGTH && !verifiedAccessToken && !submitting) void verifyOtp(v);
-              }}
-              disabled={submitting}
-              error={!!otpError}
-            />
-
-            {verifiedAccessToken ? (
-              <p className="text-center text-sm text-emerald-700">Email verified. Finish setup when you are ready.</p>
-            ) : otpError ? (
-              <p className="text-center text-sm text-red-600">{otpError}</p>
-            ) : null}
+            {!verifiedAccessToken && (
+              <>
+                <OtpInput
+                  value={otp}
+                  onChange={(v) => {
+                    setOtp(v);
+                    if (v.length === OTP_LENGTH && !verifiedAccessToken && !submitting) void verifyOtp(v);
+                  }}
+                  disabled={submitting}
+                  error={!!otpError}
+                />
+                {otpError && <p className="text-center text-sm text-red-600">{otpError}</p>}
+              </>
+            )}
 
             <div className="text-center text-sm">
-              {verifiedAccessToken ? (
-                <span className="text-ink-muted">Your company details are ready to finish.</span>
-              ) : resendIn > 0 ? (
+              {!verifiedAccessToken && resendIn > 0 ? (
                 <span className="text-ink-muted">{sw.auth.otp.resendIn(resendIn)}</span>
-              ) : (
+              ) : !verifiedAccessToken ? (
                 <button
                   type="button"
                   onClick={() => void resendOtp()}
@@ -304,7 +307,7 @@ export default function SignupCompany() {
                 >
                   {sw.auth.otp.resend}
                 </button>
-              )}
+              ) : null}
             </div>
 
             {submitError && <p className="text-center text-sm text-red-600">{submitError}</p>}
