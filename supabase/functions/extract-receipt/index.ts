@@ -162,6 +162,18 @@ Deno.serve(async (req) => {
     const detail = JSON.stringify(claudeJson);
     console.error('claude rejected', claudeRes.status, detail);
     await markError(admin, receiptId, `claude ${claudeRes.status}`, detail);
+    if (claudeRes.status === 401 || claudeRes.status === 403) {
+      return json({
+        error: 'Receipt AI is not configured. An administrator must update the Anthropic API key in Supabase secrets.',
+        code: 'AI_AUTH_CONFIG_ERROR',
+      }, { status: 503 });
+    }
+    if (claudeRes.status === 429) {
+      return json({
+        error: 'Receipt AI is temporarily rate-limited. Please try again shortly.',
+        code: 'AI_RATE_LIMITED',
+      }, { status: 503 });
+    }
     const providerMessage = claudeJson?.error?.message || claudeJson?.message || 'The AI provider rejected the request.';
     return json({
       error: 'Receipt extraction could not be completed.',
