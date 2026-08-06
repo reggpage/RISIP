@@ -894,7 +894,7 @@ export default function SettingsPage() {
           title={sw.settings.changePassword}
           description={sw.settingsCopy.changePasswordDesc}
         >
-          <Card className="p-6 sm:p-8">
+          <Card className={personalPasswordOpen ? 'p-6 sm:p-8' : 'border-0 bg-transparent p-0 shadow-none'}>
             {pwMsg && <p className={`mt-4 text-sm ${pwMsg.type === 'ok' ? 'text-emerald-700' : 'text-red-600'}`}>{pwMsg.text}</p>}
             {!personalPasswordOpen ? (
               <div className="mt-6">
