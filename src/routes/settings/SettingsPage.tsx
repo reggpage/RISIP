@@ -61,6 +61,11 @@ export default function SettingsPage() {
   const [myPhone, setMyPhone] = useState('');
   const [savingMe, setSavingMe] = useState(false);
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
+  const [emailChangeOpen, setEmailChangeOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [emailPassword, setEmailPassword] = useState('');
+  const [changingEmail, setChangingEmail] = useState(false);
+  const [emailChangeMsg, setEmailChangeMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
   const emailSectionRef = useRef<HTMLElement | null>(null);
   const [notificationToasts, setNotificationToasts] = useState(() =>
     window.localStorage.getItem('risip:notificationToasts') !== 'off',
@@ -304,6 +309,49 @@ export default function SettingsPage() {
     }
   }
 
+  async function changeEmail() {
+    const currentEmail = auth.status === 'signed-in' ? (auth.session.user.email ?? '').trim().toLowerCase() : '';
+    const nextEmail = newEmail.trim().toLowerCase();
+    if (!currentEmail || !nextEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail)) {
+      setEmailChangeMsg({ type: 'err', text: 'Enter a valid new email address.' });
+      return;
+    }
+    if (nextEmail === currentEmail) {
+      setEmailChangeMsg({ type: 'err', text: 'The new email must be different from your current email.' });
+      return;
+    }
+    if (!emailPassword) {
+      setEmailChangeMsg({ type: 'err', text: 'Enter your current personal password to continue.' });
+      return;
+    }
+
+    setChangingEmail(true);
+    setEmailChangeMsg(null);
+    const { error: reauthError } = await supabase.auth.signInWithPassword({
+      email: currentEmail,
+      password: emailPassword,
+    });
+    if (reauthError) {
+      setChangingEmail(false);
+      setEmailChangeMsg({ type: 'err', text: 'Your current personal password is incorrect.' });
+      return;
+    }
+
+    const { error } = await supabase.auth.updateUser({ email: nextEmail });
+    setChangingEmail(false);
+    if (error) {
+      setEmailChangeMsg({ type: 'err', text: error.message });
+      return;
+    }
+    setEmailChangeMsg({
+      type: 'ok',
+      text: 'Confirmation emails were sent to your current and new email addresses. The change applies after both are confirmed.',
+    });
+    setNewEmail('');
+    setEmailPassword('');
+    setEmailChangeOpen(false);
+  }
+
   async function setStaffPassword() {
     if (staffPw.length < 6) return setStaffPwMsg({ type: 'err', text: 'Password must be at least 6 characters.' });
     setSettingStaffPw(true);
@@ -447,6 +495,72 @@ export default function SettingsPage() {
                   >
                     Why verify?
                   </Button>
+                )}
+              </div>
+              <div className="mt-6 border-t border-surface-border pt-5">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Account email</p>
+                    <p className="mt-1 text-sm font-medium text-ink">
+                      {auth.status === 'signed-in' ? auth.session.user.email : '—'}
+                    </p>
+                  </div>
+                  {!emailChangeOpen && (
+                    <Button variant="secondary" tint="admin" onClick={() => {
+                      setEmailChangeMsg(null);
+                      setEmailChangeOpen(true);
+                    }}>
+                      Change email
+                    </Button>
+                  )}
+                </div>
+
+                {emailChangeOpen && (
+                  <div className="mt-5 rounded-lg border border-surface-border bg-surface-muted/40 p-4 sm:p-5">
+                    <div className="flex flex-col gap-4">
+                      <Input
+                        label="New email address"
+                        type="email"
+                        autoComplete="email"
+                        value={newEmail}
+                        onChange={(e) => setNewEmail(e.target.value)}
+                        placeholder="name@company.com"
+                      />
+                      <PasswordField
+                        label="Current personal password"
+                        autoComplete="current-password"
+                        value={emailPassword}
+                        onChange={(e) => setEmailPassword(e.target.value)}
+                        hint="This confirms the sensitive change. It is not the company access password."
+                      />
+                    </div>
+                    <p className="mt-4 text-xs leading-relaxed text-ink-muted">
+                      We will send confirmation messages to both email addresses. Your account email changes only after both confirmations.
+                    </p>
+                    {emailChangeMsg && (
+                      <p className={`mt-3 text-sm ${emailChangeMsg.type === 'ok' ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {emailChangeMsg.text}
+                      </p>
+                    )}
+                    <div className="mt-5 flex flex-wrap gap-3">
+                      <Button tint="admin" disabled={changingEmail} onClick={() => void changeEmail()}>
+                        {changingEmail ? sw.common.loading : 'Send confirmation emails'}
+                      </Button>
+                      <Button variant="ghost" disabled={changingEmail} onClick={() => {
+                        setEmailChangeOpen(false);
+                        setEmailChangeMsg(null);
+                        setNewEmail('');
+                        setEmailPassword('');
+                      }}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                {emailChangeMsg && !emailChangeOpen && (
+                  <p className={`mt-3 text-sm ${emailChangeMsg.type === 'ok' ? 'text-emerald-700' : 'text-red-600'}`}>
+                    {emailChangeMsg.text}
+                  </p>
                 )}
               </div>
             </Card>

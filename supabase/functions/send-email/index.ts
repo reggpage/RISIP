@@ -5,16 +5,24 @@
 import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0';
 
 interface HookPayload {
-  user: { id: string; email: string; user_metadata?: Record<string, unknown> };
+  user: {
+    id: string;
+    email: string;
+    new_email?: string;
+    user_metadata?: Record<string, unknown>;
+  };
   email_data: {
     token: string;
     token_hash: string;
+    token_new?: string;
+    token_hash_new?: string;
     redirect_to: string;
     email_action_type:
       | 'signup'
       | 'magiclink'
       | 'recovery'
       | 'invite'
+      | 'email_change'
       | 'email_change_current'
       | 'email_change_new'
       | 'reauthentication';
@@ -35,19 +43,25 @@ function bad(msg: string, status = 400) {
   });
 }
 
-function renderEmail(payload: HookPayload): { subject: string; html: string } {
-  const { token } = payload.email_data;
+function renderEmail(
+  payload: HookPayload,
+  token: string,
+  confirmationUrl?: string,
+): { subject: string; html: string } {
   const action = payload.email_data.email_action_type;
   const digitLabel = /^\d+$/.test(token) ? `${token.length}-digit ` : '';
 
   const heading =
     action === 'recovery' ? 'Set a new password'
+    : action === 'email_change' || action === 'email_change_current' || action === 'email_change_new' ? 'Confirm your new email'
     : action === 'invite' ? 'You have been invited to Risip'
     : action === 'reauthentication' ? 'Confirm this action'
     : 'Confirm your email';
 
   const preface =
-    action === 'recovery'
+    action === 'email_change' || action === 'email_change_current' || action === 'email_change_new'
+      ? 'Confirm the email change using the button below:'
+      : action === 'recovery'
       ? `Use this ${digitLabel}code to reset your password:`
       : action === 'invite'
         ? `Use this ${digitLabel}code to finish your registration:`
@@ -57,6 +71,7 @@ function renderEmail(payload: HookPayload): { subject: string; html: string } {
 
   const subject =
     action === 'recovery' ? 'Risip · Password reset code'
+    : action === 'email_change' || action === 'email_change_current' || action === 'email_change_new' ? 'Risip · Confirm your email change'
     : action === 'invite' ? 'Risip · You are invited'
     : 'Risip · Verification code';
 
@@ -81,9 +96,16 @@ function renderEmail(payload: HookPayload): { subject: string; html: string } {
                   <td style="padding:28px 32px 8px">
                     <h1 style="margin:0 0 8px;font-family:'Outfit',sans-serif;font-size:20px;font-weight:600;color:#0f172a">${heading}</h1>
                     <p style="margin:0 0 20px;font-size:14px;color:#475569;line-height:1.6">${preface}</p>
-                    <div style="margin:0 auto 20px;padding:18px 24px;background:#fdf2f4;border:1px solid #f6c9d2;border-radius:12px;text-align:center">
-                      <div style="font-family:'Outfit',sans-serif;font-size:34px;letter-spacing:10px;font-weight:700;color:#DD2D4A">${token}</div>
-                    </div>
+                    ${confirmationUrl ? `
+                      <div style="margin:0 auto 20px;text-align:center">
+                        <a href="${confirmationUrl}" style="display:inline-block;background:#DD2D4A;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 20px;border-radius:8px">Confirm email change</a>
+                      </div>
+                      <p style="margin:0 0 20px;font-size:12px;color:#64748b;line-height:1.6;word-break:break-all">If the button does not work, open this link:<br />${confirmationUrl}</p>
+                    ` : `
+                      <div style="margin:0 auto 20px;padding:18px 24px;background:#fdf2f4;border:1px solid #f6c9d2;border-radius:12px;text-align:center">
+                        <div style="font-family:'Outfit',sans-serif;font-size:34px;letter-spacing:10px;font-weight:700;color:#DD2D4A">${token}</div>
+                      </div>
+                    `}
                     <p style="margin:0;font-size:12px;color:#475569;line-height:1.6">
                       This code expires in a few minutes. If you did not request it, ignore this email.
                     </p>
@@ -127,18 +149,40 @@ Deno.serve(async (req) => {
     return bad('invalid signature', 401);
   }
 
-  const { subject, html } = renderEmail(payload);
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+  const action = payload.email_data.email_action_type;
+  const isEmailChange = action === 'email_change' || action === 'email_change_current' || action === 'email_change_new';
+  const emails: Array<{ to: string; token: string; tokenHash?: string }> = isEmailChange
+    ? [
+        ...(payload.user.email && (payload.email_data.token_hash_new || payload.email_data.token)
+          ? [{ to: payload.user.email, token: payload.email_data.token, tokenHash: payload.email_data.token_hash_new }]
+          : []),
+        ...(payload.user.new_email && (payload.email_data.token_hash || payload.email_data.token_new)
+          ? [{ to: payload.user.new_email, token: payload.email_data.token_new ?? payload.email_data.token, tokenHash: payload.email_data.token_hash }]
+          : []),
+      ]
+    : [{ to: payload.user.email, token: payload.email_data.token }];
 
-  const res = await fetch(RESEND_ENDPOINT, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ from, to: payload.user.email, subject, html }),
-  });
+  if (emails.length === 0) return bad('email change payload is missing recipients or tokens', 400);
 
-  if (!res.ok) {
-    const text = await res.text();
-    console.error('resend error', res.status, text);
-    return bad(`resend rejected: ${res.status}`, 502);
+  const results = await Promise.all(emails.map(async ({ to, token, tokenHash }) => {
+    const confirmationUrl = isEmailChange && tokenHash
+      ? `${supabaseUrl}/auth/v1/verify?token=${encodeURIComponent(tokenHash)}&type=email_change&redirect_to=${encodeURIComponent(payload.email_data.redirect_to)}`
+      : undefined;
+    const { subject, html } = renderEmail(payload, token, confirmationUrl);
+    return fetch(RESEND_ENDPOINT, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ from, to, subject, html }),
+    });
+  }));
+
+  for (const res of results) {
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('resend error', res.status, text);
+      return bad(`resend rejected: ${res.status}`, 502);
+    }
   }
 
   return new Response(JSON.stringify({ sent: true }), {

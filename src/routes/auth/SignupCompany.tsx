@@ -15,6 +15,7 @@ import {
   type CompanyDetails,
 } from '@/features/auth/signupCompany';
 import { sw } from '@/i18n/sw';
+import { supabase } from '@/lib/supabase';
 
 type Step1Fields = Pick<
   CompanyDetails,
@@ -23,6 +24,37 @@ type Step1Fields = Pick<
 
 const STEP_LABELS = [sw.auth.stepCompany, sw.auth.stepVerify] as const;
 const RESEND_COOLDOWN_SECONDS = 60;
+const SIGNUP_DRAFT_KEY = 'risip:companySignupDraft';
+
+type SignupDraft = Pick<Step1Fields, 'company_name' | 'hq_location' | 'sector' | 'full_name' | 'phone' | 'email'>;
+
+function readSignupDraft(): SignupDraft | null {
+  try {
+    const raw = window.localStorage.getItem(SIGNUP_DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as SignupDraft & { saved_at?: number };
+    if (parsed.saved_at && Date.now() - parsed.saved_at > 24 * 60 * 60 * 1000) {
+      window.localStorage.removeItem(SIGNUP_DRAFT_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveSignupDraft(values: Step1Fields) {
+  const draft: SignupDraft & { saved_at: number } = {
+    company_name: values.company_name ?? '',
+    hq_location: values.hq_location ?? '',
+    sector: values.sector ?? '',
+    full_name: values.full_name ?? '',
+    phone: values.phone ?? '',
+    email: values.email ?? '',
+    saved_at: Date.now(),
+  };
+  window.localStorage.setItem(SIGNUP_DRAFT_KEY, JSON.stringify(draft));
+}
 
 export default function SignupCompany() {
   const navigate = useNavigate();
@@ -35,13 +67,30 @@ export default function SignupCompany() {
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [verifiedAccessToken, setVerifiedAccessToken] = useState<string | null>(null);
+  const [needsCompanyPassword, setNeedsCompanyPassword] = useState(false);
 
   const {
     register,
     trigger,
     getValues,
+    reset,
     formState: { errors },
   } = useForm<Step1Fields>({ mode: 'onTouched' });
+
+  // Keep only non-sensitive signup details. If the browser is refreshed after OTP
+  // verification, the session can resume setup without storing either password.
+  useEffect(() => {
+    const draft = readSignupDraft();
+    if (!draft) return;
+    reset({ ...draft, company_password: '' });
+    void supabase.auth.getSession().then(({ data }) => {
+      const session = data.session;
+      if (!session?.user.email_confirmed_at || session.user.email?.toLowerCase() !== draft.email.toLowerCase()) return;
+      setVerifiedAccessToken(session.access_token);
+      setNeedsCompanyPassword(true);
+      setStep(2);
+    });
+  }, [reset]);
 
   // Resend cooldown ticker.
   useEffect(() => {
@@ -63,6 +112,7 @@ export default function SignupCompany() {
       return;
     }
     const { email, full_name } = getValues();
+    saveSignupDraft(getValues());
     setSubmitting(true);
     try {
       await startCompanySignup(email, full_name, password);
@@ -83,7 +133,8 @@ export default function SignupCompany() {
     try {
       const session = await verifySignupOtp(v.email, code);
       setVerifiedAccessToken(session.access_token);
-      await finishCompanySetup(session.access_token);
+      saveSignupDraft(v);
+      setNeedsCompanyPassword(true);
     } catch (err) {
       const message = err instanceof Error ? err.message : sw.auth.otp.invalid;
       setOtpError(message.includes('Invalid') || message.includes('expired') ? sw.auth.otp.invalid : null);
@@ -96,6 +147,10 @@ export default function SignupCompany() {
   async function finishCompanySetup(accessToken = verifiedAccessToken) {
     const v = getValues();
     if (!accessToken) throw new Error('Your verified session is missing. Please verify the email again.');
+    if (!v.company_password?.trim()) {
+      setNeedsCompanyPassword(true);
+      throw new Error('Enter your company access password to finish setup.');
+    }
     await createCompanyAfterVerification({
         full_name: v.full_name,
         phone: v.phone,
@@ -104,6 +159,7 @@ export default function SignupCompany() {
         sector: v.sector,
         company_password: v.company_password,
       }, accessToken);
+    window.localStorage.removeItem(SIGNUP_DRAFT_KEY);
     navigate('/dashboard', { replace: true });
   }
 
@@ -228,14 +284,14 @@ export default function SignupCompany() {
             />
 
             {verifiedAccessToken ? (
-              <p className="text-center text-sm text-emerald-700">Email verified. Finish setting up your company below.</p>
+              <p className="text-center text-sm text-emerald-700">Email verified. Finish setup when you are ready.</p>
             ) : otpError ? (
               <p className="text-center text-sm text-red-600">{otpError}</p>
             ) : null}
 
             <div className="text-center text-sm">
               {verifiedAccessToken ? (
-                <span className="text-ink-muted">Use the verified session to finish setup.</span>
+                <span className="text-ink-muted">Your company details are ready to finish.</span>
               ) : resendIn > 0 ? (
                 <span className="text-ink-muted">{sw.auth.otp.resendIn(resendIn)}</span>
               ) : (
@@ -253,21 +309,31 @@ export default function SignupCompany() {
             {submitError && <p className="text-center text-sm text-red-600">{submitError}</p>}
 
             {verifiedAccessToken && (
-              <Button
-                type="button"
-                tint="admin"
-                fullWidth
-                disabled={submitting}
-                onClick={() => {
-                  setSubmitError(null);
-                  setSubmitting(true);
-                  void finishCompanySetup().catch((err) => {
-                    setSubmitError(err instanceof Error ? err.message : sw.common.error);
-                  }).finally(() => setSubmitting(false));
-                }}
-              >
-                {submitting ? sw.common.loading : 'Finish company setup'}
-              </Button>
+              <>
+                {needsCompanyPassword && (
+                  <Input
+                    label={sw.auth.companyAccessPassword}
+                    hint="Re-enter the shared password to finish setting up this company."
+                    {...register('company_password', { required: true, minLength: 6 })}
+                    error={errors.company_password && sw.auth.companyPasswordHint}
+                  />
+                )}
+                <Button
+                  type="button"
+                  tint="admin"
+                  fullWidth
+                  disabled={submitting}
+                  onClick={() => {
+                    setSubmitError(null);
+                    setSubmitting(true);
+                    void finishCompanySetup().catch((err) => {
+                      setSubmitError(err instanceof Error ? err.message : sw.common.error);
+                    }).finally(() => setSubmitting(false));
+                  }}
+                >
+                  {submitting ? sw.common.loading : 'Finish company setup'}
+                </Button>
+              </>
             )}
 
             <div className="flex items-center justify-between text-sm">
