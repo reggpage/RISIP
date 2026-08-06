@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 
-const LENGTH = 8;
+const LENGTH = 6;
 
 export default function OtpInput({
   value,
