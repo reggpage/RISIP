@@ -54,6 +54,8 @@ export default function ReceiptDetailModal({
   const [reviewing, setReviewing] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [nickname, setNickname] = useState('');
+  const [nicknameEditing, setNicknameEditing] = useState(false);
+  const [nicknameSaved, setNicknameSaved] = useState(false);
   const [savingNickname, setSavingNickname] = useState(false);
   const { state: projectsState } = useProjects();
   const project = projectsState.status === 'ready'
@@ -139,6 +141,8 @@ export default function ReceiptDetailModal({
       return;
     }
     setNickname(value);
+    setNicknameSaved(!!value);
+    setNicknameEditing(false);
     onAliasChanged?.(data.id, value || null);
     toast.success(value ? 'Receipt name saved.' : 'Receipt name removed.');
   }
@@ -216,7 +220,11 @@ export default function ReceiptDetailModal({
         .eq('user_id', profile.id)
         .maybeSingle()
         .then(({ data: alias }) => {
-          if (!cancelled) setNickname((alias?.nickname as string | null) ?? '');
+          if (!cancelled) {
+            const value = (alias?.nickname as string | null) ?? '';
+            setNickname(value);
+            setNicknameSaved(!!value);
+          }
         });
     }
     return () => { cancelled = true; };
@@ -408,28 +416,36 @@ export default function ReceiptDetailModal({
               // ── Read-only view ─────────────────────────────────────────
               <>
                 {canName && (
-                  <div className="mb-4 rounded-lg border border-surface-border bg-surface-muted/40 p-3">
+                  <div className="mb-4">
                     <label className="flex flex-col gap-2">
-                      <span className="text-xs font-medium uppercase tracking-wide text-ink-muted">My receipt name</span>
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <input
-                          value={nickname}
-                          onChange={(e) => setNickname(e.target.value)}
-                          maxLength={120}
-                          placeholder="e.g. Fuel for Dodoma site"
-                          className={`${inputCls} flex-1 bg-surface`}
-                        />
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          tint="admin"
-                          onClick={() => void saveNickname()}
-                          disabled={savingNickname || nickname.trim().length > 120}
-                          className="shrink-0"
-                        >
-                          {savingNickname ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save name'}
-                        </Button>
-                      </div>
+                      <span className="text-sm font-medium text-ink">My receipt name</span>
+                      {nicknameSaved && !nicknameEditing ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="min-w-0 flex-1 rounded-lg border border-surface-border bg-surface-muted px-3 py-2 text-sm text-ink">{nickname}</span>
+                          <Button type="button" variant="secondary" tint="admin" onClick={() => setNicknameEditing(true)}>Edit</Button>
+                          <span className="inline-flex items-center gap-1 text-xs text-emerald-600"><CheckCircle2 className="h-3.5 w-3.5" /> Saved</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-2 sm:flex-row">
+                          <input
+                            value={nickname}
+                            onChange={(e) => setNickname(e.target.value)}
+                            maxLength={120}
+                            placeholder="e.g. Fuel for Dodoma site"
+                            className={`${inputCls} flex-1 bg-surface`}
+                          />
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            tint="admin"
+                            onClick={() => void saveNickname()}
+                            disabled={savingNickname || nickname.trim().length > 120}
+                            className="shrink-0"
+                          >
+                            {savingNickname ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save name'}
+                          </Button>
+                        </div>
+                      )}
                       <span className="text-xs text-ink-muted">Only you can see and search this name.</span>
                     </label>
                   </div>

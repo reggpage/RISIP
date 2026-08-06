@@ -155,7 +155,7 @@ export default function JoinPage() {
           autoComplete="off"
           hint="Enter the shared password for this company."
           {...register('company_password', { required: true, minLength: 6 })}
-          error={errors.company_password && sw.common.error}
+          error={errors.company_password && 'Enter the company password.'}
         />
         {mode === 'register' && (
           <>
@@ -163,7 +163,7 @@ export default function JoinPage() {
               label={sw.auth.fullName}
               autoComplete="name"
               {...register('full_name', { required: mode === 'register' })}
-              error={errors.full_name && sw.common.error}
+              error={errors.full_name && 'Enter your full name.'}
             />
             <Input label={sw.auth.phone} autoComplete="tel" {...register('phone')} />
           </>
@@ -173,7 +173,7 @@ export default function JoinPage() {
           label={sw.auth.email}
           autoComplete="email"
           {...register('email', { required: true, pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ })}
-          error={errors.email && sw.common.error}
+          error={errors.email && 'Enter a valid email address.'}
         />
 
         <PasswordField
@@ -181,7 +181,7 @@ export default function JoinPage() {
           autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
           hint={mode === 'register' ? sw.auth.passwordHint : undefined}
           {...register('password', { required: true, minLength: mode === 'register' ? 8 : 6 })}
-          error={errors.password && (mode === 'register' ? sw.auth.passwordHint : sw.common.error)}
+          error={errors.password && (mode === 'register' ? sw.auth.passwordHint : 'Enter your password.')}
         />
         {mode === 'register' && password.length > 0 && (
           <div className="-mt-2 flex flex-col gap-1">

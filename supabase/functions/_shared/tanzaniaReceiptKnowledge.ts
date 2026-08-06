@@ -162,10 +162,13 @@ function findMerchant(row: ReceiptLike): KnownMerchant | null {
     for (const alias of merchant.aliases) {
       const aliasClean = cleanText(alias);
       const aliasCompact = compact(alias);
+      // Never infer a merchant from generic receipt labels such as TOTAL. Those
+      // words occur in every fiscal receipt's amount section.
+      const contextualMatch = aliasClean.length >= 6 && context.includes(aliasClean) ? 0.86 : 0;
       const score = Math.max(
         similarity(vendor, aliasClean),
         similarity(vendorCompact, aliasCompact),
-        context.includes(aliasClean) ? 0.98 : 0,
+        contextualMatch,
       );
       if (!best || score > best.score) best = { merchant, score };
     }
@@ -195,7 +198,14 @@ export function normalizeTanzaniaReceipt<T extends ReceiptLike>(row: T): T {
   const rawVendor = String(row.vendor ?? row.vendor_name ?? '');
   const vendorKey = 'vendor_name' in row ? 'vendor_name' : 'vendor';
   const normalizedTin = normalizeTin(row.vendor_tin);
-  const shouldReplaceVendor = merchant && (!rawVendor || vendorLooksLikeReceiptHeader(rawVendor) || merchant.category === 'Fuel');
+  const vendorEvidence = merchant && merchant.aliases.some((alias) => {
+    const aliasClean = cleanText(alias);
+    return Math.max(similarity(cleanText(rawVendor), aliasClean), similarity(compact(rawVendor), compact(alias))) >= 0.72;
+  });
+  // A fuel category is not evidence of a specific brand. Preserve a readable
+  // station name such as “GP NANENANE PETROL STATION”; only canonicalize when
+  // the printed/vendor value itself matches a known merchant or is a header.
+  const shouldReplaceVendor = merchant && (!rawVendor || vendorLooksLikeReceiptHeader(rawVendor) || vendorEvidence);
   const category = isFuelContext(row, merchant) ? 'Fuel' : row.category ?? merchant?.category;
 
   return {

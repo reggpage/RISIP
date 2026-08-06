@@ -39,10 +39,13 @@ TANZANIA TRA FIELD RULES — follow exactly:
 - total_amount: the grand total INCLUDING VAT — the line "TOTAL INCL OF TAX" or "TOTAL". For fuel "Client Ticket" statements the total is the "TOTAL … TZS" line (ignore BALANCE, GLOBAL, REMAINDER, tank capacity — those are not the purchase amount). Return a JSON number in TZS with no separators: 176,018, 176.018, and 176 018 all mean 176018; a decimal is allowed only when the receipt clearly shows one or two fractional digits.
 - tax_amount: the VAT portion only — the "TAX A – 18%" / "TOTAL TAX" line. If the receipt shows no VAT, set null and add "tax_amount" to low_confidence_fields. Apply the same TZS separator rule.
 - receipt_number: the receipt/ticket number (e.g. "RECEIPT NO", "TICKET NO").
+- receipt_date: when the printed date uses a two-digit year such as 06-08-26, interpret it as 2026 (20YY), not 2006, unless the receipt clearly prints a four-digit year.
 - Read all amounts digit-by-digit; never invent, drop, or duplicate a digit.
 
 Tanzania merchant context:
 - "START OF LEGAL RECEIPT", "START OF UCON RECEIPT", "START OF LEON RECEIPT" and similar headers are NOT merchant names. Read the merchant printed below/near the logo/TIN.
+- Copy the merchant/vendor name from the printed merchant line exactly when it is readable (for example, "GP NANENANE PETROL STATION"). Do not replace it with a famous fuel brand, a guessed company, the TRA logo, or a name from these instructions.
+- The word "TOTAL" in "TOTAL EXCLUSIVE OF TAX", "TOTAL TAX", or "TOTAL INCLUSIVE OF TAX" is an amount label, never the vendor. Do not infer TotalEnergies from that word or from the fact that the receipt is for fuel.
 - TotalEnergies, Total Energy, Total, TokiEnergy/TokiEnergies/TokroEnergies OCR variants, Oilcom, Puma Energy, Oryx Energies, Engen, Lake Oil, GBP, Camel Oil, MOIL, GAPCO, Vivo Energy/Shell, Hass Petroleum, Star Oil, Mogas, Acer Petroleum, Mount Meru, Petro Africa, Petrofuel, Sahara Energy, Dalbit, Olympic Petroleum, Natoil, Afroil, General Petroleum, World Oil, TIPER, and petrol/service/filling stations are fuel merchants. Categorize them as Fuel, not Utilities.
 - If a receipt sells petrol, diesel, kerosene, lubricant, or station fuel, category must be Fuel.
 - If OCR is noisy but the logo/brand clearly says TotalEnergies, return vendor "TotalEnergies" exactly.
