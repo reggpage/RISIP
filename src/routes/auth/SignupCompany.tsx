@@ -27,7 +27,20 @@ const STEP_LABELS = [sw.auth.stepCompany, sw.auth.stepVerify] as const;
 const RESEND_COOLDOWN_SECONDS = 60;
 const SIGNUP_DRAFT_KEY = 'risip:companySignupDraft';
 
-type SignupDraft = Pick<Step1Fields, 'company_name' | 'hq_location' | 'sector' | 'full_name' | 'phone' | 'email'>;
+type SignupDraft = Pick<Step1Fields, 'company_name' | 'hq_location' | 'sector' | 'full_name' | 'phone' | 'email'> & {
+  saved_at?: number;
+};
+
+function readableSignupError(err: unknown) {
+  const details = err && typeof err === 'object'
+    ? err as { status?: number; code?: string; message?: string }
+    : {};
+  const message = details.message ?? (err instanceof Error ? err.message : '');
+  if (details.status === 429 || details.code === 'over_email_send_rate_limit' || details.code === 'over_request_rate_limit' || /too many requests|rate limit/i.test(message)) {
+    return 'Too many verification requests were sent. Please wait before trying again, then request one new code.';
+  }
+  return message || sw.common.error;
+}
 
 function readSignupDraft(): SignupDraft | null {
   try {
@@ -84,12 +97,14 @@ export default function SignupCompany() {
     const draft = readSignupDraft();
     if (!draft) return;
     reset({ ...draft, company_password: '' });
+    setStep(2);
+    const draftAge = draft.saved_at ? Date.now() - draft.saved_at : RESEND_COOLDOWN_SECONDS * 1000;
+    setResendIn(Math.max(0, RESEND_COOLDOWN_SECONDS - Math.floor(draftAge / 1000)));
     void supabase.auth.getSession().then(({ data }) => {
       const session = data.session;
       if (!session?.user.email_confirmed_at || session.user.email?.toLowerCase() !== draft.email.toLowerCase()) return;
       setVerifiedAccessToken(session.access_token);
       setResumedSetup(true);
-      setStep(2);
     });
   }, [reset]);
 
@@ -113,14 +128,14 @@ export default function SignupCompany() {
       return;
     }
     const { email, full_name } = getValues();
-    saveSignupDraft(getValues());
     setSubmitting(true);
     try {
       await startCompanySignup(email, full_name, password);
+      saveSignupDraft(getValues());
       setResendIn(RESEND_COOLDOWN_SECONDS);
       setStep(2);
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : sw.common.error);
+      setSubmitError(readableSignupError(err));
     } finally {
       setSubmitting(false);
     }
@@ -182,7 +197,7 @@ export default function SignupCompany() {
       await resendSignupOtp(email);
       setResendIn(RESEND_COOLDOWN_SECONDS);
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : sw.common.error);
+      setSubmitError(readableSignupError(err));
     } finally {
       setSubmitting(false);
     }

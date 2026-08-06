@@ -103,7 +103,10 @@ export default function SettingsPage() {
   const [pwMsg, setPwMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // ── Staff shared password (owner only) ────────────────────────────────────
-  const [staffPw, setStaffPw] = useState('');
+  const [staffPasswordOpen, setStaffPasswordOpen] = useState(false);
+  const [staffCurrentPw, setStaffCurrentPw] = useState('');
+  const [staffNewPw, setStaffNewPw] = useState('');
+  const [staffConfirmPw, setStaffConfirmPw] = useState('');
   const [settingStaffPw, setSettingStaffPw] = useState(false);
   const [staffPwMsg, setStaffPwMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
@@ -353,15 +356,30 @@ export default function SettingsPage() {
   }
 
   async function setStaffPassword() {
-    if (staffPw.length < 6) return setStaffPwMsg({ type: 'err', text: 'Password must be at least 6 characters.' });
+    if (!company) return;
+    if (!staffCurrentPw) return setStaffPwMsg({ type: 'err', text: 'Enter the current staff shared password.' });
+    if (staffNewPw.length < 6) return setStaffPwMsg({ type: 'err', text: 'New password must be at least 6 characters.' });
+    if (staffNewPw !== staffConfirmPw) return setStaffPwMsg({ type: 'err', text: 'New passwords do not match.' });
     setSettingStaffPw(true);
     setStaffPwMsg(null);
-    const { error } = await supabase.rpc('set_company_password', { p_password: staffPw });
+    const { data: validCurrent, error: verifyError } = await supabase.rpc('verify_company_password', {
+      p_company_id: company.id,
+      p_password: staffCurrentPw,
+    });
+    if (verifyError || !validCurrent) {
+      setSettingStaffPw(false);
+      setStaffPwMsg({ type: 'err', text: 'The current staff shared password is incorrect.' });
+      return;
+    }
+    const { error } = await supabase.rpc('set_company_password', { p_password: staffNewPw });
     setSettingStaffPw(false);
     if (error) setStaffPwMsg({ type: 'err', text: error.message });
     else {
       setStaffPwMsg({ type: 'ok', text: sw.settings.companyPasswordSet });
-      setStaffPw('');
+      setStaffCurrentPw('');
+      setStaffNewPw('');
+      setStaffConfirmPw('');
+      setStaffPasswordOpen(false);
     }
   }
 
@@ -869,25 +887,62 @@ export default function SettingsPage() {
             icon={<Lock className="h-4 w-4" />}
             title={sw.settings.companyPassword}
             description={sw.settingsCopy.companyPasswordDesc}
-          >
-            <Card className="p-6 sm:p-8">
-              <PasswordField
-                label={sw.settings.companyPassword}
-                autoComplete="new-password"
-                value={staffPw}
-                onChange={(e) => setStaffPw(e.target.value)}
-                hint="At least 6 characters"
-              />
+        >
+          <Card className="p-6 sm:p-8">
+              <p className="text-sm text-ink-muted">
+                This is the shared password staff use to find and join your company without an invite link.
+              </p>
               {staffPwMsg && (
                 <p className={`mt-3 text-sm ${staffPwMsg.type === 'ok' ? 'text-emerald-700' : 'text-red-600'}`}>{staffPwMsg.text}</p>
               )}
-              <div className="mt-6">
-                <Button tint="admin" disabled={settingStaffPw || staffPw.length < 6} onClick={() => void setStaffPassword()}>
-                  {settingStaffPw ? sw.common.loading : sw.settings.setPassword}
-                </Button>
-              </div>
-            </Card>
-          </SettingsSection>
+              {!staffPasswordOpen ? (
+                <div className="mt-6">
+                  <Button tint="admin" onClick={() => { setStaffPwMsg(null); setStaffPasswordOpen(true); }}>
+                    Change password
+                  </Button>
+                </div>
+              ) : (
+                <div className="mt-6 rounded-lg border border-surface-border bg-surface-muted/40 p-4 sm:p-5">
+                  <div className="flex flex-col gap-4">
+                    <PasswordField
+                      label="Current staff shared password"
+                      autoComplete="current-password"
+                      value={staffCurrentPw}
+                      onChange={(e) => setStaffCurrentPw(e.target.value)}
+                    />
+                    <PasswordField
+                      label="New staff shared password"
+                      autoComplete="new-password"
+                      value={staffNewPw}
+                      onChange={(e) => setStaffNewPw(e.target.value)}
+                      hint="At least 6 characters"
+                    />
+                    <PasswordField
+                      label="Confirm new staff shared password"
+                      autoComplete="new-password"
+                      value={staffConfirmPw}
+                      onChange={(e) => setStaffConfirmPw(e.target.value)}
+                      error={staffConfirmPw.length > 0 && staffNewPw !== staffConfirmPw ? 'New passwords do not match.' : undefined}
+                    />
+                  </div>
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <Button tint="admin" disabled={settingStaffPw} onClick={() => void setStaffPassword()}>
+                      {settingStaffPw ? sw.common.loading : 'Change password'}
+                    </Button>
+                    <Button variant="ghost" disabled={settingStaffPw} onClick={() => {
+                      setStaffPasswordOpen(false);
+                      setStaffCurrentPw('');
+                      setStaffNewPw('');
+                      setStaffConfirmPw('');
+                      setStaffPwMsg(null);
+                    }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+          </Card>
+        </SettingsSection>
         )}
 
         {/* ── Leave company (non-owner) ───────────────────────────────────── */}
