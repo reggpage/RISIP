@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
+import { Loader2 } from 'lucide-react';
 import AuthShell from '@/components/layout/AuthShell';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -57,7 +58,6 @@ function saveSignupDraft(values: Step1Fields) {
 }
 
 export default function SignupCompany() {
-  const navigate = useNavigate();
   const [step, setStep] = useState<1 | 2>(1);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [otp, setOtp] = useState('');
@@ -166,10 +166,11 @@ export default function SignupCompany() {
         hq_location: v.hq_location,
         sector: v.sector,
         company_password: companyPassword,
-      }, accessToken);
+    }, accessToken);
     window.localStorage.removeItem(SIGNUP_DRAFT_KEY);
-    await supabase.auth.refreshSession();
-    navigate('/dashboard', { replace: true });
+    // Provisioning created the profile on the server. Reload the app boundary
+    // so the auth hydrator fetches that new profile before rendering dashboard.
+    window.location.assign('/dashboard');
   }
 
   async function resendOtp() {
@@ -298,6 +299,12 @@ export default function SignupCompany() {
                   disabled={submitting}
                   error={!!otpError}
                 />
+                {submitting && (
+                  <div className="flex items-center justify-center gap-2 text-sm text-ink-muted" role="status">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Verifying your email…
+                  </div>
+                )}
                 {otpError && <p className="text-center text-sm text-red-600">{otpError}</p>}
               </>
             )}

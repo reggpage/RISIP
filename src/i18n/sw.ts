@@ -74,7 +74,7 @@ const english = {
     hqLocation: 'Headquarters location',
     sector: 'Sector (optional)',
     companyPassword: 'Company password',
-    companyAccessPassword: 'Company access password',
+    companyAccessPassword: 'Staff shared password',
     companyPasswordHint: 'Staff use this shared password only to find and join your company.',
     next: 'Continue',
     back: 'Back',
@@ -292,10 +292,10 @@ const english = {
     deleteCompanyTypeHint: 'Type the company name to confirm',
     deleteCompanyConfirm: 'Permanently delete',
     deleteCompanyMismatch: 'Company name does not match.',
-    companyPassword: 'Staff shared password',
-    companyPasswordHint: 'Staff without an invite link use this to join your company.',
-    companyPasswordSet: 'Password set.',
-    setPassword: 'Set password',
+    companyPassword: 'Change staff shared password',
+    companyPasswordHint: 'Set or update the shared password staff use to find and join your company.',
+    companyPasswordSet: 'Staff shared password updated.',
+    setPassword: 'Save password',
   },
 } as const;
 
