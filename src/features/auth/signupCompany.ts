@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import type { Session } from '@supabase/supabase-js';
 
 export type CompanyDetails = {
   full_name: string;
@@ -10,11 +11,15 @@ export type CompanyDetails = {
   company_password: string;
 };
 
+function cleanEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
 // Step 1 -> create a pending auth user with their personal password, then send OTP.
 // The Send Email Auth hook brands the email before it leaves Supabase.
 export async function startCompanySignup(email: string, fullName: string, password: string) {
   const { error } = await supabase.auth.signUp({
-    email,
+    email: cleanEmail(email),
     password,
     options: {
       data: { full_name: fullName },
@@ -24,24 +29,17 @@ export async function startCompanySignup(email: string, fullName: string, passwo
 }
 
 export async function resendSignupOtp(email: string) {
-  const { error } = await supabase.auth.resend({ type: 'signup', email });
+  const { error } = await supabase.auth.resend({ type: 'signup', email: cleanEmail(email) });
   if (error) throw error;
 }
 
 // Step 2 -> verify the OTP. On success we have a session for the pending user.
-export async function verifySignupOtp(email: string, token: string) {
-  const first = await supabase.auth.verifyOtp({ email, token, type: 'signup' });
-  let data = first.data;
-  let error = first.error;
-
-  // During the signup-flow changeover, some emails may still have tokens created
-  // by signInWithOtp. Accept those too so users do not get trapped mid-signup.
-  if (error) {
-    const fallback = await supabase.auth.verifyOtp({ email, token, type: 'email' });
-    data = fallback.data;
-    error = fallback.error;
-  }
-
+export async function verifySignupOtp(email: string, token: string): Promise<Session> {
+  const { data, error } = await supabase.auth.verifyOtp({
+    email: cleanEmail(email),
+    token: token.trim(),
+    type: 'signup',
+  });
   if (error) throw error;
   if (!data.session) throw new Error('Verification did not return a session.');
   return data.session;
@@ -50,8 +48,10 @@ export async function verifySignupOtp(email: string, token: string) {
 // Step 3 -> create the company + owner profile after the email is verified.
 export async function createCompanyAfterVerification(
   details: Omit<CompanyDetails, 'email'>,
+  accessToken?: string,
 ): Promise<{ company_id: string }> {
   const { data, error } = await supabase.functions.invoke<{ company_id: string }>('signup-company', {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
     body: {
       full_name: details.full_name,
       phone: details.phone,
@@ -61,7 +61,25 @@ export async function createCompanyAfterVerification(
       company_password: details.company_password,
     },
   });
-  if (error) throw error;
+  if (error) throw await readableFunctionError(error);
   if (!data?.company_id) throw new Error('signup-company returned no company_id');
   return data;
+}
+
+async function readableFunctionError(error: unknown): Promise<Error> {
+  const fallback = error instanceof Error ? error.message : 'Could not finish company setup.';
+  const context = error && typeof error === 'object'
+    ? (error as { context?: { json?: () => Promise<{ error?: string; message?: string }> } }).context
+    : null;
+  const payload = await context?.json?.().catch(() => null);
+  const code = payload?.error ?? payload?.message;
+
+  const friendly: Record<string, string> = {
+    'profile already exists for this user': 'This account already has a company profile. Please log in.',
+    'company_name and hq_location are required': 'Company name and location are required.',
+    'company_password is required': 'Company access password is required.',
+    'invalid session': 'Your verified session expired. Please start signup again.',
+  };
+
+  return new Error(friendly[code ?? ''] ?? code ?? fallback);
 }

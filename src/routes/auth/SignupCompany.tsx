@@ -34,6 +34,7 @@ export default function SignupCompany() {
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [verifiedAccessToken, setVerifiedAccessToken] = useState<string | null>(null);
 
   const {
     register,
@@ -80,27 +81,34 @@ export default function SignupCompany() {
     const v = getValues();
     setSubmitting(true);
     try {
-      await verifySignupOtp(v.email, code);
-      await createCompanyAfterVerification({
+      const session = await verifySignupOtp(v.email, code);
+      setVerifiedAccessToken(session.access_token);
+      await finishCompanySetup(session.access_token);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : sw.auth.otp.invalid;
+      setOtpError(message.includes('Invalid') || message.includes('expired') ? sw.auth.otp.invalid : null);
+      if (!message.includes('Invalid') && !message.includes('expired')) setSubmitError(message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function finishCompanySetup(accessToken = verifiedAccessToken) {
+    const v = getValues();
+    if (!accessToken) throw new Error('Your verified session is missing. Please verify the email again.');
+    await createCompanyAfterVerification({
         full_name: v.full_name,
         phone: v.phone,
         company_name: v.company_name,
         hq_location: v.hq_location,
         sector: v.sector,
         company_password: v.company_password,
-      });
-      navigate('/dashboard', { replace: true });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : sw.auth.otp.invalid;
-      if (/token|otp|code/i.test(message)) setOtpError(sw.auth.otp.invalid);
-      else setSubmitError(message);
-    } finally {
-      setSubmitting(false);
-    }
+      }, accessToken);
+    navigate('/dashboard', { replace: true });
   }
 
   async function resendOtp() {
-    if (resendIn > 0 || submitting) return;
+    if (resendIn > 0 || submitting || verifiedAccessToken) return;
     setSubmitError(null);
     const { email } = getValues();
     setSubmitting(true);
@@ -213,16 +221,22 @@ export default function SignupCompany() {
               value={otp}
               onChange={(v) => {
                 setOtp(v);
-                if (v.length === OTP_LENGTH) void verifyOtp(v);
+                if (v.length === OTP_LENGTH && !verifiedAccessToken && !submitting) void verifyOtp(v);
               }}
               disabled={submitting}
               error={!!otpError}
             />
 
-            {otpError && <p className="text-center text-sm text-red-600">{otpError}</p>}
+            {verifiedAccessToken ? (
+              <p className="text-center text-sm text-emerald-700">Email verified. Finish setting up your company below.</p>
+            ) : otpError ? (
+              <p className="text-center text-sm text-red-600">{otpError}</p>
+            ) : null}
 
             <div className="text-center text-sm">
-              {resendIn > 0 ? (
+              {verifiedAccessToken ? (
+                <span className="text-ink-muted">Use the verified session to finish setup.</span>
+              ) : resendIn > 0 ? (
                 <span className="text-ink-muted">{sw.auth.otp.resendIn(resendIn)}</span>
               ) : (
                 <button
@@ -237,6 +251,24 @@ export default function SignupCompany() {
             </div>
 
             {submitError && <p className="text-center text-sm text-red-600">{submitError}</p>}
+
+            {verifiedAccessToken && (
+              <Button
+                type="button"
+                tint="admin"
+                fullWidth
+                disabled={submitting}
+                onClick={() => {
+                  setSubmitError(null);
+                  setSubmitting(true);
+                  void finishCompanySetup().catch((err) => {
+                    setSubmitError(err instanceof Error ? err.message : sw.common.error);
+                  }).finally(() => setSubmitting(false));
+                }}
+              >
+                {submitting ? sw.common.loading : 'Finish company setup'}
+              </Button>
+            )}
 
             <div className="flex items-center justify-between text-sm">
               <button
