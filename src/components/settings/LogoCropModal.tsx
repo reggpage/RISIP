@@ -24,6 +24,7 @@ export default function LogoCropModal({
   const [img, setImg] = useState<HTMLImageElement | null>(null);
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
   const drag = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null);
 
   // Load the image once so we know its natural dimensions.
@@ -67,7 +68,8 @@ export default function LogoCropModal({
   }, [zoom, img]);
 
   function onPointerDown(e: React.PointerEvent) {
-    (e.target as Element).setPointerCapture?.(e.pointerId);
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    setDragging(true);
     drag.current = { startX: e.clientX, startY: e.clientY, ox: offset.x, oy: offset.y };
   }
   function onPointerMove(e: React.PointerEvent) {
@@ -76,8 +78,15 @@ export default function LogoCropModal({
     const dy = e.clientY - drag.current.startY;
     setOffset(clampOffset(drag.current.ox + dx, drag.current.oy + dy));
   }
-  function onPointerUp() {
+  function onPointerUp(e?: React.PointerEvent) {
+    if (e) e.currentTarget.releasePointerCapture?.(e.pointerId);
     drag.current = null;
+    setDragging(false);
+  }
+
+  function onWheel(e: React.WheelEvent) {
+    e.preventDefault();
+    setZoom((value) => Math.min(4, Math.max(1, value + (e.deltaY < 0 ? 0.08 : -0.08))));
   }
 
   async function confirm() {
@@ -131,12 +140,13 @@ export default function LogoCropModal({
         <div className="flex flex-col items-center gap-4 p-5">
           {/* Crop frame — clips overflow, image inside is absolutely positioned. */}
           <div
-            className="relative touch-none overflow-hidden rounded-full border border-surface-border bg-surface-muted"
+            className={`relative touch-none overflow-hidden rounded-full border border-surface-border bg-surface-muted ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
             style={{ width: FRAME_PX, height: FRAME_PX }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
+            onWheel={onWheel}
           >
             {imgUrl && img && (
               <img
@@ -161,7 +171,7 @@ export default function LogoCropModal({
             <input
               type="range"
               min={1}
-              max={3}
+              max={4}
               step={0.01}
               value={zoom}
               disabled={uploading}

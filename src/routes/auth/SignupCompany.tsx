@@ -357,10 +357,6 @@ export default function SignupCompany() {
                   autoComplete="new-password"
                   value={companyPasswordConfirm}
                   onChange={(e) => setCompanyPasswordConfirm(e.target.value)}
-                  hint={resumedSetup ? 'Enter it again to confirm.' : 'Re-enter the password you chose for this company.'}
-                  error={companyPasswordConfirm.length > 0 && companyPasswordConfirm !== getValues('company_password')
-                    ? 'Company access passwords do not match.'
-                    : undefined}
                 />
                 <Button
                   type="button"

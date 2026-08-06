@@ -60,6 +60,7 @@ export default function SettingsPage() {
   const [myName, setMyName] = useState('');
   const [myPhone, setMyPhone] = useState('');
   const [savingMe, setSavingMe] = useState(false);
+  const [editingMe, setEditingMe] = useState(false);
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
   const [emailChangeOpen, setEmailChangeOpen] = useState(false);
   const [newEmail, setNewEmail] = useState('');
@@ -78,11 +79,11 @@ export default function SettingsPage() {
   const [hqLocation, setHqLocation] = useState('');
   const [sector, setSector] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
+  const [editingCompany, setEditingCompany] = useState(false);
   const [profileMsg, setProfileMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // ── Scanner / inbound-email integration ─────────────────────────────────────
   const [scannerSender, setScannerSender] = useState('');
-  const [savingScanner, setSavingScanner] = useState(false);
   const [copiedInbox, setCopiedInbox] = useState(false);
 
   // ── Logo ───────────────────────────────────────────────────────────────────
@@ -97,9 +98,11 @@ export default function SettingsPage() {
   const [busyMember, setBusyMember] = useState<string | null>(null);
 
   // ── Change personal password ───────────────────────────────────────────────
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changingPw, setChangingPw] = useState(false);
+  const [personalPasswordOpen, setPersonalPasswordOpen] = useState(false);
   const [pwMsg, setPwMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // ── Staff shared password (owner only) ────────────────────────────────────
@@ -155,7 +158,10 @@ export default function SettingsPage() {
       .eq('id', profile.id);
     setSavingMe(false);
     if (error) toast.error(error.message);
-    else toast.success(sw.profileSection.saved);
+    else {
+      toast.success(sw.profileSection.saved);
+      setEditingMe(false);
+    }
   }
 
   useEffect(() => {
@@ -192,6 +198,7 @@ export default function SettingsPage() {
       .eq('id', company.id);
     setSavingProfile(false);
     setProfileMsg(error ? { type: 'err', text: error.message } : { type: 'ok', text: sw.settings.saved });
+    if (!error) setEditingCompany(false);
   }
 
   // The company's unique scan-to-email inbox address. The Canon printer emails A3 scans
@@ -217,28 +224,14 @@ export default function SettingsPage() {
     window.setTimeout(() => setCopiedInbox(false), 1600);
   }
 
-  async function saveScannerSender() {
-    if (!company || !isOwner) return;
-    setSavingScanner(true);
-    const value = scannerSender.trim().toLowerCase() || null;
-    const { error } = await supabase.from('companies')
-      .update({ scanner_sender_email: value })
-      .eq('id', company.id);
-    setSavingScanner(false);
-    if (error) toast.error(error.message);
-    else {
-      setCompany((c) => (c ? { ...c, scanner_sender_email: value } : c));
-      toast.success('Scanner settings saved.');
-    }
-  }
-
   // Two-step logo flow: user picks a file → LogoCropModal opens → on Confirm we
-  // upload the cropped blob (always JPEG, always at <company_id>/logo.jpg so the
-  // storage RLS uuid parser doesn't choke on a bare filename with extension).
+  // upload the cropped blob (always JPEG, always at <company_id>.jpg so the
+  // storage RLS policy can validate the company UUID in the object name).
   const [pendingLogoFile, setPendingLogoFile] = useState<File | null>(null);
 
   async function uploadCroppedLogo(blob: Blob) {
-    if (!company || !isOwner) return;
+    if (!company || !isOwner || !editingCompany) return;
+    // Storage policies expect the company UUID as the first path segment.
     const path = `${company.id}/logo.jpg`;
     setUploadingLogo(true);
     setProfileMsg(null);
@@ -277,7 +270,7 @@ export default function SettingsPage() {
   // "Edit" re-opens the crop modal on the CURRENT logo so the owner can re-scale/
   // reposition without re-picking a file. We fetch the stored logo as a File.
   async function editExistingLogo() {
-    if (!logoUrl || !isOwner) return;
+    if (!logoUrl || !isOwner || !editingCompany) return;
     try {
       const res = await fetch(logoUrl);
       const blob = await res.blob();
@@ -298,17 +291,30 @@ export default function SettingsPage() {
   }
 
   async function changePassword() {
+    if (!currentPassword) return setPwMsg({ type: 'err', text: 'Enter your current personal password.' });
     if (newPassword !== confirmPassword) return setPwMsg({ type: 'err', text: sw.auth.passwordMismatch });
     if (newPassword.length < 8) return setPwMsg({ type: 'err', text: sw.auth.passwordHint });
     setChangingPw(true);
     setPwMsg(null);
+    const currentEmail = auth.status === 'signed-in' ? (auth.session.user.email ?? '') : '';
+    const { error: reauthError } = await supabase.auth.signInWithPassword({
+      email: currentEmail,
+      password: currentPassword,
+    });
+    if (reauthError) {
+      setChangingPw(false);
+      setPwMsg({ type: 'err', text: 'Your current personal password is incorrect.' });
+      return;
+    }
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     setChangingPw(false);
     if (error) setPwMsg({ type: 'err', text: error.message });
     else {
       setPwMsg({ type: 'ok', text: sw.settings.passwordChanged });
+      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      setPersonalPasswordOpen(false);
     }
   }
 
@@ -660,18 +666,35 @@ export default function SettingsPage() {
                 label={sw.auth.fullName}
                 value={myName}
                 onChange={(e) => setMyName(e.target.value)}
+                disabled={!editingMe}
               />
               <Input
                 label={sw.auth.phone}
                 value={myPhone}
                 onChange={(e) => setMyPhone(e.target.value)}
                 autoComplete="tel"
+                disabled={!editingMe}
               />
             </div>
             <div className="mt-6">
-              <Button tint="admin" disabled={savingMe || !profile} onClick={() => void saveMyProfile()}>
-                {savingMe ? sw.common.loading : sw.profileSection.save}
-              </Button>
+              {!editingMe ? (
+                <Button variant="secondary" tint="admin" disabled={!profile} onClick={() => setEditingMe(true)}>
+                  Edit
+                </Button>
+              ) : (
+                <div className="flex flex-wrap gap-3">
+                  <Button tint="admin" disabled={savingMe || !profile} onClick={() => void saveMyProfile()}>
+                    {savingMe ? sw.common.loading : sw.profileSection.save}
+                  </Button>
+                  <Button variant="ghost" disabled={savingMe} onClick={() => {
+                    setMyName(profile?.full_name ?? '');
+                    setMyPhone(profile?.phone ?? '');
+                    setEditingMe(false);
+                  }}>
+                    Cancel
+                  </Button>
+                </div>
+              )}
             </div>
           </Card>
         </SettingsSection>
@@ -696,22 +719,22 @@ export default function SettingsPage() {
                         <Building2 className="h-8 w-8 text-ink-muted" />
                       </div>
                     )}
-                    {isOwner && <p className="text-xs text-ink-muted">{sw.settings.logoHint}</p>}
+                  {isOwner && <p className="text-xs text-ink-muted">{sw.settings.logoHint}</p>}
                   </div>
                   {isOwner && (
                     <div className="flex shrink-0 gap-2">
                       {logoUrl ? (
                         <>
                           {/* Logo already set → Edit re-scales it, Change picks a new one. */}
-                          <Button variant="secondary" tint="admin" disabled={uploadingLogo} onClick={() => void editExistingLogo()}>
+                          <Button variant="secondary" tint="admin" disabled={uploadingLogo || !editingCompany} onClick={() => void editExistingLogo()}>
                             Edit logo
                           </Button>
-                          <Button variant="ghost" disabled={uploadingLogo} onClick={() => logoInput.current?.click()}>
+                          <Button variant="ghost" disabled={uploadingLogo || !editingCompany} onClick={() => logoInput.current?.click()}>
                             Change
                           </Button>
                         </>
                       ) : (
-                        <Button variant="secondary" tint="admin" disabled={uploadingLogo} onClick={() => logoInput.current?.click()}>
+                        <Button variant="secondary" tint="admin" disabled={uploadingLogo || !editingCompany} onClick={() => logoInput.current?.click()}>
                           {uploadingLogo ? sw.common.loading : sw.settings.logoUpload}
                         </Button>
                       )}
@@ -722,9 +745,9 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="flex flex-col gap-5">
-                  <Input label={sw.settings.companyName} value={companyName} onChange={(e) => setCompanyName(e.target.value)} disabled={!isOwner} />
-                  <Input label={sw.settings.hqLocation} value={hqLocation} onChange={(e) => setHqLocation(e.target.value)} disabled={!isOwner} />
-                  <Input label={sw.settings.sector} value={sector} onChange={(e) => setSector(e.target.value)} disabled={!isOwner} placeholder={sw.auth.sector} />
+                  <Input label={sw.settings.companyName} value={companyName} onChange={(e) => setCompanyName(e.target.value)} disabled={!isOwner || !editingCompany} />
+                  <Input label={sw.settings.hqLocation} value={hqLocation} onChange={(e) => setHqLocation(e.target.value)} disabled={!isOwner || !editingCompany} />
+                  <Input label={sw.settings.sector} value={sector} onChange={(e) => setSector(e.target.value)} disabled={!isOwner || !editingCompany} placeholder={sw.auth.sector} />
                 </div>
 
                 {profileMsg && (
@@ -733,9 +756,25 @@ export default function SettingsPage() {
 
                 {isOwner && (
                   <div className="mt-6">
-                    <Button tint="admin" disabled={savingProfile} onClick={() => void saveCompanyProfile()}>
-                      {savingProfile ? sw.common.loading : sw.settings.saveProfile}
-                    </Button>
+                    {!editingCompany ? (
+                      <Button variant="secondary" tint="admin" onClick={() => setEditingCompany(true)}>
+                        Edit
+                      </Button>
+                    ) : (
+                      <div className="flex flex-wrap gap-3">
+                        <Button tint="admin" disabled={savingProfile} onClick={() => void saveCompanyProfile()}>
+                          {savingProfile ? sw.common.loading : sw.settings.saveProfile}
+                        </Button>
+                        <Button variant="ghost" disabled={savingProfile} onClick={() => {
+                          setCompanyName(company?.name ?? '');
+                          setHqLocation(company?.hq_location ?? '');
+                          setSector(company?.sector ?? '');
+                          setEditingCompany(false);
+                        }}>
+                          Cancel
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 )}
               </>
@@ -751,6 +790,11 @@ export default function SettingsPage() {
             description="Let your office Canon printer email A3 scans straight into Risip. Scanned receipts arrive as “pending review” for your accountant to approve."
           >
             <Card className="p-6 sm:p-8">
+              <div className="mb-5 flex justify-end">
+                <span className="rounded-full bg-surface-muted px-3 py-1 text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                  Coming soon
+                </span>
+              </div>
               {/* Unique inbox address for this company's printer. */}
               <label className="mb-2 block text-sm font-medium text-ink">Your scanner inbox address</label>
               <div className="flex items-stretch gap-2">
@@ -764,7 +808,7 @@ export default function SettingsPage() {
                   variant="secondary"
                   tint="admin"
                   className="shrink-0"
-                  disabled={!scannerInbox}
+                  disabled
                   onClick={() => void copyInbox()}
                 >
                   {copiedInbox ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
@@ -785,16 +829,12 @@ export default function SettingsPage() {
                 value={scannerSender}
                 onChange={(e) => setScannerSender(e.target.value)}
                 placeholder="office-printer@company.com"
+                disabled
               />
               <p className="mt-2 text-xs text-ink-muted">
                 Optional. When set, Risip only accepts scans emailed from this exact address and
                 ignores everything else. Leave blank to accept from any sender.
               </p>
-              <div className="mt-5">
-                <Button tint="admin" disabled={savingScanner} onClick={() => void saveScannerSender()}>
-                  {savingScanner ? sw.common.loading : 'Save scanner settings'}
-                </Button>
-              </div>
             </Card>
           </SettingsSection>
         )}
@@ -855,29 +895,53 @@ export default function SettingsPage() {
           description={sw.settingsCopy.changePasswordDesc}
         >
           <Card className="p-6 sm:p-8">
-            <div className="flex flex-col gap-5">
-              <PasswordField
-                label={sw.settings.newPassword}
-                autoComplete="new-password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                hint={sw.auth.passwordHint}
-              />
-              <PasswordField
-                label={sw.settings.confirmNewPassword}
-                autoComplete="new-password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                error={confirmPassword.length > 0 && newPassword !== confirmPassword ? sw.auth.passwordMismatch : undefined}
-              />
-            </div>
             {pwMsg && <p className={`mt-4 text-sm ${pwMsg.type === 'ok' ? 'text-emerald-700' : 'text-red-600'}`}>{pwMsg.text}</p>}
-            <div className="mt-6">
-              <Button tint="admin" disabled={changingPw || newPassword.length < 8 || newPassword !== confirmPassword}
-                onClick={() => void changePassword()}>
-                {changingPw ? sw.common.loading : sw.settings.changePassword}
-              </Button>
-            </div>
+            {!personalPasswordOpen ? (
+              <div className="mt-6">
+                <Button variant="secondary" tint="admin" onClick={() => { setPwMsg(null); setPersonalPasswordOpen(true); }}>
+                  Change password
+                </Button>
+              </div>
+            ) : (
+              <div className="mt-6 rounded-lg border border-surface-border bg-surface-muted/40 p-4 sm:p-5">
+                <div className="flex flex-col gap-5">
+                  <PasswordField
+                    label="Current personal password"
+                    autoComplete="current-password"
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                  />
+                  <PasswordField
+                    label={sw.settings.newPassword}
+                    autoComplete="new-password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    hint={sw.auth.passwordHint}
+                  />
+                  <PasswordField
+                    label={sw.settings.confirmNewPassword}
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    error={confirmPassword.length > 0 && newPassword !== confirmPassword ? sw.auth.passwordMismatch : undefined}
+                  />
+                </div>
+                <div className="mt-6 flex flex-wrap gap-3">
+                  <Button tint="admin" disabled={changingPw} onClick={() => void changePassword()}>
+                    {changingPw ? sw.common.loading : 'Change password'}
+                  </Button>
+                  <Button variant="ghost" disabled={changingPw} onClick={() => {
+                    setPersonalPasswordOpen(false);
+                    setCurrentPassword('');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                    setPwMsg(null);
+                  }}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
           </Card>
         </SettingsSection>
 
