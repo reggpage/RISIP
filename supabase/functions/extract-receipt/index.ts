@@ -52,8 +52,25 @@ General rules:
 
 function bad(msg, status = 400) { return json({ error: msg }, { status }); }
 function safeParseJson(text) {
-  const stripped = text.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '');
-  try { return JSON.parse(stripped); } catch { return null; }
+  const stripped = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/, '');
+  try { return JSON.parse(stripped); } catch {}
+
+  // Claude normally follows the JSON-only instruction, but if it adds one
+  // sentence before/after the object, recover the object instead of marking a
+  // perfectly usable receipt as failed.
+  const start = stripped.indexOf('{');
+  const end = stripped.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    try { return JSON.parse(stripped.slice(start, end + 1)); } catch {}
+  }
+  return null;
+}
+
+function imageMediaType(type) {
+  const normalized = (type || '').toLowerCase().split(';')[0].trim();
+  return ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(normalized)
+    ? normalized
+    : 'image/jpeg';
 }
 
 // Attempts to mark the receipt as errored so the UI can surface a real message
@@ -102,7 +119,7 @@ Deno.serve(async (req) => {
     await markError(admin, receiptId, 'storage download failed', detail);
     return bad(`download failed: ${detail}`, 500);
   }
-  const mediaType = fileBlob.type || 'image/jpeg';
+  const mediaType = imageMediaType(fileBlob.type);
   const bytes = new Uint8Array(await fileBlob.arrayBuffer());
   let binary = '';
   const chunk = 0x8000;
@@ -145,7 +162,12 @@ Deno.serve(async (req) => {
     const detail = JSON.stringify(claudeJson);
     console.error('claude rejected', claudeRes.status, detail);
     await markError(admin, receiptId, `claude ${claudeRes.status}`, detail);
-    return bad(`claude rejected: ${claudeRes.status}`, 502);
+    const providerMessage = claudeJson?.error?.message || claudeJson?.message || 'The AI provider rejected the request.';
+    return json({
+      error: 'Receipt extraction could not be completed.',
+      code: 'AI_PROVIDER_REJECTED',
+      detail: providerMessage,
+    }, { status: 502 });
   }
 
   const text = claudeJson?.content?.[0]?.text ?? '';

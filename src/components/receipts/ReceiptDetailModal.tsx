@@ -122,10 +122,20 @@ export default function ReceiptDetailModal({
     setReanalyzing(true);
     // Flip to processing so the list shows the spinner while Claude re-reads it.
     await supabase.from('receipts').update({ status: 'processing' }).eq('id', data.id);
-    void supabase.functions.invoke('extract-receipt', {
+    const { error } = await supabase.functions.invoke('extract-receipt', {
       body: { receipt_id: data.id, storage_path: data.image_url, model: 'claude-sonnet-5' },
     });
     setReanalyzing(false);
+    if (error) {
+      const context = (error as { context?: Response }).context;
+      let detail = error.message;
+      if (context) {
+        const payload = await context.clone().json().catch(() => null) as { detail?: string; error?: string } | null;
+        detail = payload?.detail || payload?.error || detail;
+      }
+      toast.error(detail);
+      return;
+    }
     toast.success('Re-analysing with high accuracy… the result updates shortly.');
     onClose();
   }
