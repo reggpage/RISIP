@@ -4,7 +4,7 @@
 // signup_company_v1() with the service_role key to create the company + owner profile
 // atomically. RLS on companies/profiles stays locked for the anon/authenticated roles.
 //
-// Request body: { full_name, phone, company_name, hq_location, sector? }
+// Request body: { full_name, phone, company_name, hq_location, sector?, company_password }
 // Response:     { company_id }
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
@@ -16,6 +16,7 @@ interface SignupBody {
   company_name?: string;
   hq_location?: string;
   sector?: string;
+  company_password?: string;
 }
 
 function bad(reason: string, status = 400) {
@@ -53,9 +54,11 @@ Deno.serve(async (req) => {
   const full_name = body.full_name?.trim();
   const company_name = body.company_name?.trim();
   const hq_location = body.hq_location?.trim();
+  const company_password = body.company_password?.trim();
   if (!full_name) return bad('full_name required');
   if (!company_name) return bad('company_name required');
   if (!hq_location) return bad('hq_location required');
+  if (!company_password) return bad('company_password required');
 
   const admin = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
@@ -68,6 +71,7 @@ Deno.serve(async (req) => {
     p_company_name: company_name,
     p_hq_location: hq_location,
     p_sector: body.sector ?? null,
+    p_company_password: company_password,
   });
 
   if (rpcErr) {

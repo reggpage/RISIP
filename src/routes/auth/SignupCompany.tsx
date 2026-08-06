@@ -8,9 +8,10 @@ import OtpInput, { OTP_LENGTH } from '@/components/ui/OtpInput';
 import PasswordField, { PasswordStrengthBar, scorePassword } from '@/components/ui/PasswordField';
 import StepProgress from '@/components/ui/StepProgress';
 import {
-  sendSignupOtp,
+  startCompanySignup,
+  resendSignupOtp,
   verifySignupOtp,
-  setPasswordAndCreateCompany,
+  createCompanyAfterVerification,
   type CompanyDetails,
 } from '@/features/auth/signupCompany';
 import { sw } from '@/i18n/sw';
@@ -20,12 +21,12 @@ type Step1Fields = Pick<
   'company_name' | 'hq_location' | 'sector' | 'full_name' | 'phone' | 'email' | 'company_password'
 >;
 
-const STEP_LABELS = [sw.auth.stepCompany, sw.auth.stepVerify, sw.auth.stepPassword] as const;
+const STEP_LABELS = [sw.auth.stepCompany, sw.auth.stepVerify] as const;
 const RESEND_COOLDOWN_SECONDS = 60;
 
 export default function SignupCompany() {
   const navigate = useNavigate();
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2>(1);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [otp, setOtp] = useState('');
   const [otpError, setOtpError] = useState<string | null>(null);
@@ -52,10 +53,18 @@ export default function SignupCompany() {
     setSubmitError(null);
     const ok = await trigger(['company_name', 'hq_location', 'full_name', 'email', 'company_password']);
     if (!ok) return;
+    if (password.length < 8) {
+      setSubmitError(sw.auth.personalPasswordHint);
+      return;
+    }
+    if (password !== passwordConfirm) {
+      setSubmitError(sw.auth.passwordMismatch);
+      return;
+    }
     const { email, full_name } = getValues();
     setSubmitting(true);
     try {
-      await sendSignupOtp(email, full_name);
+      await startCompanySignup(email, full_name, password);
       setResendIn(RESEND_COOLDOWN_SECONDS);
       setStep(2);
     } catch (err) {
@@ -67,47 +76,12 @@ export default function SignupCompany() {
 
   async function verifyOtp(code: string) {
     setOtpError(null);
-    const { email } = getValues();
-    setSubmitting(true);
-    try {
-      await verifySignupOtp(email, code);
-      setStep(3);
-    } catch {
-      setOtpError(sw.auth.otp.invalid);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function resendOtp() {
-    if (resendIn > 0 || submitting) return;
     setSubmitError(null);
-    const { email, full_name } = getValues();
-    setSubmitting(true);
-    try {
-      await sendSignupOtp(email, full_name);
-      setResendIn(RESEND_COOLDOWN_SECONDS);
-    } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : sw.common.error);
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function finish() {
-    setSubmitError(null);
-    if (password.length < 8) {
-      setSubmitError(sw.auth.passwordHint);
-      return;
-    }
-    if (password !== passwordConfirm) {
-      setSubmitError(sw.auth.passwordMismatch);
-      return;
-    }
     const v = getValues();
     setSubmitting(true);
     try {
-      await setPasswordAndCreateCompany(password, {
+      await verifySignupOtp(v.email, code);
+      await createCompanyAfterVerification({
         full_name: v.full_name,
         phone: v.phone,
         company_name: v.company_name,
@@ -116,6 +90,23 @@ export default function SignupCompany() {
         company_password: v.company_password,
       });
       navigate('/dashboard', { replace: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : sw.auth.otp.invalid;
+      if (/token|otp|code/i.test(message)) setOtpError(sw.auth.otp.invalid);
+      else setSubmitError(message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function resendOtp() {
+    if (resendIn > 0 || submitting) return;
+    setSubmitError(null);
+    const { email } = getValues();
+    setSubmitting(true);
+    try {
+      await resendSignupOtp(email);
+      setResendIn(RESEND_COOLDOWN_SECONDS);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : sw.common.error);
     } finally {
@@ -152,7 +143,7 @@ export default function SignupCompany() {
             />
             <Input label={sw.auth.sector} {...register('sector')} />
             <Input
-              label={sw.auth.companyPassword}
+              label={sw.auth.companyAccessPassword}
               hint={sw.auth.companyPasswordHint}
               {...register('company_password', { required: true, minLength: 6 })}
               error={errors.company_password && sw.auth.companyPasswordHint}
@@ -174,6 +165,30 @@ export default function SignupCompany() {
               autoComplete="email"
               {...register('email', { required: true, pattern: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ })}
               error={errors.email && sw.common.error}
+            />
+            <PasswordField
+              label={sw.auth.personalPassword}
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              hint={sw.auth.personalPasswordHint}
+            />
+            {password.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <PasswordStrengthBar score={pwScore} />
+                <span className="text-xs text-ink-muted">{strengthLabel}</span>
+              </div>
+            )}
+            <PasswordField
+              label={sw.auth.passwordConfirm}
+              autoComplete="new-password"
+              value={passwordConfirm}
+              onChange={(e) => setPasswordConfirm(e.target.value)}
+              error={
+                passwordConfirm.length > 0 && password !== passwordConfirm
+                  ? sw.auth.passwordMismatch
+                  : undefined
+              }
             />
 
             {submitError && <p className="text-sm text-red-600">{submitError}</p>}
@@ -238,53 +253,6 @@ export default function SignupCompany() {
             </div>
           </div>
         )}
-
-        {step === 3 && (
-          <div className="flex flex-col gap-4">
-            <PasswordField
-              label={sw.auth.password}
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              hint={sw.auth.passwordHint}
-            />
-            {password.length > 0 && (
-              <div className="flex flex-col gap-1">
-                <PasswordStrengthBar score={pwScore} />
-                <span className="text-xs text-ink-muted">{strengthLabel}</span>
-              </div>
-            )}
-            <PasswordField
-              label={sw.auth.passwordConfirm}
-              autoComplete="new-password"
-              value={passwordConfirm}
-              onChange={(e) => setPasswordConfirm(e.target.value)}
-              error={
-                passwordConfirm.length > 0 && password !== passwordConfirm
-                  ? sw.auth.passwordMismatch
-                  : undefined
-              }
-            />
-
-            {submitError && <p className="text-sm text-red-600">{submitError}</p>}
-
-            <Button
-              type="button"
-              tint="admin"
-              fullWidth
-              disabled={submitting || password.length < 8 || password !== passwordConfirm}
-              onClick={() => void finish()}
-            >
-              {submitting ? sw.common.loading : sw.auth.finish}
-            </Button>
-          </div>
-        )}
-
-      <p className="mt-6 text-center text-sm text-ink-muted">
-        <Link to="/login" className="font-medium text-role-admin hover:underline">
-          {sw.auth.login}
-        </Link>
-      </p>
     </AuthShell>
   );
 }

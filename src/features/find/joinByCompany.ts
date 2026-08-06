@@ -3,7 +3,15 @@ import { supabase } from '@/lib/supabase';
 import type { UserRole } from '@/types/db';
 
 export class CompanyAuthError extends Error {
-  reason: 'invalid_password' | 'password_not_set' | 'user_not_found' | 'already_exists' | 'unknown';
+  reason:
+    | 'invalid_password'
+    | 'password_not_set'
+    | 'user_not_found'
+    | 'already_exists'
+    | 'invalid_credentials'
+    | 'not_company_member'
+    | 'deactivated'
+    | 'unknown';
   constructor(message: string, reason: CompanyAuthError['reason']) {
     super(message);
     this.reason = reason;
@@ -16,6 +24,7 @@ function classify(msg: string): CompanyAuthError['reason'] {
   if (m.includes('company_password_not_set')) return 'password_not_set';
   if (m.includes('user_not_found')) return 'user_not_found';
   if (m.includes('already exists')) return 'already_exists';
+  if (m.includes('invalid login credentials')) return 'invalid_credentials';
   return 'unknown';
 }
 
@@ -41,30 +50,44 @@ export async function checkCompanyPassword(companyId: string, password: string):
   return Boolean(data);
 }
 
-// Existing staff: name + company password → session (via magic-link token).
+// Existing staff: company access password opens the company pane; personal
+// email/password is still the only way to create a real user session.
 export async function loginByCompany(input: {
   company_id: string;
-  name: string;
-  company_password: string;
+  email: string;
+  password: string;
 }): Promise<{ role: UserRole }> {
-  const { data, error } = await supabase.functions.invoke<{
-    token_hash: string;
-    role: UserRole;
-    email: string;
-  }>('login-by-company', { body: input });
-  if (error) {
-    const msg = await bodyErrorMessage(error);
-    throw new CompanyAuthError(msg, classify(msg));
-  }
-  if (!data?.token_hash) throw new CompanyAuthError('no token', 'unknown');
-
-  // Materialize the session in this browser.
-  const { error: vErr } = await supabase.auth.verifyOtp({
-    token_hash: data.token_hash,
-    type: 'magiclink',
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: input.email.trim(),
+    password: input.password,
   });
-  if (vErr) throw new CompanyAuthError(vErr.message, 'unknown');
-  return { role: data.role };
+  if (error) {
+    throw new CompanyAuthError(error.message, classify(error.message));
+  }
+
+  const userId = data.user?.id;
+  if (!userId) throw new CompanyAuthError('user_not_found', 'user_not_found');
+
+  const { data: profile, error: profileErr } = await supabase
+    .from('profiles')
+    .select('company_id, role, deactivated_at')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (profileErr || !profile) {
+    await supabase.auth.signOut();
+    throw new CompanyAuthError(profileErr?.message ?? 'user_not_found', 'user_not_found');
+  }
+  if (profile.company_id !== input.company_id) {
+    await supabase.auth.signOut();
+    throw new CompanyAuthError('not_company_member', 'not_company_member');
+  }
+  if (profile.deactivated_at) {
+    await supabase.auth.signOut();
+    throw new CompanyAuthError('deactivated', 'deactivated');
+  }
+
+  return { role: profile.role };
 }
 
 // New staff: create auth user with their personal password, then join-company edge fn

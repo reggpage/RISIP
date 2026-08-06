@@ -10,34 +10,47 @@ export type CompanyDetails = {
   company_password: string;
 };
 
-// Step 1 → send an OTP to email. Delivered by the send-email Auth hook (Resend).
-export async function sendSignupOtp(email: string, fullName: string) {
-  const { error } = await supabase.auth.signInWithOtp({
+// Step 1 -> create a pending auth user with their personal password, then send OTP.
+// The Send Email Auth hook brands the email before it leaves Supabase.
+export async function startCompanySignup(email: string, fullName: string, password: string) {
+  const { error } = await supabase.auth.signUp({
     email,
+    password,
     options: {
-      shouldCreateUser: true,
       data: { full_name: fullName },
     },
   });
   if (error) throw error;
 }
 
-// Step 2 → verify the OTP. On success we have a session (auth.users row exists).
+export async function resendSignupOtp(email: string) {
+  const { error } = await supabase.auth.resend({ type: 'signup', email });
+  if (error) throw error;
+}
+
+// Step 2 -> verify the OTP. On success we have a session for the pending user.
 export async function verifySignupOtp(email: string, token: string) {
-  const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
+  const first = await supabase.auth.verifyOtp({ email, token, type: 'signup' });
+  let data = first.data;
+  let error = first.error;
+
+  // During the signup-flow changeover, some emails may still have tokens created
+  // by signInWithOtp. Accept those too so users do not get trapped mid-signup.
+  if (error) {
+    const fallback = await supabase.auth.verifyOtp({ email, token, type: 'email' });
+    data = fallback.data;
+    error = fallback.error;
+  }
+
   if (error) throw error;
   if (!data.session) throw new Error('Verification did not return a session.');
   return data.session;
 }
 
-// Step 3 → set password and create the company + owner profile atomically.
-export async function setPasswordAndCreateCompany(
-  password: string,
+// Step 3 -> create the company + owner profile after the email is verified.
+export async function createCompanyAfterVerification(
   details: Omit<CompanyDetails, 'email'>,
 ): Promise<{ company_id: string }> {
-  const { error: pwErr } = await supabase.auth.updateUser({ password });
-  if (pwErr) throw pwErr;
-
   const { data, error } = await supabase.functions.invoke<{ company_id: string }>('signup-company', {
     body: {
       full_name: details.full_name,

@@ -180,7 +180,7 @@ export function PasswordPane({
 
       <form onSubmit={submit} className="flex flex-col gap-4">
         <PasswordField
-          label={sw.find.passwordPromptTitle}
+          label={sw.find.passwordPromptField}
           autoComplete="off"
           autoFocus
           value={password}
@@ -237,7 +237,7 @@ export function AccountPane({
       </div>
 
       {tab === 'login' ? (
-        <LoginForm company={company} companyPassword={companyPassword} onDone={onDone} />
+        <LoginForm company={company} onDone={onDone} />
       ) : (
         <RegisterForm company={company} companyPassword={companyPassword} onDone={onDone} />
       )}
@@ -270,14 +270,13 @@ function TabButton({
 
 function LoginForm({
   company,
-  companyPassword,
   onDone,
 }: {
   company: CompanyHit;
-  companyPassword: string;
   onDone: (role: 'worker' | 'accountant' | 'owner') => void;
 }) {
-  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [handoff, setHandoff] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -290,14 +289,20 @@ function LoginForm({
     try {
       const { role } = await loginByCompany({
         company_id: company.id,
-        name,
-        company_password: companyPassword,
+        email,
+        password,
       });
       success = true;
       setHandoff(true);
       onDone(role);
     } catch (err) {
-      if (err instanceof CompanyAuthError && err.reason === 'user_not_found') {
+      if (err instanceof CompanyAuthError && err.reason === 'invalid_credentials') {
+        setError(sw.find.loginInvalid);
+      } else if (err instanceof CompanyAuthError && err.reason === 'not_company_member') {
+        setError(sw.find.loginWrongCompany);
+      } else if (err instanceof CompanyAuthError && err.reason === 'deactivated') {
+        setError(sw.find.loginDeactivated);
+      } else if (err instanceof CompanyAuthError && err.reason === 'user_not_found') {
         setError(sw.find.userNotFound);
       } else {
         setError(err instanceof Error ? err.message : sw.common.error);
@@ -315,13 +320,20 @@ function LoginForm({
     <form onSubmit={submit} className="flex flex-col gap-4">
       <p className="text-sm text-ink-muted">{sw.find.loginHint}</p>
       <Input
-        label={sw.find.yourName}
-        autoComplete="name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
+        type="email"
+        label={sw.find.loginEmail}
+        autoComplete="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
+      <PasswordField
+        label={sw.find.loginPassword}
+        autoComplete="current-password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
       />
       {error && <p className="text-sm text-red-600">{error}</p>}
-      <Button type="submit" tint="admin" fullWidth disabled={busy || !name.trim()}>
+      <Button type="submit" tint="admin" fullWidth disabled={busy || !email.trim() || !password}>
         {busy ? sw.common.loading : sw.find.loginSubmit}
       </Button>
     </form>
@@ -412,9 +424,9 @@ function RegisterForm({
         error={errors.email && sw.common.error}
       />
       <PasswordField
-        label={sw.auth.password}
+        label={sw.auth.personalPassword}
         autoComplete="new-password"
-        hint={sw.auth.passwordHint}
+        hint={sw.auth.personalPasswordHint}
         {...register('password', { required: true, minLength: 8 })}
         error={errors.password && sw.auth.passwordHint}
       />

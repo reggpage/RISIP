@@ -19,6 +19,22 @@ type CompanyLoginStage =
   | { name: 'password'; company: CompanyHit }
   | { name: 'account'; company: CompanyHit; companyPassword: string; tab: 'login' | 'register' };
 
+function withTimeout<T>(promise: PromiseLike<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), ms);
+    Promise.resolve(promise).then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export default function Login() {
   const navigate = useNavigate();
   const auth = useAuth();
@@ -32,19 +48,47 @@ export default function Login() {
 
   async function onSubmit(values: FormValues) {
     setSubmitError(null);
-    const { error } = await supabase.auth.signInWithPassword(values);
+    const { data, error } = await supabase.auth.signInWithPassword(values);
     if (error) {
       setSubmitError(error.message);
       return;
     }
-    navigate('/dashboard', { replace: true });
+
+    const userId = data.user?.id;
+    if (!userId) {
+      setSubmitError(sw.find.userNotFound);
+      return;
+    }
+
+    try {
+      const { data: profile, error: profileError } = await withTimeout(
+        supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', userId)
+          .maybeSingle(),
+        8_000,
+        'Could not load your company profile. Check your internet or proxy settings, then try again.',
+      );
+
+      if (profileError || !profile) {
+        await supabase.auth.signOut();
+        setSubmitError('This login is valid, but it is not linked to a company profile yet.');
+        return;
+      }
+
+      navigate(profile.role === 'worker' ? '/receipts' : '/dashboard', { replace: true });
+    } catch (err) {
+      await supabase.auth.signOut();
+      setSubmitError(err instanceof Error ? err.message : sw.common.error);
+    }
   }
 
   if (auth.status === 'signed-in' && auth.profile) {
     return <Navigate to={auth.profile.role === 'worker' ? '/receipts' : '/dashboard'} replace />;
   }
 
-  if (auth.status === 'loading' || auth.status === 'signed-in') {
+  if (auth.status === 'loading') {
     return (
       <AuthShell>
         <Card className="flex items-center gap-3">
@@ -60,11 +104,29 @@ export default function Login() {
     );
   }
 
+  if (auth.status === 'signed-in' && !auth.profile) {
+    return (
+      <AuthShell>
+        <Card className="flex flex-col gap-4">
+          <div>
+            <p className="text-sm font-semibold text-ink">Account needs company access</p>
+            <p className="mt-1 text-sm text-ink-muted">
+              This account is signed in, but it is not linked to a company profile yet.
+            </p>
+          </div>
+          <Button variant="secondary" onClick={() => void supabase.auth.signOut()} fullWidth>
+            {sw.common.logout}
+          </Button>
+        </Card>
+      </AuthShell>
+    );
+  }
+
   return (
     <AuthShell>
       <div className="mb-6 text-center">
         <h1 className="text-2xl font-semibold text-ink">
-          {tab === 'admin' ? sw.auth.adminLogin : 'Company access'}
+          {tab === 'admin' ? sw.auth.adminLogin : sw.find.title}
         </h1>
       </div>
 
@@ -74,7 +136,7 @@ export default function Login() {
           onClick={() => setTab('admin')}
           className={`rounded-md px-3 py-2 font-medium transition ${tab === 'admin' ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted hover:text-ink'}`}
         >
-          Admin login
+          {sw.auth.login}
         </button>
         <button
           type="button"

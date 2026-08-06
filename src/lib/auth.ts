@@ -23,10 +23,27 @@ let authSubscription: { unsubscribe: () => void } | null = null;
 let hydrateRun = 0;
 let lastProfileUserId: string | null = null;
 let lastProfile: Profile | null = null;
+const PROFILE_TIMEOUT_MS = 8_000;
 
 function publish(next: AuthState) {
   sharedState = next;
   for (const listener of listeners) listener(next);
+}
+
+function withTimeout<T>(promise: PromiseLike<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), ms);
+    Promise.resolve(promise).then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 async function hydrate(session: Session | null) {
@@ -44,11 +61,15 @@ async function hydrate(session: Session | null) {
   }
 
   try {
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('id, company_id, full_name, phone, role')
-      .eq('id', session.user.id)
-      .maybeSingle();
+    const { data: profile, error } = await withTimeout(
+      supabase
+        .from('profiles')
+        .select('id, company_id, full_name, phone, role')
+        .eq('id', session.user.id)
+        .maybeSingle(),
+      PROFILE_TIMEOUT_MS,
+      'Profile request timed out. Check your internet or proxy settings.',
+    );
     if (run !== hydrateRun) return;
     if (error) throw error;
     lastProfileUserId = session.user.id;
@@ -66,7 +87,13 @@ async function hydrate(session: Session | null) {
 function bootAuth() {
   if (booted) return;
   booted = true;
-  void supabase.auth.getSession().then(({ data }) => hydrate(data.session));
+  void supabase.auth
+    .getSession()
+    .then(({ data }) => hydrate(data.session))
+    .catch((err) => {
+      console.warn('Could not initialise auth session.', err);
+      publish({ status: 'signed-out' });
+    });
   const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
     void hydrate(session);
   });

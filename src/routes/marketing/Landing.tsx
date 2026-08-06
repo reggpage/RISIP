@@ -46,11 +46,11 @@ export default function Landing() {
             {sw.landing.heroLead}
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link to="/find-company">
-              <Button tint="admin" className="px-6 py-3 text-base">{sw.landing.ctaPrimary}</Button>
+            <Link to="/find-company" className="w-full sm:w-auto">
+              <Button tint="admin" className="w-full px-6 py-3 text-base sm:w-auto">{sw.landing.ctaPrimary}</Button>
             </Link>
-            <Link to="/signup" className="hidden sm:block">
-              <Button variant="secondary" tint="admin" className="px-6 py-3 text-base">Create a new company</Button>
+            <Link to="/signup" className="w-full sm:w-auto">
+              <Button variant="secondary" tint="admin" className="w-full px-6 py-3 text-base sm:w-auto">Create your company</Button>
             </Link>
           </div>
         </div>
@@ -61,7 +61,7 @@ export default function Landing() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <h2 className="mb-3 text-center text-2xl font-bold text-ink sm:text-3xl">How it works</h2>
           <p className="mx-auto mb-12 max-w-2xl text-center text-ink-muted">From a paper receipt to reports and invoices — in three steps.</p>
-          <div className="grid gap-8 md:grid-cols-3">
+          <div className="grid divide-y divide-surface-border border-y border-surface-border md:grid-cols-3 md:divide-x md:divide-y-0">
             <Step icon={<Camera className="h-6 w-6" />} title="Snap or scan"
               body="Staff photograph receipts on their phone, or you upload an A4/A3/PDF page holding several receipts." />
             <Step icon={<Sparkles className="h-6 w-6" />} title="AI reads it"
@@ -138,6 +138,7 @@ export default function Landing() {
         <div className="mx-auto max-w-7xl px-4 text-center text-sm sm:px-6 lg:px-8">
           <div className="mb-2 text-lg font-bold text-role-admin">Risip</div>
           <p className="text-ink">{sw.landing.footerTagline}</p>
+          <p className="mt-3 text-xs text-ink-muted">© 2026 Risip. All rights reserved.</p>
         </div>
       </footer>
     </div>
@@ -146,7 +147,7 @@ export default function Landing() {
 
 function Step({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
   return (
-    <div className="relative rounded-xl border border-surface-border bg-surface p-6">
+    <div className="px-0 py-6 md:px-8 md:py-0">
       <div className="mb-4 flex items-center gap-3">
         <span className="text-role-admin">{icon}</span>
       </div>
@@ -161,25 +162,21 @@ const orbitFeatures = [
     icon: <Sparkles className="h-5 w-5" />,
     title: 'TRA receipt OCR',
     body: 'Reads Tanzanian receipts accurately — TIN, VRN, verification code and VAT.',
-    slot: 'one',
   },
   {
     icon: <FileText className="h-5 w-5" />,
     title: 'Digital invoices',
     body: 'Create invoices, send a live link, and keep a full approval history.',
-    slot: 'two',
   },
   {
     icon: <Wallet className="h-5 w-5" />,
     title: 'Petty cash',
     body: 'Allocate staff spending money, track balances, and prevent overspending.',
-    slot: 'three',
   },
   {
     icon: <ScanLine className="h-5 w-5" />,
     title: 'Batch scan',
     body: 'Upload A4, A3, or PDF pages and split multiple receipts for review.',
-    slot: 'four',
   },
 ];
 
@@ -228,9 +225,9 @@ function FeatureOrbitSection() {
       </div>
 
       <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
-        <div className="relative mx-auto aspect-square w-full max-w-[34rem]">
-          <div className="absolute inset-6 rounded-full border-[3px] border-dotted border-role-admin/30 bg-surface shadow-xl shadow-role-admin/5" />
-          <div className="absolute inset-[13%] overflow-hidden rounded-full border border-white/80 bg-surface shadow-2xl">
+        <div className="relative mx-auto aspect-square w-full max-w-[22rem] sm:max-w-[28rem] lg:max-w-[34rem]">
+          <div className="absolute inset-6 hidden rounded-full border-[3px] border-dotted border-role-admin/30 bg-surface shadow-xl shadow-role-admin/5 lg:block" />
+          <div className="absolute inset-0 overflow-hidden rounded-2xl border border-white/80 bg-surface shadow-2xl lg:inset-[13%] lg:rounded-full">
             <img
               src={receiptScanImage}
               alt="Receipt scanning on a phone"
