@@ -23,12 +23,16 @@ const PAD = { l: 52, r: 12, t: 12, b: 28 };
 const PLOT_W = VB_W - PAD.l - PAD.r;
 const PLOT_H = VB_H - PAD.t - PAD.b;
 
-function ymd(d: Date) { return d.toISOString().slice(0, 10); }
+function ymd(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 function startOfWeek(d: Date) { const x = new Date(d); const day = (x.getDay() + 6) % 7; x.setDate(x.getDate() - day); x.setHours(0, 0, 0, 0); return x; }
 function parseDate(r: Receipt): Date | null {
   const key = r.receipt_date ?? r.created_at?.slice(0, 10);
   if (!key) return null;
-  const d = new Date(key);
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(key);
+  if (!match) return null;
+  const d = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
   return isNaN(d.getTime()) ? null : d;
 }
 function niceMax(v: number) {

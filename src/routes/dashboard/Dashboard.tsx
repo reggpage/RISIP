@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Receipt, Users, FileText, Wallet } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -20,6 +20,15 @@ export default function Dashboard() {
 
   const activeProjects =
     projectsState.status === 'ready' ? projectsState.projects.filter((p) => p.status === 'active') : [];
+  const recentActivity = useMemo(() => {
+    const visible = data.recent.slice(0, 3);
+    const duplicate = visible.find((receipt) => receipt.status === 'duplicate' && receipt.duplicate_of);
+    const original = duplicate?.duplicate_of
+      ? data.recent.find((receipt) => receipt.id === duplicate.duplicate_of)
+      : null;
+    if (original && !visible.some((receipt) => receipt.id === original.id)) visible.push(original);
+    return visible;
+  }, [data.recent]);
 
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
@@ -108,12 +117,16 @@ export default function Dashboard() {
             <div className="flex flex-col gap-2">
               {Array.from({ length: 3 }).map((_, i) => <ListItemSkeleton key={i} lines={2} />)}
             </div>
-          ) : data.recent.length === 0 ? (
+          ) : recentActivity.length === 0 ? (
             <p className="text-sm text-ink-muted">{sw.dashboard.noReceipts}</p>
           ) : (
             <div className="flex flex-col gap-2">
-              {data.recent.slice(0, 3).map((r) => (
-                <ReceiptCard key={r.id} receipt={r} />
+              {recentActivity.map((r, index) => (
+                <ReceiptCard
+                  key={r.id}
+                  receipt={r}
+                  connectorToNext={r.status === 'duplicate' && recentActivity[index + 1]?.id === r.duplicate_of}
+                />
               ))}
             </div>
           )}

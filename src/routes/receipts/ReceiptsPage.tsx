@@ -260,25 +260,14 @@ export default function ReceiptsPage() {
         )}
         {receiptsState.status === 'ready' && filtered.length > 0 && (
           <div className="flex flex-col gap-3">
-            {filtered.map((r) => (
-              <div key={r.id} className="relative overflow-visible">
-                <ReceiptCard
-                  receipt={r}
-                  nickname={r.uploaded_by === profile?.id ? myReceiptNames[r.id] : null}
-                  onOpen={setOpenReceipt}
-                />
-                {r.status === 'duplicate' && r.duplicate_of && (
-                  <div
-                    aria-label="Duplicate receipt linked to its original"
-                    title="Duplicate linked to original receipt"
-                    className="pointer-events-none absolute -right-4 top-4 hidden h-[calc(100%+0.75rem)] w-4 sm:block"
-                  >
-                    <span className="absolute right-0 top-0 h-full w-2 rounded-r-xl border-r-2 border-orange-400" />
-                    <span className="absolute right-0 top-0 w-3 border-t-2 border-orange-400" />
-                    <span className="absolute right-0 bottom-0 w-3 border-b-2 border-orange-400" />
-                  </div>
-                )}
-              </div>
+            {filtered.map((r, index) => (
+              <ReceiptCard
+                key={r.id}
+                receipt={r}
+                nickname={r.uploaded_by === profile?.id ? myReceiptNames[r.id] : null}
+                onOpen={setOpenReceipt}
+                connectorToNext={r.status === 'duplicate' && filtered[index + 1]?.id === r.duplicate_of}
+              />
             ))}
           </div>
         )}

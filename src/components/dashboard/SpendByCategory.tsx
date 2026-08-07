@@ -29,6 +29,21 @@ function windowStart(gran: Gran): number {
   return d.getTime();
 }
 
+function parseLocalDate(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function periodLabel(gran: Gran) {
+  const today = new Date();
+  if (gran === 'day') return 'Today';
+  if (gran === 'week') return 'This week';
+  if (gran === 'month') return new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' }).format(today);
+  return String(today.getFullYear());
+}
+
 type CatItem = { category: string; total: number; pct: number };
 
 function compute(receipts: Receipt[], gran: Gran): CatItem[] {
@@ -39,8 +54,8 @@ function compute(receipts: Receipt[], gran: Gran): CatItem[] {
     if (r.status !== 'confirmed') continue;
     const key = r.receipt_date ?? r.created_at?.slice(0, 10);
     if (!key) continue;
-    const t = new Date(key).getTime();
-    if (isNaN(t) || t < start) continue;
+    const date = parseLocalDate(key);
+    if (!date || date.getTime() < start) continue;
     const amt = Number(r.total_amount || 0);
     const cat = r.category ?? 'Other';
     byCat.set(cat, (byCat.get(cat) ?? 0) + amt);
@@ -74,11 +89,23 @@ function Row({ item, tint, delay }: { item: CatItem; tint: string; delay: number
 export default function SpendByCategory({ receipts }: { receipts: Receipt[] }) {
   const [gran, setGran] = useState<Gran>('month');
   const items = useMemo(() => compute(receipts, gran), [receipts, gran]);
+  const confirmedCount = useMemo(() => {
+    const start = windowStart(gran);
+    return receipts.filter((receipt) => {
+      if (receipt.status !== 'confirmed') return false;
+      const key = receipt.receipt_date ?? receipt.created_at?.slice(0, 10);
+      const date = key ? parseLocalDate(key) : null;
+      return Boolean(date && date.getTime() >= start);
+    }).length;
+  }, [receipts, gran]);
 
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-base font-semibold text-ink">Spend by category</h3>
+        <div>
+          <h3 className="text-base font-semibold text-ink">Spend by category</h3>
+          <p className="mt-0.5 text-xs text-ink-muted">{periodLabel(gran)} · {confirmedCount} confirmed receipt{confirmedCount === 1 ? '' : 's'}</p>
+        </div>
         <div className="inline-flex rounded-lg border border-surface-border bg-surface p-0.5 text-xs">
           {(Object.keys(GRAN_LABEL) as Gran[]).map((g) => (
             <button key={g} type="button" onClick={() => setGran(g)}
@@ -93,6 +120,7 @@ export default function SpendByCategory({ receipts }: { receipts: Receipt[] }) {
         <EmptyState title="No spend in this period" description="Try a wider range (Month or Year)." />
       ) : (
         <div key={gran} className="flex flex-col gap-3">
+          {items.length === 1 && <p className="text-xs text-ink-muted">All confirmed spend in this period is categorized as {items[0].category}.</p>}
           {items.map((it, i) => <Row key={it.category} item={it} tint={tintFor(it.category)} delay={i * 80} />)}
         </div>
       )}

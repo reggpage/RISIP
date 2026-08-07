@@ -22,10 +22,12 @@ export default function ReceiptCard({
   receipt,
   onOpen,
   nickname,
+  connectorToNext = false,
 }: {
   receipt: Receipt;
   onOpen?: (r: Receipt) => void;
   nickname?: string | null;
+  connectorToNext?: boolean;
 }) {
   const [thumb, setThumb] = useState<string | null>(null);
   const [uploader, setUploader] = useState<string | null>(null);
@@ -65,6 +67,7 @@ export default function ReceiptCard({
   }, [receipt.uploaded_by]);
 
   return (
+    <div className="relative">
     <Card className="flex gap-3 p-3">
       {/* Thumbnail slot — image if present, otherwise a bare (bg-less) receipt
           glyph, bigger than before so it reads at a glance on mobile lists. */}
@@ -125,5 +128,12 @@ export default function ReceiptCard({
         )}
       </div>
     </Card>
+    {connectorToNext && (
+      <span
+        aria-label="Duplicate receipt connected to its original"
+        className="pointer-events-none absolute left-[31%] top-full z-10 hidden h-3 w-[20%] rounded-br-lg border-b-2 border-r-2 border-role-admin sm:block"
+      />
+    )}
+    </div>
   );
 }
