@@ -87,7 +87,7 @@ function Row({ item, tint, delay }: { item: CatItem; tint: string; delay: number
 }
 
 export default function SpendByCategory({ receipts }: { receipts: Receipt[] }) {
-  const [gran, setGran] = useState<Gran>('month');
+  const [gran, setGran] = useState<Gran>('year');
   const items = useMemo(() => compute(receipts, gran), [receipts, gran]);
   const confirmedCount = useMemo(() => {
     const start = windowStart(gran);
@@ -105,6 +105,7 @@ export default function SpendByCategory({ receipts }: { receipts: Receipt[] }) {
         <div>
           <h3 className="text-base font-semibold text-ink">Spend by category</h3>
           <p className="mt-0.5 text-xs text-ink-muted">{periodLabel(gran)} · {confirmedCount} confirmed receipt{confirmedCount === 1 ? '' : 's'}</p>
+          <p className="mt-0.5 text-xs text-ink-muted">Grouped by receipt date.</p>
         </div>
         <div className="inline-flex rounded-lg border border-surface-border bg-surface p-0.5 text-xs">
           {(Object.keys(GRAN_LABEL) as Gran[]).map((g) => (

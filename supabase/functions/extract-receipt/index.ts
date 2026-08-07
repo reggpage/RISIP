@@ -117,6 +117,23 @@ function amountFromEvidence(value: unknown): number | null {
   return candidates?.length ? normalizeMoney(candidates[candidates.length - 1]) : null;
 }
 
+function isSamePhysicalReceipt(extracted: any, existing: any): boolean {
+  const extractedTin = String(extracted.vendor_tin ?? '').replace(/\D/g, '');
+  const existingTin = String(existing?.vendor_tin ?? '').replace(/\D/g, '');
+  const extractedNumber = String(extracted.receipt_number ?? '').trim();
+  const existingNumber = String(existing?.receipt_number ?? '').trim();
+  const sameTotal = Number(extracted.total_amount) === Number(existing?.total_amount);
+  // A verification-code collision alone is not proof: the model can mistake
+  // O/0, I/1 etc. TIN, total and receipt number must agree before excluding it.
+  return Boolean(
+    extractedTin.length === 9
+    && extractedTin === existingTin
+    && sameTotal
+    && extractedNumber
+    && extractedNumber === existingNumber
+  );
+}
+
 // Attempts to mark the receipt as errored so the UI can surface a real message
 // instead of leaving the row stuck in 'processing' forever.
 async function markError(admin, receiptId, reason, detail) {
@@ -278,18 +295,30 @@ Deno.serve(async (req) => {
       const { data: original } = normalized.verification_code
         ? await admin
           .from('receipts')
-          .select('id')
+          .select('id, vendor_tin, total_amount, receipt_number')
           .eq('verification_code', normalized.verification_code)
           .neq('id', receiptId)
           .neq('status', 'duplicate')
           .maybeSingle()
         : { data: null };
+      if (original && isSamePhysicalReceipt(normalized, original)) {
+        await admin.from('receipts').update({
+          ...updates,
+          status: 'duplicate',
+          duplicate_of: original.id,
+        }).eq('id', receiptId);
+        return json({ status: 'duplicate', receipt_id: receiptId }, { status: 200 });
+      }
+      // Do not exclude a real expense just because an uncertain OCR code happens
+      // to collide. The original AI value remains in raw_ai_response for review.
       await admin.from('receipts').update({
         ...updates,
-        status: 'duplicate',
-        duplicate_of: original?.id ?? null,
+        verification_code: null,
+        status: 'pending_review',
+        duplicate_of: null,
+        low_confidence_fields: [...new Set([...lowConfidence, 'verification_code'])],
       }).eq('id', receiptId);
-      return json({ status: 'duplicate', receipt_id: receiptId }, { status: 200 });
+      return json({ status: 'pending_review', receipt_id: receiptId, reason: 'verification code needs review' }, { status: 200 });
     }
     await markError(admin, receiptId, 'db update failed', updErr.message);
     return bad(`update failed: ${updErr.message}`, 500);

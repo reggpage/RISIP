@@ -93,7 +93,7 @@ function buildSeries(receipts: Receipt[], gran: Gran): Slot[] {
 }
 
 export default function SpendTrendChart({ receipts }: { receipts: Receipt[] }) {
-  const [gran, setGran] = useState<Gran>('day');
+  const [gran, setGran] = useState<Gran>('week');
   const [view, setView] = useState<ViewType>('bar');
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ x: number; y: number; label: string; total: number } | null>(null);

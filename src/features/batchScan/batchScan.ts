@@ -15,6 +15,7 @@ export type ExtractedReceipt = {
   vendor: string | null;
   vendor_tin: string | null;
   vendor_vrn: string | null;
+  receipt_number?: string | null;
   receipt_date: string | null;
   category: string | null;
   verification_code: string | null;
@@ -38,6 +39,20 @@ function cleanMerchantText(value: unknown): string {
 function isReceiptHeader(value: unknown): boolean {
   return /start\s+of.*receipt|legal\s+receipt|ucon\s+receipt|leon\s+receipt|logi\s+receipt|god\s+receipt/i
     .test(cleanMerchantText(value));
+}
+
+function isSamePhysicalReceipt(extracted: ExtractedReceipt, existing: { vendor_tin: string | null; total_amount: number | null; receipt_number: string | null } | null): boolean {
+  const extractedTin = String(extracted.vendor_tin ?? '').replace(/\D/g, '');
+  const existingTin = String(existing?.vendor_tin ?? '').replace(/\D/g, '');
+  const extractedNumber = String(extracted.receipt_number ?? '').trim();
+  const existingNumber = String(existing?.receipt_number ?? '').trim();
+  return Boolean(
+    extractedTin.length === 9
+    && extractedTin === existingTin
+    && Number(extracted.total_amount) === Number(existing?.total_amount)
+    && extractedNumber
+    && extractedNumber === existingNumber
+  );
 }
 
 function looksLikeTotalEnergies(row: ExtractedReceipt): boolean {
@@ -239,6 +254,7 @@ export async function importBatch(
       vendor_name: r.vendor,
       vendor_tin: r.vendor_tin,
       vendor_vrn: r.vendor_vrn,
+      receipt_number: r.receipt_number ?? null,
       receipt_date: r.receipt_date,
       category: r.category,
       verification_code: r.verification_code,
@@ -254,16 +270,21 @@ export async function importBatch(
       const { data: original } = r.verification_code
         ? await supabase
           .from('receipts')
-          .select('id')
+          .select('id, vendor_tin, total_amount, receipt_number')
           .eq('verification_code', r.verification_code)
           .neq('status', 'duplicate')
           .maybeSingle()
         : { data: null };
-      ({ error } = await supabase.from('receipts').insert({
-        ...base,
-        status: 'duplicate',
-        duplicate_of: original?.id ?? null,
-      }));
+      ({ error } = await supabase.from('receipts').insert(
+        original && isSamePhysicalReceipt(r, original)
+          ? { ...base, status: 'duplicate', duplicate_of: original.id }
+          : {
+              ...base,
+              verification_code: null,
+              status: 'pending_review',
+              low_confidence_fields: ['verification_code'],
+            },
+      ));
     }
     if (error) throw error;
     imported++;

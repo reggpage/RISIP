@@ -33,13 +33,14 @@ For EACH distinct receipt found, extract:
 3. vendor_vrn (VRN — digits ending in a letter, e.g. 10015084M)
 4. receipt_date (YYYY-MM-DD)
 5. category (one of: Materials, Fuel, Food, Transport, Equipment, Office, Utilities, Rent, Communication, Consulting, Labor, Other)
-6. verification_code (alphanumeric TRA code near a QR; distinguish B/8, I/1, O/0, S/5, Z/2 — do not add or repeat characters)
-7. net_amount (number)
-8. tax_amount (VAT only; null if none)
-9. total_amount (grand total INCL of VAT — the "TOTAL INCL OF TAX" / "TOTAL … TZS" line)
-10. crop_box (for image inputs only: normalized page coordinates { "x": 0..1, "y": 0..1, "width": 0..1, "height": 0..1 } around the ENTIRE physical receipt, including all four edges, the QR code, and the footer; include a small margin and never crop at the merchant header or total line; use null if uncertain)
-11. merchant_hint (short text/brand/logo evidence you used for the vendor; e.g. "SHOPPERS SUPERMARKET LTD" or "TotalEnergies logo")
-12. raw_text_excerpt (one or two key lines around the merchant/TIN/date/total; do not include the full receipt)
+6. receipt_number (the printed receipt/ticket number)
+7. verification_code (alphanumeric TRA code near a QR; distinguish B/8, I/1, O/0, S/5, Z/2 — do not add or repeat characters)
+8. net_amount (number)
+9. tax_amount (VAT only; null if none)
+10. total_amount (grand total INCL of VAT — the "TOTAL INCL OF TAX" / "TOTAL … TZS" line)
+11. crop_box (for image inputs only: normalized page coordinates { "x": 0..1, "y": 0..1, "width": 0..1, "height": 0..1 } around the ENTIRE physical receipt, including all four edges, the QR code, and the footer; include a small margin and never crop at the merchant header or total line; use null if uncertain)
+12. merchant_hint (short text/brand/logo evidence you used for the vendor; e.g. "SHOPPERS SUPERMARKET LTD" or "TotalEnergies logo")
+13. raw_text_excerpt (one or two key lines around the merchant/TIN/date/total; do not include the full receipt)
 
 Tanzania merchant context:
 - The words "START OF LEGAL RECEIPT", "START OF UCON RECEIPT", "START OF LEON RECEIPT" and similar headers are NOT merchant names. Read the merchant printed below/near the logo/TIN. Preserve the full printed station name (for example, "PUMA HAZINA SERVICE STATION"); do not shorten it to only a fuel brand.

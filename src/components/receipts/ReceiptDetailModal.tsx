@@ -382,7 +382,7 @@ export default function ReceiptDetailModal({
             {canReview && !editing && (
               <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3">
                 <p className="text-xs text-sky-800">
-                  This receipt arrived by scanner email. Check the details against the image,
+                  This receipt needs verification. Check the details against the image,
                   then approve it into the ledger or discard it.
                 </p>
                 <div className="mt-3 flex gap-2">
