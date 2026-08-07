@@ -44,6 +44,7 @@ export default function JoinPage() {
   const [verificationError, setVerificationError] = useState<string | null>(null);
   const [verifyingEmail, setVerifyingEmail] = useState(false);
   const [fullNameNotice, setFullNameNotice] = useState<string | null>(null);
+  const [fullNameDuplicate, setFullNameDuplicate] = useState(false);
 
   const {
     register,
@@ -54,6 +55,9 @@ export default function JoinPage() {
 
   const password = watch('password', '');
   const passwordConfirm = watch('password_confirm', '');
+  const companyPassword = watch('company_password', '');
+  const fullName = watch('full_name', '');
+  const email = watch('email', '');
   const pwScore = scorePassword(password);
   const strengthLabel =
     pwScore >= 4 ? sw.auth.passwordStrength.strong
@@ -94,6 +98,15 @@ export default function JoinPage() {
   const role = info.role!;
   const roleName = roleLabel[role];
   const fullNameField = register('full_name', { required: mode === 'register' });
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const passwordValid = password.length >= 8 && /[A-Za-z]/.test(password) && /\d/.test(password);
+  const canCompleteSignup = mode === 'register'
+    && companyPassword.trim().length >= 6
+    && fullName.trim().length >= 2
+    && emailValid
+    && passwordValid
+    && password === passwordConfirm
+    && !fullNameDuplicate;
 
   async function checkExistingFullName(value: string) {
     const name = value.trim();
@@ -109,10 +122,13 @@ export default function JoinPage() {
       .limit(1);
     if (error) {
       // A new invite may not have a session yet, so the lookup is best-effort.
+      setFullNameDuplicate(false);
       setFullNameNotice('Full names can be shared by team members. Your email identifies your account.');
       return;
     }
-    setFullNameNotice(data && data.length > 0
+    const duplicate = Boolean(data && data.length > 0);
+    setFullNameDuplicate(duplicate);
+    setFullNameNotice(duplicate
       ? 'This name is already used by another team member. That is okay—your email identifies your account.'
       : null);
   }
@@ -156,6 +172,11 @@ export default function JoinPage() {
       }
       navigate(role === 'worker' ? '/receipts' : '/dashboard', { replace: true });
     } catch (err) {
+      if (err instanceof Error && err.message.includes('full_name_already_used')) {
+        setFullNameDuplicate(true);
+        setFullNameNotice('This full name is already used by a team member. Use a different name to continue.');
+        return;
+      }
       if (err instanceof EmailVerificationRequiredError && mode === 'register') {
         setPendingVerification(values);
         setVerificationCode('');
@@ -188,7 +209,12 @@ export default function JoinPage() {
       });
       navigate(role === 'worker' ? '/receipts' : '/dashboard', { replace: true });
     } catch (err) {
-      setVerificationError(err instanceof Error ? err.message : 'The code could not be verified.');
+      if (err instanceof Error && err.message.includes('full_name_already_used')) {
+        setFullNameDuplicate(true);
+        setVerificationError('This full name is already used by a team member. Go back and choose a different name.');
+      } else {
+        setVerificationError(err instanceof Error ? err.message : 'The code could not be verified.');
+      }
     } finally {
       setVerifyingEmail(false);
     }
@@ -219,14 +245,14 @@ export default function JoinPage() {
         <div className="grid grid-cols-2 gap-1 rounded-lg bg-surface-muted p-1 text-sm">
           <button
             type="button"
-            onClick={() => setMode('login')}
+            onClick={() => { setMode('login'); setFullNameDuplicate(false); setFullNameNotice(null); }}
             className={`rounded-md px-3 py-2 font-medium transition ${mode === 'login' ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted hover:text-ink'}`}
           >
             I already have an account
           </button>
           <button
             type="button"
-            onClick={() => setMode('register')}
+            onClick={() => { setMode('register'); setFullNameDuplicate(false); setFullNameNotice(null); }}
             className={`rounded-md px-3 py-2 font-medium transition ${mode === 'register' ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted hover:text-ink'}`}
           >
             Create account
@@ -281,6 +307,11 @@ export default function JoinPage() {
               label={sw.auth.fullName}
               autoComplete="name"
               {...fullNameField}
+              onChange={(event) => {
+                fullNameField.onChange(event);
+                setFullNameDuplicate(false);
+                setFullNameNotice(null);
+              }}
               onBlur={(event) => {
                 fullNameField.onBlur(event);
                 void checkExistingFullName(event.target.value);
@@ -344,7 +375,7 @@ export default function JoinPage() {
           type="submit"
           tint="admin"
           fullWidth
-          disabled={submitting || (mode === 'register' && (password.length < 8 || password !== passwordConfirm))}
+          disabled={submitting || (mode === 'register' && !canCompleteSignup)}
         >
           {submitting ? sw.common.loading : mode === 'login' ? 'Log in and join' : sw.join.finish}
         </Button>

@@ -1,12 +1,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { json, preflight } from '../_shared/cors.ts';
 import { CATEGORIES, normalizeTanzaniaReceipt } from '../_shared/tanzaniaReceiptKnowledge.ts';
+import { resolveAnthropicModel } from '../_shared/anthropicModel.ts';
 
 // Use the higher-accuracy model for the first pass too. Re-analysis used to be
 // better simply because it was the only path using Sonnet, which made the same
 // receipt produce inconsistent totals.
-const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
-const ALLOWED_MODELS = new Set([DEFAULT_MODEL]);
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 
 // Domain-aware prompt. These are Tanzanian TRA fiscal receipts, so we tell the model the
@@ -130,7 +129,6 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch {}
   const receiptId = (body.receipt_id || '').trim();
   const storagePath = (body.storage_path || '').trim();
-  const model = body.model && ALLOWED_MODELS.has(body.model) ? body.model : DEFAULT_MODEL;
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -145,6 +143,7 @@ Deno.serve(async (req) => {
     await markError(admin, receiptId, 'ANTHROPIC_API_KEY not set in Supabase edge function secrets');
     return bad('ANTHROPIC_API_KEY not set', 500);
   }
+  const model = await resolveAnthropicModel(anthropicKey, body.model);
   if (!receiptId) return bad('receipt_id required');
   if (!storagePath) return bad('storage_path required');
 

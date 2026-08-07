@@ -7,9 +7,8 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { normalizeTanzaniaReceipt } from '../_shared/tanzaniaReceiptKnowledge.ts';
+import { resolveAnthropicModel } from '../_shared/anthropicModel.ts';
 
-const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
-const ALLOWED = new Set([DEFAULT_MODEL]);
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 type AnthropicResponse = {
   error?: { message?: string };
@@ -92,7 +91,7 @@ Deno.serve(async (req) => {
   let body: { storage_path?: string; model?: string };
   try { body = await req.json(); } catch { return json({ error: 'invalid json' }, 400); }
   const storagePath = (body.storage_path || '').trim();
-  const model = body.model && ALLOWED.has(body.model) ? body.model : DEFAULT_MODEL;
+  const model = await resolveAnthropicModel(anthropicKey, body.model);
   if (!storagePath) return json({ error: 'storage_path required' }, 400);
 
   const { data: fileBlob, error: dlErr } = await admin.storage.from('receipts').download(storagePath);

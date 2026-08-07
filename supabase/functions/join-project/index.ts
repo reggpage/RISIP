@@ -95,6 +95,15 @@ Deno.serve(async (req) => {
     return json({ project_id: invite.project_id, role: existingProfile.role }, { status: 200 });
   }
 
+  const { data: sameName, error: sameNameErr } = await admin
+    .from('profiles')
+    .select('id')
+    .eq('company_id', invite.company_id)
+    .ilike('full_name', full_name)
+    .limit(1);
+  if (sameNameErr) return bad(sameNameErr.message, 500);
+  if (sameName?.length) return bad('full_name_already_used', 409);
+
   const { data, error } = await admin.rpc('join_by_invite_v1', {
     p_user_id: userData.user.id,
     p_token: token,
