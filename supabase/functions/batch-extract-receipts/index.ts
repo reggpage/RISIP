@@ -11,6 +11,10 @@ import { normalizeTanzaniaReceipt } from '../_shared/tanzaniaReceiptKnowledge.ts
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
 const ALLOWED = new Set([DEFAULT_MODEL]);
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
+type AnthropicResponse = {
+  error?: { message?: string };
+  content?: Array<{ text?: string }>;
+};
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -50,7 +54,11 @@ function parseArray(text: string): unknown[] | null {
   const stripped = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/, '');
   try {
     const parsed = JSON.parse(stripped);
-    return Array.isArray(parsed) ? parsed : null;
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { receipts?: unknown[] }).receipts)) {
+      return (parsed as { receipts: unknown[] }).receipts;
+    }
+    return null;
   } catch {
     const m = stripped.match(/\[[\s\S]*\]/);
     if (m) { try { return JSON.parse(m[0]); } catch { return null; } }
@@ -102,16 +110,24 @@ Deno.serve(async (req) => {
     ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } }
     : { type: 'image', source: { type: 'base64', media_type: rawType || 'image/jpeg', data: b64 } };
 
-  const claudeRes = await fetch(ANTHROPIC_URL, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({
-      model,
-      max_tokens: 4096,
-      messages: [{ role: 'user', content: [contentBlock, { type: 'text', text: PROMPT }] }],
-    }),
-  });
-  const claudeJson = await claudeRes.json();
+  let claudeRes: Response;
+  let claudeJson: AnthropicResponse;
+  try {
+    claudeRes = await fetch(ANTHROPIC_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model,
+        max_tokens: 4096,
+        messages: [{ role: 'user', content: [contentBlock, { type: 'text', text: PROMPT }] }],
+      }),
+    });
+    const responseText = await claudeRes.text();
+    try { claudeJson = JSON.parse(responseText) as AnthropicResponse; }
+    catch { return json({ error: 'The AI service returned an invalid response.', detail: responseText.slice(0, 300) }, 502); }
+  } catch (error) {
+    return json({ error: 'The AI service could not be reached. Please try again shortly.', detail: error instanceof Error ? error.message : String(error) }, 503);
+  }
   if (!claudeRes.ok) {
     if (claudeRes.status === 429 || claudeRes.status === 529 || claudeRes.status >= 500) {
       return json({ error: 'Receipt splitting is temporarily unavailable. Please try again shortly.', code: 'AI_TEMPORARILY_UNAVAILABLE' }, 503);

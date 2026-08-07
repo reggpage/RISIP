@@ -20,6 +20,7 @@ import OtpInput, { OTP_LENGTH } from '@/components/ui/OtpInput';
 import { checkCompanyPassword } from '@/features/find/joinByCompany';
 import { roleColorClass, roleLabel } from '@/lib/roles';
 import { sw } from '@/i18n/sw';
+import { supabase } from '@/lib/supabase';
 
 type FormFields = {
   company_password: string;
@@ -42,6 +43,7 @@ export default function JoinPage() {
   const [verificationCode, setVerificationCode] = useState('');
   const [verificationError, setVerificationError] = useState<string | null>(null);
   const [verifyingEmail, setVerifyingEmail] = useState(false);
+  const [fullNameNotice, setFullNameNotice] = useState<string | null>(null);
 
   const {
     register,
@@ -91,6 +93,29 @@ export default function JoinPage() {
 
   const role = info.role!;
   const roleName = roleLabel[role];
+  const fullNameField = register('full_name', { required: mode === 'register' });
+
+  async function checkExistingFullName(value: string) {
+    const name = value.trim();
+    if (!name || !info.company_id || mode !== 'register') {
+      setFullNameNotice(null);
+      return;
+    }
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('company_id', info.company_id)
+      .ilike('full_name', name)
+      .limit(1);
+    if (error) {
+      // A new invite may not have a session yet, so the lookup is best-effort.
+      setFullNameNotice('Full names can be shared by team members. Your email identifies your account.');
+      return;
+    }
+    setFullNameNotice(data && data.length > 0
+      ? 'This name is already used by another team member. That is okay—your email identifies your account.'
+      : null);
+  }
 
   async function onSubmit(values: FormFields) {
     if (!token) return;
@@ -255,9 +280,14 @@ export default function JoinPage() {
             <Input
               label={sw.auth.fullName}
               autoComplete="name"
-              {...register('full_name', { required: mode === 'register' })}
+              {...fullNameField}
+              onBlur={(event) => {
+                fullNameField.onBlur(event);
+                void checkExistingFullName(event.target.value);
+              }}
               error={errors.full_name && 'Enter your full name.'}
             />
+            {fullNameNotice && <p className="-mt-2 text-xs text-amber-700">{fullNameNotice}</p>}
             <Input label={sw.auth.phone} autoComplete="tel" {...register('phone')} />
           </>
         )}

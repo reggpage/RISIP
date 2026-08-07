@@ -183,7 +183,7 @@ export async function scanA3AndExtract(
     'batch-extract-receipts',
     { body: { storage_path: path, model: ctx.model } },
   );
-  if (error) throw error;
+  if (error) throw await readableBatchFunctionError(error);
 
   const receipts = data?.receipts ?? [];
   const croppedReceipts = await cropAndUploadReceiptImages(receipts, file, {
@@ -198,6 +198,21 @@ export async function scanA3AndExtract(
   }));
 
   return { scannedDocId: doc.id as string, storagePath: path, receipts: previewReceipts };
+}
+
+async function readableBatchFunctionError(error: unknown): Promise<Error> {
+  const candidate = error as { message?: string; context?: Response };
+  const fallback = candidate.message || 'Batch scan failed. Please try again.';
+  const response = candidate.context;
+  if (!response || typeof response.clone !== 'function') return new Error(fallback);
+  try {
+    const payload = await response.clone().json() as { error?: string; detail?: string; code?: string };
+    const message = payload.error || payload.detail;
+    if (message) return new Error(payload.code === 'AI_TEMPORARILY_UNAVAILABLE' ? `${message} (The AI service may be busy or out of balance.)` : message);
+  } catch {
+    // Keep the SDK message when the edge function returned a non-JSON response.
+  }
+  return new Error(fallback);
 }
 
 // 2. Bulk-insert the approved rows. All receipts share the A3 image + scanned_doc_id.

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, FileText, Link2, Loader2, MailCheck, Pencil, Sparkles, Trash2, Wallet, X, XCircle,
+  AlertTriangle, CheckCircle2, FileText, Loader2, MailCheck, Pencil, Sparkles, Trash2, Wallet, X, XCircle,
   Receipt as ReceiptGlyph,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
@@ -58,7 +58,6 @@ export default function ReceiptDetailModal({
   const [nicknameEditing, setNicknameEditing] = useState(false);
   const [nicknameSaved, setNicknameSaved] = useState(false);
   const [savingNickname, setSavingNickname] = useState(false);
-  const [duplicateOriginal, setDuplicateOriginal] = useState<{ vendor_name: string | null; total_amount: number | null; receipt_date: string | null } | null>(null);
   const { state: projectsState } = useProjects();
   const project = projectsState.status === 'ready'
     ? projectsState.projects.find((p) => p.id === data.project_id) ?? null
@@ -239,18 +238,8 @@ export default function ReceiptDetailModal({
           }
         });
     }
-    if (receipt.status === 'duplicate' && receipt.duplicate_of) {
-      void supabase
-        .from('receipts')
-        .select('vendor_name, total_amount, receipt_date')
-        .eq('id', receipt.duplicate_of)
-        .maybeSingle()
-        .then(({ data: original }) => {
-          if (!cancelled) setDuplicateOriginal(original as typeof duplicateOriginal);
-        });
-    } else setDuplicateOriginal(null);
     return () => { cancelled = true; };
-  }, [profile?.id, receipt.id, receipt.uploaded_by, receipt.image_url, receipt.scanned_doc_id, receipt.status, receipt.duplicate_of, editing]);
+  }, [profile?.id, receipt.id, receipt.uploaded_by, receipt.image_url, receipt.scanned_doc_id, editing]);
 
   async function handleDelete() {
     const ok = await confirm({
@@ -364,17 +353,6 @@ export default function ReceiptDetailModal({
                 </div>
               )}
             </div>
-
-            {data.status === 'duplicate' && (
-              <div className="mb-4 flex items-start gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-900">
-                <Link2 className="mt-0.5 h-4 w-4 shrink-0" />
-                <p>
-                  <span className="font-semibold">This receipt is linked to an original receipt.</span>
-                  {duplicateOriginal && <> Original: {duplicateOriginal.vendor_name ?? 'Receipt'} · {formatMoney(duplicateOriginal.total_amount)}.</>}
-                  <span className="mt-1 block text-xs text-orange-800">It remains visible for audit history but is excluded from totals.</span>
-                </p>
-              </div>
-            )}
 
             {data.status === 'processing' ? (
               <ReceiptDetailsSkeleton />
@@ -538,6 +516,9 @@ export default function ReceiptDetailModal({
             )}
             </>}
           </div>
+        </div>
+        <div className="sticky bottom-0 flex justify-end border-t border-surface-border bg-surface p-3 sm:hidden">
+          <Button variant="secondary" onClick={onClose}>Close</Button>
         </div>
       </div>
 
