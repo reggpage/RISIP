@@ -8,8 +8,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { normalizeTanzaniaReceipt } from '../_shared/tanzaniaReceiptKnowledge.ts';
 
-const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
-const ALLOWED = new Set([DEFAULT_MODEL, 'claude-sonnet-5']);
+const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
+const ALLOWED = new Set([DEFAULT_MODEL]);
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 
 const corsHeaders = {
@@ -33,7 +33,7 @@ For EACH distinct receipt found, extract:
 7. net_amount (number)
 8. tax_amount (VAT only; null if none)
 9. total_amount (grand total INCL of VAT — the "TOTAL INCL OF TAX" / "TOTAL … TZS" line)
-10. crop_box (for image inputs only: normalized page coordinates { "x": 0..1, "y": 0..1, "width": 0..1, "height": 0..1 } tightly around that receipt; use null if uncertain)
+10. crop_box (for image inputs only: normalized page coordinates { "x": 0..1, "y": 0..1, "width": 0..1, "height": 0..1 } around the ENTIRE physical receipt, including all four edges, the QR code, and the footer; include a small margin and never crop at the merchant header or total line; use null if uncertain)
 11. merchant_hint (short text/brand/logo evidence you used for the vendor; e.g. "SHOPPERS SUPERMARKET LTD" or "TotalEnergies logo")
 12. raw_text_excerpt (one or two key lines around the merchant/TIN/date/total; do not include the full receipt)
 
@@ -44,7 +44,7 @@ Tanzania merchant context:
 - If OCR is noisy but the logo/brand clearly says TotalEnergies, return vendor "TotalEnergies" exactly.
 - If the first line is only a legal receipt header, look below it. For the left receipts in this example shape, the merchant line can be "SHOPPERS SUPERMARKET LTD." even when the header says "START OF LEGAL RECEIPT".
 
-Read every digit carefully; never invent, drop, or duplicate a digit. Return the response STRICTLY as a raw JSON array of objects, one per receipt. Do not wrap it in markdown codeblocks. If a field cannot be read, use null. Example: [{"vendor":"RealBlocks Limited","vendor_tin":null,"vendor_vrn":null,"receipt_date":"2026-08-01","category":"Materials","verification_code":null,"net_amount":100000,"tax_amount":18000,"total_amount":118000,"crop_box":{"x":0.1,"y":0.1,"width":0.35,"height":0.4},"merchant_hint":"RealBlocks Limited","raw_text_excerpt":"TIN ... TOTAL ..."}]`;
+Read every digit carefully; never invent, drop, or duplicate a digit. Before returning, verify that every crop_box is a complete receipt crop and that no two crop boxes describe the same receipt. Return the response STRICTLY as a raw JSON array of objects, one per receipt. Do not wrap it in markdown codeblocks. If a field cannot be read, use null. Example: [{"vendor":"RealBlocks Limited","vendor_tin":null,"vendor_vrn":null,"receipt_date":"2026-08-01","category":"Materials","verification_code":null,"net_amount":100000,"tax_amount":18000,"total_amount":118000,"crop_box":{"x":0.1,"y":0.1,"width":0.35,"height":0.4},"merchant_hint":"RealBlocks Limited","raw_text_excerpt":"TIN ... TOTAL ..."}]`;
 
 function parseArray(text: string): unknown[] | null {
   const stripped = text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/, '');
@@ -112,7 +112,12 @@ Deno.serve(async (req) => {
     }),
   });
   const claudeJson = await claudeRes.json();
-  if (!claudeRes.ok) return json({ error: 'claude rejected: ' + claudeRes.status, detail: claudeJson }, 502);
+  if (!claudeRes.ok) {
+    if (claudeRes.status === 429 || claudeRes.status === 529 || claudeRes.status >= 500) {
+      return json({ error: 'Receipt splitting is temporarily unavailable. Please try again shortly.', code: 'AI_TEMPORARILY_UNAVAILABLE' }, 503);
+    }
+    return json({ error: 'Receipt splitting could not be completed.', detail: claudeJson?.error?.message ?? claudeJson }, 502);
+  }
 
   const text = claudeJson?.content?.[0]?.text ?? '';
   const arr = parseArray(text);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, AlertTriangle, XCircle, Loader2, MailCheck, Receipt as ReceiptGlyph } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, Loader2, MailCheck, Receipt as ReceiptGlyph, Link2 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import { useProjects } from '@/features/projects/useProjects';
@@ -29,6 +29,7 @@ export default function ReceiptCard({
 }) {
   const [thumb, setThumb] = useState<string | null>(null);
   const [uploader, setUploader] = useState<string | null>(null);
+  const [duplicateOriginal, setDuplicateOriginal] = useState<{ vendor_name: string | null; total_amount: number | null; receipt_date: string | null } | null>(null);
   const { state: projectsState } = useProjects();
   const meta = STATUS_META[receipt.status];
   const StatusIcon = meta.icon;
@@ -63,6 +64,23 @@ export default function ReceiptCard({
       cancelled = true;
     };
   }, [receipt.uploaded_by]);
+
+  useEffect(() => {
+    if (receipt.status !== 'duplicate' || !receipt.duplicate_of) {
+      setDuplicateOriginal(null);
+      return;
+    }
+    let cancelled = false;
+    void supabase
+      .from('receipts')
+      .select('vendor_name, total_amount, receipt_date')
+      .eq('id', receipt.duplicate_of)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setDuplicateOriginal(data as typeof duplicateOriginal);
+      });
+    return () => { cancelled = true; };
+  }, [receipt.status, receipt.duplicate_of]);
 
   return (
     <Card className="flex gap-3 p-3">
@@ -115,6 +133,16 @@ export default function ReceiptCard({
           {uploader && <span className="font-semibold text-ink">{uploader}</span>}
           {project && <span>· {project.name}</span>}
         </div>
+
+        {receipt.status === 'duplicate' && (
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
+            <Link2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>
+              <span className="font-semibold">Duplicate linked to the original receipt.</span>
+              {duplicateOriginal && <> {duplicateOriginal.vendor_name ?? 'Original receipt'} · {formatMoney(duplicateOriginal.total_amount)}</>}
+            </span>
+          </div>
+        )}
 
         {onOpen && (
           <div className="mt-2 flex justify-end">

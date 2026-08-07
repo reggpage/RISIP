@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Eye, FileText, Loader2, Pencil, Radio, Save, ScanLine, Trash2, Upload, X } from 'lucide-react';
+import { Eye, FileText, Loader2, Pencil, Save, ScanLine, Trash2, Upload, X } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
-import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import {
   importBatch,
@@ -13,7 +12,6 @@ import {
 import { receiptImageUrl } from '@/features/receipts/uploadReceipt';
 import { formatMoney } from '@/lib/format';
 import ImageLightbox from '@/components/ui/ImageLightbox';
-import type { Receipt } from '@/types/db';
 
 const CATEGORIES = [
   'Fuel', 'Materials', 'Labor', 'Food', 'Transport',
@@ -28,23 +26,6 @@ type ReviewRow = ExtractedReceipt & { id?: string };
 type MerchantCorrection = { vendor: string | null; category: string | null };
 
 const MERCHANT_MEMORY_KEY = 'risip:batchMerchantMemory:v1';
-
-function toReviewRow(rc: Receipt): ReviewRow {
-  return normalizeExtractedReceipt({
-    id: rc.id,
-    vendor: rc.vendor_name,
-    vendor_tin: rc.vendor_tin,
-    vendor_vrn: rc.vendor_vrn,
-    receipt_date: rc.receipt_date,
-    category: rc.category,
-    verification_code: rc.verification_code,
-    net_amount: null,
-    tax_amount: rc.tax_amount,
-    total_amount: rc.total_amount,
-    image_url: rc.image_url,
-    image_preview_url: null,
-  });
-}
 
 function memoryKey(value: unknown): string {
   return String(value ?? '')
@@ -82,8 +63,7 @@ function applyMerchantMemory(row: ReviewRow): ReviewRow {
 }
 
 // Batch panel. Upload one A4/A3 page (image or PDF) with several receipts; the AI splits
-// it into individual receipts for review. Finance roles can also listen live for scans
-// emailed from the office printer.
+// it into individual receipts for review.
 export default function BatchScanPanel({
   projectId,
   userId,
@@ -96,19 +76,10 @@ export default function BatchScanPanel({
   onImported: () => void;
 }) {
   const toast = useToast();
-  const auth = useAuth();
-  const profile = auth.status === 'signed-in' ? auth.profile : null;
-  const companyId = profile?.company_id ?? null;
-  const isFinance = profile?.role === 'owner' || profile?.role === 'accountant';
   const imageInput = useRef<HTMLInputElement>(null);
   const pdfInput = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>('config');
   const [busy, setBusy] = useState(false);
-
-  // Live listener state.
-  const [isListening, setIsListening] = useState(false);
-  const channelId = useRef(`batch-listen-${Math.random().toString(36).slice(2)}`);
-  const debounceRef = useRef<number | null>(null);
 
   const [reviewSource, setReviewSource] = useState<'upload' | 'inbound'>('upload');
   const [rows, setRows] = useState<ReviewRow[]>([]);
@@ -123,51 +94,7 @@ export default function BatchScanPanel({
 
   const selectedRow = selectedIndex === null ? null : rows[selectedIndex] ?? null;
 
-  async function loadInboundBatch(docId: string) {
-    const { data, error } = await supabase
-      .from('receipts')
-      .select('*')
-      .eq('scanned_doc_id', docId)
-      .eq('status', 'pending_review')
-      .order('created_at', { ascending: true });
-    if (error || !data || data.length === 0) return;
-    const receipts = data as Receipt[];
-    setRows(receipts.map((receipt) => applyMerchantMemory(toReviewRow(receipt))));
-    setScannedDocId(docId);
-    setImageUrl(receipts[0].image_url ?? null);
-    setReviewSource('inbound');
-    setIsListening(false);
-    setPhase('review');
-    toast.success(`${receipts.length} receipt${receipts.length === 1 ? '' : 's'} received from the scanner.`);
-  }
-
-  // Realtime: while listening, watch for pending_review receipts arriving via scan-to-email
-  // for this company. Debounce so all rows of one page collect before we load them.
-  useEffect(() => {
-    if (!isListening || !companyId) return;
-    const channel = supabase
-      .channel(channelId.current)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'receipts', filter: `company_id=eq.${companyId}` },
-        (payload) => {
-          const row = payload.new as Receipt;
-          if (row.status !== 'pending_review' || !row.scanned_doc_id) return;
-          const docId = row.scanned_doc_id;
-          if (debounceRef.current) window.clearTimeout(debounceRef.current);
-          debounceRef.current = window.setTimeout(() => { void loadInboundBatch(docId); }, 1200);
-        },
-      )
-      .subscribe();
-    return () => {
-      if (debounceRef.current) window.clearTimeout(debounceRef.current);
-      void supabase.removeChannel(channel);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isListening, companyId]);
-
   async function processFile(file: File) {
-    setIsListening(false);
     setReviewSource('upload');
     setPhase('processing');
     setBusy(true);
@@ -317,22 +244,8 @@ export default function BatchScanPanel({
               </p>
 
               <div className="flex flex-col gap-2 sm:flex-row">
-                {/* Live listener — finance only. Waits for the printer to email a scan. */}
-                {isFinance && (!isListening ? (
-                  <Button tint="admin" fullWidth disabled={busy} onClick={() => setIsListening(true)}>
-                    <Radio className="h-4 w-4" /> 📡 Listen to Scanner
-                  </Button>
-                ) : (
-                  <Button
-                    fullWidth
-                    onClick={() => setIsListening(false)}
-                    className="animate-pulse !bg-sky-600 !border-sky-600 !text-white hover:!bg-sky-700"
-                  >
-                    <Radio className="h-4 w-4" /> 📡 Waiting for scans…
-                  </Button>
-                ))}
                 <Button
-                  variant={isFinance ? 'secondary' : 'primary'}
+                  variant="primary"
                   tint="admin"
                   fullWidth
                   disabled={busy}
@@ -344,19 +257,6 @@ export default function BatchScanPanel({
                   <FileText className="h-4 w-4" /> Upload PDF
                 </Button>
               </div>
-
-              {isListening && (
-                <div className="flex gap-3 rounded-lg border border-sky-200 bg-sky-50 p-4">
-                  <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-sky-600" />
-                  <div>
-                    <p className="text-sm font-medium text-sky-800">Risip is listening live</p>
-                    <p className="mt-1 text-xs leading-relaxed text-sky-700">
-                      Go to your Canon printer, tap “Scan to Email”, and send the document to your
-                      scanner inbox. It will appear here instantly.
-                    </p>
-                  </div>
-                </div>
-              )}
 
               <input ref={imageInput} type="file" accept="image/*" className="hidden"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) void processFile(f); e.target.value = ''; }} />

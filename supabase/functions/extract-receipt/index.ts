@@ -254,7 +254,20 @@ Deno.serve(async (req) => {
   const { error: updErr } = await admin.from('receipts').update(updates).eq('id', receiptId);
   if (updErr) {
     if (updErr.code === '23505') {
-      await admin.from('receipts').update({ ...updates, status: 'duplicate' }).eq('id', receiptId);
+      const { data: original } = normalized.verification_code
+        ? await admin
+          .from('receipts')
+          .select('id')
+          .eq('verification_code', normalized.verification_code)
+          .neq('id', receiptId)
+          .neq('status', 'duplicate')
+          .maybeSingle()
+        : { data: null };
+      await admin.from('receipts').update({
+        ...updates,
+        status: 'duplicate',
+        duplicate_of: original?.id ?? null,
+      }).eq('id', receiptId);
       return json({ status: 'duplicate', receipt_id: receiptId }, { status: 200 });
     }
     await markError(admin, receiptId, 'db update failed', updErr.message);

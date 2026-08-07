@@ -122,6 +122,7 @@ export type Receipt = {
   tax_amount: number | null;
   category: string | null;
   status: ReceiptStatus;
+  duplicate_of: string | null;
   payment_method: PaymentMethod;
   scanned_doc_id: string | null;
   raw_ai_response: unknown;

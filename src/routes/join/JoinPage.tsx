@@ -1,13 +1,22 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
+import { Loader2 } from 'lucide-react';
 import AuthShell from '@/components/layout/AuthShell';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
 import PasswordField, { PasswordStrengthBar, scorePassword } from '@/components/ui/PasswordField';
 import { useInviteInfo } from '@/features/join/getInviteInfo';
-import { joinExistingWithInvite, joinWithPassword } from '@/features/join/joinProject';
+import {
+  EmailVerificationRequiredError,
+  joinExistingWithInvite,
+  joinVerifiedWithInvite,
+  joinWithPassword,
+  resendInviteSignupOtp,
+  verifyInviteSignupOtp,
+} from '@/features/join/joinProject';
+import OtpInput, { OTP_LENGTH } from '@/components/ui/OtpInput';
 import { checkCompanyPassword } from '@/features/find/joinByCompany';
 import { roleColorClass, roleLabel } from '@/lib/roles';
 import { sw } from '@/i18n/sw';
@@ -29,6 +38,10 @@ export default function JoinPage() {
   const [showLoginHint, setShowLoginHint] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [pendingVerification, setPendingVerification] = useState<FormFields | null>(null);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [verifyingEmail, setVerifyingEmail] = useState(false);
 
   const {
     register,
@@ -118,11 +131,52 @@ export default function JoinPage() {
       }
       navigate(role === 'worker' ? '/receipts' : '/dashboard', { replace: true });
     } catch (err) {
+      if (err instanceof EmailVerificationRequiredError && mode === 'register') {
+        setPendingVerification(values);
+        setVerificationCode('');
+        setVerificationError(null);
+        return;
+      }
       const message = err instanceof Error ? err.message : sw.common.error;
       setSubmitError(message);
       setShowLoginHint(message.toLowerCase().includes('already registered') || message.toLowerCase().includes('email verification'));
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function verifyAndJoin() {
+    if (!token || !pendingVerification) return;
+    if (verificationCode.trim().length !== OTP_LENGTH) {
+      setVerificationError(`Enter the ${OTP_LENGTH}-digit code from your email.`);
+      return;
+    }
+    setVerifyingEmail(true);
+    setVerificationError(null);
+    try {
+      await verifyInviteSignupOtp(pendingVerification.email, verificationCode);
+      await joinVerifiedWithInvite({
+        token,
+        company_password: pendingVerification.company_password,
+        full_name: pendingVerification.full_name,
+        phone: pendingVerification.phone,
+      });
+      navigate(role === 'worker' ? '/receipts' : '/dashboard', { replace: true });
+    } catch (err) {
+      setVerificationError(err instanceof Error ? err.message : 'The code could not be verified.');
+    } finally {
+      setVerifyingEmail(false);
+    }
+  }
+
+  async function resendVerificationCode() {
+    if (!pendingVerification) return;
+    setVerificationError(null);
+    try {
+      await resendInviteSignupOtp(pendingVerification.email);
+      setVerificationError('A new verification code was sent.');
+    } catch (err) {
+      setVerificationError(err instanceof Error ? err.message : 'Could not resend the code.');
     }
   }
 
@@ -154,6 +208,41 @@ export default function JoinPage() {
           </button>
         </div>
 
+        {pendingVerification ? (
+          <Card className="border-role-admin/20 bg-surface p-5 shadow-sm">
+            <div className="flex flex-col items-center gap-4 text-center">
+              <div>
+                <h3 className="text-lg font-semibold text-ink">Verify your email</h3>
+                <p className="mt-1 text-sm leading-relaxed text-ink-muted">
+                  We sent a {OTP_LENGTH}-digit code to <span className="font-medium text-ink">{pendingVerification.email}</span>.
+                </p>
+              </div>
+              <OtpInput
+                value={verificationCode}
+                onChange={setVerificationCode}
+                disabled={verifyingEmail}
+                error={!!verificationError && verificationCode.length === OTP_LENGTH}
+              />
+              {verifyingEmail && (
+                <div className="flex items-center gap-2 text-sm text-ink-muted" role="status">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Verifying your email…
+                </div>
+              )}
+              {verificationError && <p className={`text-sm ${verificationError.startsWith('A new') ? 'text-emerald-700' : 'text-red-600'}`}>{verificationError}</p>}
+              <Button type="button" tint="admin" fullWidth disabled={verifyingEmail} onClick={() => void verifyAndJoin()}>
+                {verifyingEmail ? 'Verifying…' : 'Verify and join project'}
+              </Button>
+              <div className="flex flex-wrap justify-center gap-4 text-sm">
+                <button type="button" className="font-medium text-role-admin hover:underline" onClick={() => void resendVerificationCode()} disabled={verifyingEmail}>
+                  Resend code
+                </button>
+                <button type="button" className="text-ink-muted hover:text-ink" onClick={() => { setPendingVerification(null); setVerificationError(null); setVerificationCode(''); }} disabled={verifyingEmail}>
+                  Back to account details
+                </button>
+              </div>
+            </div>
+          </Card>
+        ) : <>
         <PasswordField
           label="Company password"
           autoComplete="off"
@@ -229,6 +318,7 @@ export default function JoinPage() {
         >
           {submitting ? sw.common.loading : mode === 'login' ? 'Log in and join' : sw.join.finish}
         </Button>
+        </>}
       </form>
     </AuthShell>
   );

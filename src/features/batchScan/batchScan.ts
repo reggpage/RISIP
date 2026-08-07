@@ -101,13 +101,17 @@ async function cropAndUploadReceiptImages(
 
   const img = await loadImage(file);
   const out = await Promise.all(rows.map(async (row, index) => {
+    try {
     const box = row.crop_box;
     if (!box) return row;
     if (![box.x, box.y, box.width, box.height].every(Number.isFinite) || box.width <= 0 || box.height <= 0) {
       return row;
     }
 
-    const pad = 0.015;
+    // Claude's box can hug the printed text too closely. A 3% margin keeps the
+    // receipt edges, QR code and footer in the individual image without
+    // falling back to the full A3 page when one crop fails.
+    const pad = 0.03;
     const x = clamp(box.x - pad, 0, 1);
     const y = clamp(box.y - pad, 0, 1);
     const right = clamp(box.x + box.width + pad, 0, 1);
@@ -134,6 +138,11 @@ async function cropAndUploadReceiptImages(
       .upload(path, blob, { contentType: 'image/jpeg', upsert: true });
     if (error) throw error;
     return { ...row, image_url: path, image_preview_url: previewUrl };
+    } catch {
+      // Preserve successful crops from the rest of the page. One storage or
+      // canvas failure must not make every receipt point to the full scan.
+      return row;
+    }
   }));
 
   return out;
@@ -180,7 +189,7 @@ export async function scanA3AndExtract(
   const croppedReceipts = await cropAndUploadReceiptImages(receipts, file, {
     project_id: ctx.project_id,
     scanned_doc_id: doc.id as string,
-  }).catch(() => receipts);
+  });
   const isImage = !isPdf;
   const fallbackPreview = isImage ? URL.createObjectURL(file) : null;
   const previewReceipts = croppedReceipts.map((receipt) => normalizeExtractedReceipt({
@@ -227,7 +236,19 @@ export async function importBatch(
     let { error } = await supabase.from('receipts').insert({ ...base, status: 'confirmed' });
     // 23505 = unique_violation on (company_id, verification_code): re-insert as duplicate.
     if (error && error.code === '23505') {
-      ({ error } = await supabase.from('receipts').insert({ ...base, status: 'duplicate' }));
+      const { data: original } = r.verification_code
+        ? await supabase
+          .from('receipts')
+          .select('id')
+          .eq('verification_code', r.verification_code)
+          .neq('status', 'duplicate')
+          .maybeSingle()
+        : { data: null };
+      ({ error } = await supabase.from('receipts').insert({
+        ...base,
+        status: 'duplicate',
+        duplicate_of: original?.id ?? null,
+      }));
     }
     if (error) throw error;
     imported++;

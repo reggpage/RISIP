@@ -1,6 +1,12 @@
 import { supabase } from '@/lib/supabase';
 import type { UserRole } from '@/types/db';
 
+export class EmailVerificationRequiredError extends Error {
+  constructor(public readonly email: string) {
+    super('Email verification is required before joining this project.');
+  }
+}
+
 // Join flow (no OTP): the invite token IS the authorization.
 // 1. Create the auth user with the password they chose (signUp returns a session
 //    immediately if "Confirm email" is OFF in Supabase Auth settings).
@@ -30,11 +36,40 @@ export async function joinWithPassword(input: {
     if (signUpData.user?.identities?.length === 0) {
       throw new Error('This email is already registered. Choose “I already have an account” and log in instead.');
     }
-    throw new Error(
-      'This account needs email verification. Check your inbox, then choose “I already have an account” to finish joining.',
-    );
+    throw new EmailVerificationRequiredError(input.email);
   }
 
+  return joinVerifiedWithInvite({
+    token: input.token,
+    company_password: input.company_password,
+    full_name: input.full_name,
+    phone: input.phone,
+  });
+}
+
+export async function verifyInviteSignupOtp(email: string, token: string) {
+  const { error } = await supabase.auth.verifyOtp({
+    email: email.trim().toLowerCase(),
+    token: token.trim(),
+    type: 'signup',
+  });
+  if (error) throw error;
+}
+
+export async function resendInviteSignupOtp(email: string) {
+  const { error } = await supabase.auth.resend({
+    type: 'signup',
+    email: email.trim().toLowerCase(),
+  });
+  if (error) throw error;
+}
+
+export async function joinVerifiedWithInvite(input: {
+  token: string;
+  company_password: string;
+  full_name: string;
+  phone?: string;
+}): Promise<{ project_id: string; role: UserRole }> {
   const { data, error } = await supabase.functions.invoke<{ project_id: string; role: UserRole }>(
     'join-project',
     {
