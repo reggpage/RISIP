@@ -30,6 +30,9 @@ const KNOWN_MERCHANTS: KnownMerchant[] = [
     ],
   },
   { canonical: 'Puma Energy', category: 'Fuel', aliases: ['puma energy', 'puma'] },
+  // TIN is printed clearly on TRA receipts and is more reliable than a fuzzy
+  // logo/name read. This prevents Erima receipts being normalised to Puma.
+  { canonical: 'Erima Energy', category: 'Fuel', aliases: ['erima energy', 'erima'], tins: ['140933074'] },
   { canonical: 'Oryx Energies', category: 'Fuel', aliases: ['oryx energies', 'oryx energy', 'oryx'] },
   { canonical: 'Oilcom', category: 'Fuel', aliases: ['oilcom', 'oil com', 'oilcom t ltd'] },
   { canonical: 'Lake Oil', category: 'Fuel', aliases: ['lake oil', 'lakeoil'] },
@@ -108,7 +111,7 @@ function normalizeTin(value: unknown): string | null {
 // arrive as 176.018 after the model has already interpreted the punctuation as
 // a decimal. For TZS, three digits after a separator are a thousands group;
 // only one or two trailing digits are treated as decimal cents.
-function normalizeMoney(value: unknown): number | null {
+export function normalizeMoney(value: unknown): number | null {
   if (value == null || value === '') return null;
   const raw = String(value).trim().replace(/[^0-9,.'\s-]/g, '');
   if (!raw) return null;
@@ -198,6 +201,7 @@ export function normalizeTanzaniaReceipt<T extends ReceiptLike>(row: T): T {
   const rawVendor = String(row.vendor ?? row.vendor_name ?? '');
   const vendorKey = 'vendor_name' in row ? 'vendor_name' : 'vendor';
   const normalizedTin = normalizeTin(row.vendor_tin);
+  const merchantMatchedByTin = Boolean(merchant && normalizedTin && merchant.tins?.includes(normalizedTin));
   const vendorEvidence = merchant && merchant.aliases.some((alias) => {
     const aliasClean = cleanText(alias);
     return Math.max(similarity(cleanText(rawVendor), aliasClean), similarity(compact(rawVendor), compact(alias))) >= 0.72;
@@ -205,7 +209,7 @@ export function normalizeTanzaniaReceipt<T extends ReceiptLike>(row: T): T {
   // A fuel category is not evidence of a specific brand. Preserve a readable
   // station name such as “GP NANENANE PETROL STATION”; only canonicalize when
   // the printed/vendor value itself matches a known merchant or is a header.
-  const shouldReplaceVendor = merchant && (!rawVendor || vendorLooksLikeReceiptHeader(rawVendor) || vendorEvidence);
+  const shouldReplaceVendor = merchant && (merchantMatchedByTin || !rawVendor || vendorLooksLikeReceiptHeader(rawVendor) || vendorEvidence);
   const category = isFuelContext(row, merchant) ? 'Fuel' : row.category ?? merchant?.category;
 
   return {

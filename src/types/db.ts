@@ -139,6 +139,20 @@ export type ReceiptAlias = {
   updated_at: string;
 };
 
+export type MerchantMemory = {
+  id: string;
+  company_id: string;
+  match_key: string;
+  vendor_name: string;
+  vendor_tin: string | null;
+  vendor_vrn: string | null;
+  category: string | null;
+  learned_from_receipt_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ScannedDocument = {
   id: string;
   company_id: string;
@@ -255,6 +269,17 @@ export type Database = {
         Row: ReceiptAlias;
         Insert: Partial<ReceiptAlias> & { receipt_id: string; user_id: string; nickname: string };
         Update: Partial<ReceiptAlias>;
+        Relationships: [];
+      };
+      merchant_memory: {
+        Row: MerchantMemory;
+        Insert: Partial<MerchantMemory> & {
+          company_id: string;
+          match_key: string;
+          vendor_name: string;
+          created_by: string;
+        };
+        Update: Partial<MerchantMemory>;
         Relationships: [];
       };
       petty_cash_accounts: {

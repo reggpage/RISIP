@@ -1,7 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { json, preflight } from '../_shared/cors.ts';
-import { CATEGORIES, normalizeTanzaniaReceipt } from '../_shared/tanzaniaReceiptKnowledge.ts';
+import { CATEGORIES, normalizeMoney, normalizeTanzaniaReceipt } from '../_shared/tanzaniaReceiptKnowledge.ts';
 import { resolveAnthropicModel } from '../_shared/anthropicModel.ts';
+import { applyCompanyMerchantMemory } from '../_shared/merchantMemory.ts';
 
 // Use the higher-accuracy model for the first pass too. Re-analysis used to be
 // better simply because it was the only path using Sonnet, which made the same
@@ -24,6 +25,7 @@ Return ONLY a single JSON object matching this exact schema. No prose, no markdo
   "receipt_date": "YYYY-MM-DD" | null,
   "receipt_time": "HH:MM:SS" | null,
   "total_amount": number | null,
+  "total_amount_evidence": string | null,
   "tax_amount": number | null,
   "category": one of ${JSON.stringify(CATEGORIES)} | null,
   "low_confidence_fields": string[],
@@ -36,10 +38,11 @@ TANZANIA TRA FIELD RULES — follow exactly:
 - vendor_vrn: labelled "VRN". Format is digits ending in a letter, e.g. "10015084M" or "40-XXXXXX-X". Keep the trailing letter. Do not confuse with the TIN.
 - verification_code: near the bottom, labelled "RECEIPT VERIFICATION CODE", usually just above a QR code (e.g. 8F9CDB204130). It is alphanumeric — read each character carefully and DISTINGUISH letters from digits: B vs 8, I vs 1, O vs 0, S vs 5, Z vs 2. Do not add or repeat characters.
 - total_amount: the grand total INCLUDING VAT — the line "TOTAL INCL OF TAX" or "TOTAL". For fuel "Client Ticket" statements the total is the "TOTAL … TZS" line (ignore BALANCE, GLOBAL, REMAINDER, tank capacity — those are not the purchase amount). Return a JSON number in TZS with no separators: 176,018, 176.018, and 176 018 all mean 176018; a decimal is allowed only when the receipt clearly shows one or two fractional digits.
+- total_amount_evidence: copy the exact printed TOTAL line used for total_amount, including its amount (for example "TOTAL INCLUSIVE OF TAX 65,200"). This must be a transcription, not a calculation. If the total line cannot be read clearly, set both total_amount and total_amount_evidence to null and include "total_amount" in low_confidence_fields.
 - tax_amount: the VAT portion only — the "TAX A – 18%" / "TOTAL TAX" line. If the receipt shows no VAT, set null and add "tax_amount" to low_confidence_fields. Apply the same TZS separator rule.
 - receipt_number: the receipt/ticket number (e.g. "RECEIPT NO", "TICKET NO").
 - receipt_date: when the printed date uses a two-digit year such as 06-08-26, interpret it as 2026 (20YY), not 2006, unless the receipt clearly prints a four-digit year.
-- Read all amounts digit-by-digit; never invent, drop, or duplicate a digit.
+- Read all amounts digit-by-digit; never invent, drop, or duplicate a digit. Before returning, read the grand-total line a second time. Never calculate a total from line items and never add a digit because an amount "looks more likely".
 
 Tanzania merchant context:
 - "START OF LEGAL RECEIPT", "START OF UCON RECEIPT", "START OF LEON RECEIPT" and similar headers are NOT merchant names. Read the merchant printed below/near the logo/TIN.
@@ -107,6 +110,11 @@ function imageMediaType(type) {
   return ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(normalized)
     ? normalized
     : 'image/jpeg';
+}
+
+function amountFromEvidence(value: unknown): number | null {
+  const candidates = String(value ?? '').match(/\d[\d,\.\s]*/g);
+  return candidates?.length ? normalizeMoney(candidates[candidates.length - 1]) : null;
 }
 
 // Attempts to mark the receipt as errored so the UI can surface a real message
@@ -231,8 +239,22 @@ Deno.serve(async (req) => {
     return bad('unable to parse model output as JSON', 502);
   }
 
-  const normalized = normalizeTanzaniaReceipt(parsed);
+  const normalizedBase = normalizeTanzaniaReceipt(parsed);
+  const { data: receiptContext } = await admin
+    .from('receipts')
+    .select('company_id')
+    .eq('id', receiptId)
+    .maybeSingle();
+  const normalized = await applyCompanyMerchantMemory(admin, receiptContext?.company_id, normalizedBase);
   const category = normalized.category && CATEGORIES.includes(normalized.category) ? normalized.category : null;
+  const lowConfidence = Array.isArray(parsed.low_confidence_fields)
+    ? [...new Set(parsed.low_confidence_fields.filter((field) => typeof field === 'string'))]
+    : [];
+  const evidenceAmount = amountFromEvidence(parsed.total_amount_evidence);
+  if (normalized.total_amount == null || evidenceAmount == null || evidenceAmount !== normalized.total_amount) {
+    lowConfidence.push('total_amount');
+  }
+  const needsReview = lowConfidence.length > 0;
 
   const updates = {
     vendor_name: normalized.vendor_name,
@@ -245,9 +267,9 @@ Deno.serve(async (req) => {
     total_amount: normalized.total_amount,
     tax_amount: normalized.tax_amount,
     category,
-    low_confidence_fields: parsed.low_confidence_fields ?? [],
+    low_confidence_fields: [...new Set(lowConfidence)],
     raw_ai_response: claudeJson,
-    status: 'confirmed',
+    status: needsReview ? 'pending_review' : 'confirmed',
   };
 
   const { error: updErr } = await admin.from('receipts').update(updates).eq('id', receiptId);
@@ -273,5 +295,5 @@ Deno.serve(async (req) => {
     return bad(`update failed: ${updErr.message}`, 500);
   }
 
-  return json({ status: 'confirmed', receipt_id: receiptId, category }, { status: 200 });
+  return json({ status: needsReview ? 'pending_review' : 'confirmed', receipt_id: receiptId, category }, { status: 200 });
 });

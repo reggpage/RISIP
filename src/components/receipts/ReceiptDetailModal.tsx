@@ -11,6 +11,7 @@ import { useProjects } from '@/features/projects/useProjects';
 import { receiptImageUrl } from '@/features/receipts/uploadReceipt';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
+import { rememberMerchantCorrection } from '@/features/receipts/merchantMemory';
 import { formatDate, formatDateTime, formatMoney } from '@/lib/format';
 import type { Receipt } from '@/types/db';
 
@@ -119,9 +120,30 @@ export default function ReceiptDetailModal({
       toast.error(error.message);
       return;
     }
+    let merchantLearned = false;
+    if (profile?.company_id && profile.id) {
+      try {
+        merchantLearned = await rememberMerchantCorrection({
+          companyId: profile.company_id,
+          userId: profile.id,
+          receiptId: data.id,
+          before: {
+            vendor_name: data.vendor_name,
+            vendor_tin: data.vendor_tin,
+            vendor_vrn: data.vendor_vrn,
+            category: data.category,
+          },
+          after: updates,
+        });
+      } catch (memoryError) {
+        // The receipt itself was saved. Do not make a directory failure look like
+        // a failed correction, but retain the diagnostic for support.
+        console.error('merchant memory save failed', memoryError);
+      }
+    }
     setData((d) => ({ ...d, ...updates }));
     setEditing(false);
-    toast.success('Receipt updated.');
+    toast.success(merchantLearned ? 'Receipt updated. Vendor saved for future scans.' : 'Receipt updated.');
   }
 
   async function saveNickname() {

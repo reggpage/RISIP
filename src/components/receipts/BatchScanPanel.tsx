@@ -3,6 +3,12 @@ import { Eye, FileText, Loader2, Pencil, Save, ScanLine, Trash2, Upload, X } fro
 import Button from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/auth';
+import {
+  applyMerchantMemory as applySavedMerchantMemory,
+  loadMerchantMemory,
+  rememberMerchantCorrection as rememberSavedMerchantCorrection,
+} from '@/features/receipts/merchantMemory';
 import {
   importBatch,
   normalizeExtractedReceipt,
@@ -23,45 +29,6 @@ type Phase = 'config' | 'processing' | 'review';
 // A review row is an extracted receipt; when it carries an `id` it's an already-persisted
 // inbound (scan-to-email) receipt we approve in place, not a new one we insert.
 type ReviewRow = ExtractedReceipt & { id?: string };
-type MerchantCorrection = { vendor: string | null; category: string | null };
-
-const MERCHANT_MEMORY_KEY = 'risip:batchMerchantMemory:v1';
-
-function memoryKey(value: unknown): string {
-  return String(value ?? '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
-function readMerchantMemory(): Record<string, MerchantCorrection> {
-  try {
-    return JSON.parse(window.localStorage.getItem(MERCHANT_MEMORY_KEY) ?? '{}') as Record<string, MerchantCorrection>;
-  } catch {
-    return {};
-  }
-}
-
-function rememberMerchantCorrection(before: ReviewRow, after: ReviewRow) {
-  const key = memoryKey(before.vendor);
-  if (!key || key === memoryKey(after.vendor)) return;
-  const memory = readMerchantMemory();
-  memory[key] = { vendor: after.vendor, category: after.category };
-  window.localStorage.setItem(MERCHANT_MEMORY_KEY, JSON.stringify(memory));
-}
-
-function applyMerchantMemory(row: ReviewRow): ReviewRow {
-  const remembered = readMerchantMemory()[memoryKey(row.vendor)];
-  if (!remembered) return row;
-  return {
-    ...row,
-    vendor: remembered.vendor ?? row.vendor,
-    category: remembered.category ?? row.category,
-  };
-}
-
 // Batch panel. Upload one A4/A3 page (image or PDF) with several receipts; the AI splits
 // it into individual receipts for review.
 export default function BatchScanPanel({
@@ -76,6 +43,7 @@ export default function BatchScanPanel({
   onImported: () => void;
 }) {
   const toast = useToast();
+  const auth = useAuth();
   const imageInput = useRef<HTMLInputElement>(null);
   const pdfInput = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>('config');
@@ -102,7 +70,17 @@ export default function BatchScanPanel({
       const result = await scanA3AndExtract(file, { project_id: projectId, user_id: userId });
       setScannedDocId(result.scannedDocId);
       setImageUrl(result.storagePath);
-      setRows(result.receipts.map((receipt) => applyMerchantMemory(normalizeExtractedReceipt(receipt))));
+      const memory = await loadMerchantMemory().catch(() => []); // A scan still works without memory.
+      setRows(result.receipts.map((receipt) => {
+        const normalized = normalizeExtractedReceipt(receipt);
+        const remembered = applySavedMerchantMemory({
+          vendor_name: normalized.vendor,
+          vendor_tin: normalized.vendor_tin,
+          vendor_vrn: normalized.vendor_vrn,
+          category: normalized.category,
+        }, memory);
+        return { ...normalized, vendor: remembered.vendor_name, vendor_tin: remembered.vendor_tin, vendor_vrn: remembered.vendor_vrn, category: remembered.category };
+      }));
       if (result.receipts.length === 0) {
         toast.info('No receipts were detected on the page.');
       }
@@ -178,9 +156,32 @@ export default function BatchScanPanel({
     setDetailImageUrl(null);
     setDetailZoomOpen(false);
   }
-  function saveDetails() {
+  async function saveDetails() {
     if (selectedIndex === null || !detailDraft) return;
-    rememberMerchantCorrection(rows[selectedIndex], detailDraft);
+    const profile = auth.status === 'signed-in' ? auth.profile : null;
+    if (profile) {
+      try {
+        await rememberSavedMerchantCorrection({
+          companyId: profile.company_id,
+          userId: profile.id,
+          receiptId: detailDraft.id ?? '',
+          before: {
+            vendor_name: rows[selectedIndex].vendor,
+            vendor_tin: rows[selectedIndex].vendor_tin,
+            vendor_vrn: rows[selectedIndex].vendor_vrn,
+            category: rows[selectedIndex].category,
+          },
+          after: {
+            vendor_name: detailDraft.vendor,
+            vendor_tin: detailDraft.vendor_tin,
+            vendor_vrn: detailDraft.vendor_vrn,
+            category: detailDraft.category,
+          },
+        });
+      } catch (memoryError) {
+        console.error('merchant memory save failed', memoryError);
+      }
+    }
     patchRow(selectedIndex, detailDraft);
     setDetailEditing(false);
   }
@@ -439,7 +440,7 @@ export default function BatchScanPanel({
             <div className="flex justify-end gap-2 border-t border-surface-border px-5 py-3">
               <Button variant="ghost" onClick={closeDetails}>Close</Button>
               {detailEditing ? (
-                <Button tint="admin" onClick={saveDetails}>
+                <Button tint="admin" onClick={() => void saveDetails()}>
                   <Save className="h-4 w-4" /> Save
                 </Button>
               ) : (

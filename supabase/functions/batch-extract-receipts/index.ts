@@ -8,6 +8,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { normalizeTanzaniaReceipt } from '../_shared/tanzaniaReceiptKnowledge.ts';
 import { resolveAnthropicModel } from '../_shared/anthropicModel.ts';
+import { applyCompanyMerchantMemory } from '../_shared/merchantMemory.ts';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 type AnthropicResponse = {
@@ -85,7 +86,7 @@ Deno.serve(async (req) => {
 
   // Any company member (incl. staff) may extract — it only reads the page and returns JSON;
   // the actual receipts are inserted client-side under the caller's own RLS.
-  const { data: profile } = await admin.from('profiles').select('role').eq('id', uid).maybeSingle();
+  const { data: profile } = await admin.from('profiles').select('role, company_id').eq('id', uid).maybeSingle();
   if (!profile) return json({ error: 'forbidden' }, 403);
 
   let body: { storage_path?: string; model?: string };
@@ -138,9 +139,9 @@ Deno.serve(async (req) => {
   const arr = parseArray(text);
   if (!arr) return json({ error: 'could not parse model output as a JSON array', raw: text.slice(0, 500) }, 502);
 
-  const receipts = arr.map((row) => row && typeof row === 'object'
-    ? normalizeTanzaniaReceipt(row as Record<string, unknown>)
-    : row);
+  const receipts = await Promise.all(arr.map(async (row) => row && typeof row === 'object'
+    ? applyCompanyMerchantMemory(admin, profile.company_id, normalizeTanzaniaReceipt(row as Record<string, unknown>))
+    : row));
 
   return json({ receipts, count: receipts.length });
 });
