@@ -121,11 +121,11 @@ export default function Dashboard() {
             <p className="text-sm text-ink-muted">{sw.dashboard.noReceipts}</p>
           ) : (
             <div className="flex flex-col gap-2">
-              {recentActivity.map((r, index) => (
+              {recentActivity.map((r) => (
                 <ReceiptCard
                   key={r.id}
                   receipt={r}
-                  connectorToNext={r.status === 'duplicate' && recentActivity[index + 1]?.id === r.duplicate_of}
+                  linkedToDuplicate={r.status === 'duplicate' || recentActivity.some((candidate) => candidate.duplicate_of === r.id)}
                 />
               ))}
             </div>

@@ -46,7 +46,7 @@ TANZANIA TRA FIELD RULES — follow exactly:
 
 Tanzania merchant context:
 - "START OF LEGAL RECEIPT", "START OF UCON RECEIPT", "START OF LEON RECEIPT" and similar headers are NOT merchant names. Read the merchant printed below/near the logo/TIN.
-- Copy the merchant/vendor name from the printed merchant line exactly when it is readable (for example, "GP NANENANE PETROL STATION"). Do not replace it with a famous fuel brand, a guessed company, the TRA logo, or a name from these instructions.
+- Copy the merchant/vendor name from the printed merchant line exactly when it is readable (for example, "PUMA HAZINA SERVICE STATION" or "GP NANENANE PETROL STATION"). A station name is the merchant name; do not shorten it to a brand such as "Puma Energy". Do not replace it with a famous fuel brand, a guessed company, the TRA logo, or a name from these instructions.
 - The word "TOTAL" in "TOTAL EXCLUSIVE OF TAX", "TOTAL TAX", or "TOTAL INCLUSIVE OF TAX" is an amount label, never the vendor. Do not infer TotalEnergies from that word or from the fact that the receipt is for fuel.
 - TotalEnergies, Total Energy, Total, TokiEnergy/TokiEnergies/TokroEnergies OCR variants, Oilcom, Puma Energy, Oryx Energies, Engen, Lake Oil, GBP, Camel Oil, MOIL, GAPCO, Vivo Energy/Shell, Hass Petroleum, Star Oil, Mogas, Acer Petroleum, Mount Meru, Petro Africa, Petrofuel, Sahara Energy, Dalbit, Olympic Petroleum, Natoil, Afroil, General Petroleum, World Oil, TIPER, and petrol/service/filling stations are fuel merchants. Categorize them as Fuel, not Utilities.
 - If a receipt sells petrol, diesel, kerosene, lubricant, or station fuel, category must be Fuel.

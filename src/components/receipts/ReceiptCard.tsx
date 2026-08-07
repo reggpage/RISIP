@@ -22,17 +22,17 @@ export default function ReceiptCard({
   receipt,
   onOpen,
   nickname,
-  connectorToNext = false,
+  linkedToDuplicate = false,
 }: {
   receipt: Receipt;
   onOpen?: (r: Receipt) => void;
   nickname?: string | null;
-  connectorToNext?: boolean;
+  linkedToDuplicate?: boolean;
 }) {
   const [thumb, setThumb] = useState<string | null>(null);
   const [uploader, setUploader] = useState<string | null>(null);
   const { state: projectsState } = useProjects();
-  const meta = STATUS_META[receipt.status];
+  const meta = linkedToDuplicate ? STATUS_META.duplicate : STATUS_META[receipt.status];
   const StatusIcon = meta.icon;
 
   const project =
@@ -128,12 +128,6 @@ export default function ReceiptCard({
         )}
       </div>
     </Card>
-    {connectorToNext && (
-      <span
-        aria-label="Duplicate receipt connected to its original"
-        className="pointer-events-none absolute left-[31%] top-full z-10 hidden h-3 w-[20%] rounded-br-lg border-b-2 border-r-2 border-role-admin sm:block"
-      />
-    )}
     </div>
   );
 }

@@ -42,7 +42,7 @@ For EACH distinct receipt found, extract:
 12. raw_text_excerpt (one or two key lines around the merchant/TIN/date/total; do not include the full receipt)
 
 Tanzania merchant context:
-- The words "START OF LEGAL RECEIPT", "START OF UCON RECEIPT", "START OF LEON RECEIPT" and similar headers are NOT merchant names. Read the merchant printed below/near the logo/TIN.
+- The words "START OF LEGAL RECEIPT", "START OF UCON RECEIPT", "START OF LEON RECEIPT" and similar headers are NOT merchant names. Read the merchant printed below/near the logo/TIN. Preserve the full printed station name (for example, "PUMA HAZINA SERVICE STATION"); do not shorten it to only a fuel brand.
 - TotalEnergies, Total Energy, Total, TokiEnergy/TokiEnergies/TokroEnergies OCR variants, Oilcom, Puma Energy, Oryx Energies, Engen, Lake Oil, GBP, Camel Oil, MOIL, GAPCO, Vivo Energy/Shell, Hass Petroleum, Star Oil, Mogas, Acer Petroleum, Mount Meru, Petro Africa, Petrofuel, Sahara Energy, Dalbit, Olympic Petroleum, Natoil, Afroil, General Petroleum, World Oil, TIPER, and petrol/service/filling stations are fuel merchants. Categorize them as Fuel, not Utilities.
 - If a receipt sells petrol, diesel, kerosene, lubricant, or station fuel, category must be Fuel.
 - If OCR is noisy but the logo/brand clearly says TotalEnergies, return vendor "TotalEnergies" exactly.

@@ -30,6 +30,9 @@ const KNOWN_MERCHANTS: KnownMerchant[] = [
     ],
   },
   { canonical: 'Puma Energy', category: 'Fuel', aliases: ['puma energy', 'puma'] },
+  // Station names are the merchant names printed on receipts, not merely a
+  // brand. TIN 100260085 belongs to the Hazina station shown on its receipts.
+  { canonical: 'Puma Hazina Service Station', category: 'Fuel', aliases: ['puma hazina service station', 'puma hazina', 'hazina service station'], tins: ['100260085'] },
   // TIN is printed clearly on TRA receipts and is more reliable than a fuzzy
   // logo/name read. This prevents Erima receipts being normalised to Puma.
   { canonical: 'Erima Energy', category: 'Fuel', aliases: ['erima energy', 'erima'], tins: ['140933074'] },
@@ -140,6 +143,10 @@ function vendorLooksLikeReceiptHeader(vendor: string): boolean {
   return /start\s+of.*receipt|legal\s+receipt|ucon\s+receipt|leon\s+receipt|official\s+receipt/i.test(cleanText(vendor));
 }
 
+function vendorLooksLikeSpecificStation(vendor: string): boolean {
+  return /\b(?:service|filling|petrol)\s+station\b/i.test(cleanText(vendor));
+}
+
 function findMerchant(row: ReceiptLike): KnownMerchant | null {
   const vendor = cleanText(row.vendor ?? row.vendor_name);
   const vendorCompact = compact(row.vendor ?? row.vendor_name);
@@ -209,7 +216,12 @@ export function normalizeTanzaniaReceipt<T extends ReceiptLike>(row: T): T {
   // A fuel category is not evidence of a specific brand. Preserve a readable
   // station name such as “GP NANENANE PETROL STATION”; only canonicalize when
   // the printed/vendor value itself matches a known merchant or is a header.
-  const shouldReplaceVendor = merchant && (merchantMatchedByTin || !rawVendor || vendorLooksLikeReceiptHeader(rawVendor) || vendorEvidence);
+  const shouldReplaceVendor = merchant && (
+    merchantMatchedByTin
+    || !rawVendor
+    || vendorLooksLikeReceiptHeader(rawVendor)
+    || (vendorEvidence && !vendorLooksLikeSpecificStation(rawVendor))
+  );
   const category = isFuelContext(row, merchant) ? 'Fuel' : row.category ?? merchant?.category;
 
   return {

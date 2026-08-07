@@ -260,13 +260,13 @@ export default function ReceiptsPage() {
         )}
         {receiptsState.status === 'ready' && filtered.length > 0 && (
           <div className="flex flex-col gap-3">
-            {filtered.map((r, index) => (
+            {filtered.map((r) => (
               <ReceiptCard
                 key={r.id}
                 receipt={r}
                 nickname={r.uploaded_by === profile?.id ? myReceiptNames[r.id] : null}
                 onOpen={setOpenReceipt}
-                connectorToNext={r.status === 'duplicate' && filtered[index + 1]?.id === r.duplicate_of}
+                linkedToDuplicate={r.status === 'duplicate' || receiptsState.receipts.some((candidate) => candidate.duplicate_of === r.id)}
               />
             ))}
           </div>
