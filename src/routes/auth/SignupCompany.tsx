@@ -281,7 +281,16 @@ export default function SignupCompany() {
               }
             />
 
-            {submitError && <p className="text-sm text-red-600">{submitError}</p>}
+            {submitError && (
+              <div className="space-y-2 text-sm text-red-600">
+                <p>{submitError}</p>
+                {submitError.toLowerCase().includes('already registered') && (
+                  <Link to="/login" className="font-medium text-role-admin underline underline-offset-2">
+                    Log in instead
+                  </Link>
+                )}
+              </div>
+            )}
 
             <Button type="button" tint="admin" fullWidth disabled={submitting} onClick={goStep2}>
               {submitting ? sw.common.loading : sw.auth.next}

@@ -26,6 +26,7 @@ export default function JoinPage() {
   const navigate = useNavigate();
   const inviteState = useInviteInfo(token);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [showLoginHint, setShowLoginHint] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [mode, setMode] = useState<'login' | 'register'>('login');
 
@@ -81,6 +82,7 @@ export default function JoinPage() {
   async function onSubmit(values: FormFields) {
     if (!token) return;
     setSubmitError(null);
+    setShowLoginHint(false);
     if (!values.company_password.trim()) {
       setSubmitError('Enter the company password to continue.');
       return;
@@ -116,7 +118,9 @@ export default function JoinPage() {
       }
       navigate(role === 'worker' ? '/receipts' : '/dashboard', { replace: true });
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : sw.common.error);
+      const message = err instanceof Error ? err.message : sw.common.error;
+      setSubmitError(message);
+      setShowLoginHint(message.toLowerCase().includes('already registered') || message.toLowerCase().includes('email verification'));
     } finally {
       setSubmitting(false);
     }
@@ -202,7 +206,20 @@ export default function JoinPage() {
           />
         )}
 
-        {submitError && <p className="text-sm text-red-600">{submitError}</p>}
+        {submitError && (
+          <div className="space-y-2 text-sm text-red-600">
+            <p>{submitError}</p>
+            {showLoginHint && mode === 'register' && (
+              <button
+                type="button"
+                className="font-medium text-role-admin underline underline-offset-2"
+                onClick={() => { setMode('login'); setSubmitError(null); setShowLoginHint(false); }}
+              >
+                I already have an account — log in instead
+              </button>
+            )}
+          </div>
+        )}
 
         <Button
           type="submit"

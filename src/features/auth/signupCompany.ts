@@ -25,7 +25,16 @@ export async function startCompanySignup(email: string, fullName: string, passwo
       data: { full_name: fullName },
     },
   });
-  if (error) throw error;
+  if (error) {
+    const message = error.message.toLowerCase();
+    if (message.includes('already registered') || message.includes('already exists')) {
+      throw new Error('This email is already registered. Log in instead or use a different email address.');
+    }
+    if (error.status === 429) {
+      throw new Error('Too many signup attempts. Please wait a few minutes before trying again.');
+    }
+    throw error;
+  }
 }
 
 export async function resendSignupOtp(email: string) {

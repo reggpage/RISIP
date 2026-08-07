@@ -49,6 +49,7 @@ export default function ReceiptDetailModal({
   const [uploader, setUploader] = useState<string | null>(null);
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [docPdfUrl, setDocPdfUrl] = useState<string | null>(null);
+  const [mediaLoading, setMediaLoading] = useState(Boolean(receipt.image_url || receipt.scanned_doc_id));
   const [zoomOpen, setZoomOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [reviewing, setReviewing] = useState(false);
@@ -151,13 +152,15 @@ export default function ReceiptDetailModal({
   async function reanalyze() {
     if (!data.image_url) { toast.error('This receipt has no image to analyse.'); return; }
     setReanalyzing(true);
+    setData((d) => ({ ...d, status: 'processing' }));
     // Flip to processing so the list shows the spinner while Claude re-reads it.
     await supabase.from('receipts').update({ status: 'processing' }).eq('id', data.id);
     const { error } = await supabase.functions.invoke('extract-receipt', {
-      body: { receipt_id: data.id, storage_path: data.image_url, model: 'claude-sonnet-5' },
+      body: { receipt_id: data.id, storage_path: data.image_url, model: 'claude-sonnet-4-20250514' },
     });
     setReanalyzing(false);
     if (error) {
+      setData((d) => ({ ...d, status: 'error' }));
       const context = (error as { context?: Response }).context;
       let detail = error.message;
       if (context) {
@@ -167,8 +170,13 @@ export default function ReceiptDetailModal({
       toast.error(detail);
       return;
     }
-    toast.success('Re-analysing with high accuracy… the result updates shortly.');
-    onClose();
+    const { data: refreshed } = await supabase
+      .from('receipts')
+      .select('*')
+      .eq('id', data.id)
+      .maybeSingle();
+    if (refreshed) setData(refreshed as Receipt);
+    toast.success('Receipt re-analysed successfully.');
   }
 
   async function approve() {
@@ -182,6 +190,7 @@ export default function ReceiptDetailModal({
 
   useEffect(() => {
     let cancelled = false;
+    if (!editing) setData(receipt);
     void supabase
       .from('profiles')
       .select('full_name')
@@ -195,7 +204,8 @@ export default function ReceiptDetailModal({
       const isPdf = receipt.image_url.toLowerCase().endsWith('.pdf');
       receiptImageUrl(receipt.image_url)
         .then((u) => { if (!cancelled) (isPdf ? setDocPdfUrl : setImgUrl)(u); })
-        .catch(() => !cancelled && setImgUrl(null));
+        .catch(() => !cancelled && setImgUrl(null))
+        .finally(() => { if (!cancelled) setMediaLoading(false); });
     } else if (receipt.scanned_doc_id) {
       // Batch/inbound receipts with no own image: fall back to the scanned source page.
       void supabase
@@ -205,13 +215,14 @@ export default function ReceiptDetailModal({
         .maybeSingle()
         .then(async ({ data: doc }) => {
           const path = doc?.file_url as string | undefined;
-          if (!path || cancelled) return;
+          if (!path || cancelled) { if (!cancelled) setMediaLoading(false); return; }
           const signed = await receiptImageUrl(path).catch(() => null);
-          if (!signed || cancelled) return;
-          if (path.toLowerCase().endsWith('.pdf')) setDocPdfUrl(signed);
-          else setImgUrl(signed);
-      });
-    }
+           if (!signed || cancelled) { if (!cancelled) setMediaLoading(false); return; }
+           if (path.toLowerCase().endsWith('.pdf')) setDocPdfUrl(signed);
+           else setImgUrl(signed);
+           setMediaLoading(false);
+       });
+    } else setMediaLoading(false);
     if (profile?.id) {
       void supabase
         .from('receipt_aliases')
@@ -290,7 +301,9 @@ export default function ReceiptDetailModal({
         {/* Two-column body: portrait image left, details right. Stacks on mobile. */}
         <div className="grid gap-5 p-5 sm:grid-cols-[minmax(0,240px)_1fr]">
           <div>
-            {imgUrl ? (
+            {mediaLoading ? (
+              <div className="mx-auto aspect-[3/4] w-full max-w-[240px] animate-pulse rounded-xl bg-surface-muted" aria-label="Loading receipt image" />
+            ) : imgUrl ? (
               <button
                 type="button"
                 onClick={() => setZoomOpen(true)}
@@ -341,6 +354,9 @@ export default function ReceiptDetailModal({
               )}
             </div>
 
+            {data.status === 'processing' ? (
+              <ReceiptDetailsSkeleton />
+            ) : <>
             {canReview && !editing && (
               <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3">
                 <p className="text-xs text-sky-800">
@@ -498,6 +514,7 @@ export default function ReceiptDetailModal({
                 )}
               </>
             )}
+            </>}
           </div>
         </div>
       </div>
@@ -533,6 +550,20 @@ function Row({ label, value, mono, strong }: { label: string; value: React.React
       >
         {value}
       </span>
+    </div>
+  );
+}
+
+function ReceiptDetailsSkeleton() {
+  return (
+    <div className="space-y-4" role="status" aria-label="Loading receipt details">
+      <div className="h-5 w-28 animate-pulse rounded bg-surface-muted" />
+      {Array.from({ length: 8 }, (_, index) => (
+        <div key={index} className="flex items-center justify-between gap-4">
+          <div className="h-3 w-24 animate-pulse rounded bg-surface-muted" />
+          <div className="h-4 w-32 animate-pulse rounded bg-surface-muted" />
+        </div>
+      ))}
     </div>
   );
 }

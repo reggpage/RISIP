@@ -19,10 +19,19 @@ export async function joinWithPassword(input: {
     password: input.password,
     options: { data: { full_name: input.full_name } },
   });
-  if (signUpErr) throw signUpErr;
+  if (signUpErr) {
+    const message = signUpErr.message.toLowerCase();
+    if (message.includes('already registered') || message.includes('already exists')) {
+      throw new Error('This email is already registered. Choose “I already have an account” and log in instead.');
+    }
+    throw signUpErr;
+  }
   if (!signUpData.session) {
+    if (signUpData.user?.identities?.length === 0) {
+      throw new Error('This email is already registered. Choose “I already have an account” and log in instead.');
+    }
     throw new Error(
-      'Session haijarudi — hakikisha "Confirm email" imezimwa kwenye Supabase Auth.',
+      'This account needs email verification. Check your inbox, then choose “I already have an account” to finish joining.',
     );
   }
 

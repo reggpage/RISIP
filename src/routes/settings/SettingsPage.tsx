@@ -264,21 +264,15 @@ export default function SettingsPage() {
 
   function handleLogoFile(file: File | null) {
     if (!file || !company || !isOwner) return;
-    setPendingLogoFile(file);
-  }
-
-  // "Edit" re-opens the crop modal on the CURRENT logo so the owner can re-scale/
-  // reposition without re-picking a file. We fetch the stored logo as a File.
-  async function editExistingLogo() {
-    if (!logoUrl || !isOwner || !editingCompany) return;
-    try {
-      const res = await fetch(logoUrl);
-      const blob = await res.blob();
-      setPendingLogoFile(new File([blob], 'logo.jpg', { type: blob.type || 'image/jpeg' }));
-    } catch {
-      // Fall back to picking a new file if the fetch fails (e.g. CORS).
-      logoInput.current?.click();
+    if (!['image/png', 'image/jpeg'].includes(file.type)) {
+      toast.error('Choose a PNG or JPG image.');
+      return;
     }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Logo must be 2 MB or smaller.');
+      return;
+    }
+    setPendingLogoFile(file);
   }
 
   async function toggleDeactivation(member: Profile) {
@@ -719,28 +713,14 @@ export default function SettingsPage() {
                         <Building2 className="h-8 w-8 text-ink-muted" />
                       </div>
                     )}
-                  {isOwner && <p className="text-xs text-ink-muted">{sw.settings.logoHint}</p>}
+                  {isOwner && <p className="text-xs text-ink-muted">PNG, JPG · max 2 MB</p>}
                   </div>
-                  {isOwner && (
-                    <div className="flex shrink-0 gap-2">
-                      {logoUrl ? (
-                        <>
-                          {/* Logo already set → Edit re-scales it, Change picks a new one. */}
-                          <Button variant="secondary" tint="admin" disabled={uploadingLogo || !editingCompany} onClick={() => void editExistingLogo()}>
-                            Edit logo
-                          </Button>
-                          <Button variant="ghost" disabled={uploadingLogo || !editingCompany} onClick={() => logoInput.current?.click()}>
-                            Change
-                          </Button>
-                        </>
-                      ) : (
-                        <Button variant="secondary" tint="admin" disabled={uploadingLogo || !editingCompany} onClick={() => logoInput.current?.click()}>
-                          {uploadingLogo ? sw.common.loading : sw.settings.logoUpload}
-                        </Button>
-                      )}
-                    </div>
+                  {isOwner && editingCompany && (
+                    <Button variant="secondary" tint="admin" disabled={uploadingLogo} onClick={() => logoInput.current?.click()}>
+                      {uploadingLogo ? sw.common.loading : logoUrl ? 'Change logo' : 'Upload logo'}
+                    </Button>
                   )}
-                  <input ref={logoInput} type="file" accept="image/png,image/jpeg,image/webp" className="hidden"
+                  <input ref={logoInput} type="file" accept="image/png,image/jpeg" className="hidden"
                     onChange={(e) => void handleLogoFile(e.target.files?.[0] ?? null)} />
                 </div>
 

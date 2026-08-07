@@ -9,6 +9,11 @@ import { createInviteLink } from '@/features/projects/useInviteLinks';
 import { supabase } from '@/lib/supabase';
 import { formatMoney } from '@/lib/format';
 
+function formatAmountInput(value: string): string {
+  const digits = value.replace(/[^\d]/g, '');
+  return digits ? Number(digits).toLocaleString('en-US') : '';
+}
+
 // Team & petty cash control for one project. Owner appoints leaders + sets the budget;
 // leaders (and owner) allocate petty cash to members within that budget and invite field
 // staff. Uploaders just... upload — they don't see this panel.
@@ -121,7 +126,7 @@ export default function ProjectTeamPanel({
             {isOwner && (
               <div className="mt-3 flex gap-2">
                 <input inputMode="numeric" placeholder="Set new budget" value={budgetInput}
-                  onChange={(e) => setBudgetInput(e.target.value)}
+                  onChange={(e) => setBudgetInput(formatAmountInput(e.target.value))}
                   className="w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm" />
                 <Button tint="admin" disabled={savingBudget || !budgetInput} onClick={() => void saveBudget()}>
                   {savingBudget ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
@@ -137,7 +142,7 @@ export default function ProjectTeamPanel({
               <div className="grid gap-2 sm:grid-cols-[1fr_140px_auto]">
                 <Select value={allocUser} onChange={setAllocUser} placeholder="Select member" options={memberOptions} />
                 <input inputMode="numeric" placeholder="Amount" value={allocAmount}
-                  onChange={(e) => setAllocAmount(e.target.value)}
+                  onChange={(e) => setAllocAmount(formatAmountInput(e.target.value))}
                   className="rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm" />
                 <Button tint="admin" disabled={busy} onClick={() => void allocate()}>
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />} Allocate

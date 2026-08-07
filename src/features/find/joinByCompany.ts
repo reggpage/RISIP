@@ -23,7 +23,7 @@ function classify(msg: string): CompanyAuthError['reason'] {
   if (m.includes('invalid_company_password') || m.includes('invalid password')) return 'invalid_password';
   if (m.includes('company_password_not_set')) return 'password_not_set';
   if (m.includes('user_not_found')) return 'user_not_found';
-  if (m.includes('already exists')) return 'already_exists';
+  if (m.includes('already exists') || m.includes('already registered')) return 'already_exists';
   if (m.includes('invalid login credentials')) return 'invalid_credentials';
   return 'unknown';
 }
@@ -106,10 +106,25 @@ export async function registerByCompany(input: {
     password: input.password,
     options: { data: { full_name: input.full_name } },
   });
-  if (signUpErr) throw new CompanyAuthError(signUpErr.message, 'unknown');
+  if (signUpErr) {
+    const message = signUpErr.message.toLowerCase();
+    if (message.includes('already registered') || message.includes('already exists')) {
+      throw new CompanyAuthError(
+        'This email is already registered. Switch to “I already have an account” and log in instead.',
+        'already_exists',
+      );
+    }
+    throw new CompanyAuthError(signUpErr.message, 'unknown');
+  }
   if (!signUpData.session) {
+    if (signUpData.user?.identities?.length === 0) {
+      throw new CompanyAuthError(
+        'This email is already registered. Switch to “I already have an account” and log in instead.',
+        'already_exists',
+      );
+    }
     throw new CompanyAuthError(
-      'Session missing — make sure "Confirm email" is OFF in Supabase Auth.',
+      'This account needs email verification. Check your inbox, then switch to “I already have an account” and log in to continue.',
       'unknown',
     );
   }

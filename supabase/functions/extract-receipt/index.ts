@@ -5,8 +5,8 @@ import { CATEGORIES, normalizeTanzaniaReceipt } from '../_shared/tanzaniaReceipt
 // Use the higher-accuracy model for the first pass too. Re-analysis used to be
 // better simply because it was the only path using Sonnet, which made the same
 // receipt produce inconsistent totals.
-const DEFAULT_MODEL = 'claude-sonnet-5';
-const ALLOWED_MODELS = new Set([DEFAULT_MODEL, 'claude-sonnet-5']);
+const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
+const ALLOWED_MODELS = new Set([DEFAULT_MODEL]);
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 
 // Domain-aware prompt. These are Tanzanian TRA fiscal receipts, so we tell the model the
@@ -205,10 +205,10 @@ Deno.serve(async (req) => {
         code: 'AI_AUTH_CONFIG_ERROR',
       }, { status: 503 });
     }
-    if (claudeRes.status === 429) {
+    if (claudeRes.status === 429 || claudeRes.status === 529 || claudeRes.status >= 500) {
       return json({
-        error: 'Receipt AI is temporarily rate-limited. Please try again shortly.',
-        code: 'AI_RATE_LIMITED',
+        error: 'Receipt AI is temporarily unavailable. Please try again shortly.',
+        code: claudeRes.status === 429 ? 'AI_RATE_LIMITED' : 'AI_TEMPORARILY_UNAVAILABLE',
       }, { status: 503 });
     }
     const providerMessage = claudeJson?.error?.message || claudeJson?.message || 'The AI provider rejected the request.';
