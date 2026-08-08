@@ -312,6 +312,16 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
     );
   }, [receiptQuery, receipts]);
 
+  // "Mark all" toggles every currently-visible receipt (respects the search filter).
+  const allVisibleSelected =
+    visibleReceipts.length > 0 && visibleReceipts.every((r) => selected.has(r.id));
+  function toggleAllVisible() {
+    const next = new Set(selected);
+    if (allVisibleSelected) visibleReceipts.forEach((r) => next.delete(r.id));
+    else visibleReceipts.forEach((r) => next.add(r.id));
+    setSelected(next);
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!projectId || selectedReceipts.length === 0) {
@@ -388,8 +398,17 @@ function SubmitRetirementCard({ profile, onCreated }: { profile: AuthProfile; on
         )}
 
         <div className="rounded-lg border border-surface-border">
-          <div className="border-b border-surface-border px-3 py-2 text-sm font-semibold text-ink">
-            Receipts · {formatMoney(total)}
+          <div className="flex items-center justify-between gap-2 border-b border-surface-border px-3 py-2 text-sm font-semibold text-ink">
+            <span>Receipts · {formatMoney(total)}</span>
+            {visibleReceipts.length > 0 && (
+              <button
+                type="button"
+                onClick={toggleAllVisible}
+                className="text-xs font-medium text-role-admin hover:underline"
+              >
+                {allVisibleSelected ? 'Clear all' : `Mark all (${visibleReceipts.length})`}
+              </button>
+            )}
           </div>
           <div className="border-b border-surface-border p-2">
             <input

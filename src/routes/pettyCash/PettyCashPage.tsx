@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Clock, Loader2, Wallet, X } from 'lucide-react';
+import { Loader2, Wallet, X } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
@@ -17,7 +17,7 @@ import { formatMoney } from '@/lib/format';
 //   Top-up modal uses NumberInput so amounts render "500,000" while the user types.
 export default function PettyCashPage() {
   const auth = useAuth();
-  const { rows, loading, error } = useCompanyPettyCash();
+  const { rows, loading, error, refresh } = useCompanyPettyCash();
   const [topUpTarget, setTopUpTarget] = useState<StaffWithAccount | null>(null);
   const [viewTarget, setViewTarget] = useState<StaffWithAccount | null>(null);
 
@@ -95,16 +95,16 @@ export default function PettyCashPage() {
                   </Button>
                 </div>
 
-                {/* Pending top-up: sent but not yet accepted. Shown faded so admins
-                    know the cash is on its way but is not spendable until accepted. */}
+                {/* Pending top-up: sent but not yet accepted. Plain text (no card)
+                    so it reads as a quiet note; the purpose headlines the line. */}
                 {r.pending > 0 && (
-                  <div className="order-last flex w-full items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-1.5 text-xs">
-                    <Clock className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                  <p className="order-last w-full text-xs leading-relaxed">
+                    {r.pending_note && (
+                      <span className="font-semibold text-ink">{r.pending_note} · </span>
+                    )}
                     <span className="font-semibold text-amber-700">Pending {formatMoney(r.pending)}</span>
-                    <span className="text-ink-muted">
-                      — awaiting {r.full_name.split(' ')[0]}'s acceptance
-                    </span>
-                  </div>
+                    <span className="text-ink-muted"> — awaiting {r.full_name.split(' ')[0]}'s acceptance</span>
+                  </p>
                 )}
               </li>
             ))}
@@ -120,6 +120,7 @@ export default function PettyCashPage() {
         <TopUpModal
           target={topUpTarget}
           onClose={() => setTopUpTarget(null)}
+          onSuccess={() => void refresh()}
         />
       )}
     </div>
@@ -176,9 +177,11 @@ function StatRow({ label, value, tone, bold }: { label: string; value: string; t
 function TopUpModal({
   target,
   onClose,
+  onSuccess,
 }: {
   target: StaffWithAccount;
   onClose: () => void;
+  onSuccess: () => void;
 }) {
   const toast = useToast();
   const [amount, setAmount] = useState('');
@@ -196,6 +199,7 @@ function TopUpModal({
     try {
       await requestTopUp(target.user_id, n, note.trim());
       toast.success(`Top-up request sent to ${target.full_name}. It activates after they accept.`);
+      onSuccess();
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Top-up failed');
@@ -236,12 +240,9 @@ function TopUpModal({
             </span>
           </div>
           {target.pending > 0 && (
-            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs">
-              <Clock className="h-3.5 w-3.5 shrink-0 text-amber-600" />
-              <span className="text-ink-muted">
-                {formatMoney(target.pending)} already sent and awaiting acceptance — it becomes spendable once {target.full_name.split(' ')[0]} accepts.
-              </span>
-            </div>
+            <p className="text-xs text-ink-muted">
+              {formatMoney(target.pending)} already sent and awaiting acceptance — it becomes spendable once {target.full_name.split(' ')[0]} accepts.
+            </p>
           )}
           <NumberInput
             label="Amount (TSh)"
@@ -251,10 +252,10 @@ function TopUpModal({
             autoFocus
           />
           <Input
-            label="Note"
+            label="What's this for?"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Optional — e.g. Week 30 float"
+            placeholder="e.g. Fuel for the Dodoma site"
           />
           <div className="mt-2 flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>

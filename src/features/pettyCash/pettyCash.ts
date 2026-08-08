@@ -57,6 +57,9 @@ export type StaffWithAccount = {
   // Top-ups the admin has sent but the staff member has not yet accepted. Shown
   // faded on the page so admins know the request is out but not yet spendable.
   pending: number;
+  // Purpose of the most recent pending top-up (the "what's this for?" note), so
+  // the page can headline what the cash is for.
+  pending_note: string | null;
 };
 
 export function useCompanyPettyCash() {
@@ -76,7 +79,7 @@ export function useCompanyPettyCash() {
         .in('role', ['worker', 'accountant'])
         .is('deactivated_at', null),
       supabase.from('petty_cash_accounts').select('id, user_id, current_balance'),
-      supabase.from('petty_cash_transactions').select('account_id, amount, status'),
+      supabase.from('petty_cash_transactions').select('account_id, amount, status, description, created_at'),
     ]);
     setLoading(false);
     if (profRes.error) { setError(profRes.error.message); return; }
@@ -95,14 +98,25 @@ export function useCompanyPettyCash() {
     // Roll up transactions per account. Declined entries are ignored entirely;
     // pending top-ups are tracked separately (not yet spendable) so the page can
     // show them faded, and only 'accepted' entries move topped-up / spent totals.
-    const totalsByAcct = new Map<string, { toppedUp: number; spent: number; pending: number }>();
+    type Totals = { toppedUp: number; spent: number; pending: number; pendingNote: string | null; pendingAt: string };
+    const emptyTotals = (): Totals => ({ toppedUp: 0, spent: 0, pending: 0, pendingNote: null, pendingAt: '' });
+    const totalsByAcct = new Map<string, Totals>();
     for (const t of txnRes.data ?? []) {
       const st = t.status as string | null;
       if (st === 'declined') continue;
       const amt = Number(t.amount);
-      const cur = totalsByAcct.get(t.account_id as string) ?? { toppedUp: 0, spent: 0, pending: 0 };
+      const cur = totalsByAcct.get(t.account_id as string) ?? emptyTotals();
       if (st === 'pending') {
-        if (amt > 0) cur.pending += amt;
+        if (amt > 0) {
+          cur.pending += amt;
+          // Keep the purpose of the most recent pending request to headline it.
+          const at = String(t.created_at ?? '');
+          if (at >= cur.pendingAt) {
+            cur.pendingAt = at;
+            const note = ((t.description as string | null) ?? '').trim();
+            cur.pendingNote = note && note.toLowerCase() !== 'top-up' ? note : null;
+          }
+        }
       } else if (amt >= 0) {
         cur.toppedUp += amt;
       } else {
@@ -113,7 +127,7 @@ export function useCompanyPettyCash() {
 
     const merged = (profRes.data ?? []).map((p) => {
       const a = acctByUser.get(p.id as string);
-      const totals = a ? totalsByAcct.get(a.id) ?? { toppedUp: 0, spent: 0, pending: 0 } : { toppedUp: 0, spent: 0, pending: 0 };
+      const totals = a ? totalsByAcct.get(a.id) ?? emptyTotals() : emptyTotals();
       return {
         user_id: p.id as string,
         full_name: p.full_name as string,
@@ -123,6 +137,7 @@ export function useCompanyPettyCash() {
         total_topped_up: totals.toppedUp,
         total_spent: totals.spent,
         pending: totals.pending,
+        pending_note: totals.pendingNote,
       } satisfies StaffWithAccount;
     });
     setRows(merged);
