@@ -8,11 +8,13 @@ import ReceiptCard from '@/components/receipts/ReceiptCard';
 import ReceiptDetailModal from '@/components/receipts/ReceiptDetailModal';
 import AddReceiptSheet from '@/components/receipts/AddReceiptSheet';
 import BatchScanPanel from '@/components/receipts/BatchScanPanel';
+import ReceiptPrintButton from '@/components/receipts/ReceiptPrintButton';
 import StaffBalanceCard from '@/components/pettyCash/StaffBalanceCard';
 import { useReceipts } from '@/features/receipts/useReceipts';
 import { useProjects } from '@/features/projects/useProjects';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
+import { useCompany } from '@/features/company/useCompany';
 import { sw } from '@/i18n/sw';
 import type { Receipt } from '@/types/db';
 
@@ -26,6 +28,7 @@ const CATEGORIES = [
 
 export default function ReceiptsPage() {
   const auth = useAuth();
+  const company = useCompany();
   const { state: projectsState } = useProjects();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -47,7 +50,7 @@ export default function ReceiptsPage() {
     return projectsState.projects.filter((p) => p.status === 'active');
   }, [projectsState]);
   const effectiveProjectId = selectedProjectId ?? (activeProjects.length === 1 ? activeProjects[0].id : null);
-  const { state: receiptsState } = useReceipts(selectedProjectId ?? undefined);
+  const { state: receiptsState } = useReceipts(selectedProjectId ?? undefined, 500);
 
   // Uploader name cache so search-by-name works against the full name, not just uid.
   // Lazy-populated as receipts come in.
@@ -137,6 +140,13 @@ export default function ReceiptsPage() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-2xl font-semibold text-ink">{sw.nav.receipts}</h1>
         <div className="flex gap-2">
+          {receiptsState.status === 'ready' && (
+            <ReceiptPrintButton
+              receipts={receiptsState.receipts}
+              company={company}
+              projects={projectsState.status === 'ready' ? projectsState.projects : []}
+            />
+          )}
           {/* Batch scan is for everyone: upload one A4/A3 page printed with several
               receipts and the AI splits them all at once. */}
           <Button

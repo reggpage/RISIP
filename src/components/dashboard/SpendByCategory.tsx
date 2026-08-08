@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import EmptyState from '@/components/ui/EmptyState';
 import { formatMoney } from '@/lib/format';
+import { receiptActivityDate } from '@/lib/receiptDates';
 import type { Receipt } from '@/types/db';
 
 type Gran = 'day' | 'week' | 'month' | 'year';
@@ -29,13 +30,6 @@ function windowStart(gran: Gran): number {
   return d.getTime();
 }
 
-function parseLocalDate(value: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-  if (!match) return null;
-  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
 function periodLabel(gran: Gran) {
   const today = new Date();
   if (gran === 'day') return 'Today';
@@ -52,9 +46,7 @@ function compute(receipts: Receipt[], gran: Gran): CatItem[] {
   let total = 0;
   for (const r of receipts) {
     if (r.status !== 'confirmed') continue;
-    const key = r.receipt_date ?? r.created_at?.slice(0, 10);
-    if (!key) continue;
-    const date = parseLocalDate(key);
+    const date = receiptActivityDate(r);
     if (!date || date.getTime() < start) continue;
     const amt = Number(r.total_amount || 0);
     const cat = r.category ?? 'Other';
@@ -93,8 +85,7 @@ export default function SpendByCategory({ receipts }: { receipts: Receipt[] }) {
     const start = windowStart(gran);
     return receipts.filter((receipt) => {
       if (receipt.status !== 'confirmed') return false;
-      const key = receipt.receipt_date ?? receipt.created_at?.slice(0, 10);
-      const date = key ? parseLocalDate(key) : null;
+      const date = receiptActivityDate(receipt);
       return Boolean(date && date.getTime() >= start);
     }).length;
   }, [receipts, gran]);
@@ -105,7 +96,7 @@ export default function SpendByCategory({ receipts }: { receipts: Receipt[] }) {
         <div>
           <h3 className="text-base font-semibold text-ink">Spend by category</h3>
           <p className="mt-0.5 text-xs text-ink-muted">{periodLabel(gran)} · {confirmedCount} confirmed receipt{confirmedCount === 1 ? '' : 's'}</p>
-          <p className="mt-0.5 text-xs text-ink-muted">Grouped by receipt date.</p>
+          <p className="mt-0.5 text-xs text-ink-muted">Grouped by the day the receipt was recorded.</p>
         </div>
         <div className="inline-flex rounded-lg border border-surface-border bg-surface p-0.5 text-xs">
           {(Object.keys(GRAN_LABEL) as Gran[]).map((g) => (

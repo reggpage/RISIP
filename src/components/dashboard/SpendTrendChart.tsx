@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { BarChart3, LineChart as LineIcon } from 'lucide-react';
 import { formatMoney } from '@/lib/format';
+import { receiptActivityDate } from '@/lib/receiptDates';
 import type { Receipt } from '@/types/db';
 
 // Interactive spend-over-time chart. Pure SVG — no chart library. Switch granularity
@@ -27,14 +28,7 @@ function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 function startOfWeek(d: Date) { const x = new Date(d); const day = (x.getDay() + 6) % 7; x.setDate(x.getDate() - day); x.setHours(0, 0, 0, 0); return x; }
-function parseDate(r: Receipt): Date | null {
-  const key = r.receipt_date ?? r.created_at?.slice(0, 10);
-  if (!key) return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(key);
-  if (!match) return null;
-  const d = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  return isNaN(d.getTime()) ? null : d;
-}
+function parseDate(r: Receipt): Date | null { return receiptActivityDate(r); }
 function niceMax(v: number) {
   if (v <= 0) return 1;
   const p = Math.pow(10, Math.floor(Math.log10(v)));
