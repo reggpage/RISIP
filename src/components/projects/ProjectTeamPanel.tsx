@@ -70,7 +70,7 @@ export default function ProjectTeamPanel({
     });
     setBusy(false);
     if (error) { toast.error(error.message); return; }
-    toast.success('Funds allocated.');
+    toast.success('Top-up request sent. The member must accept it before the funds are available.');
     setAllocAmount('');
     void team.refresh();
   }
@@ -138,17 +138,18 @@ export default function ProjectTeamPanel({
           {/* Allocate */}
           {canManage && (
             <div className="mb-5 rounded-xl border border-surface-border p-4">
-              <div className="mb-3 text-sm font-semibold text-ink">Allocate funds to a member</div>
+              <div className="mb-3 text-sm font-semibold text-ink">Send a top-up request</div>
               <div className="grid gap-2 sm:grid-cols-[1fr_140px_auto]">
                 <Select value={allocUser} onChange={setAllocUser} placeholder="Select member" options={memberOptions} />
                 <input inputMode="numeric" placeholder="Amount" value={allocAmount}
                   onChange={(e) => setAllocAmount(formatAmountInput(e.target.value))}
                   className="rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm" />
                 <Button tint="admin" disabled={busy} onClick={() => void allocate()}>
-                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />} Allocate
+                  {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />} Send request
                 </Button>
               </div>
-              {!isOwner && <p className="mt-2 text-xs text-ink-muted">You can allocate up to {formatMoney(remaining)} (remaining budget).</p>}
+              <p className="mt-2 text-xs text-ink-muted">The member must accept before the cash becomes available.</p>
+              {!isOwner && <p className="mt-1 text-xs text-ink-muted">You can reserve up to {formatMoney(remaining)} (remaining budget).</p>}
             </div>
           )}
 

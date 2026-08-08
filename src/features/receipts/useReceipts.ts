@@ -86,5 +86,19 @@ export function useReceipts(projectId?: string, limit = 50) {
     };
   }, [projectId, limit, refresh]);
 
+  // Keep summaries correct immediately when a details modal deletes a receipt
+  // in this browser while Realtime is still reconnecting.
+  useEffect(() => {
+    const removeDeletedReceipt = (event: Event) => {
+      const detail = (event as CustomEvent<{ id?: string; projectId?: string }>).detail;
+      if (!detail?.id || (projectId && detail.projectId && detail.projectId !== projectId)) return;
+      setState((prev) => prev.status === 'ready'
+        ? { status: 'ready', receipts: prev.receipts.filter((receipt) => receipt.id !== detail.id) }
+        : prev);
+    };
+    window.addEventListener('risip:receipt-deleted', removeDeletedReceipt);
+    return () => window.removeEventListener('risip:receipt-deleted', removeDeletedReceipt);
+  }, [projectId]);
+
   return { state, refresh };
 }

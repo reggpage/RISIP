@@ -83,6 +83,7 @@ export type InviteLink = {
 
 export type PaymentMethod = 'cash_personal' | 'petty_cash';
 export type PettyCashTxnType = 'allocation' | 'expense' | 'adjustment';
+export type PettyCashTransactionStatus = 'pending' | 'accepted' | 'declined';
 
 export type PettyCashAccount = {
   id: string;
@@ -102,6 +103,8 @@ export type PettyCashTransaction = {
   project_id: string | null;
   description: string | null;
   created_by: string;
+  status: PettyCashTransactionStatus;
+  responded_at: string | null;
   created_at: string;
 };
 
@@ -411,6 +414,14 @@ export type Database = {
       /** Leader (capped by project budget) or owner allocates petty cash to a project member. */
       allocate_project_petty_cash: {
         Args: { p_project: string; p_user: string; p_amount: number; p_description?: string | null };
+        Returns: string;
+      };
+      request_petty_cash_top_up: {
+        Args: { p_user: string; p_amount: number; p_description?: string | null };
+        Returns: string;
+      };
+      respond_to_petty_cash_request: {
+        Args: { p_transaction: string; p_accept: boolean };
         Returns: string;
       };
       auth_company_id: { Args: Record<string, never>; Returns: string };

@@ -1,16 +1,20 @@
-import { Bell, CheckCircle2 } from 'lucide-react';
+import { Bell, CheckCircle2, Loader2 } from 'lucide-react';
+import { useState } from 'react';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { ListItemSkeleton, Skeleton } from '@/components/ui/Skeleton';
-import { markNotificationRead, useNotifications } from '@/features/notifications/notifications';
+import { markNotificationRead, respondToPettyCashRequest, useNotifications } from '@/features/notifications/notifications';
 import { useAuth } from '@/lib/auth';
 import { formatDateTime } from '@/lib/format';
+import { useToast } from '@/components/ui/Toast';
 
 export default function NotificationsPage() {
   const auth = useAuth();
   const profile = auth.status === 'signed-in' ? auth.profile : null;
   const { state, unreadCount, refresh } = useNotifications(profile?.id);
   const notifications = state.notifications;
+  const toast = useToast();
+  const [respondingId, setRespondingId] = useState<string | null>(null);
 
   async function markRead(id: string) {
     await markNotificationRead(id);
@@ -20,6 +24,20 @@ export default function NotificationsPage() {
   async function markAllRead() {
     await Promise.all(notifications.filter((n) => !n.read_at).map((n) => markNotificationRead(n.id)));
     await refresh();
+  }
+
+  async function respond(notificationId: string, transactionId: string, accept: boolean) {
+    setRespondingId(notificationId);
+    try {
+      await respondToPettyCashRequest(transactionId, accept);
+      await markNotificationRead(notificationId);
+      toast.success(accept ? 'Top-up accepted. The cash is now available.' : 'Top-up declined.');
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not respond to the top-up request.');
+    } finally {
+      setRespondingId(null);
+    }
   }
 
   return (
@@ -66,6 +84,12 @@ export default function NotificationsPage() {
         <div className="flex flex-col gap-3">
           {notifications.map((n) => (
             <Card key={n.id} className={!n.read_at ? 'border-role-admin/40 bg-role-admin/5' : undefined}>
+              {(() => {
+                const metadata = n.metadata && typeof n.metadata === 'object'
+                  ? n.metadata as { transaction_id?: string }
+                  : {};
+                const needsResponse = n.type === 'petty_cash_request' && !!metadata.transaction_id && !n.read_at;
+                return (
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
@@ -78,13 +102,35 @@ export default function NotificationsPage() {
                   </div>
                   {n.body && <p className="mt-2 text-sm leading-relaxed text-ink-muted">{n.body}</p>}
                   <p className="mt-2 text-xs text-ink-muted">{formatDateTime(n.created_at)}</p>
+                  {needsResponse && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        tint="admin"
+                        disabled={respondingId === n.id}
+                        onClick={() => void respond(n.id, metadata.transaction_id!, true)}
+                      >
+                        {respondingId === n.id && <Loader2 className="h-4 w-4 animate-spin" />}
+                        Accept top-up
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        disabled={respondingId === n.id}
+                        onClick={() => void respond(n.id, metadata.transaction_id!, false)}
+                        className="!border-red-300 !text-red-600 hover:!bg-red-50"
+                      >
+                        Decline
+                      </Button>
+                    </div>
+                  )}
                 </div>
-                {!n.read_at && (
+                {!n.read_at && !needsResponse && (
                   <Button variant="ghost" className="shrink-0 !px-2 !py-1" onClick={() => void markRead(n.id)}>
                     Mark read
                   </Button>
                 )}
               </div>
+                );
+              })()}
             </Card>
           ))}
         </div>

@@ -7,9 +7,8 @@ import Input from '@/components/ui/Input';
 import NumberInput from '@/components/ui/NumberInput';
 import { ListItemSkeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
-import { ensureAccount, topUp, useCompanyPettyCash, type StaffWithAccount } from '@/features/pettyCash/pettyCash';
+import { requestTopUp, useCompanyPettyCash, type StaffWithAccount } from '@/features/pettyCash/pettyCash';
 import { useAuth } from '@/lib/auth';
-import { useCompany } from '@/features/company/useCompany';
 import { formatMoney } from '@/lib/format';
 
 // Full-featured petty cash page. Structure:
@@ -18,7 +17,6 @@ import { formatMoney } from '@/lib/format';
 //   Top-up modal uses NumberInput so amounts render "500,000" while the user types.
 export default function PettyCashPage() {
   const auth = useAuth();
-  const company = useCompany();
   const { rows, loading, error } = useCompanyPettyCash();
   const [topUpTarget, setTopUpTarget] = useState<StaffWithAccount | null>(null);
   const [viewTarget, setViewTarget] = useState<StaffWithAccount | null>(null);
@@ -106,11 +104,9 @@ export default function PettyCashPage() {
         <ViewModal target={viewTarget} onClose={() => setViewTarget(null)} />
       )}
 
-      {topUpTarget && profile && company && (
+      {topUpTarget && profile && (
         <TopUpModal
           target={topUpTarget}
-          companyId={company.id}
-          createdBy={profile.id}
           onClose={() => setTopUpTarget(null)}
         />
       )}
@@ -164,13 +160,9 @@ function StatRow({ label, value, tone, bold }: { label: string; value: string; t
 
 function TopUpModal({
   target,
-  companyId,
-  createdBy,
   onClose,
 }: {
   target: StaffWithAccount;
-  companyId: string;
-  createdBy: string;
   onClose: () => void;
 }) {
   const toast = useToast();
@@ -187,9 +179,8 @@ function TopUpModal({
     }
     setBusy(true);
     try {
-      const acctId = target.account_id ?? (await ensureAccount(target.user_id, companyId));
-      await topUp(acctId, n, note.trim(), createdBy);
-      toast.success(`Topped up ${target.full_name}.`);
+      await requestTopUp(target.user_id, n, note.trim());
+      toast.success(`Top-up request sent to ${target.full_name}. It activates after they accept.`);
       onClose();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Top-up failed');
@@ -224,7 +215,7 @@ function TopUpModal({
 
         <form onSubmit={submit} className="flex flex-col gap-4 p-5">
           <div className="rounded-lg bg-surface-muted p-3 text-sm">
-            <span className="text-ink-muted">Current balance</span>
+            <span className="text-ink-muted">Current available balance</span>
             <span className="ml-2 font-display font-semibold text-ink">
               {formatMoney(target.balance)}
             </span>
@@ -248,7 +239,7 @@ function TopUpModal({
             </Button>
             <Button type="submit" tint="admin" disabled={busy || !amount}>
               {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-              {busy ? 'Adding…' : 'Add funds'}
+              {busy ? 'Sending…' : 'Send top-up request'}
             </Button>
           </div>
         </form>

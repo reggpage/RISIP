@@ -37,7 +37,7 @@ export function useProjectTeam(projectId: string | undefined, myUserId: string |
     const [pmRes, projRes, allocRes] = await Promise.all([
       supabase.from('project_members').select('profile_id, role').eq('project_id', projectId),
       supabase.from('projects').select('petty_cash_budget').eq('id', projectId).maybeSingle(),
-      supabase.from('petty_cash_transactions').select('amount').eq('project_id', projectId).eq('type', 'allocation'),
+      supabase.from('petty_cash_transactions').select('amount').eq('project_id', projectId).eq('type', 'allocation').in('status', ['pending', 'accepted']),
     ]);
     if (pmRes.error) { setError(pmRes.error.message); setLoading(false); return; }
 

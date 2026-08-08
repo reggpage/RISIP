@@ -64,6 +64,15 @@ export async function markNotificationRead(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function respondToPettyCashRequest(transactionId: string, accept: boolean): Promise<'accepted' | 'declined'> {
+  const { data, error } = await supabase.rpc('respond_to_petty_cash_request', {
+    p_transaction: transactionId,
+    p_accept: accept,
+  });
+  if (error) throw error;
+  return data as 'accepted' | 'declined';
+}
+
 export async function createNotifications(
   rows: Array<{
     company_id: string;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, FileText, Loader2, MailCheck, Pencil, Sparkles, Trash2, Wallet, X, XCircle,
+  AlertTriangle, CheckCircle2, FileText, Loader2, Pencil, Sparkles, Wallet, X, XCircle,
   Receipt as ReceiptGlyph,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
@@ -20,7 +20,7 @@ const STATUS_META = {
   confirmed: { label: 'Confirmed', tone: 'text-emerald-600', Icon: CheckCircle2, spin: false },
   duplicate: { label: 'Duplicate', tone: 'text-orange-600', Icon: AlertTriangle, spin: false },
   error: { label: 'Extraction failed', tone: 'text-red-600', Icon: XCircle, spin: false },
-  pending_review: { label: 'Pending review (scan-to-email)', tone: 'text-sky-600', Icon: MailCheck, spin: false },
+  pending_review: { label: 'Needs review', tone: 'text-sky-600', Icon: AlertTriangle, spin: false },
 } as const;
 
 const CATEGORIES = [
@@ -53,7 +53,6 @@ export default function ReceiptDetailModal({
   const [mediaLoading, setMediaLoading] = useState(Boolean(receipt.image_url || receipt.scanned_doc_id));
   const [zoomOpen, setZoomOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [nickname, setNickname] = useState('');
   const [nicknameEditing, setNicknameEditing] = useState(false);
@@ -69,7 +68,6 @@ export default function ReceiptDetailModal({
   const canDelete = profile?.id === data.uploaded_by || profile?.role === 'owner';
   // Finance can edit any company receipt; the uploader can fix AI mistakes on their own.
   const canEdit = isFinance || profile?.id === data.uploaded_by;
-  const canReview = data.status === 'pending_review' && isFinance;
   const canName = profile?.id === data.uploaded_by;
 
   // ── Edit mode (finance only) ──────────────────────────────────────────────
@@ -113,6 +111,9 @@ export default function ReceiptDetailModal({
       verification_code: form.verification_code.trim() || null,
       vendor_tin: form.vendor_tin.trim() || null,
       vendor_vrn: form.vendor_vrn.trim() || null,
+      // Saving a reviewed pending receipt confirms it; this replaces the old
+      // scan-to-email approval panel without silently approving it.
+      ...(data.status === 'pending_review' ? { status: 'confirmed' as const } : {}),
     };
     const { error } = await supabase.from('receipts').update(updates).eq('id', data.id);
     setSaving(false);
@@ -201,15 +202,6 @@ export default function ReceiptDetailModal({
     toast.success('Receipt re-analysed successfully.');
   }
 
-  async function approve() {
-    setReviewing(true);
-    const { error } = await supabase.from('receipts').update({ status: 'confirmed' }).eq('id', data.id);
-    setReviewing(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success('Receipt approved.');
-    onClose();
-  }
-
   useEffect(() => {
     let cancelled = false;
     if (!editing) setData(receipt);
@@ -275,6 +267,7 @@ export default function ReceiptDetailModal({
     const { error } = await supabase.from('receipts').delete().eq('id', data.id);
     setDeleting(false);
     if (error) { toast.error(error.message); return; }
+    window.dispatchEvent(new CustomEvent('risip:receipt-deleted', { detail: { id: data.id, projectId: data.project_id } }));
     toast.success('Receipt deleted.');
     onDeleted?.(data.id);
     onClose();
@@ -297,18 +290,6 @@ export default function ReceiptDetailModal({
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-surface-border bg-surface px-5 py-3">
           <h2 className="text-base font-semibold text-ink">Receipt details</h2>
           <div className="flex items-center gap-1">
-            {canDelete && !editing && (
-              <button
-                type="button"
-                onClick={() => void handleDelete()}
-                disabled={deleting}
-                className="rounded p-1 text-ink-muted hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-                aria-label="Delete receipt"
-                title="Delete"
-              >
-                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-              </button>
-            )}
             <button
               type="button"
               onClick={onClose}
@@ -379,30 +360,6 @@ export default function ReceiptDetailModal({
             {data.status === 'processing' ? (
               <ReceiptDetailsSkeleton />
             ) : <>
-            {canReview && !editing && (
-              <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 p-3">
-                <p className="text-xs text-sky-800">
-                  This receipt needs verification. Check the details against the image,
-                  then approve it into the ledger or discard it.
-                </p>
-                <div className="mt-3 flex gap-2">
-                  <Button tint="admin" disabled={reviewing || deleting} onClick={() => void approve()}>
-                    {reviewing ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                    Approve
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    disabled={reviewing || deleting}
-                    onClick={() => void handleDelete()}
-                    className="!border-red-300 !text-red-600 hover:!bg-red-50"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                    Discard
-                  </Button>
-                </div>
-              </div>
-            )}
-
             {editing ? (
               // ── Edit form ──────────────────────────────────────────────
               <div className="flex flex-col gap-3">
@@ -529,7 +486,6 @@ export default function ReceiptDetailModal({
                       disabled={deleting}
                       className="!border-red-300 !text-red-600 hover:!bg-red-50"
                     >
-                      <Trash2 className="h-4 w-4" />
                       {deleting ? 'Deleting…' : 'Delete receipt'}
                     </Button>
                   </div>

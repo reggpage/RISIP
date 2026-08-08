@@ -73,7 +73,7 @@ export function useCompanyPettyCash() {
         .in('role', ['worker', 'accountant'])
         .is('deactivated_at', null),
       supabase.from('petty_cash_accounts').select('id, user_id, current_balance'),
-      supabase.from('petty_cash_transactions').select('account_id, amount'),
+      supabase.from('petty_cash_transactions').select('account_id, amount, status'),
     ]);
     setLoading(false);
     if (profRes.error) { setError(profRes.error.message); return; }
@@ -92,6 +92,7 @@ export function useCompanyPettyCash() {
     // Roll up transactions per account.
     const totalsByAcct = new Map<string, { toppedUp: number; spent: number }>();
     for (const t of txnRes.data ?? []) {
+      if ((t.status as string | null) === 'pending' || (t.status as string | null) === 'declined') continue;
       const amt = Number(t.amount);
       const cur = totalsByAcct.get(t.account_id as string) ?? { toppedUp: 0, spent: 0 };
       if (amt >= 0) cur.toppedUp += amt;
@@ -151,24 +152,18 @@ export async function ensureAccount(userId: string, companyId: string): Promise<
   return data.id as string;
 }
 
-export async function topUp(
-  accountId: string,
+export async function requestTopUp(
+  userId: string,
   amount: number,
   description: string,
-  createdBy: string,
 ): Promise<PettyCashTransaction> {
   if (!(amount > 0)) throw new Error('Top-up amount must be positive');
   const { data, error } = await supabase
-    .from('petty_cash_transactions')
-    .insert({
-      account_id: accountId,
-      amount,
-      type: 'allocation',
-      description: description || 'Top-up',
-      created_by: createdBy,
-    })
-    .select('*')
-    .single();
+    .rpc('request_petty_cash_top_up', {
+      p_user: userId,
+      p_amount: amount,
+      p_description: description || 'Top-up',
+    });
   if (error) throw error;
-  return data as PettyCashTransaction;
+  return { id: data as string } as PettyCashTransaction;
 }
