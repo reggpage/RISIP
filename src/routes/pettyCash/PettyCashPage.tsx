@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, Wallet, X } from 'lucide-react';
+import { Clock, Loader2, Wallet, X } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
@@ -94,6 +94,18 @@ export default function PettyCashPage() {
                     Top up
                   </Button>
                 </div>
+
+                {/* Pending top-up: sent but not yet accepted. Shown faded so admins
+                    know the cash is on its way but is not spendable until accepted. */}
+                {r.pending > 0 && (
+                  <div className="order-last flex w-full items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-1.5 text-xs">
+                    <Clock className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+                    <span className="font-semibold text-amber-700">Pending {formatMoney(r.pending)}</span>
+                    <span className="text-ink-muted">
+                      — awaiting {r.full_name.split(' ')[0]}'s acceptance
+                    </span>
+                  </div>
+                )}
               </li>
             ))}
           </ul>
@@ -141,6 +153,9 @@ function ViewModal({ target, onClose }: { target: StaffWithAccount; onClose: () 
           <StatRow label="Topped up" value={formatMoney(target.total_topped_up)} tone="text-emerald-700" />
           <StatRow label="Spent" value={formatMoney(target.total_spent)} tone="text-red-600" />
           <StatRow label="Remaining" value={formatMoney(target.balance)} tone="text-ink" bold />
+          {target.pending > 0 && (
+            <StatRow label="Pending acceptance" value={formatMoney(target.pending)} tone="text-amber-600" />
+          )}
         </div>
       </div>
     </div>
@@ -220,6 +235,14 @@ function TopUpModal({
               {formatMoney(target.balance)}
             </span>
           </div>
+          {target.pending > 0 && (
+            <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs">
+              <Clock className="h-3.5 w-3.5 shrink-0 text-amber-600" />
+              <span className="text-ink-muted">
+                {formatMoney(target.pending)} already sent and awaiting acceptance — it becomes spendable once {target.full_name.split(' ')[0]} accepts.
+              </span>
+            </div>
+          )}
           <NumberInput
             label="Amount (TSh)"
             value={amount}

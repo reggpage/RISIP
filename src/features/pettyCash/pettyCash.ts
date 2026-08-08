@@ -54,6 +54,9 @@ export type StaffWithAccount = {
   // I ever put in?" vs "how much has been spent?" alongside the current balance.
   total_topped_up: number;
   total_spent: number;
+  // Top-ups the admin has sent but the staff member has not yet accepted. Shown
+  // faded on the page so admins know the request is out but not yet spendable.
+  pending: number;
 };
 
 export function useCompanyPettyCash() {
@@ -89,20 +92,28 @@ export function useCompanyPettyCash() {
       });
     }
 
-    // Roll up transactions per account.
-    const totalsByAcct = new Map<string, { toppedUp: number; spent: number }>();
+    // Roll up transactions per account. Declined entries are ignored entirely;
+    // pending top-ups are tracked separately (not yet spendable) so the page can
+    // show them faded, and only 'accepted' entries move topped-up / spent totals.
+    const totalsByAcct = new Map<string, { toppedUp: number; spent: number; pending: number }>();
     for (const t of txnRes.data ?? []) {
-      if ((t.status as string | null) === 'pending' || (t.status as string | null) === 'declined') continue;
+      const st = t.status as string | null;
+      if (st === 'declined') continue;
       const amt = Number(t.amount);
-      const cur = totalsByAcct.get(t.account_id as string) ?? { toppedUp: 0, spent: 0 };
-      if (amt >= 0) cur.toppedUp += amt;
-      else cur.spent += -amt;
+      const cur = totalsByAcct.get(t.account_id as string) ?? { toppedUp: 0, spent: 0, pending: 0 };
+      if (st === 'pending') {
+        if (amt > 0) cur.pending += amt;
+      } else if (amt >= 0) {
+        cur.toppedUp += amt;
+      } else {
+        cur.spent += -amt;
+      }
       totalsByAcct.set(t.account_id as string, cur);
     }
 
     const merged = (profRes.data ?? []).map((p) => {
       const a = acctByUser.get(p.id as string);
-      const totals = a ? totalsByAcct.get(a.id) ?? { toppedUp: 0, spent: 0 } : { toppedUp: 0, spent: 0 };
+      const totals = a ? totalsByAcct.get(a.id) ?? { toppedUp: 0, spent: 0, pending: 0 } : { toppedUp: 0, spent: 0, pending: 0 };
       return {
         user_id: p.id as string,
         full_name: p.full_name as string,
@@ -111,6 +122,7 @@ export function useCompanyPettyCash() {
         balance: a?.balance ?? 0,
         total_topped_up: totals.toppedUp,
         total_spent: totals.spent,
+        pending: totals.pending,
       } satisfies StaffWithAccount;
     });
     setRows(merged);
