@@ -11,10 +11,15 @@ import { useCompanySearch, type CompanyHit } from '@/features/find/useCompanySea
 import {
   checkCompanyPassword,
   CompanyAuthError,
+  CompanyEmailVerificationRequiredError,
+  finishCompanyRegistration,
   loginByCompany,
   registerByCompany,
+  resendCompanySignupOtp,
+  verifyCompanySignupOtp,
 } from '@/features/find/joinByCompany';
 import { sw } from '@/i18n/sw';
+import OtpInput, { OTP_LENGTH } from '@/components/ui/OtpInput';
 
 // Company icon that shows the uploaded logo when present, else a building glyph.
 export function CompanyIcon({ logoUrl, size = 'md' }: { logoUrl: string | null; size?: 'md' | 'lg' }) {
@@ -369,6 +374,9 @@ function RegisterForm({
   const [busy, setBusy] = useState(false);
   const [handoff, setHandoff] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingVerification, setPendingVerification] = useState<FormFields | null>(null);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationError, setVerificationError] = useState<string | null>(null);
 
   const password = watch('password', '');
   const passwordConfirm = watch('password_confirm', '');
@@ -400,10 +408,93 @@ function RegisterForm({
       setHandoff(true);
       onDone(role);
     } catch (err) {
+      if (err instanceof CompanyEmailVerificationRequiredError) {
+        setPendingVerification(values);
+        setVerificationCode('');
+        setVerificationError(null);
+        return;
+      }
       setError(err instanceof Error ? err.message : sw.common.error);
     } finally {
       if (!success) setBusy(false);
     }
+  }
+
+  async function verifyAndFinish() {
+    if (!pendingVerification) return;
+    if (verificationCode.trim().length !== OTP_LENGTH) {
+      setVerificationError(`Enter the ${OTP_LENGTH}-digit code from your email.`);
+      return;
+    }
+    setBusy(true);
+    let success = false;
+    setVerificationError(null);
+    try {
+      await verifyCompanySignupOtp(pendingVerification.email, verificationCode);
+      const { role } = await finishCompanyRegistration({
+        company_id: company.id,
+        company_password: companyPassword,
+        full_name: pendingVerification.full_name,
+        phone: pendingVerification.phone,
+      });
+      success = true;
+      setHandoff(true);
+      onDone(role);
+    } catch (err) {
+      setVerificationError(err instanceof Error ? err.message : 'The code could not be verified.');
+    } finally {
+      if (!success) setBusy(false);
+    }
+  }
+
+  async function resendCode() {
+    if (!pendingVerification) return;
+    setVerificationError(null);
+    try {
+      await resendCompanySignupOtp(pendingVerification.email);
+      setVerificationError('A new verification code was sent.');
+    } catch (err) {
+      setVerificationError(err instanceof Error ? err.message : 'Could not resend the code.');
+    }
+  }
+
+  if (pendingVerification) {
+    return (
+      <Card className="border-role-admin/20 bg-surface p-5 shadow-sm">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div>
+            <h3 className="text-lg font-semibold text-ink">Verify your email</h3>
+            <p className="mt-1 text-sm leading-relaxed text-ink-muted">
+              We sent a {OTP_LENGTH}-digit code to <span className="font-medium text-ink">{pendingVerification.email}</span>.
+            </p>
+          </div>
+          <OtpInput
+            value={verificationCode}
+            onChange={setVerificationCode}
+            error={!!verificationError && verificationCode.length === OTP_LENGTH}
+            disabled={busy}
+          />
+          {verificationError && (
+            <p className={`text-sm ${verificationError.startsWith('A new') ? 'text-emerald-700' : 'text-red-600'}`}>
+              {verificationError}
+            </p>
+          )}
+          <Button type="button" tint="admin" fullWidth disabled={busy} onClick={() => void verifyAndFinish()}>
+            {busy ? 'Verifying…' : 'Verify and join company'}
+          </Button>
+          <div className="flex flex-wrap justify-center gap-4 text-sm">
+            <button type="button" disabled={busy} className="font-medium text-role-admin hover:underline disabled:cursor-not-allowed disabled:opacity-50" onClick={() => void resendCode()}>
+              Resend code
+            </button>
+            <button type="button" disabled={busy} className="text-ink-muted hover:text-ink disabled:cursor-not-allowed disabled:opacity-50" onClick={() => {
+              setPendingVerification(null); setVerificationCode(''); setVerificationError(null);
+            }}>
+              Back to account details
+            </button>
+          </div>
+        </div>
+      </Card>
+    );
   }
 
   if (busy || handoff) {

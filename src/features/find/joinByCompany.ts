@@ -11,10 +11,17 @@ export class CompanyAuthError extends Error {
     | 'invalid_credentials'
     | 'not_company_member'
     | 'deactivated'
+    | 'email_verification_required'
     | 'unknown';
   constructor(message: string, reason: CompanyAuthError['reason']) {
     super(message);
     this.reason = reason;
+  }
+}
+
+export class CompanyEmailVerificationRequiredError extends CompanyAuthError {
+  constructor(public readonly email: string) {
+    super('Check your inbox for the verification code.', 'email_verification_required');
   }
 }
 
@@ -117,18 +124,40 @@ export async function registerByCompany(input: {
     throw new CompanyAuthError(signUpErr.message, 'unknown');
   }
   if (!signUpData.session) {
-    if (signUpData.user?.identities?.length === 0) {
+    // A confirmed account belongs in the sign-in tab. An unconfirmed account
+    // (including a just-created one) must stay in this flow and receive an OTP.
+    if (signUpData.user?.email_confirmed_at) {
       throw new CompanyAuthError(
         'This email is already registered. Switch to “I already have an account” and log in instead.',
         'already_exists',
       );
     }
-    throw new CompanyAuthError(
-      'This account needs email verification. Check your inbox, then switch to “I already have an account” and log in to continue.',
-      'unknown',
-    );
+    throw new CompanyEmailVerificationRequiredError(input.email);
   }
 
+  return finishCompanyRegistration(input);
+}
+
+export async function verifyCompanySignupOtp(email: string, token: string): Promise<void> {
+  const { error } = await supabase.auth.verifyOtp({
+    email: email.trim().toLowerCase(),
+    token: token.trim(),
+    type: 'signup',
+  });
+  if (error) throw error;
+}
+
+export async function resendCompanySignupOtp(email: string): Promise<void> {
+  const { error } = await supabase.auth.resend({ type: 'signup', email: email.trim().toLowerCase() });
+  if (error) throw error;
+}
+
+export async function finishCompanyRegistration(input: {
+  company_id: string;
+  company_password: string;
+  full_name: string;
+  phone?: string;
+}): Promise<{ role: UserRole }> {
   const { data, error } = await supabase.functions.invoke<{ role: UserRole }>('join-company', {
     body: {
       company_id: input.company_id,
