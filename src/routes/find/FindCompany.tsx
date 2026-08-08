@@ -28,7 +28,7 @@ export function CompanyIcon({ logoUrl, size = 'md' }: { logoUrl: string | null; 
   if (logoUrl) {
     return (
       <div className={`${box} shrink-0 overflow-hidden rounded-lg border border-surface-border bg-surface`}>
-        <img src={logoUrl} alt="" className="h-full w-full object-cover" />
+        <img src={logoUrl} alt="" className="h-full w-full object-contain" />
       </div>
     );
   }
