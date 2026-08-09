@@ -27,7 +27,8 @@ function safe(value: string | null | undefined): string {
 
 // Progress screen shown inside the print window while every receipt is scanned.
 function progressMarkup(total: number): string {
-  return `<!doctype html><html><head><meta charset="utf-8" /><title>Preparing receipts…</title>
+  return `<!doctype html><html><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" /><title>Preparing receipts…</title>
 <style>
   :root { color-scheme: light; }
   body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
@@ -93,35 +94,49 @@ function buildPrintDocument(
     )
     .join('');
 
-  return `<!doctype html><html><head><meta charset="utf-8" /><title>Receipt Register - ${safe(company?.name ?? 'Risip')}</title>
+  return `<!doctype html><html><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Receipt Register - ${safe(company?.name ?? 'Risip')}</title>
 <style>
   @page { size: A4 portrait; margin: 10mm; }
   * { box-sizing: border-box; }
-  body { margin: 0; color: #172033; font: 11px/1.4 Arial, Helvetica, sans-serif; background: #fff; }
-  /* Fixed-height cells (not flex/min-height) so two receipts sit on one A4 sheet
-     without overflowing into blank trailing pages. */
-  .page { page-break-after: always; break-after: page; }
-  .page:last-child { page-break-after: auto; break-after: auto; }
-  .doc-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px;
-    padding-bottom: 6px; margin-bottom: 4mm; border-bottom: 2px solid #172033; }
+  body { margin: 0; color: #172033; font: 13px/1.45 Arial, Helvetica, sans-serif; background: #f1f5f9; }
+
+  /* ── SCREEN (phone / preview): one receipt per row, full width, readable ── */
+  .wrap { max-width: 820px; margin: 0 auto; padding: 14px; }
+  .doc-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
+    gap: 12px; padding-bottom: 8px; margin-bottom: 14px; border-bottom: 2px solid #172033; }
   .brand { display: flex; align-items: center; gap: 10px; }
-  .logo { width: 28px; height: 28px; object-fit: contain; border-radius: 50%; }
-  .co { font-size: 15px; font-weight: 700; letter-spacing: -.2px; }
-  .sub { margin-top: 2px; color: #667085; font-size: 9px; text-transform: uppercase; letter-spacing: 1.1px; }
-  .meta { color: #667085; text-align: right; font-size: 9px; }
-  .meta strong { display: block; color: #172033; font-size: 12px; }
-  .grid { display: flex; flex-direction: column; gap: 5mm; }
-  .cell { position: relative; height: 125mm; display: flex; align-items: center; justify-content: center;
-    border: 1px solid #e5e7eb; border-radius: 4px; overflow: hidden; background: #fff;
-    break-inside: avoid; page-break-inside: avoid; }
-  /* First page loses a little height to the header, so its cells are shorter. */
-  .page:first-child .cell { height: 118mm; }
-  .scan { max-width: 100%; max-height: 100%; object-fit: contain; }
-  .idx { position: absolute; top: 2mm; left: 2mm; color: #9ca3af; font-size: 9px; font-weight: 700; }
-  .missing { display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 10px; }
-  .pf { margin-top: 3mm; text-align: center; color: #9ca3af; font-size: 8px; }
-  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-</style></head><body>${pageMarkup}</body></html>`;
+  .logo { width: 30px; height: 30px; object-fit: contain; border-radius: 50%; }
+  .co { font-size: 17px; font-weight: 700; letter-spacing: -.2px; }
+  .sub { margin-top: 2px; color: #667085; font-size: 10px; text-transform: uppercase; letter-spacing: 1.1px; }
+  .meta { color: #667085; font-size: 11px; }
+  .meta strong { display: block; color: #172033; font-size: 13px; }
+  .grid { display: flex; flex-direction: column; gap: 14px; }
+  .cell { position: relative; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; }
+  .scan { display: block; width: 100%; height: auto; }
+  .idx { position: absolute; top: 8px; left: 8px; color: #9ca3af; font-size: 11px; font-weight: 700; }
+  .missing { display: flex; align-items: center; justify-content: center; min-height: 120px; color: #9ca3af; font-size: 12px; }
+  .pf { display: none; }
+
+  /* ── PRINT: exact A4, two receipts per sheet ── */
+  @media print {
+    body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .wrap { max-width: none; margin: 0; padding: 0; }
+    .doc-head { margin-bottom: 4mm; padding-bottom: 6px; }
+    .co { font-size: 15px; }
+    .page { page-break-after: always; break-after: page; }
+    .page:last-child { page-break-after: auto; break-after: auto; }
+    .grid { gap: 5mm; }
+    .cell { height: 125mm; display: flex; align-items: center; justify-content: center;
+      border: 1px solid #e5e7eb; border-radius: 4px; padding: 0; overflow: hidden;
+      break-inside: avoid; page-break-inside: avoid; }
+    .page:first-child .cell { height: 118mm; }
+    .scan { width: auto; max-width: 100%; max-height: 100%; object-fit: contain; }
+    .idx { top: 2mm; left: 2mm; font-size: 9px; }
+    .pf { display: block; margin-top: 3mm; text-align: center; color: #9ca3af; font-size: 8px; }
+  }
+</style></head><body><div class="wrap">${pageMarkup}</div></body></html>`;
 }
 
 export default function ReceiptPrintButton({ receipts, company, projects: _projects }: Props) {
