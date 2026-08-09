@@ -119,19 +119,22 @@ function buildPrintDocument(
   .missing { display: flex; align-items: center; justify-content: center; min-height: 120px; color: #9ca3af; font-size: 12px; }
   .pf { display: none; }
 
-  /* ── PRINT: exact A4, two receipts per sheet ── */
+  /* ── PRINT: exact A4, two receipts SIDE BY SIDE per sheet ── */
   @media print {
     body { background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .wrap { max-width: none; margin: 0; padding: 0; }
     .doc-head { margin-bottom: 4mm; padding-bottom: 6px; }
     .co { font-size: 15px; }
+    /* One sheet per .page. Two receipts side by side, each filling the sheet
+       height, so tall receipts print large. The grid height is fixed a little
+       under the A4 printable area so a receipt never splits across sheets. */
     .page { page-break-after: always; break-after: page; }
     .page:last-child { page-break-after: auto; break-after: auto; }
-    .grid { gap: 5mm; }
-    .cell { height: 125mm; display: flex; align-items: center; justify-content: center;
+    .grid { flex-direction: row; gap: 6mm; height: 250mm; }
+    .page:first-child .grid { height: 232mm; }
+    .cell { flex: 1 1 0; min-width: 0; height: 100%; display: flex; align-items: center; justify-content: center;
       border: 1px solid #e5e7eb; border-radius: 4px; padding: 0; overflow: hidden;
       break-inside: avoid; page-break-inside: avoid; }
-    .page:first-child .cell { height: 118mm; }
     .scan { width: auto; max-width: 100%; max-height: 100%; object-fit: contain; }
     .idx { top: 2mm; left: 2mm; font-size: 9px; }
     .pf { display: block; margin-top: 3mm; text-align: center; color: #9ca3af; font-size: 8px; }

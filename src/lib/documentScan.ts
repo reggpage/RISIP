@@ -269,7 +269,19 @@ export async function scanReceiptToDataUrl(url: string): Promise<string> {
     const cGray = grayscaleOf(cropped.getContext('2d')!.getImageData(0, 0, cw, ch).data, cw * ch);
     const cThr = Math.min(245, otsuThreshold(cGray) + 8);
     const corners = detectCorners(cGray, cw, ch, cThr);
-    const page = corners ? warpToRect(cropped, corners[0], corners[1], corners[2], corners[3]) : cropped;
+    // Nudge the corners ~3% outward so text right at the paper edge isn't clipped.
+    let page = cropped;
+    if (corners) {
+      const cx = (corners[0].x + corners[1].x + corners[2].x + corners[3].x) / 4;
+      const cy = (corners[0].y + corners[1].y + corners[2].y + corners[3].y) / 4;
+      const f = 0.03;
+      const clamp = (v: number, hi: number) => (v < 0 ? 0 : v > hi ? hi : v);
+      const e = corners.map((p) => ({
+        x: clamp(p.x + (p.x - cx) * f, cw - 1),
+        y: clamp(p.y + (p.y - cy) * f, ch - 1),
+      })) as [Pt, Pt, Pt, Pt];
+      page = warpToRect(cropped, e[0], e[1], e[2], e[3]);
+    }
 
     // 3) Crisp black-and-white.
     adaptiveBinarize(page);
