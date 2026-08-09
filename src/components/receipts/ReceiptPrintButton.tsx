@@ -98,20 +98,24 @@ function buildPrintDocument(
   @page { size: A4 portrait; margin: 10mm; }
   * { box-sizing: border-box; }
   body { margin: 0; color: #172033; font: 11px/1.4 Arial, Helvetica, sans-serif; background: #fff; }
-  .page { display: flex; flex-direction: column; min-height: 277mm; page-break-after: always; break-after: page; }
+  /* Fixed-height cells (not flex/min-height) so two receipts sit on one A4 sheet
+     without overflowing into blank trailing pages. */
+  .page { page-break-after: always; break-after: page; }
   .page:last-child { page-break-after: auto; break-after: auto; }
   .doc-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px;
-    padding-bottom: 8px; margin-bottom: 6mm; border-bottom: 2px solid #172033; }
+    padding-bottom: 6px; margin-bottom: 4mm; border-bottom: 2px solid #172033; }
   .brand { display: flex; align-items: center; gap: 10px; }
-  .logo { width: 30px; height: 30px; object-fit: contain; border-radius: 50%; }
-  .co { font-size: 16px; font-weight: 700; letter-spacing: -.2px; }
+  .logo { width: 28px; height: 28px; object-fit: contain; border-radius: 50%; }
+  .co { font-size: 15px; font-weight: 700; letter-spacing: -.2px; }
   .sub { margin-top: 2px; color: #667085; font-size: 9px; text-transform: uppercase; letter-spacing: 1.1px; }
   .meta { color: #667085; text-align: right; font-size: 9px; }
   .meta strong { display: block; color: #172033; font-size: 12px; }
-  .grid { flex: 1; display: flex; flex-direction: column; gap: 6mm; min-height: 0; }
-  .cell { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center;
+  .grid { display: flex; flex-direction: column; gap: 5mm; }
+  .cell { position: relative; height: 125mm; display: flex; align-items: center; justify-content: center;
     border: 1px solid #e5e7eb; border-radius: 4px; overflow: hidden; background: #fff;
     break-inside: avoid; page-break-inside: avoid; }
+  /* First page loses a little height to the header, so its cells are shorter. */
+  .page:first-child .cell { height: 118mm; }
   .scan { max-width: 100%; max-height: 100%; object-fit: contain; }
   .idx { position: absolute; top: 2mm; left: 2mm; color: #9ca3af; font-size: 9px; font-weight: 700; }
   .missing { display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 10px; }

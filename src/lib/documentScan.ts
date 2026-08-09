@@ -1,85 +1,24 @@
-// Apple-Notes-style document scan, entirely client-side and lazy-loaded.
+// Apple-Notes-style document scan, entirely client-side, no external libraries.
 //
-// Given a receipt image URL we: detect the paper, perspective-correct it to a
-// straight rectangle, and render it as a crisp near-black-and-white "scanned
-// page". OpenCV (~10MB WASM) and jscanify are pulled from a CDN on the first
-// scan only, so they never touch the initial app bundle. Every step degrades
-// gracefully: if OpenCV fails to load, or no paper is detected, we still return
-// a contrast-enhanced version of the original so printing never breaks.
-
-const OPENCV_URL = 'https://docs.opencv.org/4.10.0/opencv.js';
-const JSCANIFY_URL = 'https://cdn.jsdelivr.net/npm/jscanify@1.3.0/src/jscanify.min.js';
-
-type Corner = { x: number; y: number };
-type Corners = {
-  topLeftCorner: Corner;
-  topRightCorner: Corner;
-  bottomLeftCorner: Corner;
-  bottomRightCorner: Corner;
-};
-
-const scriptCache = new Map<string, Promise<void>>();
-function loadScriptOnce(src: string): Promise<void> {
-  const cached = scriptCache.get(src);
-  if (cached) return cached;
-  const p = new Promise<void>((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = src;
-    s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error(`Failed to load ${src}`));
-    document.head.appendChild(s);
-  });
-  scriptCache.set(src, p);
-  return p;
-}
-
-let cvPromise: Promise<unknown> | null = null;
-function loadOpenCv(): Promise<unknown> {
-  if (cvPromise) return cvPromise;
-  cvPromise = (async () => {
-    const w = window as unknown as { cv?: unknown };
-    await loadScriptOnce(OPENCV_URL);
-    // Newer builds expose `cv` as a promise; older ones need onRuntimeInitialized.
-    let cv = w.cv as { Mat?: unknown; onRuntimeInitialized?: () => void; then?: unknown } | undefined;
-    if (cv && typeof (cv as { then?: unknown }).then === 'function') {
-      cv = (await (cv as unknown as Promise<typeof cv>)) as typeof cv;
-      w.cv = cv;
-    }
-    if (!cv) throw new Error('OpenCV did not initialise');
-    if (cv.Mat) return cv;
-    await new Promise<void>((resolve) => {
-      cv!.onRuntimeInitialized = () => resolve();
-    });
-    return w.cv;
-  })();
-  return cvPromise;
-}
-
-let scannerPromise: Promise<any> | null = null;
-function loadScanner(): Promise<any> {
-  if (scannerPromise) return scannerPromise;
-  scannerPromise = (async () => {
-    await loadScriptOnce(JSCANIFY_URL);
-    const Ctor = (window as unknown as { jscanify?: new () => any }).jscanify;
-    if (!Ctor) throw new Error('jscanify did not load');
-    return new Ctor();
-  })();
-  return scannerPromise;
-}
+// Given a receipt image URL we: crop away the background (the paper is bright,
+// the desk/hand behind it is darker), then whiten the paper and deepen the ink
+// for a crisp "scanned page" look. This is deliberately dependency-free — an
+// earlier OpenCV/jscanify build was unreliable in the field, so we use a robust
+// brightness-projection crop that works for the common case (light receipt on a
+// darker surface) and always degrades to a clean enhanced image, never a crash.
 
 async function loadBitmap(url: string): Promise<ImageBitmap> {
-  // Fetch to a blob first so the canvas is never tainted (blob: is same-origin),
-  // which lets us read pixels back out for OpenCV and toDataURL.
+  // Blob first so the canvas is never tainted; honour EXIF so phone photos are
+  // upright before we analyse them.
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`image fetch failed (${resp.status})`);
-  return createImageBitmap(await resp.blob());
+  return createImageBitmap(await resp.blob(), { imageOrientation: 'from-image' });
 }
 
 function bitmapToCanvas(bmp: ImageBitmap, maxDim = 1800): HTMLCanvasElement {
   const scale = Math.min(1, maxDim / Math.max(bmp.width, bmp.height));
-  const w = Math.round(bmp.width * scale);
-  const h = Math.round(bmp.height * scale);
+  const w = Math.max(1, Math.round(bmp.width * scale));
+  const h = Math.max(1, Math.round(bmp.height * scale));
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -87,36 +26,93 @@ function bitmapToCanvas(bmp: ImageBitmap, maxDim = 1800): HTMLCanvasElement {
   return canvas;
 }
 
-function dist(a: Corner, b: Corner): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-// Rejects degenerate detections (a sliver, or basically the whole frame) so we
-// fall back to the full image instead of producing a warped mess.
-function cornersAreUsable(c: Corners, imgW: number, imgH: number): boolean {
-  const pts = [c.topLeftCorner, c.topRightCorner, c.bottomRightCorner, c.bottomLeftCorner];
-  if (pts.some((p) => !p || !Number.isFinite(p.x) || !Number.isFinite(p.y))) return false;
-  // Shoelace area of the quad.
-  let area = 0;
-  for (let i = 0; i < pts.length; i++) {
-    const p = pts[i];
-    const q = pts[(i + 1) % pts.length];
-    area += p.x * q.y - q.x * p.y;
+// Otsu's method: pick the grey level that best separates dark (background) from
+// bright (paper) pixels, from a 256-bin histogram.
+function otsuThreshold(hist: number[], total: number): number {
+  let sum = 0;
+  for (let t = 0; t < 256; t++) sum += t * hist[t];
+  let sumB = 0;
+  let wB = 0;
+  let max = 0;
+  let threshold = 127;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (wB === 0) continue;
+    const wF = total - wB;
+    if (wF === 0) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const between = wB * wF * (mB - mF) * (mB - mF);
+    if (between > max) {
+      max = between;
+      threshold = t;
+    }
   }
-  area = Math.abs(area) / 2;
-  const frac = area / (imgW * imgH);
-  return frac > 0.12 && frac < 0.999;
+  return threshold;
 }
 
-function paperSize(c: Corners): { w: number; h: number } {
-  const wTop = dist(c.topLeftCorner, c.topRightCorner);
-  const wBot = dist(c.bottomLeftCorner, c.bottomRightCorner);
-  const hL = dist(c.topLeftCorner, c.bottomLeftCorner);
-  const hR = dist(c.topRightCorner, c.bottomRightCorner);
-  const w = Math.round((wTop + wBot) / 2);
-  const h = Math.round((hL + hR) / 2);
-  const clamp = (v: number) => Math.max(240, Math.min(2200, v));
-  return { w: clamp(w), h: clamp(h) };
+// Crop to the paper by projecting bright pixels onto each axis and trimming the
+// margins that are mostly background. Returns the same canvas if it cannot find
+// a confident, large-enough region (so we never over-crop into the receipt).
+function autoCropPaper(src: HTMLCanvasElement): HTMLCanvasElement {
+  const { width: w, height: h } = src;
+  const ctx = src.getContext('2d')!;
+  const data = ctx.getImageData(0, 0, w, h).data;
+
+  const gray = new Uint8ClampedArray(w * h);
+  const hist = new Array<number>(256).fill(0);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const g = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114) | 0;
+    gray[p] = g;
+    hist[g]++;
+  }
+  // Bias the threshold up a touch so faint desk texture doesn't read as "paper".
+  const thr = Math.min(245, otsuThreshold(hist, w * h) + 10);
+
+  const colCount = new Int32Array(w);
+  const rowCount = new Int32Array(h);
+  for (let y = 0; y < h; y++) {
+    const base = y * w;
+    let rc = 0;
+    for (let x = 0; x < w; x++) {
+      if (gray[base + x] > thr) {
+        rc++;
+        colCount[x]++;
+      }
+    }
+    rowCount[y] = rc;
+  }
+
+  // A row/column belongs to the paper if a good share of it is bright.
+  const colNeed = h * 0.3;
+  const rowNeed = w * 0.3;
+  let x0 = 0;
+  while (x0 < w && colCount[x0] < colNeed) x0++;
+  let x1 = w - 1;
+  while (x1 > x0 && colCount[x1] < colNeed) x1--;
+  let y0 = 0;
+  while (y0 < h && rowCount[y0] < rowNeed) y0++;
+  let y1 = h - 1;
+  while (y1 > y0 && rowCount[y1] < rowNeed) y1--;
+
+  const cw = x1 - x0;
+  const ch = y1 - y0;
+  // Bail if the detected region is implausibly small (bad lighting) — better to
+  // print the whole enhanced photo than a sliver.
+  if (cw < w * 0.25 || ch < h * 0.25) return src;
+
+  const pad = Math.round(Math.min(cw, ch) * 0.02);
+  x0 = Math.max(0, x0 - pad);
+  y0 = Math.max(0, y0 - pad);
+  x1 = Math.min(w - 1, x1 + pad);
+  y1 = Math.min(h - 1, y1 + pad);
+
+  const out = document.createElement('canvas');
+  out.width = x1 - x0;
+  out.height = y1 - y0;
+  out.getContext('2d')!.drawImage(src, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
+  return out;
 }
 
 // Whiten the background and deepen the ink for a clean "scanned document" look
@@ -157,39 +153,15 @@ function enhanceToDocument(canvas: HTMLCanvasElement): void {
 
 /**
  * Scan a single receipt image into a Notes-style black-and-white data URL.
- * Never throws — on any failure it returns an enhanced (or original) image.
+ * Never throws — on any failure it returns the original URL untouched.
  */
 export async function scanReceiptToDataUrl(url: string): Promise<string> {
-  let srcCanvas: HTMLCanvasElement;
   try {
-    srcCanvas = bitmapToCanvas(await loadBitmap(url), 1800);
+    const src = bitmapToCanvas(await loadBitmap(url), 1800);
+    const cropped = autoCropPaper(src);
+    enhanceToDocument(cropped);
+    return cropped.toDataURL('image/jpeg', 0.9);
   } catch {
-    return url; // Could not even load it — let the print fall back to the URL.
-  }
-
-  try {
-    const cv = (await loadOpenCv()) as { imread: (c: HTMLCanvasElement) => { delete?: () => void } };
-    const scanner = await loadScanner();
-    let cropped: HTMLCanvasElement | null = null;
-    const mat = cv.imread(srcCanvas);
-    try {
-      const contour = scanner.findPaperContour(mat);
-      if (contour) {
-        const corners = scanner.getCornerPoints(contour) as Corners;
-        if (cornersAreUsable(corners, srcCanvas.width, srcCanvas.height)) {
-          const { w, h } = paperSize(corners);
-          cropped = scanner.extractPaper(srcCanvas, w, h, corners) as HTMLCanvasElement;
-        }
-        (contour as { delete?: () => void }).delete?.();
-      }
-    } finally {
-      mat.delete?.();
-    }
-    const out = cropped ?? srcCanvas;
-    enhanceToDocument(out);
-    return out.toDataURL('image/jpeg', 0.9);
-  } catch {
-    enhanceToDocument(srcCanvas);
-    return srcCanvas.toDataURL('image/jpeg', 0.9);
+    return url;
   }
 }
