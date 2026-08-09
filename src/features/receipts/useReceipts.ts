@@ -14,20 +14,29 @@ export function useReceipts(projectId?: string, limit = 50) {
   const [state, setState] = useState<State>({ status: 'loading' });
   const projectIdRef = useRef(projectId);
   projectIdRef.current = projectId;
+  // Monotonic request id so a slow in-flight fetch can't overwrite a newer one
+  // (e.g. when the user switches projects quickly).
+  const reqSeq = useRef(0);
 
   const refresh = useCallback(async () => {
+    const seq = ++reqSeq.current;
+    const pid = projectIdRef.current;
     let query = supabase
       .from('receipts')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(limit);
-    if (projectIdRef.current) query = query.eq('project_id', projectIdRef.current);
+    if (pid) query = query.eq('project_id', pid);
     const { data, error } = await query;
+    if (seq !== reqSeq.current) return; // superseded by a newer request
     if (error) setState({ status: 'error', message: error.message });
     else setState({ status: 'ready', receipts: (data ?? []) as Receipt[] });
   }, [limit]);
 
   useEffect(() => {
+    // Clear the previous project's rows immediately so the dashboard shows a
+    // loading state for the new project instead of stale numbers, then refetch.
+    setState({ status: 'loading' });
     void refresh();
   }, [projectId, refresh]);
 
