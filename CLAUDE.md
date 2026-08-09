@@ -22,9 +22,9 @@ Invite links are role-bound (one link per role per project — never a role drop
 
 ## Data model (see `supabase/migrations/`)
 
-Every business row is scoped by `company_id`, directly or via `project → company`. `receipts.company_id` is denormalized and kept in sync by a trigger so the duplicate-receipt unique index can span the whole company.
+Every business row is scoped by `company_id`, directly or via `project → company`. `receipts.company_id` is denormalized and kept in sync by a trigger.
 
-Duplicate/fraud guard: unique index on `(receipts.company_id, verification_code)` where `status <> 'duplicate'`.
+Duplicate/fraud guard: **global** unique index on `(receipts.verification_code)` where `verification_code is not null and status <> 'duplicate'` (migration 0041). A TRA verification code is one real transaction, so the same code is rejected across the whole platform — even across companies (no double input-VAT claim). The `23505` handlers in `extract-receipt` / `batch-extract-receipts` look up the original by `verification_code` alone and mark the newcomer `status='duplicate'`.
 
 ## RLS posture
 
