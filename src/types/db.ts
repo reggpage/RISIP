@@ -131,6 +131,9 @@ export type Receipt = {
   raw_ai_response: unknown;
   low_confidence_fields: string[];
   created_at: string;
+  /** Set once finance pays the uploader back for a cash_personal receipt. */
+  reimbursed_at: string | null;
+  reimbursed_by: string | null;
 };
 
 export type ReceiptAlias = {
@@ -423,6 +426,11 @@ export type Database = {
       respond_to_petty_cash_request: {
         Args: { p_transaction: string; p_accept: boolean };
         Returns: string;
+      };
+      /** Finance marks cash_personal receipts paid back (or undoes it). Returns rows changed. */
+      mark_receipts_reimbursed: {
+        Args: { p_receipt_ids: string[]; p_paid?: boolean };
+        Returns: number;
       };
       auth_company_id: { Args: Record<string, never>; Returns: string };
       auth_role: { Args: Record<string, never>; Returns: UserRole };

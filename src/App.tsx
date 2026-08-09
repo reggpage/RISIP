@@ -24,6 +24,7 @@ import PettyCashPage from '@/routes/pettyCash/PettyCashPage';
 import SettingsPage from '@/routes/settings/SettingsPage';
 import NotificationsPage from '@/routes/notifications/NotificationsPage';
 import RetirementsPage from '@/routes/retirements/RetirementsPage';
+import ReimbursementsPage from '@/routes/reimbursements/ReimbursementsPage';
 
 export default function App() {
   return (
@@ -72,6 +73,7 @@ export default function App() {
         <Route path="/receipts/new" element={<ManualReceipt />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/retirements" element={<RetirementsPage />} />
+        <Route path="/reimbursements" element={<ReimbursementsPage />} />
         <Route
           path="/claims"
           element={

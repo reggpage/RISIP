@@ -10,6 +10,7 @@ import AddReceiptSheet from '@/components/receipts/AddReceiptSheet';
 import BatchScanPanel from '@/components/receipts/BatchScanPanel';
 import ReceiptPrintButton from '@/components/receipts/ReceiptPrintButton';
 import StaffBalanceCard from '@/components/pettyCash/StaffBalanceCard';
+import OwedToMeCard from '@/components/reimbursements/OwedToMeCard';
 import { useReceipts } from '@/features/receipts/useReceipts';
 import { useProjects } from '@/features/projects/useProjects';
 import { useAuth } from '@/lib/auth';
@@ -170,6 +171,7 @@ export default function ReceiptsPage() {
       </div>
 
       <StaffBalanceCard />
+      <OwedToMeCard />
 
       {/* Toolbar row: All/My segmented control + a Projects dropdown to filter the list
           down to one project. */}
