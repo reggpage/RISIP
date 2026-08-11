@@ -78,7 +78,7 @@ export default function ReceiptDetailModal({
     receipt_date: '', receipt_number: '', verification_code: '', vendor_tin: '', vendor_vrn: '',
     // Project and payment source are chosen here too: a receipt that arrived over
     // WhatsApp has neither, and both are required before it can be approved.
-    project_id: '', payment_method: 'cash_personal' as PaymentMethod,
+    project_id: '', payment_method: '' as PaymentMethod | '',
   });
 
   function startEdit() {
@@ -95,7 +95,9 @@ export default function ReceiptDetailModal({
       // Null means nobody has chosen a project yet (a WhatsApp receipt with an
       // ambiguous caption), so the selector opens empty rather than pre-filled.
       project_id: data.project_id ?? '',
-      payment_method: data.payment_method,
+      // Seed from the confirmed value; if there is none, offer the caption's
+      // suggestion pre-selected but still requiring an explicit save.
+      payment_method: data.payment_method ?? data.payment_method_suggested ?? '',
     });
     setEditing(true);
   }
@@ -139,7 +141,7 @@ export default function ReceiptDetailModal({
       vendor_tin: form.vendor_tin.trim() || null,
       vendor_vrn: form.vendor_vrn.trim() || null,
       ...(form.project_id ? { project_id: form.project_id } : {}),
-      payment_method: form.payment_method,
+      payment_method: form.payment_method || null,
       details_confirmed: canApprove,
       // Saving a reviewed pending receipt confirms it; this replaces the old
       // scan-to-email approval panel without silently approving it.
@@ -431,6 +433,7 @@ export default function ReceiptDetailModal({
                     onChange={(e) => setForm((f) => ({ ...f, payment_method: e.target.value as PaymentMethod }))}
                     className={inputCls}
                   >
+                    <option value="">Not confirmed — choose one</option>
                     <option value="cash_personal">Cash / Personal money</option>
                     <option value="petty_cash">Petty cash</option>
                   </select>
@@ -544,7 +547,21 @@ export default function ReceiptDetailModal({
                   value={
                     <span className="inline-flex items-center gap-1 text-sm text-ink">
                       {data.payment_method === 'petty_cash' && <Wallet className="h-3.5 w-3.5 text-role-admin" />}
-                      {data.payment_method === 'petty_cash' ? 'Petty cash' : 'Cash / Personal'}
+                      {data.payment_method === 'petty_cash'
+                        ? 'Petty cash'
+                        : data.payment_method === 'cash_personal'
+                          ? 'Cash / Personal'
+                          : (
+                            <span className="text-sky-600">
+                              Not confirmed
+                              {data.payment_method_suggested && (
+                                <span className="text-ink-muted">
+                                  {' '}· suggested:{' '}
+                                  {data.payment_method_suggested === 'petty_cash' ? 'Petty cash' : 'Cash / Personal'}
+                                </span>
+                              )}
+                            </span>
+                          )}
                     </span>
                   }
                 />

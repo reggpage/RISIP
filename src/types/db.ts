@@ -127,7 +127,11 @@ export type Receipt = {
   category: string | null;
   status: ReceiptStatus;
   duplicate_of: string | null;
-  payment_method: PaymentMethod;
+  /** Confirmed payment source. Null until a human confirms it (see 0049). */
+  payment_method: PaymentMethod | null;
+  /** Proposal only, e.g. parsed from a WhatsApp caption. Never authoritative. */
+  payment_method_suggested: PaymentMethod | null;
+  payment_method_reason: string | null;
   scanned_doc_id: string | null;
   raw_ai_response: unknown;
   low_confidence_fields: string[];

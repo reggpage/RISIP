@@ -25,6 +25,7 @@ import {
 } from '../_shared/whatsapp.ts';
 import {
   buildReceiptReplyV2,
+  resolvePaymentSource,
   resolveProject,
   type Lang,
   type ProjectRef,
@@ -210,6 +211,7 @@ async function processJob(db: Admin, job: any): Promise<void> {
     db, profile.id as string, identity.company_id as string, String(profile.role ?? 'worker'),
   );
   const resolution = resolveProject(caption, projects);
+  const paymentSuggestion = resolvePaymentSource(caption);
   const projectId = resolution.kind === 'resolved' ? resolution.projectId : null;
 
   if (projects.length === 0) {
@@ -242,10 +244,12 @@ async function processJob(db: Admin, job: any): Promise<void> {
     image_url: path,
     status: 'processing',
     source: 'whatsapp',
-    payment_method: 'cash_personal',
-    // Nothing sent over WhatsApp carries a chosen category or payment source, and
-    // the project is only genuinely theirs when they had exactly one. Until a
-    // human confirms all three this cannot be approved or counted as spend.
+    // Null, never a default: nobody has said how this was paid. A suggestion
+    // parsed from the caption is recorded separately and stays a suggestion —
+    // it must not decide whether the company owes this person money.
+    payment_method: null,
+    payment_method_suggested: paymentSuggestion,
+    payment_method_reason: paymentSuggestion ? 'whatsapp_caption' : null,
     details_confirmed: false,
   });
   if (insErr) throw new Error(`receipt insert failed: ${insErr.message}`);
@@ -349,8 +353,14 @@ async function processJob(db: Admin, job: any): Promise<void> {
   await audit(db, {
     company_id: identity.company_id as string, profile_id: profile.id as string,
     wa_message_id: String(job.wa_message_id), intent: 'submit_receipt',
-    action: projectId ? `project_${resolution.kind === 'resolved' ? resolution.reason : 'none'}` : 'project_unassigned',
-    outcome: 'pending_review', receipt_id: receiptId,
+    action: [
+      projectId
+        ? `project:${resolution.kind === 'resolved' ? resolution.reason : 'none'}`
+        : 'project:unassigned',
+      `payment_suggested:${paymentSuggestion ?? 'unknown'}`,
+      caption ? 'caption:present' : 'caption:absent',
+    ].join(' '),
+    outcome: 'pending_review · nothing confirmed, nothing counted', receipt_id: receiptId,
   });
 }
 
