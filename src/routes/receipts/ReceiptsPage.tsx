@@ -185,7 +185,14 @@ export default function ReceiptsPage() {
     const { error } = await supabase.from('receipts').delete().in('id', ids);
     setDeletingBulk(false);
     if (error) {
-      toast.error(error.message);
+      // 23503: the receipt is referenced by a retirement bundle or a generated
+      // invoice, both of which deliberately RESTRICT deletes so an approved
+      // document can never lose the evidence behind it.
+      toast.error(
+        error.code === '23503'
+          ? 'Some of these receipts belong to a retirement or an invoice and cannot be deleted. Remove them from that document first.'
+          : error.message,
+      );
       return;
     }
     ids.forEach((id) =>

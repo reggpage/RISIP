@@ -7,7 +7,8 @@ import Input from '@/components/ui/Input';
 import NumberInput from '@/components/ui/NumberInput';
 import { ListItemSkeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
-import { requestTopUp, useCompanyPettyCash, type StaffWithAccount } from '@/features/pettyCash/pettyCash';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
+import { cancelTopUp, requestTopUp, useCompanyPettyCash, type StaffWithAccount } from '@/features/pettyCash/pettyCash';
 import { useAuth } from '@/lib/auth';
 import { formatMoney } from '@/lib/format';
 
@@ -20,6 +21,30 @@ export default function PettyCashPage() {
   const { rows, loading, error, refresh } = useCompanyPettyCash();
   const [topUpTarget, setTopUpTarget] = useState<StaffWithAccount | null>(null);
   const [viewTarget, setViewTarget] = useState<StaffWithAccount | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const toast = useToast();
+  const confirm = useConfirm();
+
+  async function cancelPending(row: StaffWithAccount) {
+    if (!row.pending_txn_id) return;
+    const ok = await confirm({
+      title: `Cancel ${formatMoney(row.pending)} top-up?`,
+      message: `${row.full_name} has not accepted it yet, so nothing has been spent. They will be notified.`,
+      confirmLabel: 'Cancel top-up',
+      danger: true,
+    });
+    if (!ok) return;
+    setCancellingId(row.pending_txn_id);
+    try {
+      await cancelTopUp(row.pending_txn_id);
+      toast.success('Top-up cancelled.');
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not cancel the top-up.');
+    } finally {
+      setCancellingId(null);
+    }
+  }
 
   const authReady = auth.status !== 'loading';
   const profile = auth.status === 'signed-in' ? auth.profile : null;
@@ -98,12 +123,24 @@ export default function PettyCashPage() {
                 {/* Pending top-up: sent but not yet accepted. Plain text (no card)
                     so it reads as a quiet note; the purpose headlines the line. */}
                 {r.pending > 0 && (
-                  <p className="order-last w-full text-xs leading-relaxed">
+                  <p className="order-last flex w-full flex-wrap items-center gap-x-1 text-xs leading-relaxed">
                     {r.pending_note && (
                       <span className="font-semibold text-ink">{r.pending_note} · </span>
                     )}
                     <span className="font-semibold text-amber-700">Pending {formatMoney(r.pending)}</span>
-                    <span className="text-ink-muted"> — awaiting {r.full_name.split(' ')[0]}'s acceptance</span>
+                    <span className="text-ink-muted">— awaiting {r.full_name.split(' ')[0]}'s acceptance</span>
+                    {/* Withdraw a request sent by mistake. Only possible while it is
+                        still pending; accepted cash needs a real adjustment. */}
+                    {r.pending_txn_id && (
+                      <button
+                        type="button"
+                        onClick={() => void cancelPending(r)}
+                        disabled={cancellingId === r.pending_txn_id}
+                        className="ml-1 font-medium text-red-600 hover:underline disabled:opacity-50"
+                      >
+                        {cancellingId === r.pending_txn_id ? 'Cancelling…' : 'Cancel'}
+                      </button>
+                    )}
                   </p>
                 )}
               </li>

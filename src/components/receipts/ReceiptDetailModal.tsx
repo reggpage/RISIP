@@ -296,7 +296,16 @@ export default function ReceiptDetailModal({
     setDeleting(true);
     const { error } = await supabase.from('receipts').delete().eq('id', data.id);
     setDeleting(false);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      // 23503: referenced by a retirement bundle or an invoice, which RESTRICT
+      // deletes so an approved document keeps its supporting evidence.
+      toast.error(
+        error.code === '23503'
+          ? 'This receipt belongs to a retirement or an invoice, so it cannot be deleted. Remove it from that document first.'
+          : error.message,
+      );
+      return;
+    }
     window.dispatchEvent(new CustomEvent('risip:receipt-deleted', { detail: { id: data.id, projectId: data.project_id } }));
     toast.success('Receipt deleted.');
     onDeleted?.(data.id);

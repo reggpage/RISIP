@@ -60,6 +60,8 @@ export type StaffWithAccount = {
   // Purpose of the most recent pending top-up (the "what's this for?" note), so
   // the page can headline what the cash is for.
   pending_note: string | null;
+  // Most recent pending top-up, so finance can withdraw it if it was a mistake.
+  pending_txn_id: string | null;
 };
 
 export function useCompanyPettyCash() {
@@ -79,7 +81,7 @@ export function useCompanyPettyCash() {
         .in('role', ['worker', 'accountant'])
         .is('deactivated_at', null),
       supabase.from('petty_cash_accounts').select('id, user_id, current_balance'),
-      supabase.from('petty_cash_transactions').select('account_id, amount, status, description, created_at'),
+      supabase.from('petty_cash_transactions').select('id, account_id, amount, status, description, created_at'),
     ]);
     setLoading(false);
     if (profRes.error) { setError(profRes.error.message); return; }
@@ -98,8 +100,8 @@ export function useCompanyPettyCash() {
     // Roll up transactions per account. Declined entries are ignored entirely;
     // pending top-ups are tracked separately (not yet spendable) so the page can
     // show them faded, and only 'accepted' entries move topped-up / spent totals.
-    type Totals = { toppedUp: number; spent: number; pending: number; pendingNote: string | null; pendingAt: string };
-    const emptyTotals = (): Totals => ({ toppedUp: 0, spent: 0, pending: 0, pendingNote: null, pendingAt: '' });
+    type Totals = { toppedUp: number; spent: number; pending: number; pendingNote: string | null; pendingAt: string; pendingTxnId: string | null };
+    const emptyTotals = (): Totals => ({ toppedUp: 0, spent: 0, pending: 0, pendingNote: null, pendingAt: '', pendingTxnId: null });
     const totalsByAcct = new Map<string, Totals>();
     for (const t of txnRes.data ?? []) {
       const st = t.status as string | null;
@@ -115,6 +117,7 @@ export function useCompanyPettyCash() {
             cur.pendingAt = at;
             const note = ((t.description as string | null) ?? '').trim();
             cur.pendingNote = note && note.toLowerCase() !== 'top-up' ? note : null;
+            cur.pendingTxnId = String(t.id);
           }
         }
       } else if (amt >= 0) {
@@ -138,6 +141,7 @@ export function useCompanyPettyCash() {
         total_spent: totals.spent,
         pending: totals.pending,
         pending_note: totals.pendingNote,
+        pending_txn_id: totals.pendingTxnId,
       } satisfies StaffWithAccount;
     });
     setRows(merged);
@@ -193,4 +197,15 @@ export async function requestTopUp(
     });
   if (error) throw error;
   return { id: data as string } as PettyCashTransaction;
+}
+
+// Finance withdraws a top-up that the recipient has not accepted yet. Accepted
+// top-ups are intentionally not cancellable — that cash is already spendable and
+// must be corrected with a real adjustment rather than by rewriting history.
+export async function cancelTopUp(transactionId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('cancel_petty_cash_request', {
+    p_transaction: transactionId,
+  });
+  if (error) throw error;
+  return (data as number) ?? 0;
 }

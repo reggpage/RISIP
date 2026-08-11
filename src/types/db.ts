@@ -429,6 +429,8 @@ export type Database = {
         Args: { p_user: string; p_amount: number; p_description?: string | null };
         Returns: string;
       };
+      /** Finance withdraws a still-pending top-up. Returns rows changed. */
+      cancel_petty_cash_request: { Args: { p_transaction: string }; Returns: number };
       respond_to_petty_cash_request: {
         Args: { p_transaction: string; p_accept: boolean };
         Returns: string;
