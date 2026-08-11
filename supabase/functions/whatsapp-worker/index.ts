@@ -19,11 +19,16 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import {
   buildFailureReply,
-  buildReceiptReply,
   buildReviewUrl,
   maskPhone,
   validateMedia,
 } from '../_shared/whatsapp.ts';
+import {
+  buildReceiptReplyV2,
+  resolveProject,
+  type Lang,
+  type ProjectRef,
+} from '../_shared/whatsappIntent.ts';
 import { downloadMedia, getMediaMeta, sendWhatsAppText, showTyping } from '../_shared/whatsappApi.ts';
 
 const MAX_RETRIES = 3;
@@ -46,43 +51,58 @@ async function replyQuietly(to: string | null, body: string): Promise<void> {
 }
 
 /**
- * Find a home for the row. project_id is NOT NULL and RLS visibility derives from
- * it, so a receipt must reference some project — but when the employee has more
- * than one, we must not pretend a choice was made. `sole` says whether the pick is
- * genuinely theirs (exactly one candidate) or merely provisional; the caller uses
- * it to decide whether the details still need confirming.
+ * Every active project this person is actually allowed to file against. Workers
+ * get the projects they are a member of; owners and accountants see the whole
+ * company, which mirrors auth_can_see_project. An unauthorised project is simply
+ * absent from this list, so a caption naming one is indistinguishable from a
+ * caption naming a project that does not exist — we never confirm or deny it.
  */
-async function pickProject(
+async function authorizedProjects(
   db: Admin,
   profileId: string,
   companyId: string,
-): Promise<{ id: string; sole: boolean } | null> {
+  role: string,
+): Promise<ProjectRef[]> {
+  if (role === 'owner' || role === 'accountant') {
+    const { data } = await db
+      .from('projects')
+      .select('id, name')
+      .eq('company_id', companyId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false });
+    return (data ?? []) as ProjectRef[];
+  }
+
   const { data: memberships } = await db
     .from('project_members')
     .select('project_id')
     .eq('profile_id', profileId);
-
   const ids = (memberships ?? []).map((m) => m.project_id as string);
-  if (ids.length > 0) {
-    const { data } = await db
-      .from('projects')
-      .select('id')
-      .in('id', ids)
-      .eq('company_id', companyId)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false });
-    if (data?.length) return { id: data[0].id as string, sole: data.length === 1 };
-  }
+  if (ids.length === 0) return [];
 
-  // Finance roles are not project members; fall back to the company's projects.
-  const { data: fallback } = await db
+  const { data } = await db
     .from('projects')
-    .select('id')
+    .select('id, name')
+    .in('id', ids)
     .eq('company_id', companyId)
     .eq('status', 'active')
     .order('created_at', { ascending: false });
-  if (!fallback?.length) return null;
-  return { id: fallback[0].id as string, sole: fallback.length === 1 };
+  return (data ?? []) as ProjectRef[];
+}
+
+/** Append-only trail. Never records message bodies, tokens or secrets. */
+async function audit(
+  db: Admin,
+  row: {
+    company_id?: string | null; profile_id?: string | null; wa_message_id?: string | null;
+    intent?: string; action?: string; outcome?: string; receipt_id?: string | null;
+  },
+): Promise<void> {
+  try {
+    await db.from('whatsapp_audit_log').insert(row);
+  } catch {
+    // Auditing must never break the flow it is describing.
+  }
 }
 
 /** Tell the company's finance people that something is waiting, in-app only. */
@@ -130,7 +150,7 @@ async function processJob(db: Admin, job: any): Promise<void> {
   // employee deactivated, between the webhook and now.
   const { data: identity } = await db
     .from('whatsapp_identities')
-    .select('profile_id, company_id')
+    .select('id, profile_id, company_id, lang')
     .eq('phone_e164', phone ?? '')
     .is('revoked_at', null)
     .maybeSingle();
@@ -142,7 +162,7 @@ async function processJob(db: Admin, job: any): Promise<void> {
     return;
   }
   const { data: profile } = await db
-    .from('profiles').select('id, company_id, deactivated_at')
+    .from('profiles').select('id, company_id, role, deactivated_at')
     .eq('id', identity.profile_id).maybeSingle();
   if (!profile || profile.deactivated_at) {
     await db.from('whatsapp_messages').update({
@@ -176,9 +196,16 @@ async function processJob(db: Admin, job: any): Promise<void> {
   }
 
   // 2. Store under the existing receipts convention: <project_id>/<receipt_id>.jpg
-  const picked = await pickProject(db, profile.id as string, identity.company_id as string);
-  const projectId = picked?.id ?? null;
-  if (!projectId) {
+  // The caption is untrusted text from the sender. It is only ever matched against
+  // projects they are already authorised to use, so it can widen nothing.
+  const caption = (job.caption as string | null) ?? null;
+  const projects = await authorizedProjects(
+    db, profile.id as string, identity.company_id as string, String(profile.role ?? 'worker'),
+  );
+  const resolution = resolveProject(caption, projects);
+  const projectId = resolution.kind === 'resolved' ? resolution.projectId : null;
+
+  if (projects.length === 0) {
     await db.from('whatsapp_messages').update({
       status: 'failed', last_error: 'no_active_project',
       processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -188,7 +215,12 @@ async function processJob(db: Admin, job: any): Promise<void> {
   }
 
   const receiptId = crypto.randomUUID();
-  const path = `${projectId}/${receiptId}.jpg`;
+  // An unassigned receipt has no project to key its path on, so it lands in the
+  // company's inbox folder. Storage RLS falls back to "readable if the receipt row
+  // is readable", so the sender and finance can still open the image.
+  const path = projectId
+    ? `${projectId}/${receiptId}.jpg`
+    : `${identity.company_id}/unassigned/${receiptId}.jpg`;
   const { error: upErr } = await db.storage
     .from('receipts')
     .upload(path, bytes, { contentType: check.mediaType, upsert: false });
@@ -247,28 +279,67 @@ async function processJob(db: Admin, job: any): Promise<void> {
     status: 'done', processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   }).eq('id', job.id);
 
+  const lang: Lang = (identity.lang as Lang | null) ?? 'en';
+
   // 6. Exactly one reply.
   if (isDuplicate) {
     // Deliberately says nothing about which company or employee filed the original —
     // the duplicate guard is global, and that would leak across tenants.
     await replyQuietly(
       phone,
-      `This receipt has already been recorded, so I did not file it again.\n\nYou can check your receipts here:\n${reviewUrl}`,
+      lang === 'sw'
+        ? `Risiti hii tayari imeshaingizwa, kwa hiyo sikuiweka tena.\n\nAngalia risiti zako hapa:\n${reviewUrl}`
+        : `This receipt has already been recorded, so I did not file it again.\n\nYou can check your receipts here:\n${reviewUrl}`,
     );
-  } else {
-    await notifyReviewers(
-      db, identity.company_id as string, profile.id as string,
-      receiptId, receipt?.vendor_name ?? null, receipt?.total_amount ?? null,
-    );
-    await replyQuietly(
-      phone,
-      buildReceiptReply({
-        vendor: receipt?.vendor_name ?? null,
-        total: receipt?.total_amount ?? null,
-        reviewUrl: buildReviewUrl(appUrl(), receiptId),
-      }),
-    );
+    await audit(db, {
+      company_id: identity.company_id as string, profile_id: profile.id as string,
+      wa_message_id: String(job.wa_message_id), intent: 'submit_receipt',
+      action: 'duplicate_rejected', outcome: 'skipped', receipt_id: receiptId,
+    });
+    return;
   }
+
+  await notifyReviewers(
+    db, identity.company_id as string, profile.id as string,
+    receiptId, receipt?.vendor_name ?? null, receipt?.total_amount ?? null,
+  );
+
+  // When the project is still unknown, remember the question we are about to ask
+  // so a bare "2" can be understood as the answer.
+  if (!projectId) {
+    const options = projects.slice(0, 9).map((p) => ({ id: p.id, name: p.name }));
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id,
+      company_id: identity.company_id,
+      profile_id: profile.id,
+      awaiting: 'project',
+      receipt_id: receiptId,
+      options,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+  }
+
+  const chosen = projectId ? projects.find((p) => p.id === projectId) ?? null : null;
+  await replyQuietly(
+    phone,
+    buildReceiptReplyV2({
+      lang,
+      vendor: receipt?.vendor_name ?? null,
+      total: receipt?.total_amount ?? null,
+      projectName: chosen?.name ?? null,
+      needsProject: !projectId,
+      projectOptions: projects,
+      reviewUrl: buildReviewUrl(appUrl(), receiptId),
+    }),
+  );
+
+  await audit(db, {
+    company_id: identity.company_id as string, profile_id: profile.id as string,
+    wa_message_id: String(job.wa_message_id), intent: 'submit_receipt',
+    action: projectId ? `project_${resolution.kind === 'resolved' ? resolution.reason : 'none'}` : 'project_unassigned',
+    outcome: 'pending_review', receipt_id: receiptId,
+  });
 }
 
 Deno.serve(async (req) => {

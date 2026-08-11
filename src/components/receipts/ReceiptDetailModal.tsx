@@ -92,9 +92,9 @@ export default function ReceiptDetailModal({
       verification_code: data.verification_code ?? '',
       vendor_tin: data.vendor_tin ?? '',
       vendor_vrn: data.vendor_vrn ?? '',
-      // Unconfirmed receipts start blank so the provisional project the worker
-      // used is never presented as somebody's choice.
-      project_id: data.details_confirmed ? data.project_id : '',
+      // Null means nobody has chosen a project yet (a WhatsApp receipt with an
+      // ambiguous caption), so the selector opens empty rather than pre-filled.
+      project_id: data.project_id ?? '',
       payment_method: data.payment_method,
     });
     setEditing(true);
@@ -106,7 +106,7 @@ export default function ReceiptDetailModal({
 
   // The three things that turn a captured image into a real project expense.
   const missingForApproval = [
-    !(editing ? form.project_id : data.details_confirmed ? data.project_id : '') && 'project',
+    !(editing ? form.project_id : data.project_id) && 'project',
     !(editing ? form.category : data.category) && 'category',
     !(editing ? form.payment_method : data.payment_method) && 'payment source',
   ].filter(Boolean) as string[];
@@ -553,7 +553,7 @@ export default function ReceiptDetailModal({
                 <Row
                   label="Project"
                   value={
-                    needsDetails
+                    data.project_id === null
                       ? <span className="text-sky-600">Not chosen yet</span>
                       : project?.name ?? '—'
                   }

@@ -110,7 +110,8 @@ export type PettyCashTransaction = {
 
 export type Receipt = {
   id: string;
-  project_id: string;
+  /** Null until someone chooses a project. See migration 0046. */
+  project_id: string | null;
   company_id: string;
   uploaded_by: string;
   image_url: string | null;
