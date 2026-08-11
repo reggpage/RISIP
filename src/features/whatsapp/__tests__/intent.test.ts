@@ -86,9 +86,12 @@ describe('resolvePaymentSource', () => {
     expect(resolvePaymentSource('This was paid from my own money')).toBe('cash_personal');
   });
 
-  it('reads company/petty cash', () => {
+  it('keeps a petty-cash float and a company card apart', () => {
+    // These are different pots of money: a float is already in the employee's
+    // hands and must be reduced, a company card never touches it.
     expect(resolvePaymentSource('nilitumia petty cash')).toBe('petty_cash');
-    expect(resolvePaymentSource('paid with the company card')).toBe('petty_cash');
+    expect(resolvePaymentSource('paid with the company card')).toBe('company_card');
+    expect(resolvePaymentSource('nimelipa kwa kadi ya kampuni')).toBe('company_card');
   });
 
   it('returns null when the caption does not say, so the app asks', () => {

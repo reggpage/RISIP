@@ -81,7 +81,7 @@ export type InviteLink = {
   created_at: string;
 };
 
-export type PaymentMethod = 'cash_personal' | 'petty_cash';
+export type PaymentMethod = 'cash_personal' | 'petty_cash' | 'company_card';
 export type PettyCashTxnType = 'allocation' | 'expense' | 'adjustment';
 export type PettyCashTransactionStatus = 'pending' | 'accepted' | 'declined';
 

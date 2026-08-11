@@ -138,21 +138,33 @@ export function resolveProject(
 
 // ── Payment source ─────────────────────────────────────────────────────────
 
-export type PaymentGuess = 'cash_personal' | 'petty_cash' | null;
+export type PaymentGuess = 'cash_personal' | 'petty_cash' | 'company_card' | null;
 
 /**
  * Read the payment source from a caption. Returns null when the caption does not
  * say — the app then asks rather than assuming, because this decides whether the
  * employee gets their money back.
+ *
+ * The three are financially distinct and must not be collapsed:
+ *   cash_personal  the employee's own money  → may become a reimbursement
+ *   petty_cash     drawn from a petty-cash float → reduces that float
+ *   company_card   company card/bank funds → neither of the above
  */
 export function resolvePaymentSource(caption: string | null | undefined): PaymentGuess {
   const t = normalise(String(caption ?? ''));
   if (!t) return null;
-  if (/(pesa|fedha) (yangu|zangu)|mfuko(ni)? wangu|my own money|own money|personal money|nimelipa mimi|nililipa mwenyewe/.test(t)) {
+
+  // Personal first: "my own card" must not be read as a company card.
+  if (/(pesa|fedha) (yangu|zangu)|mfuko(ni)? wangu|my own money|own money|personal money|personal card|my own card|kadi yangu|nimelipa mimi|nililipa mwenyewe/.test(t)) {
     return 'cash_personal';
   }
-  if (/petty cash|pettycash|hela ya kampuni|pesa ya kampuni|company (money|cash|card)|kadi ya kampuni/.test(t)) {
+  // A petty-cash float is money already issued to the employee.
+  if (/petty cash|pettycash|hela ndogo|pesa ndogo/.test(t)) {
     return 'petty_cash';
+  }
+  // Company-funded card or bank payment: touches no float.
+  if (/company (card|bank|account)|kadi ya kampuni|akaunti ya kampuni|hela ya kampuni|pesa ya kampuni|company (money|funds|cash)/.test(t)) {
+    return 'company_card';
   }
   return null;
 }

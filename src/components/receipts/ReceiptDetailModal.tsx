@@ -436,6 +436,7 @@ export default function ReceiptDetailModal({
                     <option value="">Not confirmed — choose one</option>
                     <option value="cash_personal">Cash / Personal money</option>
                     <option value="petty_cash">Petty cash</option>
+                    <option value="company_card">Company card / bank</option>
                   </select>
                 </Field>
                 <div className="grid grid-cols-2 gap-3">
@@ -549,7 +550,9 @@ export default function ReceiptDetailModal({
                       {data.payment_method === 'petty_cash' && <Wallet className="h-3.5 w-3.5 text-role-admin" />}
                       {data.payment_method === 'petty_cash'
                         ? 'Petty cash'
-                        : data.payment_method === 'cash_personal'
+                        : data.payment_method === 'company_card'
+                          ? 'Company card / bank'
+                          : data.payment_method === 'cash_personal'
                           ? 'Cash / Personal'
                           : (
                             <span className="text-sky-600">
@@ -557,7 +560,11 @@ export default function ReceiptDetailModal({
                               {data.payment_method_suggested && (
                                 <span className="text-ink-muted">
                                   {' '}· suggested:{' '}
-                                  {data.payment_method_suggested === 'petty_cash' ? 'Petty cash' : 'Cash / Personal'}
+                                  {data.payment_method_suggested === 'petty_cash'
+                                    ? 'Petty cash'
+                                    : data.payment_method_suggested === 'company_card'
+                                      ? 'Company card / bank'
+                                      : 'Cash / Personal'}
                                 </span>
                               )}
                             </span>

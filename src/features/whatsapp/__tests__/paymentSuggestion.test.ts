@@ -4,8 +4,8 @@ import { resolvePaymentSource } from '../../../../supabase/functions/_shared/wha
 type ReceiptRow = {
   status: string;
   details_confirmed: boolean;
-  payment_method: 'cash_personal' | 'petty_cash' | null;
-  payment_method_suggested: 'cash_personal' | 'petty_cash' | null;
+  payment_method: 'cash_personal' | 'petty_cash' | 'company_card' | null;
+  payment_method_suggested: 'cash_personal' | 'petty_cash' | 'company_card' | null;
   payment_method_reason: string | null;
 };
 
@@ -62,10 +62,21 @@ describe('petty cash and company card captions', () => {
     expect(r.payment_method).toBeNull();
   });
 
-  it('treats a company card as company money, still unconfirmed', () => {
+  it('suggests company_card for company funds, never petty_cash', () => {
+    // petty_cash means a float already issued to the employee; a company card is
+    // company money and touches no float. Collapsing them misstates the ledger.
     const r = receiptFromCaption('stationery for the office, paid with the company card');
-    expect(r.payment_method_suggested).toBe('petty_cash');
+    expect(r.payment_method_suggested).toBe('company_card');
     expect(r.payment_method).toBeNull();
+  });
+
+  it('reads Swahili company-card wording the same way', () => {
+    expect(receiptFromCaption('nimelipa kwa kadi ya kampuni').payment_method_suggested).toBe('company_card');
+  });
+
+  it('does not mistake an employee own card for a company card', () => {
+    expect(receiptFromCaption('I paid with my own card').payment_method_suggested).toBe('cash_personal');
+    expect(receiptFromCaption('nimelipa kwa kadi yangu').payment_method_suggested).toBe('cash_personal');
   });
 });
 
@@ -82,6 +93,14 @@ describe('missing or ambiguous wording', () => {
   it('leaves an ambiguous caption unknown so the app asks', () => {
     const r = receiptFromCaption('mafuta ya gari jana');
     expect(r.payment_method_suggested).toBeNull();
+  });
+
+  it('company_card never books petty cash', () => {
+    const r = receiptFromCaption('paid with the company card');
+    // Only an authoritative payment_method = 'petty_cash' books a float; a
+    // company_card suggestion cannot reach the ledger at all.
+    expect(r.payment_method_suggested).toBe('company_card');
+    expect(r.payment_method).toBeNull();
   });
 
   it('does not let instruction-shaped text force a payment source', () => {
