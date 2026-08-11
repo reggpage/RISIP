@@ -47,3 +47,7 @@ comment on column whatsapp_identities.lang is
 -- is matched against the sender's own authorised projects, never executed as an
 -- instruction and never used to widen access.
 alter table whatsapp_messages add column if not exists caption text;
+
+-- Per-step latency so the slowest part of the pipeline is measurable rather than
+-- guessed. Holds elapsed milliseconds only: no tokens, image bytes or personal data.
+alter table whatsapp_messages add column if not exists timings jsonb;

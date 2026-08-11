@@ -142,6 +142,12 @@ async function processJob(db: Admin, job: any): Promise<void> {
   const phone = job.phone_e164 as string | null;
   const reviewUrl = buildReviewUrl(appUrl());
 
+  // Elapsed-milliseconds marks per step. Numbers only — never payload or personal
+  // data — so the slowest stage is measurable without logging anything sensitive.
+  const t0 = Date.now();
+  const marks: Record<string, number> = { worker_start: 0 };
+  const mark = (name: string) => { marks[name] = Date.now() - t0; };
+
   // Acknowledge immediately so the sender sees "typing…" while extraction runs.
   // Free, and it is a status update rather than a second message.
   await showTyping(String(job.wa_message_id));
@@ -185,6 +191,7 @@ async function processJob(db: Admin, job: any): Promise<void> {
   }
 
   const { bytes } = await downloadMedia(meta.url);
+  mark('media_downloaded');
   const recheck = validateMedia(check.mediaType, bytes.byteLength);
   if (!recheck.ok) {
     await db.from('whatsapp_messages').update({
@@ -243,6 +250,7 @@ async function processJob(db: Admin, job: any): Promise<void> {
   });
   if (insErr) throw new Error(`receipt insert failed: ${insErr.message}`);
 
+  mark('receipt_stored');
   await db.from('whatsapp_messages')
     .update({ receipt_id: receiptId, updated_at: new Date().toISOString() })
     .eq('id', job.id);
@@ -260,6 +268,8 @@ async function processJob(db: Admin, job: any): Promise<void> {
     console.error('extract invoke failed', err instanceof Error ? err.message : 'unknown');
   }
 
+  mark('extraction_done');
+
   // 5. Read back whatever extraction produced.
   const { data: receipt } = await db
     .from('receipts')
@@ -275,8 +285,10 @@ async function processJob(db: Admin, job: any): Promise<void> {
   }
 
   const isDuplicate = receipt?.status === 'duplicate';
+  mark('reply_sent');
   await db.from('whatsapp_messages').update({
-    status: 'done', processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    status: 'done', timings: marks,
+    processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   }).eq('id', job.id);
 
   const lang: Lang = (identity.lang as Lang | null) ?? 'en';
