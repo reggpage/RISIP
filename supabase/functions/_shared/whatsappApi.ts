@@ -44,6 +44,33 @@ export async function sendWhatsAppText(toE164: string, body: string): Promise<vo
   }
 }
 
+/**
+ * Mark the incoming message read and show the "typing…" bubble while we work.
+ * This is a status update, not a message, so it costs nothing and does not count
+ * against the one-reply budget. Best effort: never let it break processing.
+ */
+export async function showTyping(messageId: string): Promise<void> {
+  const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
+  if (!phoneNumberId) return;
+  try {
+    await fetch(`${apiBase()}/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken()}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        status: 'read',
+        message_id: messageId,
+        typing_indicator: { type: 'text' },
+      }),
+    });
+  } catch {
+    // Cosmetic only.
+  }
+}
+
 export type MediaMeta = { url: string; mimeType: string; fileSize: number | null };
 
 /** Step 1 of media retrieval: resolve a media id to a short-lived download URL. */

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, AlertTriangle, XCircle, Loader2, MessageCircle, Receipt as ReceiptGlyph } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, Loader2, Receipt as ReceiptGlyph } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
+import WhatsAppIcon from '@/components/ui/WhatsappIcon';
 import Button from '@/components/ui/Button';
-import { useProjects } from '@/features/projects/useProjects';
 import { receiptImageUrl } from '@/features/receipts/uploadReceipt';
 import { supabase } from '@/lib/supabase';
 import { formatDate, formatMoney, formatTime } from '@/lib/format';
@@ -22,22 +22,22 @@ export default function ReceiptCard({
   onOpen,
   nickname,
   linkedToDuplicate = false,
+  selectable = false,
+  selected = false,
+  onSelectChange,
 }: {
   receipt: Receipt;
   onOpen?: (r: Receipt) => void;
   nickname?: string | null;
   linkedToDuplicate?: boolean;
+  selectable?: boolean;
+  selected?: boolean;
+  onSelectChange?: (checked: boolean) => void;
 }) {
   const [thumb, setThumb] = useState<string | null>(null);
   const [uploader, setUploader] = useState<string | null>(null);
-  const { state: projectsState } = useProjects();
   const meta = linkedToDuplicate ? STATUS_META.duplicate : STATUS_META[receipt.status];
   const StatusIcon = meta.icon;
-
-  const project =
-    projectsState.status === 'ready'
-      ? projectsState.projects.find((p) => p.id === receipt.project_id) ?? null
-      : null;
 
   useEffect(() => {
     if (!receipt.image_url) return;
@@ -67,7 +67,16 @@ export default function ReceiptCard({
 
   return (
     <div className="relative">
-    <Card className="flex gap-3 p-3">
+    <Card className={`flex gap-3 p-3 ${selected ? 'border-role-admin/50 bg-role-admin/5' : ''}`}>
+      {selectable && (
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={(e) => onSelectChange?.(e.target.checked)}
+          className="mt-1 h-4 w-4 shrink-0 accent-role-admin"
+          aria-label={`Select ${receipt.vendor_name ?? 'receipt'}`}
+        />
+      )}
       {/* Thumbnail slot — image if present, otherwise a bare (bg-less) receipt
           glyph, bigger than before so it reads at a glance on mobile lists. */}
       {thumb ? (
@@ -111,17 +120,13 @@ export default function ReceiptCard({
           )}
         </div>
 
-        {/* Meta line: bold uploader name (no "by") + project chip. Payment method
-            badges removed per feedback — that context lives in the Details modal. */}
+        {/* Project name is intentionally absent — the list already has a project
+            filter, and for WhatsApp receipts no project has been chosen yet. */}
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
           {uploader && <span className="font-semibold text-ink">{uploader}</span>}
-          {project && <span>· {project.name}</span>}
-          {/* Channel badge: only for receipts that did not come from the app, so
-              reviewers can see at a glance that nobody filled the form in. */}
           {receipt.source === 'whatsapp' && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">
-              <MessageCircle className="h-3 w-3" />
-              WhatsApp
+            <span className="inline-flex items-center gap-1 text-emerald-600" title="Sent via WhatsApp">
+              <WhatsAppIcon className="h-3.5 w-3.5" />
             </span>
           )}
         </div>

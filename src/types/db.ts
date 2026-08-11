@@ -136,6 +136,8 @@ export type Receipt = {
   reimbursed_by: string | null;
   /** Which channel the receipt arrived through. */
   source: ReceiptSource;
+  /** False until a human has chosen project, category and payment source. */
+  details_confirmed: boolean;
 };
 
 export type ReceiptSource = 'web' | 'batch' | 'inbound_email' | 'whatsapp';

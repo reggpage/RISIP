@@ -5,6 +5,8 @@ import Button from '@/components/ui/Button';
 import EmptyState from '@/components/ui/EmptyState';
 import Select from '@/components/ui/Select';
 import { ListItemSkeleton } from '@/components/ui/Skeleton';
+import { useToast } from '@/components/ui/Toast';
+import { useConfirm } from '@/components/ui/ConfirmDialog';
 import ReceiptCard from '@/components/receipts/ReceiptCard';
 import ReceiptDetailModal from '@/components/receipts/ReceiptDetailModal';
 import AddReceiptSheet from '@/components/receipts/AddReceiptSheet';
@@ -53,6 +55,14 @@ export default function ReceiptsPage() {
   }, [projectsState]);
   const effectiveProjectId = selectedProjectId ?? (activeProjects.length === 1 ? activeProjects[0].id : null);
   const { state: receiptsState } = useReceipts(selectedProjectId ?? undefined, 500);
+
+  // ── Bulk delete ──────────────────────────────────────────────────────────
+  // Mirrors the single-receipt rule in the detail modal: the uploader may remove
+  // their own, an owner may remove any of the company's.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deletingBulk, setDeletingBulk] = useState(false);
+  const toast = useToast();
+  const confirm = useConfirm();
 
   // Deep link from the WhatsApp confirmation ("…/receipts?receipt=<id>"). This is
   // just a pointer into the normal authenticated page — the user still has to be
@@ -136,6 +146,54 @@ export default function ReceiptsPage() {
       return true;
     });
   }, [receiptsState, query, categoryFilter, paymentFilter, uploaderFilter, uploaderNames, myReceiptNames, profile?.id]);
+
+  function canDelete(r: Receipt): boolean {
+    return r.uploaded_by === profile?.id || profile?.role === 'owner';
+  }
+  const deletableIds = filtered.filter(canDelete).map((r) => r.id);
+  const allSelected = deletableIds.length > 0 && deletableIds.every((id) => selectedIds.has(id));
+
+  function toggleOne(id: string, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+  function toggleSelectAll() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      // Only ever affects what is currently visible, so a filtered "select all"
+      // cannot silently sweep in rows the user is not looking at.
+      deletableIds.forEach((id) => (allSelected ? next.delete(id) : next.add(id)));
+      return next;
+    });
+  }
+
+  async function deleteSelected() {
+    const ids = filtered.filter((r) => selectedIds.has(r.id) && canDelete(r)).map((r) => r.id);
+    if (ids.length === 0) return;
+    const ok = await confirm({
+      title: `Delete ${ids.length} receipt${ids.length === 1 ? '' : 's'}?`,
+      message: 'The receipts are removed permanently. This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+    setDeletingBulk(true);
+    const { error } = await supabase.from('receipts').delete().in('id', ids);
+    setDeletingBulk(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    ids.forEach((id) =>
+      window.dispatchEvent(new CustomEvent('risip:receipt-deleted', { detail: { id } })),
+    );
+    setSelectedIds(new Set());
+    toast.success(`${ids.length} receipt${ids.length === 1 ? '' : 's'} deleted.`);
+  }
 
   if (projectsState.status === 'loading') {
     return (
@@ -290,17 +348,48 @@ export default function ReceiptsPage() {
           />
         )}
         {receiptsState.status === 'ready' && filtered.length > 0 && (
-          <div className="flex flex-col gap-3">
-            {filtered.map((r) => (
-              <ReceiptCard
-                key={r.id}
-                receipt={r}
-                nickname={r.uploaded_by === profile?.id ? myReceiptNames[r.id] : null}
-                onOpen={setOpenReceipt}
-                linkedToDuplicate={r.status === 'duplicate' || receiptsState.receipts.some((candidate) => candidate.duplicate_of === r.id)}
-              />
-            ))}
-          </div>
+          <>
+            {/* Bulk selection. Only receipts the user may actually delete get a
+                checkbox, so "Select all" can never promise more than it can do. */}
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={toggleSelectAll}
+                className="text-xs font-medium text-role-admin hover:underline"
+                disabled={deletableIds.length === 0}
+              >
+                {allSelected ? 'Clear selection' : `Select all (${deletableIds.length})`}
+              </button>
+              {selectedIds.size > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-ink-muted">{selectedIds.size} selected</span>
+                  <Button
+                    variant="secondary"
+                    disabled={deletingBulk}
+                    onClick={() => void deleteSelected()}
+                    className="!border-red-300 !text-red-600 hover:!bg-red-50"
+                  >
+                    {deletingBulk ? 'Deleting…' : `Delete ${selectedIds.size}`}
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {filtered.map((r) => (
+                <ReceiptCard
+                  key={r.id}
+                  receipt={r}
+                  nickname={r.uploaded_by === profile?.id ? myReceiptNames[r.id] : null}
+                  onOpen={setOpenReceipt}
+                  selectable={canDelete(r)}
+                  selected={selectedIds.has(r.id)}
+                  onSelectChange={(checked) => toggleOne(r.id, checked)}
+                  linkedToDuplicate={r.status === 'duplicate' || receiptsState.receipts.some((candidate) => candidate.duplicate_of === r.id)}
+                />
+              ))}
+            </div>
+          </>
         )}
       </div>
 

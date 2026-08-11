@@ -13,7 +13,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { rememberMerchantCorrection } from '@/features/receipts/merchantMemory';
 import { formatDate, formatDateTime, formatMoney } from '@/lib/format';
-import type { Receipt } from '@/types/db';
+import type { PaymentMethod, Receipt } from '@/types/db';
 
 const STATUS_META = {
   processing: { label: 'Processing', tone: 'text-amber-600', Icon: Loader2, spin: true },
@@ -76,6 +76,9 @@ export default function ReceiptDetailModal({
   const [form, setForm] = useState({
     vendor_name: '', total_amount: '', tax_amount: '', category: '',
     receipt_date: '', receipt_number: '', verification_code: '', vendor_tin: '', vendor_vrn: '',
+    // Project and payment source are chosen here too: a receipt that arrived over
+    // WhatsApp has neither, and both are required before it can be approved.
+    project_id: '', payment_method: 'cash_personal' as PaymentMethod,
   });
 
   function startEdit() {
@@ -89,9 +92,25 @@ export default function ReceiptDetailModal({
       verification_code: data.verification_code ?? '',
       vendor_tin: data.vendor_tin ?? '',
       vendor_vrn: data.vendor_vrn ?? '',
+      // Unconfirmed receipts start blank so the provisional project the worker
+      // used is never presented as somebody's choice.
+      project_id: data.details_confirmed ? data.project_id : '',
+      payment_method: data.payment_method,
     });
     setEditing(true);
   }
+
+  const activeProjects = projectsState.status === 'ready'
+    ? projectsState.projects.filter((p) => p.status === 'active' || p.id === data.project_id)
+    : [];
+
+  // The three things that turn a captured image into a real project expense.
+  const missingForApproval = [
+    !(editing ? form.project_id : data.details_confirmed ? data.project_id : '') && 'project',
+    !(editing ? form.category : data.category) && 'category',
+    !(editing ? form.payment_method : data.payment_method) && 'payment source',
+  ].filter(Boolean) as string[];
+  const needsDetails = !data.details_confirmed;
 
   async function saveEdits() {
     const total = form.total_amount.trim() ? Number(form.total_amount.replace(/[^\d.]/g, '')) : null;
@@ -100,6 +119,14 @@ export default function ReceiptDetailModal({
       toast.error('VAT cannot be greater than the total.');
       return;
     }
+    // Approving is what makes a receipt count as project spend, so it may only
+    // happen once project, category and payment source are all set.
+    const canApprove = missingForApproval.length === 0;
+    if (data.status === 'pending_review' && !canApprove) {
+      toast.error(`Choose ${missingForApproval.join(', ')} before approving.`);
+      return;
+    }
+
     setSaving(true);
     const updates = {
       vendor_name: form.vendor_name.trim() || null,
@@ -111,6 +138,9 @@ export default function ReceiptDetailModal({
       verification_code: form.verification_code.trim() || null,
       vendor_tin: form.vendor_tin.trim() || null,
       vendor_vrn: form.vendor_vrn.trim() || null,
+      ...(form.project_id ? { project_id: form.project_id } : {}),
+      payment_method: form.payment_method,
+      details_confirmed: canApprove,
       // Saving a reviewed pending receipt confirms it; this replaces the old
       // scan-to-email approval panel without silently approving it.
       ...(data.status === 'pending_review' ? { status: 'confirmed' as const } : {}),
@@ -374,6 +404,28 @@ export default function ReceiptDetailModal({
                     <input inputMode="decimal" value={form.tax_amount} onChange={(e) => setForm((f) => ({ ...f, tax_amount: e.target.value }))} className={inputCls} />
                   </Field>
                 </div>
+                {/* Project + payment source: required to approve, and the two
+                    things a WhatsApp receipt arrives without. */}
+                <Field label="Project">
+                  <select
+                    value={form.project_id}
+                    onChange={(e) => setForm((f) => ({ ...f, project_id: e.target.value }))}
+                    className={inputCls}
+                  >
+                    <option value="">Choose a project…</option>
+                    {activeProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </Field>
+                <Field label="Payment source">
+                  <select
+                    value={form.payment_method}
+                    onChange={(e) => setForm((f) => ({ ...f, payment_method: e.target.value as PaymentMethod }))}
+                    className={inputCls}
+                  >
+                    <option value="cash_personal">Cash / Personal money</option>
+                    <option value="petty_cash">Petty cash</option>
+                  </select>
+                </Field>
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Category">
                     <select value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))} className={inputCls}>
@@ -410,6 +462,27 @@ export default function ReceiptDetailModal({
             ) : (
               // ── Read-only view ─────────────────────────────────────────
               <>
+                {/* Approval used to be hidden inside "Save", so nobody could find
+                    it. Surface it as its own step, and say plainly what is still
+                    missing before the receipt may count as project spend. */}
+                {data.status === 'pending_review' && canEdit && (
+                  <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50/70 p-4">
+                    <p className="text-sm font-semibold text-ink">
+                      {needsDetails ? 'Complete this receipt' : 'Ready to approve'}
+                    </p>
+                    <p className="mt-1 text-sm text-ink-muted">
+                      {missingForApproval.length > 0
+                        ? `Choose ${missingForApproval.join(', ')} before this counts as a project expense.`
+                        : 'Approving adds this receipt to approved project spend.'}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button tint="admin" onClick={startEdit}>
+                        {missingForApproval.length > 0 ? 'Complete & approve' : 'Review & approve'}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 {canName && (
                   <div className="mb-4">
                     <label className="flex flex-col gap-2">
@@ -466,7 +539,16 @@ export default function ReceiptDetailModal({
                     </span>
                   }
                 />
-                <Row label="Project" value={project?.name ?? '—'} />
+                {/* An unconfirmed receipt has only a provisional project, so never
+                    show it as though somebody picked it. */}
+                <Row
+                  label="Project"
+                  value={
+                    needsDetails
+                      ? <span className="text-sky-600">Not chosen yet</span>
+                      : project?.name ?? '—'
+                  }
+                />
                 <Row label="Uploaded by" value={<span className="font-semibold">{uploader ?? '—'}</span>} />
                 <Row label="Uploaded at" value={formatDateTime(data.created_at)} />
 

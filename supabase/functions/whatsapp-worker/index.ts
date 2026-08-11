@@ -24,7 +24,7 @@ import {
   maskPhone,
   validateMedia,
 } from '../_shared/whatsapp.ts';
-import { downloadMedia, getMediaMeta, sendWhatsAppText } from '../_shared/whatsappApi.ts';
+import { downloadMedia, getMediaMeta, sendWhatsAppText, showTyping } from '../_shared/whatsappApi.ts';
 
 const MAX_RETRIES = 3;
 const STALE_MINUTES = 5;
@@ -46,11 +46,17 @@ async function replyQuietly(to: string | null, body: string): Promise<void> {
 }
 
 /**
- * Pick the project this receipt should land in. The employee confirms or changes
- * it in the web app; we only need a valid, in-company home for the row. Members
- * get their own most recent project, finance falls back to the company's.
+ * Find a home for the row. project_id is NOT NULL and RLS visibility derives from
+ * it, so a receipt must reference some project — but when the employee has more
+ * than one, we must not pretend a choice was made. `sole` says whether the pick is
+ * genuinely theirs (exactly one candidate) or merely provisional; the caller uses
+ * it to decide whether the details still need confirming.
  */
-async function pickProject(db: Admin, profileId: string, companyId: string): Promise<string | null> {
+async function pickProject(
+  db: Admin,
+  profileId: string,
+  companyId: string,
+): Promise<{ id: string; sole: boolean } | null> {
   const { data: memberships } = await db
     .from('project_members')
     .select('project_id')
@@ -64,21 +70,19 @@ async function pickProject(db: Admin, profileId: string, companyId: string): Pro
       .in('id', ids)
       .eq('company_id', companyId)
       .eq('status', 'active')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (data?.id) return data.id as string;
+      .order('created_at', { ascending: false });
+    if (data?.length) return { id: data[0].id as string, sole: data.length === 1 };
   }
 
+  // Finance roles are not project members; fall back to the company's projects.
   const { data: fallback } = await db
     .from('projects')
     .select('id')
     .eq('company_id', companyId)
     .eq('status', 'active')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  return (fallback?.id as string) ?? null;
+    .order('created_at', { ascending: false });
+  if (!fallback?.length) return null;
+  return { id: fallback[0].id as string, sole: fallback.length === 1 };
 }
 
 /** Tell the company's finance people that something is waiting, in-app only. */
@@ -117,6 +121,10 @@ async function notifyReviewers(
 async function processJob(db: Admin, job: any): Promise<void> {
   const phone = job.phone_e164 as string | null;
   const reviewUrl = buildReviewUrl(appUrl());
+
+  // Acknowledge immediately so the sender sees "typing…" while extraction runs.
+  // Free, and it is a status update rather than a second message.
+  await showTyping(String(job.wa_message_id));
 
   // Re-check the identity at processing time: it may have been revoked, or the
   // employee deactivated, between the webhook and now.
@@ -168,7 +176,8 @@ async function processJob(db: Admin, job: any): Promise<void> {
   }
 
   // 2. Store under the existing receipts convention: <project_id>/<receipt_id>.jpg
-  const projectId = await pickProject(db, profile.id as string, identity.company_id as string);
+  const picked = await pickProject(db, profile.id as string, identity.company_id as string);
+  const projectId = picked?.id ?? null;
   if (!projectId) {
     await db.from('whatsapp_messages').update({
       status: 'failed', last_error: 'no_active_project',
@@ -195,6 +204,10 @@ async function processJob(db: Admin, job: any): Promise<void> {
     status: 'processing',
     source: 'whatsapp',
     payment_method: 'cash_personal',
+    // Nothing sent over WhatsApp carries a chosen category or payment source, and
+    // the project is only genuinely theirs when they had exactly one. Until a
+    // human confirms all three this cannot be approved or counted as spend.
+    details_confirmed: false,
   });
   if (insErr) throw new Error(`receipt insert failed: ${insErr.message}`);
 
