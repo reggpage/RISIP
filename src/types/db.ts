@@ -134,7 +134,11 @@ export type Receipt = {
   /** Set once finance pays the uploader back for a cash_personal receipt. */
   reimbursed_at: string | null;
   reimbursed_by: string | null;
+  /** Which channel the receipt arrived through. */
+  source: ReceiptSource;
 };
+
+export type ReceiptSource = 'web' | 'batch' | 'inbound_email' | 'whatsapp';
 
 export type ReceiptAlias = {
   id: string;
@@ -432,6 +436,10 @@ export type Database = {
         Args: { p_receipt_ids: string[]; p_paid?: boolean };
         Returns: number;
       };
+      /** Mints a single-use, 15-minute WhatsApp linking token. Plaintext is returned once. */
+      create_whatsapp_link_token: { Args: Record<string, never>; Returns: string };
+      /** Revokes the caller's WhatsApp connection. Returns rows changed. */
+      revoke_whatsapp_identity: { Args: Record<string, never>; Returns: number };
       auth_company_id: { Args: Record<string, never>; Returns: string };
       auth_role: { Args: Record<string, never>; Returns: UserRole };
       auth_can_see_project: { Args: { pid: string }; Returns: boolean };

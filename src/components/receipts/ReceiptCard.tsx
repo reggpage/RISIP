@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, AlertTriangle, XCircle, Loader2, Receipt as ReceiptGlyph } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, Loader2, MessageCircle, Receipt as ReceiptGlyph } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import { useProjects } from '@/features/projects/useProjects';
@@ -116,6 +116,14 @@ export default function ReceiptCard({
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
           {uploader && <span className="font-semibold text-ink">{uploader}</span>}
           {project && <span>· {project.name}</span>}
+          {/* Channel badge: only for receipts that did not come from the app, so
+              reviewers can see at a glance that nobody filled the form in. */}
+          {receipt.source === 'whatsapp' && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-semibold text-emerald-700">
+              <MessageCircle className="h-3 w-3" />
+              WhatsApp
+            </span>
+          )}
         </div>
 
         {onOpen && (

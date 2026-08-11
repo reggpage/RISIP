@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Bell, Building2, Check, Copy, KeyRound, Languages, Lock, Mail, Printer, User, Users } from 'lucide-react';
+import { AlertTriangle, Bell, Building2, Check, Copy, KeyRound, Languages, Lock, Mail, MessageCircle, Printer, User, Users } from 'lucide-react';
 import { getLang, setLang, LANG_OPTIONS, type LangCode } from '@/lib/lang';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -10,6 +10,7 @@ import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { CompanyProfileSkeleton, MemberRowSkeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
 import LogoCropModal from '@/components/settings/LogoCropModal';
+import WhatsAppConnectCard from '@/components/whatsapp/WhatsAppConnectCard';
 import { createNotifications } from '@/features/notifications/notifications';
 import { useAuth, signOut } from '@/lib/auth';
 import { roleLabel } from '@/lib/roles';
@@ -760,6 +761,15 @@ export default function SettingsPage() {
               </>
             )}
           </Card>
+        </SettingsSection>
+
+        {/* ── WhatsApp (every role — it is a personal connection) ─────────── */}
+        <SettingsSection
+          icon={<MessageCircle className="h-4 w-4" />}
+          title="WhatsApp"
+          description="Send receipt photos to Risip from your own WhatsApp account. You finish the details here in the app."
+        >
+          <WhatsAppConnectCard />
         </SettingsSection>
 
         {/* ── Scanner & Hardware Integration (owner) ──────────────────────── */}

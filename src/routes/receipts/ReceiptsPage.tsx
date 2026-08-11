@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Plus, ScanLine, Search } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import EmptyState from '@/components/ui/EmptyState';
@@ -52,6 +53,24 @@ export default function ReceiptsPage() {
   }, [projectsState]);
   const effectiveProjectId = selectedProjectId ?? (activeProjects.length === 1 ? activeProjects[0].id : null);
   const { state: receiptsState } = useReceipts(selectedProjectId ?? undefined, 500);
+
+  // Deep link from the WhatsApp confirmation ("…/receipts?receipt=<id>"). This is
+  // just a pointer into the normal authenticated page — the user still has to be
+  // logged in, and RLS still decides whether the row is visible. Opens once, then
+  // drops the param so a refresh does not re-open the modal.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandled.current) return;
+    const wanted = searchParams.get('receipt');
+    if (!wanted || receiptsState.status !== 'ready') return;
+    const match = receiptsState.receipts.find((r) => r.id === wanted);
+    if (!match) return;
+    deepLinkHandled.current = true;
+    setOpenReceipt(match);
+    searchParams.delete('receipt');
+    setSearchParams(searchParams, { replace: true });
+  }, [receiptsState, searchParams, setSearchParams]);
 
   // Uploader name cache so search-by-name works against the full name, not just uid.
   // Lazy-populated as receipts come in.

@@ -32,6 +32,26 @@ RLS enabled on every table. No policies = deny. Anon role has **no** direct tabl
 
 Helper SQL functions (`auth_company_id`, `auth_role`, `auth_can_see_project`) are `security definer` with a pinned `search_path = public`, and `execute` is granted only to `authenticated` (or `service_role` for the RPC).
 
+## WhatsApp receipt capture (whatsapp-webhook + whatsapp-worker)
+
+One official Risip number on the Meta Cloud API acts as a front door, not a chatbot.
+A linked employee sends a receipt photo; `whatsapp-webhook` (`verify_jwt=false`,
+authenticated by the `X-Hub-Signature-256` HMAC) records it idempotently on
+`whatsapp_messages.wa_message_id` and returns 200 immediately; `whatsapp-worker`
+(service-role only) downloads the media, stores it under the normal
+`<project_id>/<receipt_id>.jpg` convention, and **invokes the existing
+`extract-receipt`** rather than duplicating the AI pipeline. The receipt is always
+forced to `status='pending_review'` with `source='whatsapp'`, so it never counts
+towards approved spend before the employee completes project/category/payment
+source in the web app via a plain authenticated deep link (`/receipts?receipt=<id>`
+— no public bypass token).
+
+Linking uses a single-use, 15-minute token (`create_whatsapp_link_token`) sent as
+`LINK <token>` from the user's own WhatsApp; only its SHA-256 hash is stored. One
+live number ↔ one profile, enforced by partial unique indexes; deactivating an
+employee revokes their identity by trigger. See `docs/whatsapp-setup.md` for Meta
+dashboard steps, secrets and the manual end-to-end test.
+
 ## Scan-to-email (inbound-email edge function)
 
 Each company has `scanner_inbox_token` (unique uuid) + `scanner_sender_email`. Its inbox address is `<scanner_inbox_token>@scan.risip.co`, shown in Settings → *Scanner & Hardware Integration*. A Canon printer's "Scan to Email" sends an A3 scan there; the email provider (Resend Inbound / SendGrid / Mailgun) POSTs the parsed message to `inbound-email` (`verify_jwt=false`). The function: resolves the company by inbox token → optionally checks `from` against `scanner_sender_email` → uploads the image to the `receipts` bucket (`<project_id>/inbound/<uuid>.jpg`, most-recent active project, owner as on-behalf uploader) → runs the same Claude A3 split as `batch-extract-receipts` → inserts receipts as `status='pending_review'`. The accountant approves/discards each from the receipt details modal.
