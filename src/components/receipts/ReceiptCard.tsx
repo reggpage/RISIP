@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle2, AlertTriangle, XCircle, Loader2, Receipt as ReceiptGlyph } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, XCircle, Clock3, Loader2, Receipt as ReceiptGlyph } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import WhatsAppIcon from '@/components/ui/WhatsappIcon';
 import Button from '@/components/ui/Button';
@@ -15,6 +15,11 @@ const STATUS_META = {
   duplicate: { label: sw.receipts.duplicate, icon: AlertTriangle, className: 'text-orange-600', spin: false },
   error: { label: sw.receipts.error, icon: XCircle, className: 'text-red-600', spin: false },
   pending_review: { label: 'Needs review', icon: AlertTriangle, className: 'text-sky-600', spin: false },
+  // Phase 1b. Only reachable when the company's approval flow is enabled; none of
+  // these count towards approved project spend.
+  submitted: { label: 'Awaiting approval', icon: Clock3, className: 'text-indigo-600', spin: false },
+  changes_requested: { label: 'Changes requested', icon: AlertTriangle, className: 'text-amber-600', spin: false },
+  rejected: { label: 'Rejected', icon: XCircle, className: 'text-red-600', spin: false },
 } as const;
 
 export default function ReceiptCard({

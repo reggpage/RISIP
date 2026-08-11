@@ -12,7 +12,12 @@ export type UserRole = 'owner' | 'accountant' | 'worker';
 export type ProjectStatus = 'active' | 'archived';
 // 'pending_review' = arrived via scan-to-email inbound and awaits the accountant's
 // approval before it counts (distinct from 'processing', which is mid-extraction).
-export type ReceiptStatus = 'processing' | 'confirmed' | 'duplicate' | 'error' | 'pending_review';
+// Phase 1b adds submitted/changes_requested/rejected. They are only reachable
+// when companies.approval_flow_enabled is true; 'confirmed' remains the only
+// status counted in official totals.
+export type ReceiptStatus =
+  | 'processing' | 'confirmed' | 'duplicate' | 'error' | 'pending_review'
+  | 'submitted' | 'changes_requested' | 'rejected';
 export type InvoiceStatus =
   | 'draft'
   | 'pending_approval'
@@ -36,6 +41,10 @@ export type Company = {
   // <token>@scan.risip.co address) and the printer address allowed to send to it.
   scanner_inbox_token: string;
   scanner_sender_email: string | null;
+  /** Phase 1b approval lifecycle. Off means current behaviour, unchanged. */
+  approval_flow_enabled: boolean;
+  /** One-person companies may approve their own submissions; always audited. */
+  allow_self_approval: boolean;
 };
 
 export type Profile = {
@@ -143,6 +152,12 @@ export type Receipt = {
   source: ReceiptSource;
   /** False until a human has chosen project, category and payment source. */
   details_confirmed: boolean;
+  submitted_at: string | null;
+  submitted_by: string | null;
+  decided_at: string | null;
+  decided_by: string | null;
+  /** Required when finance requests changes or rejects. */
+  decision_reason: string | null;
 };
 
 export type ReceiptSource = 'web' | 'batch' | 'inbound_email' | 'whatsapp';
@@ -444,6 +459,13 @@ export type Database = {
       mark_receipts_reimbursed: {
         Args: { p_receipt_ids: string[]; p_paid?: boolean };
         Returns: number;
+      };
+      /** Employee sends a completed receipt to finance. Never approves it. */
+      submit_receipt: { Args: { p_receipt: string }; Returns: string };
+      /** Finance approves, requests changes, or rejects. Reason required for the last two. */
+      decide_receipt: {
+        Args: { p_receipt: string; p_decision: string; p_reason?: string | null };
+        Returns: string;
       };
       /** Mints a single-use, 15-minute WhatsApp linking token. Plaintext is returned once. */
       create_whatsapp_link_token: { Args: Record<string, never>; Returns: string };

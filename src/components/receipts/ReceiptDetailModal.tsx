@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  AlertTriangle, CheckCircle2, FileText, Loader2, Pencil, Sparkles, Wallet, X, XCircle,
+  AlertTriangle, CheckCircle2, Clock3, FileText, Loader2, Pencil, Sparkles, Wallet, X, XCircle,
   Receipt as ReceiptGlyph,
 } from 'lucide-react';
 import Button from '@/components/ui/Button';
@@ -21,6 +21,9 @@ const STATUS_META = {
   duplicate: { label: 'Duplicate', tone: 'text-orange-600', Icon: AlertTriangle, spin: false },
   error: { label: 'Extraction failed', tone: 'text-red-600', Icon: XCircle, spin: false },
   pending_review: { label: 'Needs review', tone: 'text-sky-600', Icon: AlertTriangle, spin: false },
+  submitted: { label: 'Awaiting approval', tone: 'text-indigo-600', Icon: Clock3, spin: false },
+  changes_requested: { label: 'Changes requested', tone: 'text-amber-600', Icon: AlertTriangle, spin: false },
+  rejected: { label: 'Rejected', tone: 'text-red-600', Icon: XCircle, spin: false },
 } as const;
 
 const CATEGORIES = [
