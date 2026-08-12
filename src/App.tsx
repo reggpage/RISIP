@@ -4,6 +4,7 @@ import RequireAuth from '@/guards/RequireAuth';
 import RequireRole from '@/guards/RequireRole';
 import Login from '@/routes/auth/Login';
 import ForgotPassword from '@/routes/auth/ForgotPassword';
+import WaLogin from '@/routes/auth/WaLogin';
 import SignupCompany from '@/routes/auth/SignupCompany';
 import JoinPage from '@/routes/join/JoinPage';
 import FindCompany from '@/routes/find/FindCompany';
@@ -33,6 +34,9 @@ export default function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
+      {/* Spends a one-shot WhatsApp login token and starts a session. Public
+          because the token is the credential; it lives 5 minutes and works once. */}
+      <Route path="/wa-login" element={<WaLogin />} />
       <Route path="/signup" element={<SignupCompany />} />
       <Route path="/find-company" element={<FindCompany />} />
       <Route path="/supplier-claims" element={<SupplierPortal />} />

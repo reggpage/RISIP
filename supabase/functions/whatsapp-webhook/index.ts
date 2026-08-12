@@ -46,6 +46,7 @@ import {
   startOnboarding,
   type OnboardingStep,
 } from '../_shared/whatsappOnboarding.ts';
+import { waSyntheticEmail } from '../_shared/waIdentityEmail.ts';
 
 type Admin = ReturnType<typeof createClient>;
 
@@ -235,10 +236,14 @@ async function handleOnboarding(
     // The auth user has to exist before a profile can point at it, and only the
     // Admin API can make one. No password is set and none is ever sent: the way
     // in is the short-lived login link.
+    //
+    // Identified by a synthetic .invalid address, not by phone: GoTrue's phone
+    // provider is off on this project and enabling it would mean paying Twilio
+    // for SMS we never send. See _shared/waIdentityEmail.ts.
     const { data: created, error: userErr } = await db.auth.admin.createUser({
-      phone: phone.replace('+', ''),
-      phone_confirm: true,
-      user_metadata: { source: 'whatsapp' },
+      email: waSyntheticEmail(phone),
+      email_confirm: true,
+      user_metadata: { source: 'whatsapp', phone },
     });
     if (userErr || !created?.user) {
       console.error('onboarding user create failed', userErr?.message);

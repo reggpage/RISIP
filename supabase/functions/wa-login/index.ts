@@ -57,14 +57,15 @@ Deno.serve(async (req) => {
   const profileId = (claim as { profile_id: string }).profile_id;
 
   const { data: user, error: userErr } = await db.auth.admin.getUserById(profileId);
-  if (userErr || !user?.user) return json({ error: 'account not found' }, 404);
+  if (userErr || !user?.user?.email) return json({ error: 'account not found' }, 404);
 
-  // A one-time e-mail-less sign-in link for this user. The client exchanges the
-  // hashed token for a session; we never hold their password because there is
-  // none to hold.
+  // A one-time sign-in for this user. generateLink needs an address that is
+  // actually attached to the account — for WhatsApp-first accounts that is the
+  // synthetic .invalid one, which can never receive mail. Nothing is emailed
+  // either way: we take the hashed token and throw the link away.
   const { data: link, error: linkErr } = await db.auth.admin.generateLink({
     type: 'magiclink',
-    email: user.user.email ?? `${profileId}@wa.risip.local`,
+    email: user.user.email,
   });
   if (linkErr || !link?.properties) {
     console.error('generateLink failed', linkErr?.message);
