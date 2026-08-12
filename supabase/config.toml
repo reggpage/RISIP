@@ -49,3 +49,9 @@ verify_jwt = false
 # Internal only — reached with the service-role key by the webhook or a sweeper.
 [functions.whatsapp-worker]
 verify_jwt = true
+
+# Public: the one-shot WhatsApp login token IS the credential, so there is no JWT
+# to verify. It is 5 minutes long, single use, hashed at rest, and superseded on
+# issue. See supabase/functions/wa-login/index.ts.
+[functions.wa-login]
+verify_jwt = false

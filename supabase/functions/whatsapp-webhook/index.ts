@@ -37,6 +37,15 @@ import {
   type Lang,
   type ProjectRef,
 } from '../_shared/whatsappIntent.ts';
+import {
+  advanceOnboarding,
+  businessList,
+  isLoginRequest,
+  isSwitchRequest,
+  parseBusinessChoice,
+  startOnboarding,
+  type OnboardingStep,
+} from '../_shared/whatsappOnboarding.ts';
 
 type Admin = ReturnType<typeof createClient>;
 
@@ -175,6 +184,106 @@ async function handleLink(db: Admin, phone: string, waId: string, token: string)
   return `Connected.\n\n${t('chooseLanguage', 'en')}`;
 }
 
+// ── Onboarding a number Risip has never seen ────────────────────────────────
+//
+// The gate that matters: this path never touches the AI. An unknown sender's
+// photo is acknowledged and dropped — media_id is never written, so
+// whatsapp-worker never picks it up and nothing is extracted. A stranger cannot
+// make us spend money.
+async function handleOnboarding(
+  db: Admin, phone: string, text: string | null, isImage: boolean,
+): Promise<string> {
+  const { data: state } = await db
+    .from('whatsapp_onboarding')
+    .select('phone_e164, step, lang, draft, expires_at')
+    .eq('phone_e164', phone)
+    .maybeSingle();
+
+  const fresh = !state || new Date(state.expires_at as string) < new Date();
+  if (fresh) {
+    const open = startOnboarding();
+    await db.from('whatsapp_onboarding').upsert({
+      phone_e164: phone, step: open.step, draft: {},
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'phone_e164' });
+    return open.reply;
+  }
+
+  const lang: Lang = (state.lang as Lang | null) ?? 'en';
+  // A photo mid-onboarding is not an answer to the question we asked.
+  if (isImage) {
+    return lang === 'sw'
+      ? 'Nimeipokea picha, lakini tumalize kujiandikisha kwanza.'
+      : 'I have your photo, but let us finish signing you up first.';
+  }
+
+  const next = advanceOnboarding(
+    state.step as OnboardingStep, text, lang,
+    (state.draft ?? {}) as Record<string, string>,
+  );
+
+  if (next.action.kind === 'set_language') {
+    await db.from('whatsapp_onboarding').update({
+      step: next.step, lang: next.action.lang, draft: next.draft,
+      updated_at: new Date().toISOString(),
+    }).eq('phone_e164', phone);
+    return next.reply;
+  }
+
+  if (next.action.kind === 'create_business' || next.action.kind === 'join_business') {
+    // The auth user has to exist before a profile can point at it, and only the
+    // Admin API can make one. No password is set and none is ever sent: the way
+    // in is the short-lived login link.
+    const { data: created, error: userErr } = await db.auth.admin.createUser({
+      phone: phone.replace('+', ''),
+      phone_confirm: true,
+      user_metadata: { source: 'whatsapp' },
+    });
+    if (userErr || !created?.user) {
+      console.error('onboarding user create failed', userErr?.message);
+      return lang === 'sw' ? 'Imeshindikana kwa sasa. Jaribu tena.' : 'That did not work just now. Please try again.';
+    }
+
+    const rpc = next.action.kind === 'create_business'
+      ? db.rpc('wa_create_business', {
+          p_user: created.user.id, p_phone: phone,
+          p_full_name: next.action.fullName,
+          p_company_name: next.action.businessName, p_location: '',
+        })
+      : db.rpc('wa_join_by_code', {
+          p_user: created.user.id, p_phone: phone,
+          p_code: next.action.code, p_full_name: next.action.fullName,
+        });
+
+    const { data: result, error: rpcErr } = await rpc;
+    if (rpcErr) {
+      await db.auth.admin.deleteUser(created.user.id).catch(() => {});
+      return rpcErr.message;
+    }
+
+    const name = (result as { company_name?: string } | null)?.company_name ?? '';
+    return lang === 'sw'
+      ? `Karibu ${name} 🎉\nAndika "ingia" upate link ya kufungua Risip kwenye kompyuta.`
+      : `Welcome to ${name} 🎉\nSend "login" for a link to open Risip on a computer.`;
+  }
+
+  await db.from('whatsapp_onboarding').update({
+    step: next.step, draft: next.draft, updated_at: new Date().toISOString(),
+  }).eq('phone_e164', phone);
+  return next.reply;
+}
+
+/** A short-lived way in to the web. Never a password. */
+async function handleLoginLink(db: Admin, phone: string, lang: Lang): Promise<string> {
+  const { data: token, error } = await db.rpc('wa_issue_login_token', { p_phone: phone });
+  if (error || !token) return error?.message ?? 'Could not create a link right now.';
+  const url = `${appUrl()}/wa-login?t=${token}`;
+  return lang === 'sw'
+    ? `Fungua link hii ndani ya dakika 5. Inatumika mara moja tu:\n${url}`
+    : `Open this within 5 minutes. It works once only:\n${url}`;
+}
+
 /** Fire-and-forget: nudge the worker without blocking the 200 back to Meta. */
 function nudgeWorker(): void {
   const url = Deno.env.get('SUPABASE_URL');
@@ -266,8 +375,10 @@ Deno.serve(async (req) => {
         // ── Receipt image (with its optional caption) ─────────────────────
         if (message?.type === 'image' && message?.image?.id) {
           if (!identity) {
-            await replyQuietly(phone, t('notLinked', lang));
-            await finish('skipped', 'unlinked');
+            // Onboard, never extract. media_id stays null, so whatsapp-worker
+            // never sees this and no AI is called for a stranger.
+            await replyQuietly(phone, await handleOnboarding(db, phone, null, true));
+            await finish('skipped', 'onboarding');
             continue;
           }
           await db.from('whatsapp_messages').update({
@@ -283,7 +394,12 @@ Deno.serve(async (req) => {
         }
 
         if (message?.type !== 'text') {
-          await replyQuietly(phone, identity ? t('photoOnly', lang) : t('notLinked', lang));
+          if (!identity) {
+            await replyQuietly(phone, await handleOnboarding(db, phone, null, true));
+            await finish('skipped', 'onboarding');
+            continue;
+          }
+          await replyQuietly(phone, t('photoOnly', lang));
           await finish('skipped', 'unsupported_message_type');
           continue;
         }
@@ -306,15 +422,70 @@ Deno.serve(async (req) => {
         }
 
         if (!identity) {
-          await replyQuietly(phone, t('notLinked', lang));
-          await finish('skipped', 'unlinked');
+          await replyQuietly(phone, await handleOnboarding(db, phone, body, false));
+          await finish('skipped', 'onboarding');
+          continue;
+        }
+
+        // ── Which business am I recording into? ─────────────────────────
+        if (isSwitchRequest(body)) {
+          const { data: rows } = await db.rpc('wa_memberships', { p_phone: phone });
+          const list = (rows ?? []) as { company_id: string; company_name: string; role: string; is_active: boolean }[];
+          if (list.length <= 1) {
+            await replyQuietly(phone, lang === 'sw'
+              ? `Una biashara moja tu: ${list[0]?.company_name ?? '-'}`
+              : `You only have one business: ${list[0]?.company_name ?? '-'}`);
+          } else {
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'business',
+              options: list.map((r) => ({ id: r.company_id, name: r.company_name })),
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await replyQuietly(phone, businessList(list, lang));
+          }
+          await finish('skipped', 'business_list');
+          continue;
+        }
+
+        if (convo?.awaiting === 'business') {
+          const options = (convo.options ?? []) as { id: string; name: string }[];
+          const idx = parseBusinessChoice(body, options.length);
+          if (idx === null) {
+            await replyQuietly(phone, businessList(
+              options.map((o) => ({ company_name: o.name, role: '', is_active: false })), lang));
+            await finish('skipped', 'business_choice_unclear');
+            continue;
+          }
+          // Only ever an index into the list we just sent. A company id typed
+          // into a message is never trusted.
+          const { data: name, error: swErr } = await db.rpc('wa_switch_active_company', {
+            p_phone: phone, p_company: options[idx].id,
+          });
+          await clearConversation(db, identity.id as string);
+          await replyQuietly(phone, swErr
+            ? swErr.message
+            : (lang === 'sw' ? `Sasa unatumia: ${name}` : `You are now using: ${name}`));
+          await audit(db, identity, waMessageId, 'switch_business', String(options[idx].id), swErr ? 'failed' : 'applied');
+          await finish('skipped');
+          continue;
+        }
+
+        if (isLoginRequest(body)) {
+          await replyQuietly(phone, await handleLoginLink(db, phone, lang));
+          await audit(db, identity, waMessageId, 'login_link', 'issued', 'applied');
+          await finish('skipped');
           continue;
         }
 
         if (intent === 'change_language') {
           const next = parseLanguageCommand(body)!;
-          await db.from('whatsapp_identities').update({ lang: next, updated_at: new Date().toISOString() })
-            .eq('id', identity.id);
+          // Syncs the choice onto the person too, so the web opens in the
+          // language they picked here. The browser keeps its own override.
+          await db.rpc('wa_set_language', { p_phone: phone, p_lang: next });
           await clearConversation(db, identity.id as string);
           await replyQuietly(phone, t('languageSet', next));
           await audit(db, identity, waMessageId, 'change_language', next, 'applied');

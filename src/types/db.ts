@@ -84,6 +84,24 @@ export type CompanyMember = {
   deactivated_at: string | null;
 };
 
+/**
+ * Company-level invite code. invite_links is project-scoped, and a shop has no
+ * projects, so joining a business needs its own code. Minted by the owner only,
+ * and it can never grant ownership.
+ */
+export type CompanyInviteCode = {
+  id: string;
+  company_id: string;
+  code: string;
+  role: UserRole;
+  expires_at: string | null;
+  max_uses: number | null;
+  uses: number;
+  revoked_at: string | null;
+  created_by: string;
+  created_at: string;
+};
+
 export type Project = {
   id: string;
   company_id: string;
@@ -392,6 +410,12 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      company_invite_codes: {
+        Row: CompanyInviteCode;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       // Written only by create_reimbursement_payout / void_reimbursement_payout.
       // There is no INSERT, UPDATE or DELETE policy for any role, so the Insert
       // and Update shapes here exist to satisfy the client's generic, not because
@@ -604,6 +628,22 @@ export type Database = {
       };
       /** Staff ask finance to reverse a receipt. Moves no money, ever. */
       request_receipt_reversal: { Args: { p_receipt: string; p_reason: string }; Returns: string };
+      /** Every business this person belongs to, and which one is active. */
+      my_memberships: {
+        Args: Record<string, never>;
+        Returns: { company_id: string; company_name: string; role: UserRole; is_active: boolean }[];
+      };
+      /**
+       * The only door to changing business context. Membership-checked: nothing
+       * writes profiles.active_company_id directly, and 0073 fails closed if it
+       * ever pointed somewhere the person does not belong.
+       */
+      switch_active_company: { Args: { p_company: string }; Returns: string };
+      /** Owner-only. Company-level, because a shop has no projects to invite into. */
+      create_company_invite_code: {
+        Args: { p_role?: Exclude<UserRole, 'owner'>; p_days?: number | null; p_max_uses?: number | null };
+        Returns: string;
+      };
       /** Mints a single-use, 15-minute WhatsApp linking token. Plaintext is returned once. */
       create_whatsapp_link_token: { Args: Record<string, never>; Returns: string };
       /** Revokes the caller's WhatsApp connection. Returns rows changed. */
