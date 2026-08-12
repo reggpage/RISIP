@@ -24,11 +24,14 @@ import {
   updateRetirementStatus,
   type RetirementBundle,
   type RetirementDocument,
+  type RetirementPaymentInput,
+  type RetirementPaymentMethod,
   type StaffRetirementStatus,
 } from '@/features/retirements/retirements';
 import { receiptImageUrl } from '@/features/receipts/uploadReceipt';
 import { useToast } from '@/components/ui/Toast';
 import { useAuth, type Profile as AuthProfile } from '@/lib/auth';
+import { friendlyError } from '@/lib/errors';
 import { formatDate, formatDateTime, formatMoney } from '@/lib/format';
 import { supabase } from '@/lib/supabase';
 import type { Receipt } from '@/types/db';
@@ -41,6 +44,7 @@ const statusClass: Record<StaffRetirementStatus, string> = {
   paid: 'bg-role-admin/10 text-role-admin',
   received_confirmed: 'bg-emerald-100 text-emerald-800',
   cancelled: 'bg-surface-muted text-ink-muted',
+  rejected: 'bg-red-50 text-red-700',
 };
 
 export default function RetirementsPage() {
@@ -89,7 +93,7 @@ export default function RetirementsPage() {
   }, [profile?.company_id, profile?.id]);
 
   const totals = useMemo(() => {
-    const pending = bundles.filter((b) => !['paid', 'received_confirmed', 'cancelled'].includes(b.status));
+    const pending = bundles.filter((b) => !['paid', 'received_confirmed', 'cancelled', 'rejected'].includes(b.status));
     return {
       count: pending.length,
       amount: pending.reduce((sum, b) => sum + Number(b.total_amount || 0), 0),
@@ -115,16 +119,18 @@ export default function RetirementsPage() {
   async function setStatus(
     bundle: RetirementBundle,
     status: StaffRetirementStatus,
-    options?: { note?: string; receiptIds?: string[] },
+    options?: { note?: string; receiptIds?: string[]; payment?: RetirementPaymentInput },
   ) {
-    if (!profile) return;
+    if (!profile) return false;
     try {
       await updateRetirementStatus(bundle, profile, status, options);
       toast.success('Retirement updated.');
       await refresh();
       setOpen((prev) => (prev?.id === bundle.id ? { ...prev, status } : prev));
+      return true;
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not update retirement.');
+      toast.error(friendlyError(err, 'Could not update retirement.'));
+      return false;
     }
   }
 
@@ -233,7 +239,7 @@ export default function RetirementsPage() {
           bundle={open}
           isFinance={!!isFinance}
           onClose={() => setOpen(null)}
-          onStatus={(status, note, receiptIds) => void setStatus(open, status, { note, receiptIds })}
+          onStatus={(status, options) => setStatus(open, status, options)}
         />
       )}
     </div>
@@ -479,12 +485,18 @@ function RetirementDetailModal({
   bundle: RetirementBundle;
   isFinance: boolean;
   onClose: () => void;
-  onStatus: (status: StaffRetirementStatus, note?: string, receiptIds?: string[]) => void;
+  onStatus: (
+    status: StaffRetirementStatus,
+    options?: { note?: string; receiptIds?: string[]; payment?: RetirementPaymentInput },
+  ) => Promise<boolean>;
 }) {
   const canConfirmReceived = !isFinance && bundle.status === 'paid';
   const canResubmit = !isFinance && bundle.status === 'changes_requested';
+  const canFinanceDecide = isFinance && (bundle.status === 'submitted' || bundle.status === 'viewed');
+  const canFinancePay = isFinance && bundle.status === 'approved';
   const [zoom, setZoom] = useState<{ src: string; alt: string } | null>(null);
   const [changeOpen, setChangeOpen] = useState(false);
+  const [payOpen, setPayOpen] = useState(false);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-surface shadow-xl">
@@ -560,26 +572,28 @@ function RetirementDetailModal({
 
         <footer className="shrink-0 border-t border-surface-border bg-surface p-3 sm:p-4">
           <div className="flex flex-wrap justify-end gap-2">
-          {isFinance && bundle.status !== 'paid' && bundle.status !== 'received_confirmed' && (
+          {canFinanceDecide && (
             <>
               <Button variant="secondary" tint="neutral" onClick={() => setChangeOpen(true)}>
                 Request changes
               </Button>
-              <Button variant="secondary" tint="accountant" onClick={() => onStatus('approved')}>
+              <Button variant="secondary" tint="accountant" onClick={() => void onStatus('approved')}>
                 <CheckCircle2 className="h-4 w-4" /> Approve
-              </Button>
-              <Button tint="admin" onClick={() => onStatus('paid')}>
-                <HandCoins className="h-4 w-4" /> Mark paid
               </Button>
             </>
           )}
+          {canFinancePay && (
+            <Button tint="admin" onClick={() => setPayOpen(true)}>
+              <HandCoins className="h-4 w-4" /> Mark paid
+            </Button>
+          )}
           {canConfirmReceived && (
-            <Button tint="admin" onClick={() => onStatus('received_confirmed')}>
+            <Button tint="admin" onClick={() => void onStatus('received_confirmed')}>
               <CheckCircle2 className="h-4 w-4" /> I have received
             </Button>
           )}
           {canResubmit && (
-            <Button tint="admin" onClick={() => onStatus('submitted')}>
+            <Button tint="admin" onClick={() => void onStatus('submitted')}>
               Submit again
             </Button>
           )}
@@ -594,10 +608,110 @@ function RetirementDetailModal({
           onClose={() => setChangeOpen(false)}
           onSubmit={(note, receiptIds) => {
             setChangeOpen(false);
-            onStatus('changes_requested', note, receiptIds);
+            void onStatus('changes_requested', { note, receiptIds });
           }}
         />
       )}
+      {payOpen && canFinancePay && (
+        <MarkPaidModal
+          bundle={bundle}
+          onClose={() => setPayOpen(false)}
+          onSubmit={async (payment) => {
+            const ok = await onStatus('paid', { payment });
+            if (ok) setPayOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+const RETIREMENT_PAYMENT_METHODS: Array<{ value: RetirementPaymentMethod; label: string }> = [
+  { value: 'cash', label: 'Cash' },
+  { value: 'mobile_money', label: 'Mobile money' },
+  { value: 'bank', label: 'Bank' },
+  { value: 'other', label: 'Other' },
+];
+
+function MarkPaidModal({
+  bundle,
+  onClose,
+  onSubmit,
+}: {
+  bundle: RetirementBundle;
+  onClose: () => void;
+  onSubmit: (payment: RetirementPaymentInput) => Promise<void>;
+}) {
+  const [method, setMethod] = useState<RetirementPaymentMethod>('mobile_money');
+  const [reference, setReference] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setBusy(true);
+    try {
+      await onSubmit({ method, reference, note });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[75] flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+      <Card className="w-full max-w-md rounded-t-2xl sm:rounded-2xl">
+        <h3 className="text-base font-semibold text-ink">Mark retirement paid</h3>
+        <p className="mt-1 text-sm text-ink-muted">
+          Record payment of <span className="font-medium text-ink">{formatMoney(bundle.total_amount)}</span> to{' '}
+          {bundle.staff?.full_name ?? 'this employee'}.
+        </p>
+        <p className="mt-3 rounded-lg bg-surface-muted px-3 py-2 text-xs text-ink-muted">
+          This records that the employee has been paid for receipts already counted as expenses. It does not add a new expense.
+        </p>
+
+        <div className="mt-4 space-y-3">
+          <label className="block">
+            <span className="text-sm font-medium text-ink">Payment method</span>
+            <select
+              value={method}
+              onChange={(e) => setMethod(e.target.value as RetirementPaymentMethod)}
+              className="mt-1 w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-role-admin/30"
+            >
+              {RETIREMENT_PAYMENT_METHODS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="text-sm font-medium text-ink">Payment reference</span>
+            <input
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
+              placeholder="M-Pesa code, bank reference, voucher number"
+              className="mt-1 w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-role-admin/30"
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-sm font-medium text-ink">Note / reason</span>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+              placeholder="Optional, but useful for audit history"
+              className="mt-1 w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-role-admin/30"
+            />
+          </label>
+        </div>
+
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <Button variant="ghost" disabled={busy} onClick={onClose}>Cancel</Button>
+          <Button tint="admin" disabled={busy} onClick={() => void submit()}>
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Record payment
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }

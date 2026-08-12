@@ -14,6 +14,17 @@ type ReceiptInput = {
   file_base64?: string;
 };
 
+type PreparedReceipt = {
+  vendor_name: string | null;
+  receipt_date: string | null;
+  total_amount: number | null;
+  tax_amount: number | null;
+  category: string | null;
+  verification_code: string | null;
+  image_url: string | null;
+  note: string | null;
+};
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
@@ -42,7 +53,7 @@ Deno.serve(async (req) => {
 
     const { data: connection, error: connectionError } = await admin
       .from('supplier_connections')
-      .select('id, target_company_id, status')
+      .select('id, target_company_id, status, contact_name')
       .eq('public_token', connectionToken)
       .maybeSingle();
 
@@ -54,28 +65,15 @@ Deno.serve(async (req) => {
 
     const receiptAmount = receipts.reduce((sum, receipt) => sum + safeAmount(receipt.total_amount), 0);
     const amount = explicitAmount ?? (receiptAmount > 0 ? receiptAmount : null);
+    const uploadedPaths: string[] = [];
+    const preparedReceipts: PreparedReceipt[] = [];
 
-    const { data: claim, error: claimError } = await admin
-      .from('supplier_claims')
-      .insert({
-        connection_id: connection.id,
-        target_company_id: connection.target_company_id,
-        title,
-        claim_note: claimNote,
-        amount,
-      })
-      .select('id, public_token')
-      .single();
-
-    if (claimError) throw claimError;
-
-    const rows = [];
     for (const receipt of receipts) {
       let imagePath: string | null = null;
       if (receipt.file_base64 && receipt.file_name) {
         const bytes = decodeBase64(receipt.file_base64);
         const extension = fileExtension(receipt.file_name);
-        imagePath = `${connection.target_company_id}/supplier-claims/${claim.id}/${crypto.randomUUID()}${extension}`;
+        imagePath = `${connection.target_company_id}/supplier-claims/pending/${crypto.randomUUID()}${extension}`;
         const { error: uploadError } = await admin.storage
           .from('receipts')
           .upload(imagePath, bytes, {
@@ -83,10 +81,10 @@ Deno.serve(async (req) => {
             upsert: false,
           });
         if (uploadError) throw uploadError;
+        uploadedPaths.push(imagePath);
       }
 
-      rows.push({
-        claim_id: claim.id,
+      preparedReceipts.push({
         vendor_name: clean(receipt.vendor_name),
         receipt_date: clean(receipt.receipt_date),
         total_amount: nullableAmount(receipt.total_amount),
@@ -98,17 +96,46 @@ Deno.serve(async (req) => {
       });
     }
 
-    if (rows.length > 0) {
-      const { error: receiptError } = await admin.from('supplier_claim_receipts').insert(rows);
-      if (receiptError) throw receiptError;
-    }
+    let claim: { id: string; public_token: string } | null = null;
+    try {
+      const { data: insertedClaim, error: claimError } = await admin
+        .from('supplier_claims')
+        .insert({
+          connection_id: connection.id,
+          target_company_id: connection.target_company_id,
+          title,
+          claim_note: claimNote,
+          amount,
+        })
+        .select('id, public_token')
+        .single();
 
-    if (claimNote) {
-      await admin.from('supplier_claim_messages').insert({
-        claim_id: claim.id,
-        sender_role: 'supplier',
-        message: claimNote,
-      });
+      if (claimError) throw claimError;
+      claim = insertedClaim;
+
+      if (preparedReceipts.length > 0) {
+        const rows = preparedReceipts.map((receipt) => ({ ...receipt, claim_id: claim!.id }));
+        const { error: receiptError } = await admin.from('supplier_claim_receipts').insert(rows);
+        if (receiptError) throw receiptError;
+      }
+
+      if (claimNote) {
+        const { error: messageError } = await admin.from('supplier_claim_messages').insert({
+          claim_id: claim.id,
+          author_side: 'supplier',
+          author_name: clean(connection.contact_name),
+          message: claimNote,
+        });
+        if (messageError) throw messageError;
+      }
+    } catch (dbError) {
+      if (claim?.id) {
+        await admin.from('supplier_claims').delete().eq('id', claim.id);
+      }
+      if (uploadedPaths.length > 0) {
+        await admin.storage.from('receipts').remove(uploadedPaths);
+      }
+      throw dbError;
     }
 
     return json({ claim_token: claim.public_token });

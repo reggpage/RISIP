@@ -9,6 +9,8 @@ export type SupplierClaimStatus =
   | 'received_confirmed'
   | 'disputed';
 
+export type SupplierClaimPaymentMethod = 'cash' | 'mobile_money' | 'bank' | 'other';
+
 export type SupplierConnection = {
   id: string;
   target_company_id: string;
@@ -37,6 +39,11 @@ export type SupplierClaim = {
   public_token: string;
   viewed_at: string | null;
   paid_at: string | null;
+  paid_by?: string | null;
+  paid_amount_snapshot?: number | null;
+  payment_method?: SupplierClaimPaymentMethod | null;
+  payment_reference?: string | null;
+  payment_note?: string | null;
   received_confirmed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -141,7 +148,36 @@ export async function updateSupplierConnection(id: string, patch: Partial<Suppli
   if (error) throw error;
 }
 
-export async function updateSupplierClaim(id: string, patch: Partial<SupplierClaim>) {
-  const { error } = await (supabase as any).from('supplier_claims').update(patch).eq('id', id);
+export async function decideSupplierClaim(id: string, action: 'viewed' | 'approve' | 'dispute', reason?: string) {
+  const { error } = await (supabase as any).rpc('decide_supplier_claim', {
+    p_claim_id: id,
+    p_action: action,
+    p_reason: reason?.trim() || null,
+  });
+  if (error) throw error;
+}
+
+export async function markSupplierClaimPaid(input: {
+  id: string;
+  amount: number;
+  method: SupplierClaimPaymentMethod;
+  reference?: string;
+  note?: string;
+}) {
+  const { error } = await (supabase as any).rpc('mark_supplier_claim_paid', {
+    p_claim_id: input.id,
+    p_amount: input.amount,
+    p_method: input.method,
+    p_reference: input.reference?.trim() || null,
+    p_note: input.note?.trim() || null,
+  });
+  if (error) throw error;
+}
+
+export async function confirmSupplierClaimReceived(id: string, reason?: string) {
+  const { error } = await (supabase as any).rpc('confirm_supplier_claim_received', {
+    p_claim_id: id,
+    p_reason: reason?.trim() || null,
+  });
   if (error) throw error;
 }

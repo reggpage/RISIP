@@ -1,6 +1,5 @@
 import { supabase } from '@/lib/supabase';
 import { uuidv4 } from '@/lib/uuid';
-import { createNotifications } from '@/features/notifications/notifications';
 import type { Profile, Receipt } from '@/types/db';
 
 export type RetirementProfile = Pick<Profile, 'id' | 'company_id' | 'full_name' | 'phone' | 'role'>;
@@ -12,7 +11,8 @@ export type StaffRetirementStatus =
   | 'changes_requested'
   | 'paid'
   | 'received_confirmed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'rejected';
 
 export type StaffRetirement = {
   id: string;
@@ -27,6 +27,20 @@ export type StaffRetirement = {
   approved_at: string | null;
   paid_at: string | null;
   received_confirmed_at: string | null;
+  submitted_at: string | null;
+  submitted_by: string | null;
+  viewed_by: string | null;
+  approved_by: string | null;
+  paid_by: string | null;
+  received_confirmed_by: string | null;
+  cancelled_at: string | null;
+  cancelled_by: string | null;
+  rejected_at: string | null;
+  rejected_by: string | null;
+  decision_reason: string | null;
+  payment_method: 'cash' | 'mobile_money' | 'bank' | 'other' | null;
+  payment_reference: string | null;
+  paid_amount_snapshot: number | null;
   change_request_note: string | null;
   change_request_receipt_ids: string[];
   created_at: string;
@@ -51,6 +65,14 @@ export type RetirementBundle = StaffRetirement & {
   staff?: RetirementProfile;
   receipts: Receipt[];
   documents: RetirementDocument[];
+};
+
+export type RetirementPaymentMethod = 'cash' | 'mobile_money' | 'bank' | 'other';
+
+export type RetirementPaymentInput = {
+  method: RetirementPaymentMethod;
+  reference?: string;
+  note?: string;
 };
 
 export async function fetchRetirementBundles(profile: RetirementProfile): Promise<RetirementBundle[]> {
@@ -119,6 +141,8 @@ export async function fetchRetirableReceipts(profile: RetirementProfile, project
     .eq('project_id', projectId)
     .eq('uploaded_by', profile.id)
     .eq('status', 'confirmed')
+    .is('reimbursed_at', null)
+    .neq('payment_method', 'petty_cash')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []) as Receipt[];
@@ -134,25 +158,8 @@ export async function createStaffRetirement(input: {
   documents: File[];
 }) {
   const retirementId = uuidv4();
-  const { error: insertErr } = await (supabase as any).from('staff_retirements').insert({
-    id: retirementId,
-    company_id: input.profile.company_id,
-    project_id: input.project_id,
-    staff_id: input.profile.id,
-    title: input.title.trim() || 'Receipt retirement',
-    notes: input.notes?.trim() || null,
-    total_amount: input.total_amount,
-    status: 'submitted',
-  });
-  if (insertErr) throw insertErr;
-
-  if (input.receipt_ids.length > 0) {
-    const { error: linkErr } = await (supabase as any).from('staff_retirement_receipts').insert(
-      input.receipt_ids.map((receipt_id) => ({ retirement_id: retirementId, receipt_id })),
-    );
-    if (linkErr) throw linkErr;
-  }
-
+  const uploadedPaths: string[] = [];
+  const documents: Array<{ storage_path: string; file_name: string; file_type: string | null }> = [];
   for (const file of input.documents) {
     const ext = file.name.split('.').pop()?.toLowerCase() || 'bin';
     const storagePath = `${input.project_id}/retirements/${retirementId}/${uuidv4()}.${ext}`;
@@ -160,112 +167,84 @@ export async function createStaffRetirement(input: {
       .from('receipts')
       .upload(storagePath, file, { contentType: file.type || 'application/octet-stream', upsert: false });
     if (uploadErr) throw uploadErr;
-
-    const { error: docErr } = await (supabase as any).from('staff_retirement_documents').insert({
-      retirement_id: retirementId,
-      company_id: input.profile.company_id,
-      project_id: input.project_id,
-      storage_path: storagePath,
-      file_name: file.name,
-      file_type: file.type || null,
-      created_by: input.profile.id,
-      ai_status: 'not_scanned',
-    });
-    if (docErr) throw docErr;
+    uploadedPaths.push(storagePath);
+    documents.push({ storage_path: storagePath, file_name: file.name, file_type: file.type || null });
   }
 
-  await notifyFinance(input.profile.company_id, input.profile.id, {
-    type: 'retirement_submitted',
-    title: 'New staff retirement submitted',
-    body: `${input.profile.full_name} submitted ${input.receipt_ids.length} receipt(s).`,
-    metadata: { retirement_id: retirementId },
+  const { data, error } = await (supabase as any).rpc('create_retirement', {
+    p_project_id: input.project_id,
+    p_title: input.title.trim() || 'Receipt retirement',
+    p_notes: input.notes?.trim() || null,
+    p_receipt_ids: input.receipt_ids,
+    p_documents: documents,
+    p_retirement_id: retirementId,
   });
+  if (error) {
+    if (uploadedPaths.length > 0) {
+      await supabase.storage.from('receipts').remove(uploadedPaths);
+    }
+    throw error;
+  }
 
-  return retirementId;
+  return (data as string | null) ?? retirementId;
 }
 
 export async function updateRetirementStatus(
   bundle: StaffRetirement,
-  actor: RetirementProfile,
+  _actor: RetirementProfile,
   status: StaffRetirementStatus,
-  options?: { note?: string; receiptIds?: string[] },
+  options?: { note?: string; receiptIds?: string[]; payment?: RetirementPaymentInput },
 ) {
-  const now = new Date().toISOString();
-  const patch: Partial<StaffRetirement> = { status, updated_at: now };
-  if (status === 'viewed' && !bundle.viewed_at) patch.viewed_at = now;
-  if (status === 'approved') patch.approved_at = now;
-  if (status === 'paid') patch.paid_at = now;
-  if (status === 'received_confirmed') patch.received_confirmed_at = now;
-  if (status === 'changes_requested') {
-    patch.change_request_note = options?.note?.trim() || null;
-    patch.change_request_receipt_ids = options?.receiptIds ?? [];
-  }
   if (status === 'submitted') {
-    patch.change_request_note = null;
-    patch.change_request_receipt_ids = [];
+    const { error } = await (supabase as any).rpc('submit_retirement', { p_retirement: bundle.id });
+    if (error) throw error;
+    return;
   }
-
-  const { error } = await (supabase as any).from('staff_retirements').update(patch).eq('id', bundle.id);
-  if (error) throw error;
-
-  if (actor.id !== bundle.staff_id) {
-    await createNotifications([{
-      company_id: bundle.company_id,
-      recipient_id: bundle.staff_id,
-      actor_id: actor.id,
-      type: `retirement_${status}`,
-      title: retirementStatusTitle(status),
-      body: status === 'changes_requested' && options?.note
-        ? options.note
-        : `Your retirement "${bundle.title}" is now ${status.replace(/_/g, ' ')}.`,
-      metadata: { retirement_id: bundle.id, receipt_ids: options?.receiptIds ?? [] },
-    }]);
-  } else if (status === 'received_confirmed' || status === 'submitted') {
-    await notifyFinance(bundle.company_id, actor.id, {
-      type: status === 'submitted' ? 'retirement_resubmitted' : 'retirement_received_confirmed',
-      title: status === 'submitted' ? 'Staff resubmitted retirement' : 'Staff confirmed payment received',
-      body: status === 'submitted'
-        ? `${actor.full_name} resubmitted "${bundle.title}" after changes.`
-        : `${actor.full_name} confirmed receiving payment for "${bundle.title}".`,
-      metadata: { retirement_id: bundle.id },
+  if (status === 'paid') {
+    if (!options?.payment) {
+      throw new Error('Choose a payment method before marking this retirement paid.');
+    }
+    const { error } = await (supabase as any).rpc('mark_retirement_paid', {
+      p_retirement: bundle.id,
+      p_method: options?.payment?.method,
+      p_reference: options?.payment?.reference?.trim() || null,
+      p_reason: options?.payment?.note?.trim() || null,
     });
+    if (error) throw error;
+    return;
   }
+  if (status === 'received_confirmed') {
+    const { error } = await (supabase as any).rpc('confirm_retirement_received', {
+      p_retirement: bundle.id,
+      p_reason: null,
+    });
+    if (error) throw error;
+    return;
+  }
+  if (status === 'cancelled') {
+    const { error } = await (supabase as any).rpc('cancel_retirement', {
+      p_retirement: bundle.id,
+      p_reason: options?.note ?? '',
+    });
+    if (error) throw error;
+    return;
+  }
+  const decision =
+    status === 'approved' ? 'approve'
+      : status === 'changes_requested' ? 'request_changes'
+        : status === 'rejected' ? 'reject'
+          : status;
+  const { error } = await (supabase as any).rpc('decide_retirement', {
+    p_retirement: bundle.id,
+    p_decision: decision,
+    p_reason: options?.note ?? null,
+    p_change_receipt_ids: options?.receiptIds ?? null,
+  });
+  if (error) throw error;
 }
 
 export async function retirementDocumentUrl(path: string, expiresIn = 60 * 10): Promise<string> {
   const { data, error } = await supabase.storage.from('receipts').createSignedUrl(path, expiresIn);
   if (error) throw error;
   return data.signedUrl;
-}
-
-async function notifyFinance(
-  companyId: string,
-  actorId: string,
-  notification: { type: string; title: string; body: string; metadata?: unknown },
-) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id')
-    .eq('company_id', companyId)
-    .in('role', ['owner', 'accountant']);
-  if (error) throw error;
-  await createNotifications(
-    (data ?? [])
-      .filter((p) => p.id !== actorId)
-      .map((p) => ({
-        company_id: companyId,
-        recipient_id: p.id,
-        actor_id: actorId,
-        ...notification,
-      })),
-  );
-}
-
-function retirementStatusTitle(status: StaffRetirementStatus) {
-  if (status === 'viewed') return 'Accountant viewed your retirement';
-  if (status === 'approved') return 'Retirement approved';
-  if (status === 'changes_requested') return 'Changes requested';
-  if (status === 'paid') return 'Retirement marked as paid';
-  if (status === 'received_confirmed') return 'Payment receipt confirmed';
-  return 'Retirement updated';
 }
