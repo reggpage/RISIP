@@ -53,12 +53,35 @@ export type Company = {
 
 export type Profile = {
   id: string;
+  /**
+   * The company this person was created in. Kept for compatibility during the
+   * multi-business phase; `active_company_id` is what authorisation now reads.
+   */
   company_id: string;
+  /**
+   * Which business this person is currently looking at. private.auth_company_id()
+   * resolves through this joined to company_members, so a value pointing at a
+   * company they do not belong to grants nothing.
+   */
+  active_company_id: string | null;
   full_name: string;
   phone: string | null;
   role: UserRole;
   deactivated_at: string | null;
   created_at: string;
+};
+
+/**
+ * One row per person per business. Backfilled one-to-one from profiles in 0072,
+ * so today every person has exactly one. Joining, leaving and switching become
+ * RPCs in a later phase; there is no write policy on this table.
+ */
+export type CompanyMember = {
+  profile_id: string;
+  company_id: string;
+  role: UserRole;
+  joined_at: string;
+  deactivated_at: string | null;
 };
 
 export type Project = {
@@ -361,6 +384,12 @@ export type Database = {
           created_by: string;
         };
         Update: Partial<MerchantMemory>;
+        Relationships: [];
+      };
+      company_members: {
+        Row: CompanyMember;
+        Insert: never;
+        Update: never;
         Relationships: [];
       };
       // Written only by create_reimbursement_payout / void_reimbursement_payout.
