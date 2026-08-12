@@ -4,13 +4,11 @@ import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
 import { ListItemSkeleton } from '@/components/ui/Skeleton';
-import { useToast } from '@/components/ui/Toast';
 import ReceiptDetailModal from '@/components/receipts/ReceiptDetailModal';
-import {
-  markReceiptsReimbursed,
-  useReimbursements,
-  type OwedPerson,
-} from '@/features/reimbursements/reimbursements';
+import PayoutDialog from '@/components/reimbursements/PayoutDialog';
+import PayoutHistory from '@/components/reimbursements/PayoutHistory';
+import { useReimbursements, type OwedPerson } from '@/features/reimbursements/reimbursements';
+import { useCompany } from '@/features/company/useCompany';
 import { useProjects } from '@/features/projects/useProjects';
 import { useAuth } from '@/lib/auth';
 import { formatDate, formatMoney } from '@/lib/format';
@@ -32,9 +30,11 @@ export default function ReimbursementsPage() {
 
   const [expanded, setExpanded] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState(false);
+  const [busy] = useState(false);
   const [openReceipt, setOpenReceipt] = useState<Receipt | null>(null);
-  const toast = useToast();
+  const [paying, setPaying] = useState<{ name: string; ids: string[]; amount: number } | null>(null);
+  const company = useCompany();
+  const detailedPayouts = Boolean(company?.payouts_enabled);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -42,23 +42,23 @@ export default function ReimbursementsPage() {
     return people.filter((p) => p.full_name.toLowerCase().includes(q));
   }, [people, query]);
 
-  async function pay(ids: string[], paid: boolean) {
+  // Paying is now a recorded payout rather than a flag flip, so it opens a
+  // dialog. Undoing is not the same button in reverse: it is an audited void of
+  // the payment, and it lives in the payments list below.
+  function pay(person: OwedPerson, ids: string[]) {
     if (ids.length === 0) return;
-    setBusy(true);
-    try {
-      const n = await markReceiptsReimbursed(ids, paid);
-      toast.success(
-        paid
-          ? `${n} receipt${n === 1 ? '' : 's'} marked paid. The uploader has been notified.`
-          : `${n} receipt${n === 1 ? '' : 's'} moved back to pending.`,
-      );
-      setSelected(new Set());
-      await refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not update the receipts.');
-    } finally {
-      setBusy(false);
-    }
+    const chosen = person.receipts.filter((r) => ids.includes(r.id));
+    setPaying({
+      name: person.full_name,
+      ids,
+      amount: chosen.reduce((sum, r) => sum + Number(r.total_amount || 0), 0),
+    });
+  }
+
+  async function afterPay() {
+    setPaying(null);
+    setSelected(new Set());
+    await refresh();
   }
 
   function toggleOne(id: string) {
@@ -183,6 +183,20 @@ export default function ReimbursementsPage() {
         </Card>
       )}
 
+      {/* The payments list is also the only place a payment can be cancelled. */}
+      {showPaid && <PayoutHistory onChanged={() => void refresh()} />}
+
+      {paying && (
+        <PayoutDialog
+          personName={paying.name}
+          receiptIds={paying.ids}
+          amount={paying.amount}
+          detailed={detailedPayouts}
+          onDone={() => void afterPay()}
+          onCancel={() => setPaying(null)}
+        />
+      )}
+
       {openReceipt && (
         <ReceiptDetailModal receipt={openReceipt} onClose={() => setOpenReceipt(null)} />
       )}
@@ -219,7 +233,7 @@ function PersonRow({
   selected: Set<string>;
   onToggleReceipt: (id: string) => void;
   onSelectAll: (ids: string[], allSelected: boolean) => void;
-  onPay: (ids: string[], paid: boolean) => void;
+  onPay: (person: OwedPerson, ids: string[]) => void;
   onView: (receipt: Receipt) => void;
 }) {
   const ids = person.receipts.map((r) => r.id);
@@ -256,15 +270,14 @@ function PersonRow({
           <div className="font-display text-base font-semibold text-ink">{formatMoney(person.total)}</div>
         </div>
 
-        <Button
-          variant={showPaid ? 'secondary' : 'primary'}
-          tint="admin"
-          disabled={busy}
-          onClick={() => onPay(ids, !showPaid)}
-        >
-          {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-          {showPaid ? 'Undo all' : 'Mark all paid'}
-        </Button>
+        {/* Undo is not this button in reverse: cancelling a payment is audited
+            and lives in the payments list, so it is deliberately absent here. */}
+        {!showPaid && (
+          <Button tint="admin" disabled={busy} onClick={() => onPay(person, ids)}>
+            {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Pay all
+          </Button>
+        )}
 
         <button
           type="button"
@@ -325,15 +338,16 @@ function PersonRow({
             <span className="text-xs text-ink-muted">
               {mine.length} selected · <span className="font-semibold text-ink">{formatMoney(selectedTotal)}</span>
             </span>
-            <Button
-              variant={showPaid ? 'secondary' : 'primary'}
-              tint="admin"
-              disabled={busy || mine.length === 0}
-              onClick={() => onPay(mine.map((r) => r.id), !showPaid)}
-            >
-              {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-              {showPaid ? 'Move back to unpaid' : 'Mark selected paid'}
-            </Button>
+            {!showPaid && (
+              <Button
+                tint="admin"
+                disabled={busy || mine.length === 0}
+                onClick={() => onPay(person, mine.map((r) => r.id))}
+              >
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+                Pay selected
+              </Button>
+            )}
           </div>
         </div>
       )}

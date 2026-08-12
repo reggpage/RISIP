@@ -47,6 +47,8 @@ export type Company = {
   allow_self_approval: boolean;
   /** Reversal & correction of booked petty cash. Off means booked stays frozen. */
   reversal_enabled: boolean;
+  /** The richer payout UI: method, reference, note. Paying works either way. */
+  payouts_enabled: boolean;
 };
 
 export type Profile = {
@@ -129,6 +131,39 @@ export type PettyCashTransaction = {
   /** Set on the original expense once it has been reversed. Written once. */
   reversed_at: string | null;
   reversed_by_transaction_id: string | null;
+};
+
+// Settlement, not expense. The expense counted when the receipt was confirmed;
+// a payout records the company handing that money back to the employee.
+export type ReimbursementPayoutMethod = 'cash' | 'mobile_money' | 'bank' | 'other';
+
+export type ReimbursementPayout = {
+  id: string;
+  company_id: string;
+  /** The employee being paid back. */
+  paid_to: string;
+  /** The finance user who paid them. */
+  paid_by: string;
+  paid_at: string;
+  total_amount: number;
+  method: ReimbursementPayoutMethod | null;
+  reference: string | null;
+  note: string | null;
+  /** A payout is never deleted; a mistake is voided and stays visible. */
+  voided_at: string | null;
+  voided_by: string | null;
+  void_reason: string | null;
+  created_at: string;
+};
+
+export type ReimbursementPayoutItem = {
+  id: string;
+  payout_id: string;
+  receipt_id: string;
+  /** What was actually paid. Frozen: a later edit to the receipt cannot move it. */
+  amount_paid: number;
+  voided_at: string | null;
+  created_at: string;
 };
 
 export type Receipt = {
@@ -328,6 +363,22 @@ export type Database = {
         Update: Partial<MerchantMemory>;
         Relationships: [];
       };
+      // Written only by create_reimbursement_payout / void_reimbursement_payout.
+      // There is no INSERT, UPDATE or DELETE policy for any role, so the Insert
+      // and Update shapes here exist to satisfy the client's generic, not because
+      // anything may write through them.
+      reimbursement_payouts: {
+        Row: ReimbursementPayout;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      reimbursement_payout_items: {
+        Row: ReimbursementPayoutItem;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       petty_cash_accounts: {
         Row: PettyCashAccount;
         Insert: Partial<PettyCashAccount> & { company_id: string; user_id: string };
@@ -501,6 +552,26 @@ export type Database = {
           expense_id?: string | null;
           balance: number;
         };
+      };
+      /**
+       * Records that the company paid an employee back. Settlement, not expense:
+       * the expense counted when the receipt was confirmed. One payout pays one
+       * person, and amount_paid is snapshotted so a later edit cannot rewrite
+       * what was handed over.
+       */
+      create_reimbursement_payout: {
+        Args: {
+          p_receipt_ids: string[];
+          p_method?: 'cash' | 'mobile_money' | 'bank' | 'other' | null;
+          p_reference?: string | null;
+          p_note?: string | null;
+        };
+        Returns: { payout_id: string; total_amount: number; receipts: number };
+      };
+      /** Cancels a payment. Audited, reasoned, never deleted. */
+      void_reimbursement_payout: {
+        Args: { p_payout: string; p_reason: string };
+        Returns: { status: 'voided' | 'already_voided'; payout_id: string; receipts?: number };
       };
       /** Staff ask finance to reverse a receipt. Moves no money, ever. */
       request_receipt_reversal: { Args: { p_receipt: string; p_reason: string }; Returns: string };
