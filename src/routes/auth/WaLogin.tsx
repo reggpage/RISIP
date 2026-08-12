@@ -66,16 +66,26 @@ export default function WaLogin() {
 
     void (async () => {
       try {
-        const { data, error } = await supabase.functions.invoke<{ token_hash?: string; error?: string }>(
-          'wa-login',
-          { body: { token } },
-        );
-        const serverError = error?.message ?? data?.error;
-        if (serverError || !data?.token_hash) {
+        // Plain fetch, not functions.invoke: the function answers a spent or
+        // expired token with 401, and invoke() throws away the body on a non-2xx,
+        // leaving only "non-2xx status code". Reading the body is what lets us
+        // tell somebody their link expired rather than a flat "not valid".
+        const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/wa-login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+          },
+          body: JSON.stringify({ token }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { token_hash?: string; error?: string };
+
+        if (!res.ok || !data.token_hash) {
+          const serverError = data.error ?? '';
           setPhase('failed');
           setMessage(
-            /expired/i.test(serverError ?? '') ? c.expired
-              : /already been used/i.test(serverError ?? '') ? c.used
+            /expired/i.test(serverError) ? c.expired
+              : /already been used/i.test(serverError) ? c.used
               : c.invalid,
           );
           return;
