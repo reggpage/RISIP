@@ -268,9 +268,10 @@ async function handleOnboarding(
     }
 
     const name = (result as { company_name?: string } | null)?.company_name ?? '';
+    const person = next.action.fullName;
     return lang === 'sw'
-      ? `Karibu ${name} 🎉\nAndika "ingia" upate link ya kufungua Risip kwenye kompyuta.`
-      : `Welcome to ${name} 🎉\nSend "login" for a link to open Risip on a computer.`;
+      ? `Sawa ${person}, karibu ${name} 🎉\nRisip iko tayari kukusaidia kurekodi risiti na biashara yako.\n\nAndika "ingia" kupata link ya kufungua Risip.`
+      : `Okay ${person}, welcome to ${name} 🎉\nRisip is ready to help you record receipts and manage your business.\n\nSend "login" to get a link to open Risip.`;
   }
 
   await db.from('whatsapp_onboarding').update({
@@ -285,8 +286,8 @@ async function handleLoginLink(db: Admin, phone: string, lang: Lang): Promise<st
   if (error || !token) return error?.message ?? 'Could not create a link right now.';
   const url = `${appUrl()}/wa-login?t=${token}`;
   return lang === 'sw'
-    ? `Fungua link hii ndani ya dakika 5. Inatumika mara moja tu:\n${url}`
-    : `Open this within 5 minutes. It works once only:\n${url}`;
+    ? `Fungua link hii ndani ya dakika 5. Inatumika mara moja tu.\nUsimtumie mtu mwingine link hii.\n${url}`
+    : `Open this link within 5 minutes. It works once only.\nDo not share this link with anyone.\n${url}`;
 }
 
 /** Fire-and-forget: nudge the worker without blocking the 200 back to Meta. */

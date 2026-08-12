@@ -40,6 +40,8 @@ describe('the three ways in', () => {
   });
 
   it('2 joins one with a code', () => {
+    const menu = advanceOnboarding('lang', '1', 'en');
+    expect(menu.reply).toContain('Jiunge na biashara niliyoalikwa');
     expect(advanceOnboarding('menu', '2', 'sw').step).toBe('join_code');
   });
 
@@ -48,6 +50,11 @@ describe('the three ways in', () => {
     expect(r.action.kind).toBe('explain_linking');
     expect(r.reply).toMatch(/Settings/);
     expect(r.reply).not.toMatch(/password|nywila/i);
+  });
+
+  it('uses the polished name question in both languages', () => {
+    expect(advanceOnboarding('create_name', 'Duka la Asha', 'sw').reply).toBe('Wewe unaitwa nani?');
+    expect(advanceOnboarding('create_name', 'Asha Shop', 'en').reply).toBe('What is your name?');
   });
 
   it('does not guess at anything else', () => {

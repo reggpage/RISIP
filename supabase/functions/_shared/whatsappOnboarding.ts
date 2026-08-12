@@ -40,16 +40,16 @@ const T = {
     sw: 'Karibu Risip 👋\n\nChagua lugha / Choose a language:\n1. Kiswahili\n2. English',
   },
   menu: {
-    sw: 'Vizuri. Chagua:\n1. Fungua biashara mpya\n2. Jiunge na biashara (nina kodi)\n3. Nina akaunti tayari',
-    en: 'Good. Choose:\n1. Start a new business\n2. Join a business (I have a code)\n3. I already have an account',
+    sw: 'Vizuri. Chagua:\n1. Fungua biashara mpya\n2. Jiunge na biashara niliyoalikwa\n3. Nina akaunti tayari',
+    en: 'Good. Choose:\n1. Start a new business\n2. Join a business I was invited to\n3. I already have an account',
   },
   askBusiness: {
     sw: 'Biashara yako inaitwaje?',
     en: 'What is your business called?',
   },
   askPerson: {
-    sw: 'Wewe unaitwaje?',
-    en: 'And what is your name?',
+    sw: 'Wewe unaitwa nani?',
+    en: 'What is your name?',
   },
   askCode: {
     sw: 'Andika kodi ya mwaliko (herufi 8).',
