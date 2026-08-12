@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_MEDIA_BYTES,
   buildFailureReply,
+  buildNoActiveProjectReply,
   buildReceiptReply,
   buildReviewUrl,
   maskPhone,
@@ -164,6 +165,15 @@ describe('reply messages', () => {
   it('explains unsupported media and size failures distinctly', () => {
     expect(buildFailureReply('https://x.test', 'unsupported_type')).toContain('photo');
     expect(buildFailureReply('https://x.test', 'too_large')).toContain('too large');
+  });
+
+  it('keeps failure and no-project replies in the saved WhatsApp language', () => {
+    expect(buildFailureReply('https://x.test', 'too_large', 'sw')).toContain('Picha hiyo ni kubwa sana');
+    expect(buildFailureReply('https://x.test', 'too_large', 'sw')).not.toContain('too large');
+    expect(buildNoActiveProjectReply('https://risip.online/receipts', 'sw')).toBe(
+      'Biashara yako haina mradi hai, kwa hiyo sikuweza kuhifadhi risiti hii.\nFungua Risip kukamilisha setup:\nhttps://risip.online/receipts',
+    );
+    expect(buildNoActiveProjectReply('https://risip.online/receipts', 'en')).toContain('Your business has no active project yet');
   });
 });
 

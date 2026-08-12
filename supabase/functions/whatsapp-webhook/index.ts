@@ -47,6 +47,19 @@ import {
   type OnboardingStep,
 } from '../_shared/whatsappOnboarding.ts';
 import { waSyntheticEmail } from '../_shared/waIdentityEmail.ts';
+import {
+  isProjectSetupState,
+  parseProjectSetupChoice,
+  parseProjectSetupConfirmation,
+  projectSetupConfirmation,
+  projectSetupCreatedReply,
+  projectSetupNamePrompt,
+  projectSetupPrompt,
+  projectSetupWorkerReply,
+  canCreateProject,
+  sanitizeProjectName,
+  type ProjectSetupState,
+} from '../_shared/whatsappProjectSetup.ts';
 
 type Admin = ReturnType<typeof createClient>;
 
@@ -79,6 +92,146 @@ async function loadConversation(db: Admin, identityId: string) {
 
 async function clearConversation(db: Admin, identityId: string): Promise<void> {
   await db.from('whatsapp_conversations').delete().eq('identity_id', identityId);
+}
+
+async function activeProjects(db: Admin, companyId: string): Promise<{ id: string; name: string }[]> {
+  const { data } = await db
+    .from('projects')
+    .select('id, name')
+    .eq('company_id', companyId)
+    .eq('status', 'active')
+    .order('created_at', { ascending: false });
+  return (data ?? []) as { id: string; name: string }[];
+}
+
+async function parkProjectSetup(
+  db: Admin,
+  identity: any,
+  messageId: string,
+  mediaId: string,
+  mediaMime: string | null,
+  caption: string | null,
+  lang: Lang,
+): Promise<string> {
+  const { data: profile } = await db
+    .from('profiles')
+    .select('id, company_id, role, deactivated_at')
+    .eq('id', identity.profile_id)
+    .maybeSingle();
+
+  const projects = await activeProjects(db, identity.company_id as string);
+  const canUseProject = projects.length > 0;
+  let workerHasProject = false;
+  if (profile?.role === 'worker' && projects.length > 0) {
+    const { data: memberships } = await db.from('project_members')
+      .select('project_id').eq('profile_id', identity.profile_id);
+    const memberIds = new Set((memberships ?? []).map((row) => String(row.project_id)));
+    workerHasProject = projects.some((project) => memberIds.has(project.id));
+  }
+  if ((profile?.role === 'owner' || profile?.role === 'accountant') && canUseProject) return '';
+  if (profile?.role === 'worker' && workerHasProject) return '';
+
+  await db.from('whatsapp_messages').update({
+    profile_id: identity.profile_id,
+    company_id: identity.company_id,
+    media_id: mediaId,
+    media_mime: mediaMime,
+    caption,
+    status: 'skipped',
+    last_error: 'awaiting_project_setup',
+    processed_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  }).eq('wa_message_id', messageId);
+
+  if (!profile || profile.deactivated_at || profile.company_id !== identity.company_id || profile.role === 'worker') {
+    return projectSetupWorkerReply(lang);
+  }
+
+  const { data: company } = await db.from('companies').select('name').eq('id', identity.company_id).maybeSingle();
+  const setup: ProjectSetupState = {
+    kind: 'project_setup', stage: 'choose', mediaMessageId: messageId,
+  };
+  await db.from('whatsapp_conversations').upsert({
+    identity_id: identity.id,
+    company_id: identity.company_id,
+    profile_id: identity.profile_id,
+    awaiting: 'project',
+    receipt_id: null,
+    options: setup,
+    expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'identity_id' });
+
+  return projectSetupPrompt(lang, String(company?.name ?? 'your business'));
+}
+
+async function createOrReuseProject(
+  db: Admin,
+  identity: any,
+  projectName: string,
+): Promise<{ id: string; name: string; created: boolean } | null> {
+  const { data: profile } = await db
+    .from('profiles')
+    .select('id, company_id, role, deactivated_at')
+    .eq('id', identity.profile_id)
+    .maybeSingle();
+  if (!profile || profile.deactivated_at || profile.company_id !== identity.company_id) return null;
+  if (!canCreateProject(profile.role)) return null;
+
+  const { data: existing } = await db
+    .from('projects')
+    .select('id, name')
+    .eq('company_id', identity.company_id)
+    .eq('status', 'active')
+    .eq('name', projectName)
+    .limit(1)
+    .maybeSingle();
+
+  let project = existing as { id: string; name: string } | null;
+  let created = false;
+  if (!project) {
+    const { data, error } = await db.from('projects').insert({
+      company_id: identity.company_id,
+      name: projectName,
+      status: 'active',
+      created_by: identity.profile_id,
+    }).select('id, name').single();
+    if (data) {
+      project = data as { id: string; name: string };
+      created = true;
+    } else if (error) {
+      // A concurrent setup may have created the same name. Reuse it rather than
+      // turning a harmless duplicate into a failed receipt flow.
+      const { data: raced } = await db
+        .from('projects').select('id, name').eq('company_id', identity.company_id)
+        .eq('status', 'active').eq('name', projectName).limit(1).maybeSingle();
+      if (!raced) return null;
+      project = raced as { id: string; name: string };
+    }
+  }
+
+  const { error: memberError } = await db.from('project_members').upsert({
+    project_id: project.id,
+    profile_id: identity.profile_id,
+  }, { onConflict: 'project_id,profile_id' });
+  if (memberError) return null;
+  return { ...project, created };
+}
+
+async function resumePendingReceipt(db: Admin, identity: any, mediaMessageId: string): Promise<boolean> {
+  const { data, error } = await db.from('whatsapp_messages').update({
+    status: 'pending',
+    last_error: null,
+    processed_at: null,
+    retry_count: 0,
+    updated_at: new Date().toISOString(),
+  }).eq('wa_message_id', mediaMessageId)
+    .eq('company_id', identity.company_id)
+    .eq('profile_id', identity.profile_id)
+    .is('receipt_id', null)
+    .select('id')
+    .maybeSingle();
+  return !error && Boolean(data);
 }
 
 /** Append-only trail: intent and outcome only, never bodies or secrets. */
@@ -387,6 +540,19 @@ Deno.serve(async (req) => {
             await finish('skipped', 'onboarding');
             continue;
           }
+          const setupReply = await parkProjectSetup(
+            db,
+            identity,
+            waMessageId,
+            String(message.image.id),
+            message.image.mime_type ? String(message.image.mime_type) : null,
+            message.image.caption ? String(message.image.caption).slice(0, 500) : null,
+            lang,
+          );
+          if (setupReply) {
+            await replyQuietly(phone, setupReply);
+            continue;
+          }
           await db.from('whatsapp_messages').update({
             profile_id: identity.profile_id,
             company_id: identity.company_id,
@@ -522,6 +688,82 @@ Deno.serve(async (req) => {
             continue;
           }
           await replyQuietly(phone, t('chooseLanguage', lang));
+          await finish('skipped');
+          continue;
+        }
+
+        if (convo?.awaiting === 'project' && isProjectSetupState(convo.options)) {
+          const setup = convo.options as ProjectSetupState;
+          const { data: company } = await db.from('companies')
+            .select('name').eq('id', identity.company_id).maybeSingle();
+          const companyName = String(company?.name ?? 'your business');
+
+          if (setup.stage === 'choose') {
+            const choice = parseProjectSetupChoice(body);
+            if (choice === 3) {
+              const next: ProjectSetupState = { ...setup, stage: 'name' };
+              await db.from('whatsapp_conversations').update({ options: next, updated_at: new Date().toISOString() })
+                .eq('identity_id', identity.id);
+              await replyQuietly(phone, projectSetupNamePrompt(lang));
+            } else if (choice === 1 || choice === 2) {
+              const projectName = choice === 1 ? 'General' : (sanitizeProjectName(companyName) ?? 'General');
+              const next: ProjectSetupState = { ...setup, stage: 'confirm', projectName };
+              await db.from('whatsapp_conversations').update({ options: next, updated_at: new Date().toISOString() })
+                .eq('identity_id', identity.id);
+              await replyQuietly(phone, projectSetupConfirmation(lang, projectName));
+            } else {
+              await replyQuietly(phone, projectSetupPrompt(lang, companyName));
+            }
+            await finish('skipped');
+            continue;
+          }
+
+          if (setup.stage === 'name') {
+            const projectName = sanitizeProjectName(body);
+            if (!projectName) {
+              await replyQuietly(phone, lang === 'sw'
+                ? 'Jina la project ni fupi sana. Jaribu tena.'
+                : 'That project name is too short. Try again.');
+              await finish('skipped');
+              continue;
+            }
+            const next: ProjectSetupState = { ...setup, stage: 'confirm', projectName };
+            await db.from('whatsapp_conversations').update({ options: next, updated_at: new Date().toISOString() })
+              .eq('identity_id', identity.id);
+            await replyQuietly(phone, projectSetupConfirmation(lang, projectName));
+            await finish('skipped');
+            continue;
+          }
+
+          const confirmed = parseProjectSetupConfirmation(body);
+          if (confirmed === false) {
+            const next: ProjectSetupState = { ...setup, stage: 'choose', projectName: undefined };
+            await db.from('whatsapp_conversations').update({ options: next, updated_at: new Date().toISOString() })
+              .eq('identity_id', identity.id);
+            await replyQuietly(phone, projectSetupPrompt(lang, companyName));
+            await finish('skipped');
+            continue;
+          }
+          if (confirmed !== true || !setup.projectName) {
+            await replyQuietly(phone, projectSetupConfirmation(lang, setup.projectName ?? 'General'));
+            await finish('skipped');
+            continue;
+          }
+
+          const project = await createOrReuseProject(db, identity, setup.projectName);
+          if (!project) {
+            await replyQuietly(phone, lang === 'sw'
+              ? 'Sikuweza kutengeneza project sasa. Hakikisha wewe ni owner au accountant, kisha jaribu tena.'
+              : 'I could not create that project right now. Make sure you are the owner or accountant, then try again.');
+            await finish('skipped');
+            continue;
+          }
+          const resumed = await resumePendingReceipt(db, identity, setup.mediaMessageId);
+          await clearConversation(db, identity.id as string);
+          await replyQuietly(phone, resumed
+            ? projectSetupCreatedReply(lang, project.name)
+            : (lang === 'sw' ? `Project "${project.name}" iko tayari.` : `Project "${project.name}" is ready.`));
+          await audit(db, identity, waMessageId, 'project_setup', project.created ? 'created' : 'reused', resumed ? 'applied' : 'no_pending_receipt');
           await finish('skipped');
           continue;
         }

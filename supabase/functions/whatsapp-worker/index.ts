@@ -20,6 +20,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import {
   buildFailureReply,
   buildReviewUrl,
+  buildNoActiveProjectReply,
   maskPhone,
   validateMedia,
 } from '../_shared/whatsapp.ts';
@@ -179,6 +180,22 @@ async function processJob(db: Admin, job: any): Promise<void> {
     return;
   }
 
+  const lang: Lang = (identity.lang as Lang | null) ?? 'en';
+  // Never download or extract a receipt when this company has no active project.
+  // The webhook parks the message for owner/accountant setup; this is the race-safe
+  // fallback if a project disappears between the webhook and worker invocation.
+  const projects = await authorizedProjects(
+    db, profile.id as string, identity.company_id as string, String(profile.role ?? 'worker'),
+  );
+  if (projects.length === 0) {
+    await db.from('whatsapp_messages').update({
+      status: 'failed', last_error: 'no_active_project',
+      processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    }).eq('id', job.id);
+    await replyQuietly(phone, buildNoActiveProjectReply(reviewUrl, lang));
+    return;
+  }
+
   // 1. Media metadata + validation before we spend bandwidth.
   const meta = await getMediaMeta(String(job.media_id));
   const check = validateMedia(meta.mimeType || job.media_mime, meta.fileSize);
@@ -187,7 +204,7 @@ async function processJob(db: Admin, job: any): Promise<void> {
       status: 'skipped', last_error: check.reason,
       processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     }).eq('id', job.id);
-    await replyQuietly(phone, buildFailureReply(reviewUrl, check.reason));
+    await replyQuietly(phone, buildFailureReply(reviewUrl, check.reason, lang));
     return;
   }
 
@@ -199,7 +216,7 @@ async function processJob(db: Admin, job: any): Promise<void> {
       status: 'skipped', last_error: recheck.reason,
       processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     }).eq('id', job.id);
-    await replyQuietly(phone, buildFailureReply(reviewUrl, recheck.reason));
+    await replyQuietly(phone, buildFailureReply(reviewUrl, recheck.reason, lang));
     return;
   }
 
@@ -207,21 +224,9 @@ async function processJob(db: Admin, job: any): Promise<void> {
   // The caption is untrusted text from the sender. It is only ever matched against
   // projects they are already authorised to use, so it can widen nothing.
   const caption = (job.caption as string | null) ?? null;
-  const projects = await authorizedProjects(
-    db, profile.id as string, identity.company_id as string, String(profile.role ?? 'worker'),
-  );
   const resolution = resolveProject(caption, projects);
   const paymentSuggestion = resolvePaymentSource(caption);
   const projectId = resolution.kind === 'resolved' ? resolution.projectId : null;
-
-  if (projects.length === 0) {
-    await db.from('whatsapp_messages').update({
-      status: 'failed', last_error: 'no_active_project',
-      processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
-    }).eq('id', job.id);
-    await replyQuietly(phone, `Your company has no active project yet, so I could not file this receipt.\n\n${reviewUrl}`);
-    return;
-  }
 
   const receiptId = crypto.randomUUID();
   // An unassigned receipt has no project to key its path on, so it lands in the
@@ -294,8 +299,6 @@ async function processJob(db: Admin, job: any): Promise<void> {
     status: 'done', timings: marks,
     processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
   }).eq('id', job.id);
-
-  const lang: Lang = (identity.lang as Lang | null) ?? 'en';
 
   // 6. Exactly one reply.
   if (isDuplicate) {
@@ -418,7 +421,10 @@ Deno.serve(async (req) => {
       }).eq('id', job.id);
 
       if (exhausted) {
-        await replyQuietly(job.phone_e164, buildFailureReply(buildReviewUrl(appUrl())));
+        const { data: failedIdentity } = await db.from('whatsapp_identities')
+          .select('lang').eq('phone_e164', job.phone_e164 ?? '').is('revoked_at', null).maybeSingle();
+        const failedLang: Lang = (failedIdentity?.lang as Lang | null) ?? 'en';
+        await replyQuietly(job.phone_e164, buildFailureReply(buildReviewUrl(appUrl()), undefined, failedLang));
       }
       console.error('job failed', job.id, message);
     }

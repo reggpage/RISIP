@@ -176,7 +176,16 @@ export function buildReceiptReply(input: {
   return lines.join('\n');
 }
 
-export function buildFailureReply(reviewUrl: string, reason?: string): string {
+export function buildFailureReply(reviewUrl: string, reason?: string, lang: 'en' | 'sw' = 'en'): string {
+  if (lang === 'sw') {
+    const detail =
+      reason === 'unsupported_type'
+        ? 'Aina hiyo ya faili haitumiki. Tuma risiti kama picha (JPEG, PNG au WebP).'
+        : reason === 'too_large'
+          ? 'Picha hiyo ni kubwa sana. Tuma picha ndogo (chini ya 5MB).'
+          : 'Sikuweza kusoma risiti hiyo moja kwa moja.';
+    return `${detail}\n\nUnaweza kuiweka na kuikagua hapa:\n${reviewUrl}`;
+  }
   const detail =
     reason === 'unsupported_type'
       ? 'That file type is not supported. Send the receipt as a photo (JPEG, PNG or WebP).'
@@ -184,6 +193,12 @@ export function buildFailureReply(reviewUrl: string, reason?: string): string {
         ? 'That image is too large. Send a smaller photo (under 5MB).'
         : 'I could not read that receipt automatically.';
   return `${detail}\n\nYou can upload and review it here:\n${reviewUrl}`;
+}
+
+export function buildNoActiveProjectReply(reviewUrl: string, lang: 'en' | 'sw'): string {
+  return lang === 'sw'
+    ? `Biashara yako haina mradi hai, kwa hiyo sikuweza kuhifadhi risiti hii.\nFungua Risip kukamilisha setup:\n${reviewUrl}`
+    : `Your business has no active project yet, so I could not file this receipt.\nOpen Risip to finish setup:\n${reviewUrl}`;
 }
 
 export function buildUnlinkedReply(): string {
