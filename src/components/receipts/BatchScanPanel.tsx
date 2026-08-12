@@ -3,6 +3,7 @@ import { Eye, FileText, Loader2, Pencil, Save, ScanLine, Trash2, Upload, X } fro
 import Button from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
+import { approvalFlowEnabled, creationStatus } from '@/features/receipts/approvalFlow';
 import { useAuth } from '@/lib/auth';
 import {
   applyMerchantMemory as applySavedMerchantMemory,
@@ -101,6 +102,10 @@ export default function BatchScanPanel({
     }
     setBusy(true);
     try {
+      // With the approval flow on, "approve all" only completes the details —
+      // approval itself is a separate, audited step taken through decide_receipt.
+      // The database refuses a direct jump to confirmed either way (0057).
+      const approveStatus = creationStatus(await approvalFlowEnabled());
       if (reviewSource === 'inbound') {
         for (const r of rows) {
           if (!r.id) continue;
@@ -115,12 +120,12 @@ export default function BatchScanPanel({
               verification_code: r.verification_code,
               tax_amount: r.tax_amount,
               total_amount: r.total_amount,
-              status: 'confirmed',
+              status: approveStatus,
             })
             .eq('id', r.id);
           if (error) throw error;
         }
-        toast.success(`Approved ${rows.length} receipt${rows.length === 1 ? '' : 's'}.`);
+        toast.success(`${approveStatus === 'confirmed' ? 'Approved' : 'Saved'} ${rows.length} receipt${rows.length === 1 ? '' : 's'}.`);
       } else {
         if (!scannedDocId || !imageUrl) return;
         const n = await importBatch(rows, {

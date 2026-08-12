@@ -69,3 +69,29 @@ export async function decideReceipt(
   if (error) throw error;
   return data as string;
 }
+
+/**
+ * Whether this company runs the approval flow. Read once per operation rather
+ * than per receipt, so a batch import costs a single round trip.
+ *
+ * RLS scopes `companies` to the caller's own company, so no id is needed.
+ */
+export async function approvalFlowEnabled(): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('companies')
+    .select('approval_flow_enabled')
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data?.approval_flow_enabled);
+}
+
+/**
+ * The status a directly-created receipt may be given. With the flow on, nothing
+ * may be created as already-approved — it has to be submitted and approved. The
+ * database enforces this too (migration 0057); this only keeps the app from
+ * sending a write it knows will be refused.
+ */
+export function creationStatus(flowEnabled: boolean): 'confirmed' | 'pending_review' {
+  return flowEnabled ? 'pending_review' : 'confirmed';
+}

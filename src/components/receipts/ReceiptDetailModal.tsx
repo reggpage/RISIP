@@ -8,6 +8,8 @@ import ImageLightbox from '@/components/ui/ImageLightbox';
 import { useToast } from '@/components/ui/Toast';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { useProjects } from '@/features/projects/useProjects';
+import { useCompany } from '@/features/company/useCompany';
+import ApprovalPanel from '@/components/receipts/ApprovalPanel';
 import { receiptImageUrl } from '@/features/receipts/uploadReceipt';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -62,6 +64,11 @@ export default function ReceiptDetailModal({
   const [nicknameSaved, setNicknameSaved] = useState(false);
   const [savingNickname, setSavingNickname] = useState(false);
   const { state: projectsState } = useProjects();
+  // With the approval flow on, saving must never also approve: the decision is a
+  // separate, audited step taken by finance through decide_receipt.
+  const company = useCompany();
+  const approvalFlow = Boolean(company?.approval_flow_enabled);
+  const allowSelfApproval = Boolean(company?.allow_self_approval);
   const project = projectsState.status === 'ready'
     ? projectsState.projects.find((p) => p.id === data.project_id) ?? null
     : null;
@@ -127,7 +134,7 @@ export default function ReceiptDetailModal({
     // Approving is what makes a receipt count as project spend, so it may only
     // happen once project, category and payment source are all set.
     const canApprove = missingForApproval.length === 0;
-    if (data.status === 'pending_review' && !canApprove) {
+    if (!approvalFlow && data.status === 'pending_review' && !canApprove) {
       toast.error(`Choose ${missingForApproval.join(', ')} before approving.`);
       return;
     }
@@ -146,9 +153,12 @@ export default function ReceiptDetailModal({
       ...(form.project_id ? { project_id: form.project_id } : {}),
       payment_method: form.payment_method || null,
       details_confirmed: canApprove,
-      // Saving a reviewed pending receipt confirms it; this replaces the old
-      // scan-to-email approval panel without silently approving it.
-      ...(data.status === 'pending_review' ? { status: 'confirmed' as const } : {}),
+      // Legacy path: with the approval flow OFF, saving a reviewed pending
+      // receipt confirms it, exactly as before. With the flow ON, approval is a
+      // separate step (decide_receipt) and saving only records the details.
+      ...(!approvalFlow && data.status === 'pending_review'
+        ? { status: 'confirmed' as const }
+        : {}),
     };
     const { error } = await supabase.from('receipts').update(updates).eq('id', data.id);
     setSaving(false);
@@ -481,7 +491,16 @@ export default function ReceiptDetailModal({
                 {/* Approval used to be hidden inside "Save", so nobody could find
                     it. Surface it as its own step, and say plainly what is still
                     missing before the receipt may count as project spend. */}
-                {data.status === 'pending_review' && canEdit && (
+                {approvalFlow && (
+                  <ApprovalPanel
+                    receipt={data}
+                    allowSelfApproval={allowSelfApproval}
+                    onChanged={onClose}
+                    onEdit={startEdit}
+                  />
+                )}
+
+                {!approvalFlow && data.status === 'pending_review' && canEdit && (
                   <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50/70 p-4">
                     <p className="text-sm font-semibold text-ink">
                       {needsDetails ? 'Complete this receipt' : 'Ready to approve'}

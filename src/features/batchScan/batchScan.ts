@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { approvalFlowEnabled, creationStatus } from '@/features/receipts/approvalFlow';
 import { compressImage } from '@/lib/imageCompression';
 import { uuidv4 } from '@/lib/uuid';
 
@@ -235,6 +236,10 @@ export async function importBatch(
   rows: ExtractedReceipt[],
   ctx: { project_id: string; user_id: string; scanned_doc_id: string; image_url: string },
 ): Promise<number> {
+  // Read the company's approval setting once for the whole batch. With the flow
+  // off these land confirmed exactly as before; with it on they start as
+  // pending_review and go through submit + approve like any other receipt.
+  const importStatus = creationStatus(await approvalFlowEnabled());
   // PDFs won't render as an <img> thumbnail, so leave image_url null for those (the
   // source doc is still linked via scanned_doc_id); images keep their path.
   const sharedImage = ctx.image_url && !ctx.image_url.toLowerCase().endsWith('.pdf') ? ctx.image_url : null;
@@ -264,7 +269,7 @@ export async function importBatch(
       low_confidence_fields: [] as string[],
       raw_ai_response: { source: 'batch_scan', crop_box: r.crop_box ?? null },
     };
-    let { error } = await supabase.from('receipts').insert({ ...base, status: 'confirmed' });
+    let { error } = await supabase.from('receipts').insert({ ...base, status: importStatus });
     // 23505 = unique_violation on (company_id, verification_code): re-insert as duplicate.
     if (error && error.code === '23505') {
       const { data: original } = r.verification_code

@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { approvalFlowEnabled, creationStatus } from '@/features/receipts/approvalFlow';
 import type { PaymentMethod, Receipt } from '@/types/db';
 
 export type ManualReceiptInput = {
@@ -13,12 +14,17 @@ export type ManualReceiptInput = {
   payment_method?: PaymentMethod;
 };
 
-// Direct insert as 'confirmed' — no image, no AI. Duplicate guard (unique index on
-// company_id + verification_code) still applies if verification_code is provided.
+// Direct insert, no image and no AI. The duplicate guard (unique index on
+// verification_code) still applies when one is given.
+//
+// Where it lands depends on the company: with the approval flow off it is created
+// confirmed exactly as before, and with it on it starts as pending_review so it
+// goes through submit + approve like everything else.
 export async function createManualReceipt(
   input: ManualReceiptInput,
   ctx: { user_id: string },
 ): Promise<Receipt> {
+  const status = creationStatus(await approvalFlowEnabled());
   const { data, error } = await supabase
     .from('receipts')
     .insert({
@@ -34,7 +40,7 @@ export async function createManualReceipt(
       total_amount: input.total_amount,
       tax_amount: input.tax_amount ?? null,
       category: input.category,
-      status: 'confirmed',
+      status,
       low_confidence_fields: [],
       raw_ai_response: { source: 'manual_entry' },
       payment_method: input.payment_method ?? 'cash_personal',
