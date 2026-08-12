@@ -120,3 +120,80 @@ describe('a worker can still do their job', () => {
     expect(canReadReceipt(WORKER, ownReceipt)).toBe(true);
   });
 });
+
+// ── Profiles & petty cash (migration 0061) ────────────────────────────────
+
+/** Mirrors profiles_select_scoped. */
+function canReadProfile(
+  viewer: { id: string; role: UserRole; companyId: string; leadsTeamOf?: string[] },
+  target: { id: string; companyId: string },
+): boolean {
+  if (target.id === viewer.id) return true;
+  if (target.companyId === viewer.companyId
+      && (viewer.role === 'owner' || viewer.role === 'accountant')) return true;
+  return (viewer.leadsTeamOf ?? []).includes(target.id);
+}
+
+/** Mirrors petty_cash_accounts_select. */
+function canReadPettyAccount(
+  viewer: { id: string; role: UserRole; companyId: string },
+  account: { userId: string; companyId: string },
+): boolean {
+  if (account.userId === viewer.id) return true;
+  return account.companyId === viewer.companyId
+    && (viewer.role === 'owner' || viewer.role === 'accountant');
+}
+
+describe('staff do not hold a directory of their colleagues', () => {
+  const me = { id: 'w1', companyId: 'c1' };
+  const colleague = { id: 'w2', companyId: 'c1' };
+
+  it('a worker reads their own profile', () => {
+    expect(canReadProfile(WORKER, me)).toBe(true);
+  });
+
+  it('a worker cannot read another staff profile', () => {
+    expect(canReadProfile(WORKER, colleague)).toBe(false);
+  });
+
+  it('finance reads the whole company', () => {
+    expect(canReadProfile(ACCOUNTANT, colleague)).toBe(true);
+    expect(canReadProfile(OWNER, colleague)).toBe(true);
+  });
+
+  it('nobody reads across companies', () => {
+    expect(canReadProfile(OUTSIDER, me)).toBe(false);
+    expect(canReadProfile(OWNER, { id: 'z9', companyId: 'c2' })).toBe(false);
+  });
+
+  it('a project leader still sees their own team, or the team panel goes blank', () => {
+    const leader = { ...WORKER, leadsTeamOf: ['w2'] };
+    expect(canReadProfile(leader, colleague)).toBe(true);
+    // …but only their team, not the whole company.
+    expect(canReadProfile(leader, { id: 'w3', companyId: 'c1' })).toBe(false);
+  });
+});
+
+describe('petty cash floats are private', () => {
+  const myFloat = { userId: 'w1', companyId: 'c1' };
+  const colleagueFloat = { userId: 'w2', companyId: 'c1' };
+
+  it('a worker sees their own float', () => {
+    expect(canReadPettyAccount(WORKER, myFloat)).toBe(true);
+  });
+
+  it('a worker cannot see a colleague float', () => {
+    expect(canReadPettyAccount(WORKER, colleagueFloat)).toBe(false);
+  });
+
+  it('a worker cannot total the company float', () => {
+    const all = [myFloat, colleagueFloat, { userId: 'a1', companyId: 'c1' }];
+    expect(all.filter((a) => canReadPettyAccount(WORKER, a))).toHaveLength(1);
+    expect(all.filter((a) => canReadPettyAccount(OWNER, a))).toHaveLength(3);
+  });
+
+  it('finance sees every float in their company and none outside it', () => {
+    expect(canReadPettyAccount(ACCOUNTANT, colleagueFloat)).toBe(true);
+    expect(canReadPettyAccount(OWNER, { userId: 'z9', companyId: 'c2' })).toBe(false);
+  });
+});

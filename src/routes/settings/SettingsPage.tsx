@@ -830,6 +830,9 @@ export default function SettingsPage() {
         )}
 
         {/* ── Members ─────────────────────────────────────────────────────── */}
+        {/* Managing people is a finance job, and since 0061 a worker can only read
+            their own profile — the section would just show them to themselves. */}
+        {isOwner && (
         <SettingsSection
           icon={<Users className="h-4 w-4" />}
           title={sw.settings.members}
@@ -877,6 +880,7 @@ export default function SettingsPage() {
             </ul>
           </Card>
         </SettingsSection>
+        )}
 
         {/* ── Change personal password ────────────────────────────────────── */}
         <SettingsSection
