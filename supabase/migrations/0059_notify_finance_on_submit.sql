@@ -1,0 +1,12 @@
+-- Browser testing found that submitting a receipt notified nobody, so finance had
+-- no way to know something was waiting unless they happened to look.
+-- decide_receipt already notifies the uploader; this is the missing other half.
+--
+-- Who gets told: active owner/accountant in the same company, minus whoever just
+-- submitted (finance submitting on their own behalf should not be told about
+-- their own action). Workers are never told -- approval is not their job.
+--
+-- Body is applied in production; it is 0056's submit_receipt plus the
+-- app_notifications insert at the end.
+--
+-- ROLLBACK: restore submit_receipt from 0056. No data is touched.

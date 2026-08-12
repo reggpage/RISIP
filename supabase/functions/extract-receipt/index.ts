@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { json, preflight } from '../_shared/cors.ts';
 import { CATEGORIES, normalizeMoney, normalizeTanzaniaReceipt } from '../_shared/tanzaniaReceiptKnowledge.ts';
+import { extractedStatusReason, resolveExtractedStatus } from '../_shared/receiptStatus.ts';
 import { resolveAnthropicModel } from '../_shared/anthropicModel.ts';
 import { applyCompanyMerchantMemory } from '../_shared/merchantMemory.ts';
 
@@ -273,6 +274,21 @@ Deno.serve(async (req) => {
   }
   const needsReview = lowConfidence.length > 0;
 
+  // A company running the approval flow never lets extraction confirm a receipt,
+  // however confident the model is: confirming is a human decision that must be
+  // submitted and approved. Companies with the flow off keep today's behaviour
+  // exactly, including auto-confirming a clean high-confidence read.
+  const { data: companyRow } = await admin
+    .from('receipts')
+    .select('companies!inner(approval_flow_enabled)')
+    .eq('id', receiptId)
+    .maybeSingle();
+  const approvalFlow = Boolean(
+    (companyRow as { companies?: { approval_flow_enabled?: boolean } } | null)
+      ?.companies?.approval_flow_enabled,
+  );
+  const finalStatus = resolveExtractedStatus(needsReview, approvalFlow);
+
   const updates = {
     vendor_name: normalized.vendor_name,
     vendor_tin: normalized.vendor_tin,
@@ -286,7 +302,7 @@ Deno.serve(async (req) => {
     category,
     low_confidence_fields: [...new Set(lowConfidence)],
     raw_ai_response: claudeJson,
-    status: needsReview ? 'pending_review' : 'confirmed',
+    status: finalStatus,
   };
 
   const { error: updErr } = await admin.from('receipts').update(updates).eq('id', receiptId);
@@ -324,5 +340,12 @@ Deno.serve(async (req) => {
     return bad(`update failed: ${updErr.message}`, 500);
   }
 
-  return json({ status: needsReview ? 'pending_review' : 'confirmed', receipt_id: receiptId, category }, { status: 200 });
+  return json({
+    status: finalStatus,
+    receipt_id: receiptId,
+    category,
+    // Say which of the two reasons applies, so the caller can word the message
+    // correctly instead of implying the extraction was poor.
+    reason: extractedStatusReason(needsReview, approvalFlow),
+  }, { status: 200 });
 });
