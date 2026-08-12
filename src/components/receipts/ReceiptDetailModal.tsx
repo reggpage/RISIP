@@ -11,6 +11,7 @@ import { useProjects } from '@/features/projects/useProjects';
 import { useCompany } from '@/features/company/useCompany';
 import ApprovalPanel from '@/components/receipts/ApprovalPanel';
 import ReversalPanel from '@/components/receipts/ReversalPanel';
+import ReceiptHistoryPanel from '@/components/receipts/ReceiptHistoryPanel';
 import { receiptImageUrl } from '@/features/receipts/uploadReceipt';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -627,6 +628,10 @@ export default function ReceiptDetailModal({
                     {canEdit && <span className="mt-1 block text-ink-muted">Tap “Edit” to correct, or “Re-analyse” for a fresh high-accuracy read.</span>}
                   </div>
                 )}
+
+                {/* Finance-only, and enforced by RLS rather than by this call:
+                    receipt_audit_log has no policy a worker can match. */}
+                <ReceiptHistoryPanel receiptId={data.id} />
 
                 {canDelete && (
                   <div className="mt-5 sm:hidden">

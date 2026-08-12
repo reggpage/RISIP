@@ -13,7 +13,10 @@ import type { PettyCashTransaction, Receipt, UserRole } from '@/types/db';
 // guessing would be worse than asking — the RPC returns a sentence written for
 // the person reading it, which the panel shows verbatim.
 
-export const MIN_REVERSAL_REASON = 10;
+// One validator for every reason in the app, mirroring
+// private.is_meaningful_reason. Re-exported so callers do not need to know which
+// module it lives in.
+export { isMeaningfulReason, REASON_HELP } from '@/features/receipts/reasonQuality';
 
 export type ReversalMode = 'void' | 'correct';
 
@@ -74,10 +77,6 @@ export function canRequestReversal(
   if (receipt.status !== 'confirmed') return false;
   const isFinance = role === 'owner' || role === 'accountant';
   return receipt.uploaded_by === profileId || isFinance;
-}
-
-export function reasonIsLongEnough(reason: string): boolean {
-  return reason.trim().length >= MIN_REVERSAL_REASON;
 }
 
 /**

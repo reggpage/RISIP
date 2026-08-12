@@ -3,7 +3,6 @@ import { CheckCircle2, Clock3, Loader2, XCircle } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import {
-  MIN_REASON_LENGTH,
   canDecide,
   canSubmit,
   decideReceipt,
@@ -11,7 +10,9 @@ import {
   submitReceipt,
   type Decision,
 } from '@/features/receipts/approvalFlow';
+import { isMeaningfulReason, reasonProblem } from '@/features/receipts/reasonQuality';
 import { useAuth } from '@/lib/auth';
+import { friendlyError } from '@/lib/errors';
 import type { Receipt } from '@/types/db';
 
 // Phase 1b panel. Rendered only when the company runs the approval flow, so with
@@ -51,7 +52,7 @@ export default function ApprovalPanel({
       setReason('');
       onChanged();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not complete that.');
+      toast.error(friendlyError(err));
     } finally {
       setBusy(false);
     }
@@ -101,15 +102,17 @@ export default function ApprovalPanel({
                   onChange={(e) => setReason(e.target.value)}
                   rows={3}
                   autoFocus
-                  placeholder="Explain what is wrong so the sender can fix it."
+                  placeholder="Explain what is wrong, in a full sentence, so the sender can fix it."
                   className="mt-1 w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-role-admin/30"
                 />
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <Button
                     tint="admin"
-                    disabled={busy || reason.trim().length < MIN_REASON_LENGTH}
+                    disabled={busy || !isMeaningfulReason(reason)}
                     onClick={() => void run(() => decideReceipt(receipt.id, pending, reason.trim()),
-                      pending === 'reject' ? 'Receipt rejected.' : 'Changes requested.')}
+                      pending === 'reject'
+                        ? 'Rejected. The sender has been told why.'
+                        : 'Sent back. The sender has been told what to fix.')}
                   >
                     {busy && <Loader2 className="h-4 w-4 animate-spin" />}
                     {pending === 'reject' ? 'Reject receipt' : 'Send back'}
@@ -117,12 +120,10 @@ export default function ApprovalPanel({
                   <Button variant="ghost" disabled={busy} onClick={() => { setPending(null); setReason(''); }}>
                     Cancel
                   </Button>
-                  {reason.trim().length < MIN_REASON_LENGTH && (
-                    <span className="text-xs text-ink-muted">
-                      At least {MIN_REASON_LENGTH} characters.
-                    </span>
-                  )}
                 </div>
+                {reasonProblem(reason) && (
+                  <p className="mt-2 text-xs text-ink-muted">{reasonProblem(reason)}</p>
+                )}
               </div>
             ) : (
               <div className="mt-3 flex flex-wrap gap-2">

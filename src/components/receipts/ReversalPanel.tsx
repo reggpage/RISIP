@@ -3,23 +3,49 @@ import { AlertTriangle, Loader2, RotateCcw } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { useToast } from '@/components/ui/Toast';
 import {
-  MIN_REVERSAL_REASON,
   canRequestReversal,
   canReverse,
   fetchLiveExpense,
-  reasonIsLongEnough,
   requestReversal,
   reverseReceipt,
   type LiveExpense,
   type ReversalMode,
 } from '@/features/receipts/reversal';
+import { isMeaningfulReason, reasonProblem } from '@/features/receipts/reasonQuality';
 import { useAuth } from '@/lib/auth';
+import { friendlyError } from '@/lib/errors';
 import { formatMoney } from '@/lib/format';
 import type { Receipt } from '@/types/db';
 
 // Shown only for a receipt that actually has money booked against it, and only
 // when the company has reversal_enabled. With the flag off this renders nothing
 // and a booked receipt stays frozen exactly as it is today.
+//
+// Every rule is re-checked in reverse_petty_cash_receipt / request_receipt_
+// reversal, including the reason quality: this only saves a round trip.
+
+type Panel = ReversalMode | 'request';
+
+// Said before the button is pressed, because each of these does something
+// different to the employee's money.
+const EXPLAINER: Record<Panel, string> = {
+  request: 'This sends a request to finance. It does not change the receipt, float, or totals.',
+  void: "This returns the petty cash amount to the employee's float and sends the receipt back to review.",
+  correct: 'This reverses the old petty cash posting and books the corrected amount.',
+};
+
+const ACTION_LABEL: Record<Panel, string> = {
+  request: 'Send request',
+  void: 'Reverse receipt',
+  correct: 'Correct amount',
+};
+
+const DONE_MESSAGE: Record<Panel, string> = {
+  request: 'Your finance team has been asked to look at this receipt.',
+  void: "Reversed. The petty cash has gone back to the employee's float.",
+  correct: 'Corrected. The float now reflects the new amount.',
+};
+
 export default function ReversalPanel({
   receipt,
   reversalEnabled,
@@ -36,7 +62,7 @@ export default function ReversalPanel({
   const toast = useToast();
   const [live, setLive] = useState<LiveExpense | null>(null);
   const [loaded, setLoaded] = useState(false);
-  const [mode, setMode] = useState<ReversalMode | 'request' | null>(null);
+  const [panel, setPanel] = useState<Panel | null>(null);
   const [reason, setReason] = useState('');
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
@@ -68,13 +94,12 @@ export default function ReversalPanel({
     try {
       await fn();
       toast.success(done);
-      setMode(null);
+      setPanel(null);
       setReason('');
       setAmount('');
       onChanged();
     } catch (err) {
-      // The RPC's message is written for the person reading it — show it whole.
-      toast.error(err instanceof Error ? err.message : 'Could not complete that.');
+      toast.error(friendlyError(err));
     } finally {
       setBusy(false);
     }
@@ -82,6 +107,9 @@ export default function ReversalPanel({
 
   const corrected = Number(amount.replace(/[^\d.]/g, ''));
   const correctionValid = amount.trim() !== '' && corrected > 0 && corrected !== receipt.total_amount;
+  const problem = reasonProblem(reason);
+  const canSend = !busy && isMeaningfulReason(reason)
+    && (panel !== 'correct' || correctionValid);
 
   return (
     <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50/60 p-4">
@@ -93,7 +121,7 @@ export default function ReversalPanel({
       {live && (
         <p className="mt-1 text-sm text-ink-muted">
           {formatMoney(Math.abs(live.amount))} was taken off this employee&apos;s float when the receipt was
-          approved. Reversing puts it back and returns the receipt for review.
+          approved.
         </p>
       )}
 
@@ -104,35 +132,37 @@ export default function ReversalPanel({
         </p>
       )}
 
-      {/* ── Finance: reverse or correct ─────────────────────────────────── */}
-      {allowed && live && mode === null && (
+      {/* ── Finance ─────────────────────────────────────────────────────── */}
+      {allowed && live && panel === null && (
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button variant="secondary" tint="admin" onClick={() => setMode('void')}>
-            Reverse
+          <Button variant="secondary" tint="admin" onClick={() => setPanel('void')}>
+            Reverse receipt
           </Button>
-          <Button variant="secondary" tint="neutral" onClick={() => setMode('correct')}>
-            Correct the amount
+          <Button variant="secondary" tint="neutral" onClick={() => setPanel('correct')}>
+            Correct amount
           </Button>
         </div>
       )}
 
-      {/* ── Staff: ask for one ──────────────────────────────────────────── */}
-      {mayAsk && mode === null && (
+      {/* ── Staff ───────────────────────────────────────────────────────── */}
+      {mayAsk && panel === null && (
         <div className="mt-3">
           <p className="text-sm text-ink-muted">
-            If something is wrong with this receipt, ask your finance team to reverse it.
+            If something is wrong with this receipt, tell your finance team.
           </p>
-          <Button variant="secondary" tint="neutral" className="mt-2" onClick={() => setMode('request')}>
-            Ask for a reversal
+          <Button variant="secondary" tint="neutral" className="mt-2" onClick={() => setPanel('request')}>
+            Ask finance to review this receipt
           </Button>
         </div>
       )}
 
-      {mode !== null && (
+      {panel !== null && (
         <div className="mt-3">
-          {mode === 'correct' && (
+          <p className="rounded bg-surface/70 px-3 py-2 text-xs text-ink-muted">{EXPLAINER[panel]}</p>
+
+          {panel === 'correct' && (
             <>
-              <label className="block text-sm font-medium text-ink">Corrected amount</label>
+              <label className="mt-3 block text-sm font-medium text-ink">Corrected amount</label>
               <input
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
@@ -142,8 +172,8 @@ export default function ReversalPanel({
                 className="mt-1 w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-role-admin/30"
               />
               <p className="mt-1 text-xs text-ink-muted">
-                Currently {formatMoney(receipt.total_amount)}. The old entry is reversed and the corrected
-                figure is booked; both stay visible in the float&apos;s history.
+                Currently {formatMoney(receipt.total_amount)}. Both entries stay visible in the float&apos;s
+                history.
               </p>
             </>
           )}
@@ -153,46 +183,41 @@ export default function ReversalPanel({
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             rows={3}
-            autoFocus={mode !== 'correct'}
-            placeholder={mode === 'request'
-              ? 'Say what is wrong with this receipt.'
-              : 'Say why this posting is being undone. The employee sees this.'}
+            autoFocus={panel !== 'correct'}
+            placeholder={panel === 'request'
+              ? 'Say what is wrong with this receipt, in a full sentence.'
+              : 'Say why, in a full sentence. The employee sees this.'}
             className="mt-1 w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-role-admin/30"
           />
 
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Button
               tint="admin"
-              disabled={
-                busy
-                || !reasonIsLongEnough(reason)
-                || (mode === 'correct' && !correctionValid)
-              }
+              disabled={!canSend}
               onClick={() => {
-                if (mode === 'request') {
-                  void run(() => requestReversal(receipt.id, reason), 'Your finance team has been told.');
+                if (panel === 'request') {
+                  void run(() => requestReversal(receipt.id, reason), DONE_MESSAGE.request);
                 } else if (live) {
                   void run(
-                    () => reverseReceipt(receipt.id, live.id, mode, reason,
-                      mode === 'correct' ? corrected : undefined),
-                    mode === 'correct' ? 'Amount corrected.' : 'Petty cash entry reversed.',
+                    () => reverseReceipt(receipt.id, live.id, panel, reason,
+                      panel === 'correct' ? corrected : undefined),
+                    DONE_MESSAGE[panel],
                   );
                 }
               }}
             >
               {busy && <Loader2 className="h-4 w-4 animate-spin" />}
-              {mode === 'request' ? 'Send request' : mode === 'correct' ? 'Correct it' : 'Reverse it'}
+              {ACTION_LABEL[panel]}
             </Button>
-            <Button variant="ghost" disabled={busy} onClick={() => { setMode(null); setReason(''); setAmount(''); }}>
+            <Button variant="ghost" disabled={busy} onClick={() => { setPanel(null); setReason(''); setAmount(''); }}>
               Cancel
             </Button>
-            {!reasonIsLongEnough(reason) && (
-              <span className="text-xs text-ink-muted">At least {MIN_REVERSAL_REASON} characters.</span>
-            )}
-            {mode === 'correct' && reasonIsLongEnough(reason) && !correctionValid && (
-              <span className="text-xs text-ink-muted">Enter a new amount, different from the current one.</span>
-            )}
           </div>
+
+          {problem && <p className="mt-2 text-xs text-ink-muted">{problem}</p>}
+          {!problem && panel === 'correct' && !correctionValid && (
+            <p className="mt-2 text-xs text-ink-muted">Enter a new amount, different from the current one.</p>
+          )}
         </div>
       )}
     </div>

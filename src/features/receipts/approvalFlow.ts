@@ -7,7 +7,10 @@ import type { Receipt, UserRole } from '@/types/db';
 // These helpers only decide what to *show* — a worker who forged a request still
 // cannot approve anything.
 
-export const MIN_REASON_LENGTH = 10;
+// Reason quality is one rule for the whole app, mirroring
+// private.is_meaningful_reason (0067). It replaced a bare 10-character check,
+// which let `rgdrhthtrhtjyyrjyt` into production as a real reversal reason.
+export { isMeaningfulReason, REASON_HELP } from '@/features/receipts/reasonQuality';
 
 /** The three things that must be chosen before a receipt can be submitted. */
 export function missingBeforeSubmit(receipt: Receipt): string[] {

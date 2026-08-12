@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  MIN_REVERSAL_REASON,
-  canRequestReversal,
-  canReverse,
-  reasonIsLongEnough,
-  type LiveExpense,
-} from '../reversal';
+import { canRequestReversal, canReverse, type LiveExpense } from '../reversal';
 import type { Receipt, ReceiptStatus, UserRole } from '@/types/db';
 
 // These pin what the UI offers. The database is what actually enforces it —
@@ -106,14 +100,3 @@ describe('staff may ask, never execute', () => {
   });
 });
 
-describe('a reason is mandatory', () => {
-  it('rejects what is too short to mean anything', () => {
-    expect(reasonIsLongEnough('err')).toBe(false);
-    expect(reasonIsLongEnough('   '.repeat(20))).toBe(false);
-    expect(reasonIsLongEnough('x'.repeat(MIN_REVERSAL_REASON - 1))).toBe(false);
-  });
-
-  it('accepts a sentence', () => {
-    expect(reasonIsLongEnough('the amount was captured wrongly')).toBe(true);
-  });
-});
