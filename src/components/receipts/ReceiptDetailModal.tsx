@@ -10,6 +10,7 @@ import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { useProjects } from '@/features/projects/useProjects';
 import { useCompany } from '@/features/company/useCompany';
 import ApprovalPanel from '@/components/receipts/ApprovalPanel';
+import ReversalPanel from '@/components/receipts/ReversalPanel';
 import { receiptImageUrl } from '@/features/receipts/uploadReceipt';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
@@ -69,6 +70,7 @@ export default function ReceiptDetailModal({
   const company = useCompany();
   const approvalFlow = Boolean(company?.approval_flow_enabled);
   const allowSelfApproval = Boolean(company?.allow_self_approval);
+  const reversalEnabled = Boolean(company?.reversal_enabled);
   const project = projectsState.status === 'ready'
     ? projectsState.projects.find((p) => p.id === data.project_id) ?? null
     : null;
@@ -499,6 +501,17 @@ export default function ReceiptDetailModal({
                     onEdit={startEdit}
                   />
                 )}
+
+                {/* A confirmed petty-cash receipt is frozen: the only way back is
+                    an audited reversal. Renders nothing unless money is actually
+                    booked against this receipt. */}
+                <ReversalPanel
+                  receipt={data}
+                  reversalEnabled={reversalEnabled}
+                  allowSelfApproval={allowSelfApproval}
+                  onChanged={onClose}
+                />
+
 
                 {!approvalFlow && data.status === 'pending_review' && canEdit && (
                   <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50/70 p-4">

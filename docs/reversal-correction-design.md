@@ -1,6 +1,8 @@
-# Reversal & correction of booked petty cash — design only
+# Reversal & correction of booked petty cash
 
-Status: **proposal**. Nothing here is implemented. No production object changes.
+Status: **implemented** in migrations 0062–0066, behind `companies.reversal_enabled`
+(default `false` for every company). The design below is kept as written; what
+changed between design and build is listed in **§14 As built**, at the end.
 
 Grounded in the schema as audited on 2026-08-12: `petty_cash_transactions`
 (`type` ∈ allocation | expense | adjustment, `status` ∈ pending | accepted |
@@ -302,3 +304,60 @@ Phase 1b introduces `submitted → confirmed` with `changes_requested` and
    confirmations are unrecorded. Reversal should not ship before it.
 7. **Retirement coupling.** `ON DELETE RESTRICT` protects rows but says nothing
    about a *reversed* receipt still sitting in a bundle. Needs an explicit rule.
+
+---
+
+## 14. As built
+
+Seven things differed from the proposal. Each was found by reading production or
+by running the tests, not by re-reading the plan.
+
+1. **`receipt_audit_log` already existed** (0055), with the exact columns §7
+   proposed and a trigger writing a row on every status change. So the RPC writes
+   no audit row of its own: it hands the trigger the right words through
+   transaction-local settings (0064), the same mechanism 0058 uses for
+   `self_approved`. Otherwise every reversal would have produced **two** rows.
+
+2. **The trigger attributed rows to the wrong person.** Its actor was
+   `coalesce(decided_by, submitted_by, auth.uid())`, and on a reversal
+   `decided_by` still names whoever *approved* it. A forced actor now wins.
+
+3. **A correction changes no status,** and the trigger listened to
+   `UPDATE OF status`, so a correction would have gone unrecorded. It now listens
+   to every update and returns early unless the status moved or an event was
+   forced.
+
+4. **The "is it booked?" test lives in five places, not four** — the fifth is
+   `petty_cash_auto_book_receipt`'s idempotency check. Without it, a receipt that
+   was voided, re-submitted and re-approved would silently fail to book again.
+   All five moved to "live (unreversed) expense" together in 0063.
+
+5. **A void returns the receipt to `pending_review`, not `submitted`** (§11 said
+   `submitted`). Mhandisi Consultancy runs with `approval_flow_enabled = false`,
+   where `decide_receipt` raises outright, so a receipt parked in `submitted`
+   could never leave it. `pending_review` is actionable under both flag states and
+   is *stricter* under an enabled flow: re-submit **and** re-approve.
+
+6. **A positive adjustment acquires no lock.** §4 credited
+   `petty_cash_guard_balance` with serialising the reversal, but that trigger is
+   `BEFORE INSERT` only and returns early on `amount >= 0`. The RPC therefore
+   takes the account row lock explicitly, as its first write-path statement. This
+   is load-bearing, not defensive.
+
+7. **The retry path was unreachable** (fixed in 0066). The status check ran
+   before the already-reversed check, so a retried call got *"only a confirmed
+   receipt has a posting to reverse"* instead of the previous result. No money was
+   ever at risk — the unique index and the account lock already made a second
+   posting impossible — but §9's promise was not kept until the checks were
+   reordered.
+
+Also closed while here: `petty_cash_transactions_insert_finance` let any
+accountant `POST` an arbitrary adjustment through PostgREST — no reason, no audit,
+no receipt — which would have made the RPC bypassable on the day it shipped. It is
+dropped in 0065. Verified safe first: nothing in `src/` or `supabase/functions/`
+inserts into that table, and all four petty-cash writers are `SECURITY DEFINER`
+owned by `postgres`.
+
+**Still outstanding:** the two-session concurrency harness
+(`supabase/tests/two_session_concurrency.sh`) is written but **unrun** — this
+machine has neither Docker nor `psql`. Risk 4 stands until it executes in CI.

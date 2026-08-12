@@ -45,6 +45,8 @@ export type Company = {
   approval_flow_enabled: boolean;
   /** One-person companies may approve their own submissions; always audited. */
   allow_self_approval: boolean;
+  /** Reversal & correction of booked petty cash. Off means booked stays frozen. */
+  reversal_enabled: boolean;
 };
 
 export type Profile = {
@@ -115,6 +117,18 @@ export type PettyCashTransaction = {
   status: PettyCashTransactionStatus;
   responded_at: string | null;
   created_at: string;
+  // ── Reversal (migration 0062) ────────────────────────────────────────────
+  // A posting's money is never rewritten. On the compensating adjustment,
+  // reverses_transaction_id names the expense it undoes; on that expense,
+  // reversed_at is the void marker. "One live expense per receipt" is a partial
+  // unique index over (receipt_id) where reversed_at is null.
+  /** Set on the adjustment: the expense row it undoes. */
+  reverses_transaction_id: string | null;
+  /** Required whenever reverses_transaction_id is set; at least 10 characters. */
+  reversal_reason: string | null;
+  /** Set on the original expense once it has been reversed. Written once. */
+  reversed_at: string | null;
+  reversed_by_transaction_id: string | null;
 };
 
 export type Receipt = {
@@ -467,6 +481,29 @@ export type Database = {
         Args: { p_receipt: string; p_decision: string; p_reason?: string | null };
         Returns: string;
       };
+      /**
+       * Finance voids or corrects a booked petty-cash receipt. The only writer
+       * of a reversal: petty_cash_transactions has no INSERT, UPDATE or DELETE
+       * policy for anyone. p_transaction is an expected-state argument, so a
+       * stale tab gets the previous result back instead of a second posting.
+       */
+      reverse_petty_cash_receipt: {
+        Args: {
+          p_receipt: string;
+          p_transaction: string;
+          p_mode: 'void' | 'correct';
+          p_reason: string;
+          p_new_amount?: number | null;
+        };
+        Returns: {
+          status: 'void' | 'correct' | 'already_reversed';
+          adjustment_id: string | null;
+          expense_id?: string | null;
+          balance: number;
+        };
+      };
+      /** Staff ask finance to reverse a receipt. Moves no money, ever. */
+      request_receipt_reversal: { Args: { p_receipt: string; p_reason: string }; Returns: string };
       /** Mints a single-use, 15-minute WhatsApp linking token. Plaintext is returned once. */
       create_whatsapp_link_token: { Args: Record<string, never>; Returns: string };
       /** Revokes the caller's WhatsApp connection. Returns rows changed. */
