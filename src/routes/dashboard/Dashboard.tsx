@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import StaffDashboard from '@/routes/dashboard/StaffDashboard';
+import { useAuth } from '@/lib/auth';
 import { Link } from 'react-router-dom';
 import { Receipt, Users, FileText, Wallet } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -14,6 +16,16 @@ import { formatMoney } from '@/lib/format';
 import { sw } from '@/i18n/sw';
 
 export default function Dashboard() {
+  const auth = useAuth();
+  const role = auth.status === 'signed-in' ? auth.profile?.role : undefined;
+  // Staff never see company figures. Returning early also means the company-wide
+  // queries below are never issued for them — the database would refuse the
+  // interesting parts anyway (migration 0060), but there is no reason to ask.
+  if (role && role !== 'owner' && role !== 'accountant') return <StaffDashboard />;
+  return <CompanyDashboard />;
+}
+
+function CompanyDashboard() {
   const { state: projectsState } = useProjects();
   const [projectId, setProjectId] = useState<string>('');
   const data = useDashboardData(projectId || undefined);

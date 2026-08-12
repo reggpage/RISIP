@@ -46,6 +46,10 @@ export default function ReceiptsPage() {
   // "all" (default) | "mine" — lets a user filter down to their own receipts
   // when the list mixes uploads from the whole team.
   const [uploaderFilter, setUploaderFilter] = useState<'all' | 'mine'>('all');
+  // Staff have no "all receipts" — RLS already returns only their own, so an
+  // All/Mine toggle would just be a control that appears to do nothing.
+  const isFinance = auth.status === 'signed-in'
+    && (auth.profile?.role === 'owner' || auth.profile?.role === 'accountant');
 
   const profile = auth.status === 'signed-in' ? auth.profile : null;
 
@@ -260,6 +264,7 @@ export default function ReceiptsPage() {
       {/* Toolbar row: All/My segmented control + a Projects dropdown to filter the list
           down to one project. */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
+        {isFinance && (
         <div className="inline-flex rounded-lg border border-surface-border bg-surface p-0.5 text-sm">
           <button
             type="button"
@@ -282,6 +287,7 @@ export default function ReceiptsPage() {
             My receipts
           </button>
         </div>
+        )}
 
         {activeProjects.length > 1 && (
           <div className="min-w-[180px]">

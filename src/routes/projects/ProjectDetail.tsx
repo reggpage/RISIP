@@ -40,6 +40,9 @@ export default function ProjectDetail() {
 
   const profile = auth.status === 'signed-in' ? auth.profile : null;
   const isOwner = profile?.role === 'owner';
+  // Project spend is a company figure. Staff may open a project to see what it is
+  // and file against it, but not what it has cost.
+  const canSeeFinancials = profile?.role === 'owner' || profile?.role === 'accountant';
   const canSeeLinks = profile?.role === 'owner' || profile?.role === 'accountant';
   const canManageTeam = isOwner || myIsLeader;
   const { state: receiptsState } = useReceipts(id);
@@ -170,7 +173,10 @@ export default function ProjectDetail() {
         </div>
       </div>
 
-      {/* Project-scoped summary — visible to every role that can see the project. */}
+      {/* Project spend is a company figure, so it is finance-only. Staff can still
+          open the project and file against it — they just do not see what it cost.
+          RLS backs this up: their receipt query returns only their own rows. */}
+      {canSeeFinancials && (
       <div className="mb-6 grid gap-3 sm:grid-cols-2">
         <MetricCard
           label={sw.dashboard.metrics.totalExpenses}
@@ -183,6 +189,7 @@ export default function ProjectDetail() {
           icon={<ReceiptIcon className="h-5 w-5" />}
         />
       </div>
+      )}
 
       {/* Recent receipts on this project (realtime). */}
       <section className="mb-8">
