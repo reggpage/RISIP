@@ -56,6 +56,7 @@ describe('Risip conversational AI core', () => {
     expect(prompt).toContain('Active role: owner');
     expect(prompt).toContain('Reply in Kiswahili');
     expect(prompt).toContain('pronouns and follow-up questions');
+    expect(prompt).toContain('Treat greetings and ordinary small talk as conversation');
     expect(prompt).toContain('Never require an exact memorized phrase');
     expect(prompt).toContain('Explicit NDIYO/YES is required');
   });

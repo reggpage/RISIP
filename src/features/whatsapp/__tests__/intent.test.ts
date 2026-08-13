@@ -133,6 +133,9 @@ describe('routeIntent', () => {
     expect(routeIntent({ messageType: 'text', text: 'change language to english' })).toBe('change_language');
     expect(routeIntent({ messageType: 'text', text: 'ghairi' })).toBe('cancel_action');
     expect(routeIntent({ messageType: 'text', text: 'help' })).toBe('help');
+    expect(routeIntent({ messageType: 'text', text: 'mambo vipi' })).toBe('unknown');
+    expect(routeIntent({ messageType: 'text', text: 'hello there' })).toBe('unknown');
+    expect(routeIntent({ messageType: 'text', text: 'habari za leo?' })).toBe('unknown');
     expect(routeIntent({ messageType: 'text', text: 'what is the weather' })).toBe('unknown');
   });
 

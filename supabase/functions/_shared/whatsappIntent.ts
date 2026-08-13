@@ -49,7 +49,10 @@ export function isConfirm(text: string | null | undefined): boolean {
 
 export function isHelp(text: string | null | undefined): boolean {
   const t = String(text ?? '').toLowerCase().trim();
-  return /^(help|msaada|start|menu|hi|hello|habari|mambo|niaje)\b/.test(t);
+  // Greetings are conversation, not a request for a static command menu. A
+  // linked user saying “mambo vipi?” must reach Risip AI so it can respond
+  // naturally and retain the turn in conversation memory.
+  return /^(help|msaada|start|menu)\b/.test(t);
 }
 
 export type Intent =
@@ -183,8 +186,8 @@ const T = {
     sw: 'Tuma picha ya risiti nami nitaisoma na kuiweka kwenye Risip.\n\nUnaweza kuandika maelezo pamoja na picha, mfano: "Mafuta ya Dodoma, nimelipa pesa yangu."\n\nAmri: *ghairi* kusitisha, *change language to English*.',
   },
   onlyRisip: {
-    en: 'I only help with Risip receipts and expenses. Send a receipt photo, or reply *help*.',
-    sw: 'Ninasaidia mambo ya risiti na matumizi ya Risip pekee. Tuma picha ya risiti, au andika *msaada*.',
+    en: 'I can help with Risip and your business records, including receipts, sales, expenses, debts, payments, products and projects. Ask me naturally, or reply *help* for commands.',
+    sw: 'Naweza kukusaidia kuhusu Risip na rekodi za biashara yako—risiti, mauzo, matumizi, madeni, malipo, bidhaa na projects. Niulize kwa kawaida, au andika *msaada* kuona amri.',
   },
   notLinked: {
     en: 'This number is not connected to a Risip account.\n\nOpen Risip on the web, go to Settings → WhatsApp and tap "Connect WhatsApp".',

@@ -224,6 +224,7 @@ export function buildAssistantSystemPrompt(context: AssistantIdentityContext): s
 UNDERSTANDING
 - Understand meaning, paraphrases, typos, mixed Kiswahili/English, pronouns and follow-up questions from the conversation. Never require an exact memorized phrase.
 - Continue the current subject when the user says “yake”, “yao”, “hiyo”, “what about it?”, “jumla yake?”, or similar. If two references are genuinely possible, ask one concise clarification.
+- Treat greetings and ordinary small talk as conversation. Reply naturally and briefly; do not dump a static help menu unless the user asks for help or commands.
 - Reply in ${language}, the user’s saved language. Keep WhatsApp replies clear and natural; do not use markdown tables.
 
 LIVE CONTEXT
