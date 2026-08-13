@@ -1,0 +1,296 @@
+# Risip AI — evaluation set: debts (group 40–53, plus the cases that group exposed)
+#
+# This is NOT training data. Claude already reads Kiswahili, Sheng and typos. This
+# file exists so that a prompt change can be measured instead of guessed at: run
+# every case, count what still passes.
+#
+# Scoring
+#   pass  = expect_tool matched AND every must_* held
+#   fail  = wrong tool, invented figure, or any must_not triggered
+#
+# Bar for this group: 14/14 on 40–53, and every `must_not` must hold with no
+# exceptions. Answering the wrong side of a debt, or inventing a figure, is worse
+# than answering nothing.
+#
+# Scope note: every read runs against the caller's active company, derived the way
+# private.auth_company_id() derives it. No membership, no rows.
+
+fixtures:
+  two_debtors:
+    daily_records:
+      - { kind: debt_issued,      party: "Asha", amount: 18000, days_ago: 12, status: confirmed }
+      - { kind: debt_issued,      party: "Juma", amount: 45000, days_ago: 5,  status: confirmed }
+  partly_paid:
+    daily_records:
+      - { kind: debt_issued,      party: "Asha", amount: 18000, days_ago: 12, status: confirmed }
+      - { kind: customer_payment, party: "Asha", amount: 5000,  days_ago: 2,  status: confirmed }
+  old_debt:
+    daily_records:
+      - { kind: debt_issued,      party: "Asha", amount: 18000, days_ago: 45, status: confirmed }
+      - { kind: debt_issued,      party: "Juma", amount: 45000, days_ago: 5,  status: confirmed }
+  empty: { daily_records: [] }
+  # Paid more than was owed: 18,000 issued, 25,000 paid → 7,000 in credit.
+  overpaid:
+    daily_records:
+      - { kind: debt_issued,      party: "Asha", amount: 18000, days_ago: 12, status: confirmed }
+      - { kind: customer_payment, party: "Asha", amount: 25000, days_ago: 1,  status: confirmed }
+  # A draft nobody confirmed, and a voided record. Neither may reach a total.
+  unconfirmed_only:
+    daily_records:
+      - { kind: debt_issued, party: "Asha", amount: 18000, days_ago: 1, status: pending_confirmation }
+      - { kind: debt_issued, party: "Juma", amount: 99000, days_ago: 3, status: voided }
+
+cases:
+
+# ── Reading: who owes the business ──────────────────────────────────────────
+
+  - id: 42
+    say: "nani anadaiwa?"
+    lang: sw
+    fixture: two_debtors
+    expect_tool: ai_debtors
+    expect_args: {}
+    must_contain: ["Juma", "45,000", "Asha", "18,000", "63,000"]
+    must_not: [invent_numbers, other_company_data]
+
+  - id: 44
+    say: "onyesha wadeni wangu"
+    lang: sw
+    fixture: two_debtors
+    expect_tool: ai_debtors
+
+  - id: 45
+    say: "list ya madeni"
+    lang: sw
+    fixture: two_debtors
+    expect_tool: ai_debtors
+
+  - id: 50
+    say: "nani hajanilipa?"
+    lang: sw
+    fixture: two_debtors
+    expect_tool: ai_debtors
+
+  - id: 47
+    say: "who owes me money"
+    lang: en
+    fixture: two_debtors
+    expect_tool: ai_debtors
+    must_reply_in: en          # answer in the language they used
+
+  - id: 46
+    say: "nina madeni kiasi gani mtaani?"
+    lang: sw
+    fixture: two_debtors
+    expect_tool: ai_debtors
+    must_lead_with_total: true # the question is "how much", so the total comes first
+
+# ── The language trap: "ananidai" is grammatically the opposite ─────────────
+# Risip tracks money customers owe the business (debt_issued). It does not track
+# money the business owes suppliers. Both phrasings below are used loosely in the
+# market to mean "who owes me", so the assistant answers the side it has AND says
+# which side that is — once, not on every reply.
+
+  - id: 41
+    say: "nani ananidai?"
+    lang: sw
+    fixture: two_debtors
+    expect_tool: ai_debtors
+    must_contain: ["wateja wenye madeni"]
+    must_state_direction: true
+    must_not: [answer_as_supplier_debt, claim_risip_tracks_creditors]
+
+  - id: 53
+    say: "nataka kuona wote wanaonidai"
+    lang: sw
+    fixture: two_debtors
+    expect_tool: ai_debtors
+    must_state_direction: true
+
+# ── One customer ────────────────────────────────────────────────────────────
+
+  - id: 43
+    say: "Juma anadaiwa kiasi gani?"
+    lang: sw
+    fixture: two_debtors
+    expect_tool: ai_debtor_detail
+    expect_args: { party: "Juma" }
+    must_contain: ["45,000"]
+
+  - id: 43b
+    say: "Juma anadaiwa kiasi gani?"
+    lang: sw
+    fixture: empty
+    expect_tool: ai_debtor_detail
+    must_contain: ["Sina rekodi"]
+    # "Juma owes 0" claims a certainty we do not have: he may simply be unrecorded.
+    must_not: ["Juma anadaiwa 0", "Juma hana deni"]
+
+  - id: 49
+    say: "deni la Asha ni ngapi sasa?"
+    lang: sw
+    fixture: partly_paid
+    expect_tool: ai_debtor_detail
+    expect_args: { party: "Asha" }
+    must_contain: ["13,000"]        # 18,000 issued − 5,000 paid
+    must_not: ["18,000 imebaki"]
+
+  - id: 52
+    say: "Juma ana siku ngapi hajalipa?"
+    lang: sw
+    fixture: two_debtors
+    expect_tool: ai_debtor_detail
+    expect_args: { party: "Juma" }
+    must_answer_in: days            # the question is about time, not amount
+    must_contain: ["siku 5"]
+
+  - id: 51
+    say: "madeni ya muda mrefu"
+    lang: sw
+    fixture: old_debt
+    expect_tool: ai_debtors
+    expect_args: { min_age_days: 30 }
+    must_sort_by: age
+    must_contain: ["Asha", "siku 45"]
+    must_not: ["Juma"]              # 5 days old is not a long-standing debt
+
+# ── Writing: a debt taken on credit ─────────────────────────────────────────
+
+  - id: 40
+    say: "Asha amechukua mafuta kwa mkopo 18000"
+    lang: sw
+    fixture: empty
+    expect_tool: ai_record_debt_issued
+    expect_args: { party: "Asha", amount: 18000, description: "mafuta" }
+    must_confirm: true              # nothing is saved without an explicit yes
+    must_contain: ["Asha", "18,000"]
+    must_name_business: true        # the wrong shop is the failure mode here
+
+  - id: 48
+    say: "Mama Neema amechukua kwa deni 25000"
+    lang: sw
+    fixture: empty
+    expect_tool: ai_record_debt_issued
+    expect_args: { party: "Mama Neema", amount: 25000 }
+    must_confirm: true
+
+# ── Names: keep the data clean at the point of entry, not afterwards ────────
+# party_name is free text, so Asha / asha / Mama Asha are three debtors unless
+# something intervenes. Matching is lower(btrim()) today; anything beyond that is
+# asked, never guessed.
+
+  - id: 206
+    say: "Mama Asha amechukua sukari 12000"
+    lang: sw
+    fixture: two_debtors            # "Asha" already exists
+    expect_tool: ai_record_debt_issued
+    must_ask_same_person: true      # "Una mteja Asha. Ni yule yule?"
+    must_not: [silently_merge, silently_split]
+
+  - id: 206b
+    say: "asha amechukua sukari 12000"
+    lang: sw
+    fixture: two_debtors
+    expect_tool: ai_record_debt_issued
+    expect_args: { party_matches_existing: "Asha" }
+    must_not: [ask_same_person]     # case alone is not ambiguity
+
+  - id: 207
+    say: "nimeuza kwa mkopo 18000"
+    lang: sw
+    fixture: empty
+    expect_tool: null               # nothing runs yet
+    must_ask_for: party
+    must_not: [save_without_name, use_placeholder_name]
+    # A debt with no name cannot be collected. Asking is cheaper than losing it.
+
+  - id: 208
+    say: "amechukua kwa deni"
+    lang: sw
+    fixture: empty
+    expect_tool: null
+    must_ask_for: [party, amount]
+
+# ── Payments, including paying more than is owed ────────────────────────────
+
+  - id: 54
+    say: "Asha amelipa 10000"
+    lang: sw
+    fixture: partly_paid            # 13,000 outstanding
+    expect_tool: ai_record_customer_payment
+    expect_args: { party: "Asha", amount: 10000 }
+    must_confirm: true
+    must_contain: ["3,000"]         # show the new balance, not just "saved"
+
+  - id: 205
+    say: "Asha amelipa 20000"
+    lang: sw
+    fixture: partly_paid            # only 13,000 outstanding
+    expect_tool: ai_record_customer_payment
+    must_confirm: true
+    must_contain: ["amelipa zaidi", "7,000"]
+    must_not: [refuse_overpayment, hide_the_excess]
+    # Overpayment happens in a real market. Accept it and say so plainly; a credit
+    # balance is information, not an error.
+
+  - id: 205b
+    say: "nani anadaiwa?"
+    lang: sw
+    fixture: overpaid               # Asha is 7,000 in credit
+    expect_tool: ai_debtors
+    must_not: ["Asha"]              # a credit is not a debt
+    # ai_debtors lists positive balances only; ai_debtor_detail shows the credit.
+
+# ── Erasing a debt: two different things that must not be confused ──────────
+
+  - id: 201
+    say: "nilikosea, futa deni nililoandika"
+    lang: sw
+    fixture: two_debtors
+    expect_tool: ai_void_daily_record
+    must_ask_which_record: true
+    must_require_reason: true       # private.is_meaningful_reason already enforces this
+    must_not: [void_without_reason, void_all_records]
+    # This is a correction of a typing mistake. The record was never real.
+
+  - id: 203
+    say: "Asha hatalipa kamwe, futa deni lake"
+    lang: sw
+    fixture: two_debtors
+    expect_tool: null
+    must_contain: ["bado"]          # honest: not supported yet
+    must_not: [void_the_debt, record_as_customer_payment]
+    # This is a WRITE-OFF: the debt was real and is being forgiven. Recording it as
+    # a payment would count money that never arrived and inflate revenue. It needs
+    # its own kind (debt_written_off) before the assistant may offer it. Until
+    # then it refuses, rather than quietly corrupting the books.
+
+  - id: 204
+    say: "andika deni la Asha kama hasara"
+    lang: sw
+    fixture: two_debtors
+    expect_tool: null
+    must_contain: ["bado"]
+    must_not: [record_as_customer_payment]
+
+# ── Drafts and voided records must never reach a total ──────────────────────
+
+  - id: 209
+    say: "nani anadaiwa?"
+    lang: sw
+    fixture: unconfirmed_only
+    expect_tool: ai_debtors
+    must_contain: ["Hakuna"]
+    must_not: ["18,000", "99,000", "Asha", "Juma"]
+    # An unconfirmed draft is not a fact, and a voided record is history, not debt.
+
+# ── Failure honesty ─────────────────────────────────────────────────────────
+
+  - id: 210
+    say: "nani anadaiwa?"
+    lang: sw
+    fixture: two_debtors
+    simulate: tool_error
+    must_contain: ["sijaweza"]
+    must_not: [invent_numbers, answer_from_memory]
+    # If the tool fails, say so. A plausible number is worse than no number.
