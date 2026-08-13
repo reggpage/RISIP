@@ -91,11 +91,12 @@ function tool(
   description: string,
   properties: Record<string, unknown>,
   required: string[],
+  strict = false,
 ): ToolDefinition {
   return {
     name,
     description,
-    strict: true,
+    ...(strict ? { strict: true } : {}),
     input_schema: {
       type: 'object',
       properties,
@@ -156,6 +157,7 @@ export const ASSISTANT_TOOLS: ToolDefinition[] = [
       unit: { type: ['string', 'null'], description: 'Short unit label or null.' },
     },
     ['product', 'unit_cost', 'unit'],
+    true,
   ),
   tool(
     'propose_daily_record',
@@ -181,6 +183,7 @@ export const ASSISTANT_TOOLS: ToolDefinition[] = [
       },
     },
     ['kind', 'party_name', 'description', 'amount', 'lines'],
+    true,
   ),
 ];
 
@@ -260,7 +263,7 @@ function toolsForModel(model: string): ToolDefinition[] {
   const strict = modelSupportsStrictTools(model);
   return ASSISTANT_TOOLS.map((definition, index) => ({
     ...definition,
-    ...(strict ? { strict: true } : { strict: undefined }),
+    ...(strict && definition.strict ? { strict: true } : { strict: undefined }),
     ...(index === ASSISTANT_TOOLS.length - 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
   }));
 }
@@ -391,8 +394,14 @@ export async function runConversationalAssistant(args: {
     if (!response.ok) {
       let errorType = 'unknown_error';
       try {
-        const errorPayload = await response.json() as { error?: { type?: string } };
+        const errorPayload = await response.json() as { error?: { type?: string; message?: string } };
         errorType = String(errorPayload.error?.type ?? errorType).replace(/[^a-z0-9_]+/gi, '_').slice(0, 60);
+        const detail = String(errorPayload.error?.message ?? '')
+          .replace(/sk-ant-[a-z0-9_-]+/gi, 'redacted')
+          .replace(/[^a-z0-9_.\[\]-]+/gi, '_')
+          .replace(/^_+|_+$/g, '')
+          .slice(0, 160);
+        if (detail) errorType = `${errorType}_${detail}`;
       } catch { /* status and generic type are enough for safe telemetry */ }
       args.onFailure?.(`provider_${response.status}_${errorType}`);
       return null;
