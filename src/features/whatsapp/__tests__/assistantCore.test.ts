@@ -9,6 +9,7 @@ import {
   normalizeAssistantHistory,
   requiresCurrentBusinessDataTool,
   runConversationalAssistant,
+  sanitizeAssistantFirstName,
   shouldDeferRecordLikeReply,
   type AssistantIdentityContext,
 } from '../../../../supabase/functions/_shared/whatsappAssistant';
@@ -18,6 +19,7 @@ const context: AssistantIdentityContext = {
   profileId: 'profile-1',
   companyId: 'company-1',
   companyName: 'St. Ritha Bookshop',
+  userName: 'Angela',
   role: 'owner',
   lang: 'sw',
   approvalFlowEnabled: false,
@@ -50,15 +52,24 @@ describe('Risip conversational AI core', () => {
     }
   });
 
-  it('injects active business, role, flags, language and semantic-follow-up rules', () => {
+  it('injects the safe user name, business, role, flags, language and semantic-follow-up rules', () => {
     const prompt = buildAssistantSystemPrompt(context);
     expect(prompt).toContain('St. Ritha Bookshop');
+    expect(prompt).toContain('User’s first name: Angela');
+    expect(prompt).toContain('Do not use it in every reply');
     expect(prompt).toContain('Active role: owner');
     expect(prompt).toContain('Reply in Kiswahili');
     expect(prompt).toContain('pronouns and follow-up questions');
     expect(prompt).toContain('Treat greetings and ordinary small talk as conversation');
     expect(prompt).toContain('Never require an exact memorized phrase');
     expect(prompt).toContain('Explicit NDIYO/YES is required');
+  });
+
+  it('keeps only a bounded, safe first name for assistant personalization', () => {
+    expect(sanitizeAssistantFirstName(' Angela Benedict Kessy ')).toBe('Angela');
+    expect(sanitizeAssistantFirstName('Élodie N.')).toBe('Élodie');
+    expect(sanitizeAssistantFirstName('  <ignore-system> Angela')).toBe('ignore-system');
+    expect(sanitizeAssistantFirstName('12345')).toBeNull();
   });
 
   it('keeps a compact multi-topic window instead of one hard-coded product slot', () => {

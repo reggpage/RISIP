@@ -96,8 +96,14 @@ import {
   shouldDeferRecordLikeReply,
   type AssistantHistoryMessage,
   type AssistantIdentityContext,
+  sanitizeAssistantFirstName,
   type AssistantToolExecution,
 } from '../_shared/whatsappAssistant.ts';
+import {
+  aiBudgetMessage,
+  normalizeAiBudgetDecision,
+  type AiBudgetDecision,
+} from '../_shared/whatsappAiBudget.ts';
 import {
   buildBusinessesReply,
   buildBusinessSummaryReply,
@@ -139,6 +145,7 @@ type ResolvedWhatsAppIdentity = {
   profile_id: string;
   company_id: string;
   company_name: string;
+  profile_name: string | null;
   role: string;
   lang: Lang;
   approval_flow_enabled: boolean;
@@ -169,6 +176,7 @@ async function resolveWhatsAppContext(
     profile_id: String(value.profile_id),
     company_id: String(value.company_id),
     company_name: String(value.company_name ?? 'Risip business'),
+    profile_name: typeof value.profile_name === 'string' ? value.profile_name : null,
     role: String(value.role ?? 'worker'),
     lang: value.lang === 'sw' ? 'sw' : 'en',
     approval_flow_enabled: value.approval_flow_enabled === true,
@@ -184,6 +192,7 @@ function assistantIdentityContext(identity: ResolvedWhatsAppIdentity): Assistant
     profileId: identity.profile_id,
     companyId: identity.company_id,
     companyName: identity.company_name,
+    userName: sanitizeAssistantFirstName(identity.profile_name),
     role: identity.role,
     lang: identity.lang,
     approvalFlowEnabled: identity.approval_flow_enabled,
@@ -303,22 +312,13 @@ async function addHistoricalPriceWarnings(db: Admin, companyId: string, record: 
   return warnings.length > 0 ? { ...record, warnings } : record;
 }
 
-async function consumeAiBudget(db: Admin, identity: any, inputChars: number): Promise<{ allowed: boolean; reason?: string }> {
+async function consumeAiBudget(db: Admin, identity: ResolvedWhatsAppIdentity, inputChars: number): Promise<AiBudgetDecision> {
   const { data, error } = await db.rpc('consume_whatsapp_ai_budget', {
     p_company_id: identity.company_id,
     p_identity_id: identity.id,
     p_input_chars: Math.min(Math.max(1, inputChars), MAX_INTERPRETATION_CHARS),
   });
-  if (error || !data || data.allowed !== true) {
-    return { allowed: false, reason: error ? 'budget_unavailable' : String(data?.reason ?? 'daily_limit') };
-  }
-  return { allowed: true };
-}
-
-function aiBudgetMessage(lang: Lang): string {
-  return lang === 'sw'
-    ? 'Nimefikia kikomo cha msaidizi wa AI kwa leo. Risip bado inafanya kazi; tuma ujumbe ulio wazi au jaribu tena kesho.'
-    : 'The AI fallback limit for this business has been reached today. Risip is still working; send a clearer message or try again tomorrow.';
+  return normalizeAiBudgetDecision(data, error);
 }
 
 async function productAnalytics(
@@ -1464,7 +1464,7 @@ Deno.serve(async (req) => {
         // model first, with bounded client tools and recent company-scoped
         // conversation history. The deterministic parsers below remain the
         // availability fallback when the provider or budget is unavailable.
-        let conversationalAiBudgetBlocked = false;
+        let conversationalAiBudgetBlock: AiBudgetDecision | null = null;
         const aiEligible = Boolean(body?.trim())
           && (!convo || convo.awaiting === 'product_analytics')
           && !isSwitchRequest(body)
@@ -1510,7 +1510,7 @@ Deno.serve(async (req) => {
               await audit(db, identity, waMessageId, 'conversational_ai', 'provider', assistantFailure);
             }
           } else {
-            conversationalAiBudgetBlocked = true;
+            conversationalAiBudgetBlock = budget;
             await audit(db, identity, waMessageId, 'conversational_ai', 'budget', 'fallback');
           }
         }
@@ -1541,7 +1541,7 @@ Deno.serve(async (req) => {
         if (!aiEligible && shouldInterpretReadWithAi(body)) {
           const budget = await consumeAiBudget(db, identity, body.length);
           if (!budget.allowed) {
-            await replyQuietly(phone, aiBudgetMessage(lang));
+            await replyQuietly(phone, aiBudgetMessage(lang, budget.resetAt, budget.reason));
             await audit(db, identity, waMessageId, 'semantic_read_ai', 'budget', 'blocked');
             await finish('skipped', 'ai_budget_blocked');
             continue;
@@ -1585,7 +1585,7 @@ Deno.serve(async (req) => {
             if (!parsed.draft && parsed.reason !== 'ambiguity') {
               const budget = await consumeAiBudget(db, identity, body.length);
               if (!budget.allowed) {
-                await replyQuietly(phone, aiBudgetMessage(lang));
+                await replyQuietly(phone, aiBudgetMessage(lang, budget.resetAt, budget.reason));
                 await audit(db, identity, waMessageId, 'daily_record_ai_fallback', 'budget', 'blocked');
                 await finish('skipped', 'ai_budget_blocked');
                 continue;
@@ -1844,8 +1844,8 @@ Deno.serve(async (req) => {
         }
 
         // Nothing pending: help, or a polite scope boundary.
-        await replyQuietly(phone, conversationalAiBudgetBlocked
-          ? aiBudgetMessage(lang)
+        await replyQuietly(phone, conversationalAiBudgetBlock
+          ? aiBudgetMessage(lang, conversationalAiBudgetBlock.resetAt, conversationalAiBudgetBlock.reason)
           : (intent === 'help' ? `${t('help', lang)}\n\n${buildKnowledgeReply(body, lang)}` : t('onlyRisip', lang)));
         await finish('skipped');
       }

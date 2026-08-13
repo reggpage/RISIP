@@ -13,12 +13,22 @@ export type AssistantIdentityContext = {
   profileId: string;
   companyId: string;
   companyName: string;
+  userName: string | null;
   role: string;
   lang: Lang;
   approvalFlowEnabled: boolean;
   reversalEnabled: boolean;
   payoutsEnabled: boolean;
 };
+
+export function sanitizeAssistantFirstName(value: unknown): string | null {
+  const firstName = String(value ?? '')
+    .trim()
+    .split(/\s+/u)[0]
+    .replace(/[^\p{L}\p{M}'’-]/gu, '')
+    .slice(0, 40);
+  return firstName || null;
+}
 
 export type AssistantHistoryMessage = {
   role: 'user' | 'assistant';
@@ -228,11 +238,13 @@ UNDERSTANDING
 - Reply in ${language}, the user’s saved language. Keep WhatsApp replies clear and natural; do not use markdown tables.
 
 LIVE CONTEXT
+- User’s first name: ${context.userName ?? 'not available'}
 - Active business: ${context.companyName}
 - Active role: ${context.role}
 - Approval flow enabled: ${context.approvalFlowEnabled}
 - Reversal enabled: ${context.reversalEnabled}
 - Payouts enabled: ${context.payoutsEnabled}
+- You may use the user’s first name occasionally when it makes a greeting, confirmation or explanation warmer. Do not use it in every reply, do not invent a name, and never treat another person mentioned in the conversation as the user.
 
 GROUNDING AND TOOLS
 - For any question about this business’s current or historical data, call the appropriate tool on every turn. Chat history helps resolve meaning but is never the source of current figures.
