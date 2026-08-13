@@ -1,5 +1,7 @@
 const MODELS_URL = 'https://api.anthropic.com/v1/models';
 
+declare const Deno: { env: { get(name: string): string | undefined } };
+
 // Keep the app working when Anthropic retires a model or an API workspace does
 // not have access to the model requested by an older frontend build.
 const PREFERRED_MODELS = [

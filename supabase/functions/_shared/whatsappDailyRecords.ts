@@ -19,8 +19,16 @@ export type ParsedDailyRecord = {
 
 export type DailyRecordParse =
   | { kind: 'parsed'; record: ParsedDailyRecord }
-  | { kind: 'clarify'; reason: 'amount' | 'message' | 'ambiguity' | 'limit'; question: string }
+  | { kind: 'clarify'; reason: 'amount' | 'message' | 'ambiguity' | 'limit'; question: string; draft?: DailyRecordClarification }
   | { kind: 'none' };
+
+export type DailyRecordClarification = {
+  kind: 'daily_record_clarification';
+  originalText: string;
+  sourceMessageId?: string;
+  lang: Lang;
+  sale: { description: string; quantity: number; amount: number };
+};
 
 export type DailyRecordConversation = {
   kind: 'daily_record_confirmation';
@@ -31,18 +39,45 @@ export type DailyRecordConversation = {
 
 export const MAX_DAILY_RECORD_AMOUNT = 100_000_000;
 
-const MONEY_PATTERN = '(?:(?:tshs?|tzs|sh)\\s*)?[0-9][0-9,]*(?:\\.[0-9]+)?\\s*(?:k\\b)?\\s*(?:/=)?';
+const MONEY_PATTERN = '(?:@\\s*)?(?:(?:tshs?|tzs|sh)\\s*)?[0-9][0-9,]*(?:\\.[0-9]+)?\\s*(?:k\\b)?\\s*(?:/=)?';
 const QUANTITY_PATTERN = '[0-9]+(?:\\.[0-9]+)?';
 
 type MoneyToken = { raw: string; value: number; start: number; end: number };
 
 function clean(text: string): string {
-  return text.toLowerCase().replace(/\s+/g, ' ').trim();
+  return text.toLowerCase().replace(/\r?\n/g, ' - ').replace(/\s+/g, ' ').trim();
+}
+
+const NUMBER_WORDS: Record<string, string> = {
+  sifuri: '0', zero: '0', moja: '1', mmoja: '1', mbili: '2', tatu: '3', nne: '4', tano: '5',
+  sita: '6', saba: '7', nane: '8', tisa: '9', kumi: '10', kuminamoja: '11', kuminambili: '12',
+  kuminatatu: '13', kuminanne: '14', kuminatano: '15', kuminasita: '16', kuminasaba: '17',
+  kuminanane: '18', kuminatisa: '19', ishirini: '20',
+};
+
+function normalizeNumberWords(text: string): string {
+  const protectedPhrases: string[] = [];
+  let normalized = text.replace(/\bkila\s+moja\b/gi, () => {
+    const token = `__KILA_MOJA_${protectedPhrases.length}__`;
+    protectedPhrases.push(token);
+    return token;
+  });
+  const compoundNumbers: Array<[string, string]> = [
+    ['kumi na moja', '11'], ['kumi na mbili', '12'], ['kumi na tatu', '13'], ['kumi na nne', '14'],
+    ['kumi na tano', '15'], ['kumi na sita', '16'], ['kumi na saba', '17'], ['kumi na nane', '18'], ['kumi na tisa', '19'],
+  ];
+  for (const [words, number] of compoundNumbers) {
+    normalized = normalized.replace(new RegExp(`\\b${words}\\b`, 'gi'), number);
+  }
+  for (const [word, number] of Object.entries(NUMBER_WORDS).sort((a, b) => b[0].length - a[0].length)) {
+    normalized = normalized.replace(new RegExp(`\\b${word}\\b`, 'gi'), number);
+  }
+  return normalized.replace(/__KILA_MOJA_\d+__/g, 'kila moja');
 }
 
 function parseMoneyToken(raw: string): number | null {
   let value = raw.toLowerCase().replace(/\s+/g, '').replace(/\/$/, '').replace(/=$/, '').replace(/\/$/, '');
-  value = value.replace(/^(?:tshs?|tzs|sh)/, '');
+  value = value.replace(/^@/, '').replace(/^(?:tshs?|tzs|sh)/, '');
   const thousands = value.endsWith('k');
   if (thousands) value = value.slice(0, -1);
   const amount = Number(value.replace(/,/g, ''));
@@ -83,7 +118,7 @@ function stripPrefix(text: string, prefix: RegExp): string {
 }
 
 function splitParts(text: string): string[] {
-  return text.split(/\s+(?:na|and)\s+/i).map((part) => part.trim()).filter(Boolean);
+  return text.split(/\s+(?:na|and)\s+|\s+-\s+|\s*;\s*/i).map((part) => part.trim()).filter(Boolean);
 }
 
 function lineTotal(line: DailyRecordLine): number {
@@ -145,7 +180,7 @@ function saleRecord(text: string): ParsedDailyRecord | null {
     return { kind: 'sale', amount, partyName: null, description: null, lines: unitLines };
   }
 
-  const explicitTotal = payload.match(new RegExp('^(.+?)\\s+(?:kwa|for)\\s+(' + MONEY_PATTERN + ')$', 'i'));
+  const explicitTotal = payload.match(new RegExp('^(.+?)\\s+(?:kwa|for|jumla|total)\\s+(' + MONEY_PATTERN + ')$', 'i'));
   if (explicitTotal) {
     const amount = parseMoneyToken(explicitTotal[2]);
     if (amount !== null) {
@@ -159,7 +194,7 @@ function saleRecord(text: string): ParsedDailyRecord | null {
     const before = payload.slice(0, tokens[0].start).trim();
     if (payload.slice(tokens[0].end).trim()) return null;
     const quantityWords = before.match(new RegExp('(?:^|\\s)' + QUANTITY_PATTERN + '(?:\\s|$)'));
-    const explicitTotalWord = /\b(?:kwa|for)\b/i.test(payload);
+    const explicitTotalWord = /\b(?:kwa|for|jumla|total)\b/i.test(payload);
     const explicitCurrency = /(?:tshs?|tzs|sh)/i.test(tokens[0].raw);
     if (!quantityWords && (explicitTotalWord || explicitCurrency) && validAmount(amount)) {
       return { kind: 'sale', amount, partyName: null, description: before || null, lines: [] };
@@ -175,10 +210,11 @@ function expenseRecord(text: string): ParsedDailyRecord | null {
   const parts = splitParts(payload);
   const lines: DailyRecordLine[] = [];
   for (const part of parts) {
-    const tokens = moneyTokens(part);
+    const lineText = part.replace(/^(?:nimelipa|nimetumia|expense\s+(?:ya|for)|paid|spent(?:\s+on)?)\s+/i, '').trim();
+    const tokens = moneyTokens(lineText);
     if (tokens.length !== 1 || tokens[0].value <= 0) return null;
-    if (part.slice(tokens[0].end).trim()) return null;
-    const description = part.slice(0, tokens[0].start).trim().replace(/^(?:ya|for)\s+/i, '');
+    if (lineText.slice(tokens[0].end).trim()) return null;
+    const description = lineText.slice(0, tokens[0].start).trim().replace(/^(?:ya|for)\s+/i, '').replace(/[:]+$/, '').trim();
     if (!description) return null;
     lines.push({ description, quantity: 1, unit_amount: tokens[0].value });
   }
@@ -269,7 +305,8 @@ export function isDailyRecordCandidate(text: string | null | undefined): boolean
 }
 
 export function parseDailyRecord(text: string | null | undefined, lang: Lang = 'sw'): DailyRecordParse {
-  const value = clean(String(text ?? ''));
+  const originalText = String(text ?? '').trim();
+  const value = normalizeNumberWords(clean(originalText));
   if (!value || !looksLikeDailyRecord(value)) return { kind: 'none' };
   if (hasNegativeOrZeroAmount(value)) return { kind: 'clarify', reason: 'amount', question: question('amount', lang) };
 
@@ -290,9 +327,41 @@ export function parseDailyRecord(text: string | null | undefined, lang: Lang = '
     return { kind: 'clarify', reason: 'amount', question: question('amount', lang) };
   }
   if (/\b(nimeuza|uza|sold|mauzo)\b/i.test(value) && tokens.length >= 2) {
-    return { kind: 'clarify', reason: 'ambiguity', question: question('ambiguity', lang) };
+    const sale = value.match(/^(?:leo\s+)?(?:nimeuza|uza|sold)\s+(.+?)\s+([0-9]+)\s+([0-9][0-9,]*)$/i);
+    const amount = sale ? parseMoneyToken(sale[3]) : null;
+    const quantity = sale ? Number(sale[2]) : null;
+    const description = sale?.[1]?.trim() ?? '';
+    const draft = amount && quantity && quantity > 0 && description
+      ? { kind: 'daily_record_clarification' as const, originalText, lang, sale: { description, quantity, amount } }
+      : undefined;
+    return { kind: 'clarify', reason: 'ambiguity', question: question('ambiguity', lang), draft };
   }
   return { kind: 'clarify', reason: tokens.length ? 'message' : 'amount', question: question(tokens.length ? 'message' : 'amount', lang) };
+}
+
+export type DailyRecordPriceChoice = 'unit_price' | 'total';
+
+export function parseDailyRecordPriceChoice(text: string | null | undefined): DailyRecordPriceChoice | null {
+  const value = String(text ?? '').toLowerCase().replace(/[.!?]/g, '').replace(/\s+/g, ' ').trim();
+  if (/^(?:bei ya kila moja|kila moja|bei kwa kila moja|unit price|per item|each|kwa kila moja)$/.test(value)) return 'unit_price';
+  if (/^(?:jumla|bei ya jumla|total|full total|overall)$/.test(value)) return 'total';
+  return null;
+}
+
+export function resumeDailyRecordClarification(
+  clarification: DailyRecordClarification,
+  choice: DailyRecordPriceChoice,
+): DailyRecordParse {
+  const { description, quantity, amount } = clarification.sale;
+  if (!Number.isFinite(quantity) || quantity <= 0 || !validAmount(amount)) {
+    return { kind: 'clarify', reason: 'amount', question: question('amount', clarification.lang) };
+  }
+  const unitAmount = choice === 'unit_price' ? amount : roundMoney(amount / quantity);
+  const total = choice === 'unit_price' ? roundMoney(quantity * amount) : amount;
+  return enforceLimit({
+    kind: 'sale', amount: total, partyName: null, description: null,
+    lines: [{ description, quantity, unit_amount: unitAmount }],
+  }, clarification.lang);
 }
 
 function kindLabel(kind: DailyRecordKind, lang: Lang): string {
@@ -350,7 +419,7 @@ export function isDailyRecordConfirmation(text: string | null | undefined): bool
 }
 
 export function isDailyRecordRejection(text: string | null | undefined): boolean {
-  return /^(no|hapana|cancel|ghairi|acha|sitisha)\b/i.test(String(text ?? '').trim());
+  return /^(no|hapana|cancel|ghairi|toka|futa|acha|sitisha)\b/i.test(String(text ?? '').trim());
 }
 
 export function buildDailyRecordConfirmed(record: ParsedDailyRecord, lang: Lang): string {

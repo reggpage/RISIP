@@ -6,6 +6,8 @@ import {
   isDailyRecordConfirmation,
   isDailyRecordRejection,
   parseDailyRecord,
+  parseDailyRecordPriceChoice,
+  resumeDailyRecordClarification,
 } from '../../../../supabase/functions/_shared/whatsappDailyRecords';
 
 describe('deterministic WhatsApp daily-record parser', () => {
@@ -103,13 +105,40 @@ describe('deterministic WhatsApp daily-record parser', () => {
   it('asks for clarification when the amount or message is unclear', () => {
     expect(parseDailyRecord('nimeuza bidhaa', 'sw')).toMatchObject({ kind: 'clarify', reason: 'amount' });
     expect(parseDailyRecord('expense ya umeme 12000 jana kwa mradi', 'sw')).toMatchObject({ kind: 'clarify', reason: 'message' });
-    expect(parseDailyRecord('nimeuza bidhaa 10 3000', 'sw')).toEqual({
+    expect(parseDailyRecord('nimeuza bidhaa 10 3000', 'sw')).toMatchObject({
       kind: 'clarify', reason: 'ambiguity', question: 'Bei hii ni jumla au bei ya kila moja?',
+      draft: { kind: 'daily_record_clarification', sale: { description: 'bidhaa', quantity: 10, amount: 3000 } },
     });
     expect(parseDailyRecord('nimeuza nguvu ya sala 70 kila moja', 'sw')).toMatchObject({ kind: 'clarify', reason: 'amount' });
     expect(parseDailyRecord('nimeuza bidhaa kwa 0', 'sw')).toMatchObject({ kind: 'clarify', reason: 'amount' });
     expect(parseDailyRecord('nimeuza bidhaa kwa -5000', 'sw')).toMatchObject({ kind: 'clarify', reason: 'amount' });
     expect(parseDailyRecord('nimeuza bidhaa kwa 100000001', 'sw')).toMatchObject({ kind: 'clarify', reason: 'limit' });
+  });
+
+  it('saves a clarification draft and resumes total versus unit-price choice', () => {
+    const ambiguous = parseDailyRecord('nimeuza vitabu mbili 9000', 'sw');
+    expect(ambiguous.kind).toBe('clarify');
+    if (ambiguous.kind !== 'clarify' || !ambiguous.draft) return;
+    expect(parseDailyRecordPriceChoice('bei ya kila moja')).toBe('unit_price');
+    expect(parseDailyRecordPriceChoice('kila moja')).toBe('unit_price');
+    expect(parseDailyRecordPriceChoice('unit price')).toBe('unit_price');
+    expect(parseDailyRecordPriceChoice('jumla')).toBe('total');
+    expect(parseDailyRecordPriceChoice('total')).toBe('total');
+    expect(resumeDailyRecordClarification(ambiguous.draft, 'unit_price')).toMatchObject({
+      kind: 'parsed', record: { amount: 18000, lines: [{ description: 'vitabu', quantity: 2, unit_amount: 9000 }] },
+    });
+    expect(resumeDailyRecordClarification(ambiguous.draft, 'total')).toMatchObject({
+      kind: 'parsed', record: { amount: 9000, lines: [{ description: 'vitabu', quantity: 2, unit_amount: 4500 }] },
+    });
+  });
+
+  it('normalizes number words, @ prices, new lines, and separators while keeping names', () => {
+    expect(parseDailyRecord('nimeuza madaftari saba kila moja @9,000', 'sw')).toMatchObject({
+      kind: 'parsed', record: { amount: 63000, lines: [{ description: 'madaftari', quantity: 7, unit_amount: 9000 }] },
+    });
+    expect(parseDailyRecord('nimelipa transport: TSh 9,000\nnimetumia chakula 3,000/=', 'sw')).toMatchObject({
+      kind: 'parsed', record: { amount: 12000 },
+    });
   });
 
   it('uses the requested language for confirmation copy', () => {
@@ -154,6 +183,8 @@ describe('deterministic WhatsApp daily-record parser', () => {
     expect(isDailyRecordConfirmation('yes, confirm')).toBe(true);
     expect(isDailyRecordRejection('HAPANA')).toBe(true);
     expect(isDailyRecordRejection('cancel')).toBe(true);
+    expect(isDailyRecordRejection('Toka')).toBe(true);
+    expect(isDailyRecordRejection('Futa')).toBe(true);
     expect(isDailyRecordConfirmation('nimeuza 5000')).toBe(false);
   });
 });

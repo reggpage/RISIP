@@ -30,6 +30,7 @@ import {
 import { sendWhatsAppText } from '../_shared/whatsappApi.ts';
 import {
   detectLanguage,
+  isHelp,
   parseLanguageCommand,
   parseProjectChoice,
   routeIntent,
@@ -46,7 +47,10 @@ import {
   isDailyRecordCandidate,
   isDailyRecordConfirmation,
   isDailyRecordRejection,
+  parseDailyRecordPriceChoice,
   parseDailyRecord,
+  resumeDailyRecordClarification,
+  type DailyRecordClarification,
   type DailyRecordConversation,
 } from '../_shared/whatsappDailyRecords.ts';
 import {
@@ -59,6 +63,8 @@ import {
   type OnboardingStep,
 } from '../_shared/whatsappOnboarding.ts';
 import { waSyntheticEmail } from '../_shared/waIdentityEmail.ts';
+import { interpretDailyRecordWithAi } from '../_shared/whatsappDailyRecordsAi.ts';
+import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import {
   isProjectSetupState,
   parseProjectSetupChoice,
@@ -87,6 +93,10 @@ function appUrl(): string {
   return Deno.env.get('RISIP_PUBLIC_APP_URL') || 'https://risip.online';
 }
 
+function isStopCommand(text: string | null | undefined): boolean {
+  return /^(?:toka|futa|cancel|ghairi|start over|anza upya|acha|sitisha)\b/i.test(String(text ?? '').trim());
+}
+
 /** Live conversation state, or null when nothing is pending or it has expired. */
 async function loadConversation(db: Admin, identityId: string) {
   const { data } = await db
@@ -104,6 +114,27 @@ async function loadConversation(db: Admin, identityId: string) {
 
 async function clearConversation(db: Admin, identityId: string): Promise<void> {
   await db.from('whatsapp_conversations').delete().eq('identity_id', identityId);
+}
+
+async function createDailyRecordDraft(
+  db: Admin,
+  identity: any,
+  messageId: string,
+  record: import('../_shared/whatsappDailyRecords.ts').ParsedDailyRecord,
+  lang: Lang,
+): Promise<{ id: string | null; error: any }> {
+  const { data, error } = await db.rpc('wa_create_daily_record_draft', {
+    p_profile_id: identity.profile_id,
+    p_company_id: identity.company_id,
+    p_kind: record.kind,
+    p_amount: record.amount,
+    p_party_name: record.partyName,
+    p_description: dailyRecordStorageDescription(record, lang),
+    p_occurred_at: new Date().toISOString(),
+    p_source_message_id: messageId,
+    p_lines: record.lines,
+  });
+  return { id: data ? String(data) : null, error };
 }
 
 async function activeProjects(db: Admin, companyId: string): Promise<{ id: string; name: string }[]> {
@@ -611,12 +642,88 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // Global conversation controls must work even while a draft, project,
+        // or language question is pending. These commands only clear the
+        // conversation state; they never delete a posted ledger record.
+        if (isStopCommand(body)) {
+          await clearConversation(db, identity.id as string);
+          await replyQuietly(phone, t('cancelled', lang));
+          await audit(db, identity, waMessageId, 'cancel_action', 'clear_state', 'applied');
+          await finish('skipped');
+          continue;
+        }
+        if (isHelp(body)) {
+          await replyQuietly(phone, `${t('help', lang)}\n\n${buildKnowledgeReply(body, lang)}`);
+          await audit(db, identity, waMessageId, 'help', 'knowledge_reply', 'applied');
+          await finish('skipped');
+          continue;
+        }
+
         // Daily-record draft confirmation uses the existing payment_source
         // conversation slot. Receipt/project state stays mutually exclusive.
         const dailyConversation = convo?.awaiting === 'payment_source'
           && (convo.options as Partial<DailyRecordConversation> | null)?.kind === 'daily_record_confirmation'
           ? convo.options as DailyRecordConversation
           : null;
+        const dailyClarification = convo?.awaiting === 'payment_source'
+          && (convo.options as Partial<DailyRecordClarification> | null)?.kind === 'daily_record_clarification'
+          ? convo.options as DailyRecordClarification
+          : null;
+        if (dailyClarification) {
+          const choice = parseDailyRecordPriceChoice(body);
+          if (isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, lang === 'sw' ? 'Sawa. Ujumbe huu wa mauzo umeghairiwa.' : 'Okay. This sale draft was cancelled.');
+            await audit(db, identity, waMessageId, 'daily_record', 'clarification_cancel', 'applied');
+            await finish('skipped');
+            continue;
+          }
+          if (choice) {
+            const resumed = resumeDailyRecordClarification(dailyClarification, choice);
+            if (resumed.kind === 'parsed') {
+              const created = await createDailyRecordDraft(
+                db,
+                identity,
+                dailyClarification.sourceMessageId ?? waMessageId,
+                resumed.record,
+                lang,
+              );
+              if (created.error || !created.id) {
+                await replyQuietly(phone, lang === 'sw'
+                  ? 'Sikuweza kuhifadhi draft hii. Tafadhali jaribu tena.'
+                  : 'I could not save this draft. Please try again.');
+                await audit(db, identity, waMessageId, 'daily_record', 'clarification_create', 'failed');
+                await finish('skipped', 'daily_record_create_failed');
+                continue;
+              }
+              const state: DailyRecordConversation = {
+                kind: 'daily_record_confirmation',
+                dailyRecordId: created.id,
+                sourceMessageId: dailyClarification.sourceMessageId ?? waMessageId,
+                record: resumed.record,
+              };
+              await db.from('whatsapp_conversations').upsert({
+                identity_id: identity.id,
+                company_id: identity.company_id,
+                profile_id: identity.profile_id,
+                awaiting: 'payment_source',
+                receipt_id: null,
+                options: state,
+                expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'identity_id' });
+              await replyQuietly(phone, buildDailyRecordConfirmation(resumed.record, lang));
+              await audit(db, identity, waMessageId, 'daily_record', 'clarification_resumed', 'pending');
+              await finish('skipped');
+              continue;
+            }
+          }
+          await replyQuietly(phone, lang === 'sw'
+            ? 'Jibu *bei ya kila moja* au *jumla* ili niendelee na mauzo haya.'
+            : 'Reply *unit price* or *total* so I can continue this sale.');
+          await finish('skipped');
+          continue;
+        }
         if (dailyConversation) {
           if (isDailyRecordConfirmation(body)) {
             const { error } = await db.rpc('wa_confirm_daily_record', {
@@ -658,24 +765,46 @@ Deno.serve(async (req) => {
         if (isDailyRecordCandidate(body)) {
           const parsed = parseDailyRecord(body, lang);
           if (parsed.kind === 'clarify') {
+            if (parsed.draft) {
+              await db.from('whatsapp_conversations').upsert({
+                identity_id: identity.id,
+                company_id: identity.company_id,
+                profile_id: identity.profile_id,
+                awaiting: 'payment_source',
+                receipt_id: null,
+                options: { ...parsed.draft, sourceMessageId: waMessageId },
+                expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'identity_id' });
+            }
+            if (!parsed.draft && parsed.reason !== 'ambiguity') {
+              const aiRecord = await interpretDailyRecordWithAi(body, lang);
+              if (aiRecord) {
+                const created = await createDailyRecordDraft(db, identity, waMessageId, aiRecord, lang);
+                if (!created.error && created.id) {
+                  const state: DailyRecordConversation = {
+                    kind: 'daily_record_confirmation', dailyRecordId: created.id, sourceMessageId: waMessageId, record: aiRecord,
+                  };
+                  await db.from('whatsapp_conversations').upsert({
+                    identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+                    awaiting: 'payment_source', receipt_id: null, options: state,
+                    expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+                  }, { onConflict: 'identity_id' });
+                  await replyQuietly(phone, buildDailyRecordConfirmation(aiRecord, lang));
+                  await audit(db, identity, waMessageId, 'daily_record_ai_fallback', 'create', 'pending');
+                  await finish('skipped');
+                  continue;
+                }
+              }
+            }
             await replyQuietly(phone, parsed.question);
             await audit(db, identity, waMessageId, 'daily_record', 'clarify', parsed.reason);
             await finish('skipped');
             continue;
           }
           if (parsed.kind === 'parsed') {
-            const { data: dailyRecordId, error } = await db.rpc('wa_create_daily_record_draft', {
-              p_profile_id: identity.profile_id,
-              p_company_id: identity.company_id,
-              p_kind: parsed.record.kind,
-              p_amount: parsed.record.amount,
-              p_party_name: parsed.record.partyName,
-              p_description: dailyRecordStorageDescription(parsed.record, lang),
-              p_occurred_at: new Date().toISOString(),
-              p_source_message_id: waMessageId,
-              p_lines: parsed.record.lines,
-            });
-            if (error || !dailyRecordId) {
+            const created = await createDailyRecordDraft(db, identity, waMessageId, parsed.record, lang);
+            if (created.error || !created.id) {
               await replyQuietly(phone, lang === 'sw'
                 ? 'Sikuweza kuhifadhi draft hii. Tafadhali jaribu tena.'
                 : 'I could not save this draft. Please try again.');
@@ -685,7 +814,7 @@ Deno.serve(async (req) => {
             }
             const state: DailyRecordConversation = {
               kind: 'daily_record_confirmation',
-              dailyRecordId: String(dailyRecordId),
+              dailyRecordId: created.id,
               sourceMessageId: waMessageId,
               record: parsed.record,
             };
@@ -907,7 +1036,7 @@ Deno.serve(async (req) => {
         }
 
         // Nothing pending: help, or a polite scope boundary.
-        await replyQuietly(phone, intent === 'help' ? t('help', lang) : t('onlyRisip', lang));
+        await replyQuietly(phone, intent === 'help' ? `${t('help', lang)}\n\n${buildKnowledgeReply(body, lang)}` : t('onlyRisip', lang));
         await finish('skipped');
       }
     }
