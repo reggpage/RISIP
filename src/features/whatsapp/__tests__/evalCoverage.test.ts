@@ -45,7 +45,7 @@ function hasLine(testCase: EvalCase, key: string): boolean {
   return new RegExp(`^\\s+${key}:`, 'm').test(testCase.block);
 }
 
-const files = ['debtors.yaml', 'profit.yaml', 'products.yaml'];
+const files = ['debtors.yaml', 'profit.yaml', 'products.yaml', 'a0_whatsapp.yaml'];
 
 describe('AI evaluation coverage', () => {
   it('keeps every eval case structurally complete and uniquely identified', () => {
@@ -77,6 +77,8 @@ describe('AI evaluation coverage', () => {
     expect(debtors).toHaveLength(27);
     expect(profit).toHaveLength(18);
     expect(products).toHaveLength(14);
+    expect(extractCases(readEval('a0_whatsapp.yaml'))).toHaveLength(141);
+    expect([...debtors, ...profit, ...products, ...extractCases(readEval('a0_whatsapp.yaml'))]).toHaveLength(200);
     expect(new Set(products.map((testCase) => testCase.id))).toEqual(new Set([
       '89', '90', '91', '92', '93', '94', '95', '96',
       '401', '402', '403', '404', '405', '406',
@@ -88,6 +90,8 @@ describe('AI evaluation coverage', () => {
       'ai_record_debt_issued',
       'ai_record_customer_payment',
       'ai_void_daily_record',
+      'deterministic_daily_record',
+      'deterministic_calculator',
       'set_product_cost',
     ]);
 
