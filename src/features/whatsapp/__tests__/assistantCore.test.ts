@@ -9,6 +9,7 @@ import {
   normalizeAssistantHistory,
   requiresCurrentBusinessDataTool,
   runConversationalAssistant,
+  shouldDeferRecordLikeReply,
   type AssistantIdentityContext,
 } from '../../../../supabase/functions/_shared/whatsappAssistant';
 
@@ -110,6 +111,13 @@ describe('Risip conversational AI core', () => {
     expect(requiresCurrentBusinessDataTool('Nguvu ya sala imeuzwa ngapi leo?')).toBe(true);
     expect(requiresCurrentBusinessDataTool('Jumla yake?')).toBe(true);
     expect(requiresCurrentBusinessDataTool('Nisaidie kutumia Risip')).toBe(false);
+  });
+
+  it('keeps a grounded read-tool answer even when wording also looks like a sale record', () => {
+    expect(shouldDeferRecordLikeReply(true, ['get_product_performance'])).toBe(false);
+    expect(shouldDeferRecordLikeReply(true, ['propose_daily_record'])).toBe(false);
+    expect(shouldDeferRecordLikeReply(true, [])).toBe(true);
+    expect(shouldDeferRecordLikeReply(false, [])).toBe(false);
   });
 
   it('runs a real client-tool loop over conversation history and grounds the final answer', async () => {

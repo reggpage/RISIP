@@ -92,6 +92,7 @@ import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import {
   canUseCompanyFinanceReads,
   runConversationalAssistant,
+  shouldDeferRecordLikeReply,
   type AssistantHistoryMessage,
   type AssistantIdentityContext,
   type AssistantToolExecution,
@@ -1429,8 +1430,7 @@ Deno.serve(async (req) => {
             // prose alone. If the model did not call the proposal tool, let the
             // existing deterministic validator/clarifier below take over.
             const unsafeRecordProse = assistant
-              && isDailyRecordCandidate(body)
-              && !assistant.toolNames.includes('propose_daily_record');
+              && shouldDeferRecordLikeReply(isDailyRecordCandidate(body), assistant.toolNames);
             if (assistant && !unsafeRecordProse) {
               await replyQuietly(phone, assistant.reply);
               const remembered = await storeAssistantExchange(

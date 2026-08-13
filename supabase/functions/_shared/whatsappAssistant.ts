@@ -203,6 +203,13 @@ export function requiresCurrentBusinessDataTool(text: string): boolean {
   return /\b(leo|jana|wiki|mwezi|mwaka|jumla|mauzo|imeuzwa|imeuza|nimeuza|bidhaa|gharama|matumizi|faida|deni|madeni|anadaiwa|ananidai|amelipa|malipo|risiti|salio|petty|reimbursement|today|yesterday|week|month|year|total|sales?|sold|product|expense|spend|profit|margin|debt|owes?|paid|payments?|receipts?|balance|reimbursements?|most|least|top)\b/.test(normalized);
 }
 
+export function shouldDeferRecordLikeReply(
+  recordCandidate: boolean,
+  toolNames: string[],
+): boolean {
+  return recordCandidate && toolNames.length === 0;
+}
+
 export function buildAssistantSystemPrompt(context: AssistantIdentityContext): string {
   const language = context.lang === 'sw' ? 'Kiswahili' : 'English';
   return `You are Risip AI, a capable conversational business assistant inside WhatsApp.
