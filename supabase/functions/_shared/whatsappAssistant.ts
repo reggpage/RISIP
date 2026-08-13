@@ -75,6 +75,7 @@ const periodSchema = { type: 'string', enum: ['today', 'week', 'month', 'year'] 
 export const ASSISTANT_TOOL_NAMES = [
   'get_business_summary',
   'get_product_performance',
+  'get_product_cost',
   'get_open_debts',
   'get_my_receipts',
   'get_my_petty_cash_balance',
@@ -122,6 +123,12 @@ export const ASSISTANT_TOOLS: ToolDefinition[] = [
       product_names: { type: 'array', items: { type: 'string' }, description: 'At most two product names; the server validates and truncates them.' },
     },
     ['metric', 'period', 'product_names'],
+  ),
+  tool(
+    'get_product_cost',
+    'Read the latest saved buying cost for one named product. This is commercial finance data for owner/accountant only. Use for “gharama yake?”, “bei ya kununua”, or “what does this product cost us?”. Never interpret a selling price as a buying cost.',
+    { product_name: { type: 'string', description: 'One explicit or conversation-resolved product name. The server validates and limits it.' } },
+    ['product_name'],
   ),
   tool(
     'get_open_debts',
@@ -323,6 +330,9 @@ export function inferAssistantMemory(
       },
       lastTool: latest.name,
     };
+  }
+  if (latest.name === 'get_product_cost') {
+    return { topic: 'product_cost', entities: { product: latest.input.product_name ?? null }, lastTool: latest.name };
   }
   if (latest.name === 'get_open_debts') {
     return { topic: 'customer_debts', entities: { party_name: latest.input.party_name ?? null }, lastTool: latest.name };

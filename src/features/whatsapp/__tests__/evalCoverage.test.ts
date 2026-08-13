@@ -10,6 +10,7 @@ type EvalCase = {
   fixture?: string;
   expectTool?: string | null;
   simulate?: string;
+  category?: string;
 };
 
 const evalRoot = resolve(process.cwd(), 'evals');
@@ -29,6 +30,7 @@ function extractCases(source: string): EvalCase[] {
     const fixture = block.match(/^\s+fixture:\s*([^\s#]+)\s*(?:#.*)?$/m)?.[1];
     const toolMatch = block.match(/^\s+expect_tool:\s*(null|[^\s#]+)\s*.*$/m)?.[1];
     const simulate = block.match(/^\s+simulate:\s*([^\s#]+)\s*(?:#.*)?$/m)?.[1];
+    const category = block.match(/^\s+category:\s*([^\s#]+)\s*(?:#.*)?$/m)?.[1];
     return {
       id: match[1],
       block,
@@ -37,6 +39,7 @@ function extractCases(source: string): EvalCase[] {
       fixture,
       expectTool: toolMatch === 'null' ? null : toolMatch,
       simulate,
+      category,
     };
   });
 }
@@ -45,7 +48,7 @@ function hasLine(testCase: EvalCase, key: string): boolean {
   return new RegExp(`^\\s+${key}:`, 'm').test(testCase.block);
 }
 
-const files = ['debtors.yaml', 'profit.yaml', 'products.yaml', 'a0_whatsapp.yaml'];
+const files = ['debtors.yaml', 'profit.yaml', 'products.yaml', 'a0_whatsapp.yaml', 'conversation_quality.yaml'];
 
 describe('AI evaluation coverage', () => {
   it('keeps every eval case structurally complete and uniquely identified', () => {
@@ -78,11 +81,24 @@ describe('AI evaluation coverage', () => {
     expect(profit).toHaveLength(18);
     expect(products).toHaveLength(14);
     expect(extractCases(readEval('a0_whatsapp.yaml'))).toHaveLength(141);
-    expect([...debtors, ...profit, ...products, ...extractCases(readEval('a0_whatsapp.yaml'))]).toHaveLength(200);
+    const conversations = extractCases(readEval('conversation_quality.yaml'));
+    expect(conversations).toHaveLength(40);
+    expect([...debtors, ...profit, ...products, ...extractCases(readEval('a0_whatsapp.yaml')), ...conversations]).toHaveLength(240);
     expect(new Set(products.map((testCase) => testCase.id))).toEqual(new Set([
       '89', '90', '91', '92', '93', '94', '95', '96',
       '401', '402', '403', '404', '405', '406',
     ]));
+  });
+
+  it('locks in the weakest conversational categories from the production audit', () => {
+    const cases = extractCases(readEval('conversation_quality.yaml'));
+    const count = (category: string) => cases.filter((testCase) => testCase.category === category).length;
+    expect(count('multi_turn')).toBeGreaterThanOrEqual(15);
+    expect(count('topic_switch')).toBeGreaterThanOrEqual(10);
+    expect(count('typo')).toBeGreaterThanOrEqual(8);
+    expect(count('idempotency')).toBeGreaterThanOrEqual(7);
+    expect(cases.find((testCase) => testCase.say === 'Nipe link yakulogin nichek dashboard')?.expectTool).toBe('login_control');
+    expect(cases.find((testCase) => testCase.say === 'Gharama yake?')?.expectTool).toBe('get_product_cost');
   });
 
   it('requires explicit confirmation or a reason gate for every write tool case', () => {

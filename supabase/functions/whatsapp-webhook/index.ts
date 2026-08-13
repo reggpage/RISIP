@@ -27,7 +27,7 @@ import {
   sha256Hex,
   verifyMetaSignature,
 } from '../_shared/whatsapp.ts';
-import { sendWhatsAppText } from '../_shared/whatsappApi.ts';
+import { sendWhatsAppText, showTyping } from '../_shared/whatsappApi.ts';
 import {
   detectLanguage,
   isHelp,
@@ -70,6 +70,7 @@ import {
   costSaved,
   parseProductCost,
   productCostErrorMessage,
+  productCostReply,
   validateProductCostCandidate,
   type ProductCost,
 } from '../_shared/whatsappProductCosts.ts';
@@ -559,6 +560,37 @@ async function executeAssistantTool(
       }, lang),
     };
   }
+  if (name === 'get_product_cost') {
+    if (!canUseCompanyFinanceReads(identity.role)) {
+      const denied = lang === 'sw'
+        ? 'Bei za kununua za kampuni zinaonekana kwa owner au accountant tu.'
+        : 'Company buying costs are available only to an owner or accountant.';
+      return { content: denied, isError: true, terminalReply: denied };
+    }
+    const productName = typeof input.product_name === 'string' ? input.product_name.trim().slice(0, 100) : '';
+    if (productName.length < 2 || !/[\p{L}]/u.test(productName)) {
+      const clarification = lang === 'sw' ? 'Unataka bei ya kununua ya bidhaa gani?' : 'Which product buying cost do you want?';
+      return { content: clarification, isError: true, terminalReply: clarification };
+    }
+    const { data, error } = await db.from('product_costs')
+      .select('product_name, unit_cost, unit, currency, effective_from')
+      .eq('company_id', identity.company_id)
+      .eq('product_key', productName.toLowerCase())
+      .order('effective_from', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) {
+      const failed = lang === 'sw' ? 'Sikuweza kupata bei hiyo ya kununua sasa.' : 'I could not load that buying cost right now.';
+      return { content: failed, isError: true, terminalReply: failed };
+    }
+    return {
+      content: productCostReply(productName, data ? {
+        productName: String(data.product_name), unitCost: Number(data.unit_cost),
+        unit: data.unit ? String(data.unit) : null, currency: String(data.currency), effectiveFrom: String(data.effective_from),
+      } : null, lang),
+    };
+  }
   if (name === 'get_open_debts') {
     const partyName = typeof input.party_name === 'string' ? input.party_name.trim().slice(0, 100) || null : null;
     return {
@@ -1009,13 +1041,23 @@ async function handleOnboarding(
 }
 
 /** A short-lived way in to the web. Never a password. */
-async function handleLoginLink(db: Admin, phone: string, lang: Lang): Promise<string> {
+async function handleLoginLink(db: Admin, phone: string, lang: Lang): Promise<{ reply: string; issued: boolean }> {
   const { data: token, error } = await db.rpc('wa_issue_login_token', { p_phone: phone });
-  if (error || !token) return error?.message ?? 'Could not create a link right now.';
+  if (error || !token) {
+    return {
+      issued: false,
+      reply: lang === 'sw'
+        ? 'Sikuweza kutengeneza link ya kuingia sasa. Tafadhali jaribu tena baada ya muda mfupi.'
+        : 'I could not create a login link right now. Please try again in a moment.',
+    };
+  }
   const url = `${appUrl()}/wa-login?t=${token}`;
-  return lang === 'sw'
-    ? `Fungua link hii ndani ya dakika 5. Inatumika mara moja tu.\nUsimtumie mtu mwingine link hii.\n${url}`
-    : `Open this link within 5 minutes. It works once only.\nDo not share this link with anyone.\n${url}`;
+  return {
+    issued: true,
+    reply: lang === 'sw'
+      ? `Fungua link hii ndani ya dakika 5. Inatumika mara moja tu.\nUsimtumie mtu mwingine link hii.\n${url}`
+      : `Open this link within 5 minutes. It works once only.\nDo not share this link with anyone.\n${url}`,
+  };
 }
 
 /** Fire-and-forget: nudge the worker without blocking the 200 back to Meta. */
@@ -1088,6 +1130,12 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // Give immediate feedback before onboarding, tools or the model do any
+        // slower work. This runs only after signature verification and the
+        // idempotency gate, so status webhooks and duplicate deliveries cannot
+        // flash a misleading typing indicator.
+        await showTyping(waMessageId);
+
         // Resolve identity once; used by both branches below.
         const { data: rawIdentity } = await db
           .from('whatsapp_identities')
@@ -1121,6 +1169,17 @@ Deno.serve(async (req) => {
             company_id: identity.company_id,
             updated_at: new Date().toISOString(),
           }).eq('wa_message_id', waMessageId);
+        }
+
+        // Login is a protected control-plane command. Resolve it before any
+        // conversational/record parser so natural requests such as “nipe link
+        // ya login nichek dashboard” cannot be answered (or refused) by AI.
+        if (identity && isLoginRequest(body)) {
+          const login = await handleLoginLink(db, phone, lang);
+          await replyQuietly(phone, login.reply);
+          await audit(db, identity, waMessageId, 'login_link', 'issued', login.issued ? 'applied' : 'failed');
+          await finish('skipped');
+          continue;
         }
 
         // ── Receipt image (with its optional caption) ─────────────────────
@@ -1633,13 +1692,6 @@ Deno.serve(async (req) => {
             ? swErr.message
             : (lang === 'sw' ? `Sasa unatumia: ${name}` : `You are now using: ${name}`));
           await audit(db, identity, waMessageId, 'switch_business', String(options[idx].id), swErr ? 'failed' : 'applied');
-          await finish('skipped');
-          continue;
-        }
-
-        if (isLoginRequest(body)) {
-          await replyQuietly(phone, await handleLoginLink(db, phone, lang));
-          await audit(db, identity, waMessageId, 'login_link', 'issued', 'applied');
           await finish('skipped');
           continue;
         }

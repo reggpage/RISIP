@@ -1,0 +1,323 @@
+# P0/P1 conversational contracts for indirect commands, multi-turn references,
+# topic switching, typos, and message idempotency. These are eval cases, not
+# training data and not permission for the model to bypass server tools.
+
+fixtures:
+  live_sandbox: {}
+
+cases:
+  # ── Multi-turn references (15) ──────────────────────────────────────────
+  - id: CQ001
+    category: multi_turn
+    say: "Jumla yake?"
+    lang: sw
+    fixture: live_sandbox
+    history: ["Nguvu ya sala imeuzwa ngapi leo?", "Vipande 7."]
+    expect_tool: get_product_performance
+    expected_metric: revenue
+    must_not: [answer_from_memory, invent_numbers]
+  - id: CQ002
+    category: multi_turn
+    say: "Gharama yake?"
+    lang: sw
+    fixture: live_sandbox
+    history: ["Nguvu ya sala imeuza vipande 7 leo."]
+    expect_tool: get_product_cost
+    expected_product: "Nguvu ya sala"
+    must_not: [reuse_selling_price_as_cost]
+  - id: CQ003
+    category: multi_turn
+    say: "What did it cost us?"
+    lang: en
+    fixture: live_sandbox
+    history: ["Books were the top seller today."]
+    expect_tool: get_product_cost
+    expected_product: books
+  - id: CQ004
+    category: multi_turn
+    say: "Wiki hii je?"
+    lang: sw
+    fixture: live_sandbox
+    history: ["Nguvu ya sala imeuza vipande 7 leo."]
+    expect_tool: get_product_performance
+    expected_period: week
+  - id: CQ005
+    category: multi_turn
+    say: "Na jana?"
+    lang: sw
+    fixture: live_sandbox
+    history: ["Mauzo ya leo ni kiasi gani?"]
+    expect_tool: get_business_summary
+    expected_period: yesterday
+  - id: CQ006
+    category: multi_turn
+    say: "Yeye amelipa kiasi gani?"
+    lang: sw
+    fixture: live_sandbox
+    history: ["Asha anadaiwa kiasi gani?"]
+    expect_tool: get_open_debts
+    expected_party: Asha
+    must_not: [guess_pronoun]
+  - id: CQ007
+    category: multi_turn
+    say: "How much remains?"
+    lang: en
+    fixture: live_sandbox
+    history: ["How much does Juma owe me?"]
+    expect_tool: get_open_debts
+    expected_party: Juma
+  - id: CQ008
+    category: multi_turn
+    say: "Hizo ni risiti gani?"
+    lang: sw
+    fixture: live_sandbox
+    history: ["Nina risiti ngapi zilizosubmitiwa?"]
+    expect_tool: get_my_receipts
+  - id: CQ009
+    category: multi_turn
+    say: "And the payments?"
+    lang: en
+    fixture: live_sandbox
+    history: ["Give me today's business summary."]
+    expect_tool: get_business_summary
+    must_not: [create_sale]
+  - id: CQ010
+    category: multi_turn
+    say: "Bei hiyo ni ya kununua."
+    lang: sw
+    fixture: live_sandbox
+    history: ["Unga ni 2500 kwa kilo.", "Bei hii ni ya kuuza au kununua?"]
+    expect_tool: propose_product_cost
+    must_confirm: true
+  - id: CQ011
+    category: multi_turn
+    say: "No, cancel it."
+    lang: en
+    fixture: live_sandbox
+    history: ["Draft sale total TZS 30,000. Confirm?"]
+    expect_tool: cancel_control
+    must_not: [confirm_record]
+  - id: CQ012
+    category: multi_turn
+    say: "NDIYO"
+    lang: sw
+    fixture: live_sandbox
+    history: ["Draft ya mauzo TSh 30,000. Thibitisha?"]
+    expect_tool: confirmation_control
+    must_confirm: true
+  - id: CQ013
+    category: multi_turn
+    say: "Kile cha Asha je?"
+    lang: sw
+    fixture: live_sandbox
+    history: ["Juma anadaiwa TSh 15,000; Asha pia ana deni."]
+    expect_tool: get_open_debts
+    expected_party: Asha
+  - id: CQ014
+    category: multi_turn
+    say: "Does that include receipt expenses?"
+    lang: en
+    fixture: live_sandbox
+    history: ["Today's daily-record expenses are TZS 8,000."]
+    expect_tool: search_risip_help
+    must_contain: [separate]
+  - id: CQ015
+    category: multi_turn
+    say: "Nionyeshe ya pili."
+    lang: sw
+    fixture: live_sandbox
+    history: ["Biashara zako: 1. Shop A 2. Shop B"]
+    expect_tool: switch_business_control
+    expected_choice: 2
+
+  # ── Topic switching (10) ────────────────────────────────────────────────
+  - id: CQ016
+    category: topic_switch
+    say: "Sawa, sasa nani ananidai?"
+    lang: sw
+    fixture: live_sandbox
+    history: ["Nguvu ya sala ndiyo imeuza zaidi leo."]
+    expect_tool: get_open_debts
+    must_not: [reuse_product_answer]
+  - id: CQ017
+    category: topic_switch
+    say: "Forget sales, show my petty cash balance."
+    lang: en
+    fixture: live_sandbox
+    history: ["Top-selling products are books and pens."]
+    expect_tool: get_my_petty_cash_balance
+  - id: CQ018
+    category: topic_switch
+    say: "Nipe link yakulogin nichek dashboard"
+    lang: sw
+    fixture: live_sandbox
+    history: ["Faida ya leo ni makisio."]
+    expect_tool: login_control
+    must_not: [conversational_ai_refusal]
+  - id: CQ019
+    category: topic_switch
+    say: "Now how do staff retirements work?"
+    lang: en
+    fixture: live_sandbox
+    history: ["Juma owes TZS 15,000."]
+    expect_tool: search_risip_help
+  - id: CQ020
+    category: topic_switch
+    say: "Badilisha biashara nitumie nyingine."
+    lang: sw
+    fixture: live_sandbox
+    history: ["Mauzo ya leo ni TSh 40,000."]
+    expect_tool: switch_business_control
+  - id: CQ021
+    category: topic_switch
+    say: "What does Risip do with supplier claims?"
+    lang: en
+    fixture: live_sandbox
+    history: ["Your latest receipt is submitted."]
+    expect_tool: search_risip_help
+  - id: CQ022
+    category: topic_switch
+    say: "Toka"
+    lang: sw
+    fixture: live_sandbox
+    history: ["Draft ya mauzo inasubiri uthibitisho."]
+    expect_tool: cancel_control
+    must_not: [confirm_record]
+  - id: CQ023
+    category: topic_switch
+    say: "English please"
+    lang: sw
+    fixture: live_sandbox
+    history: ["Mauzo ya leo ni TSh 40,000."]
+    expect_tool: language_control
+  - id: CQ024
+    category: topic_switch
+    say: "Nimeuza kalamu 5 kila moja 500"
+    lang: sw
+    fixture: live_sandbox
+    history: ["Hivi ndivyo retirement inavyofanya kazi."]
+    expect_tool: deterministic_daily_record
+    must_confirm: true
+  - id: CQ025
+    category: topic_switch
+    say: "Can you approve it now?"
+    lang: en
+    fixture: live_sandbox
+    history: ["Your receipt is submitted."]
+    expect_tool: null
+    must_not: [approve_receipt, direct_finance_action]
+
+  # ── Typos and indirect commands (8) ─────────────────────────────────────
+  - id: CQ026
+    category: typo
+    say: "nipatie link yakulogin niingie dashbord"
+    lang: sw
+    fixture: live_sandbox
+    expect_tool: login_control
+  - id: CQ027
+    category: typo
+    say: "natka kubadlsha biashara"
+    lang: sw
+    fixture: live_sandbox
+    expect_tool: conversational_ai
+    must_ask_for: intended_business_action
+  - id: CQ028
+    category: typo
+    say: "nguvu ya sala imeuzw ngap leo"
+    lang: sw
+    fixture: live_sandbox
+    expect_tool: get_product_performance
+  - id: CQ029
+    category: typo
+    say: "gharama yak kununua ni ngap"
+    lang: sw
+    fixture: live_sandbox
+    expect_tool: get_product_cost
+    must_ask_for: product_if_missing
+  - id: CQ030
+    category: typo
+    say: "wht sold most tday"
+    lang: en
+    fixture: live_sandbox
+    expect_tool: get_product_performance
+  - id: CQ031
+    category: typo
+    say: "nipe orodha ya biashra zangu"
+    lang: sw
+    fixture: live_sandbox
+    expect_tool: conversational_ai
+    must_ask_for: intended_business_action
+  - id: CQ032
+    category: typo
+    say: "risip inafanyaje suplyer clams"
+    lang: sw
+    fixture: live_sandbox
+    expect_tool: search_risip_help
+  - id: CQ033
+    category: typo
+    say: "nani ananidwa pesa"
+    lang: sw
+    fixture: live_sandbox
+    expect_tool: get_open_debts
+    must_not: [supplier_debt_claim]
+
+  # ── Duplicate/idempotency contracts (7) ─────────────────────────────────
+  - id: CQ034
+    category: idempotency
+    say: "nimeuza madaftari 10 kila moja 3000"
+    lang: sw
+    fixture: live_sandbox
+    expect_tool: deterministic_daily_record
+    must_confirm: true
+    repeated_message_id: true
+    must_be_idempotent: true
+  - id: CQ035
+    category: idempotency
+    say: "NDIYO"
+    lang: sw
+    fixture: live_sandbox
+    expect_tool: confirmation_control
+    must_confirm: true
+    repeated_message_id: true
+    must_be_idempotent: true
+  - id: CQ036
+    category: idempotency
+    say: "login"
+    lang: en
+    fixture: live_sandbox
+    expect_tool: login_control
+    repeated_message_id: true
+    must_be_idempotent: true
+  - id: CQ037
+    category: idempotency
+    say: "Hi"
+    lang: en
+    fixture: live_sandbox
+    expect_tool: onboarding_control
+    repeated_message_id: true
+    must_be_idempotent: true
+  - id: CQ038
+    category: idempotency
+    say: "HAPANA"
+    lang: sw
+    fixture: live_sandbox
+    expect_tool: cancel_control
+    repeated_message_id: true
+    must_be_idempotent: true
+  - id: CQ039
+    category: idempotency
+    say: "bei ya kununua unga ni 2500 kwa kilo"
+    lang: sw
+    fixture: live_sandbox
+    expect_tool: propose_product_cost
+    must_confirm: true
+    repeated_message_id: true
+    must_be_idempotent: true
+  - id: CQ040
+    category: idempotency
+    say: "What sold the most today?"
+    lang: en
+    fixture: live_sandbox
+    expect_tool: get_product_performance
+    repeated_message_id: true
+    must_be_idempotent: true

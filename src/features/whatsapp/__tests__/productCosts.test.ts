@@ -4,6 +4,7 @@ import {
   costSaved,
   parseProductCost,
   productCostErrorMessage,
+  productCostReply,
   validateProductCostCandidate,
 } from '../../../../supabase/functions/_shared/whatsappProductCosts';
 
@@ -131,5 +132,20 @@ describe('the confirmation says which business and what it was', () => {
     expect(productCostErrorMessage(raw, 'sw')).toContain('owner au accountant');
     expect(productCostErrorMessage(raw, 'sw')).not.toContain(raw.message);
     expect(productCostErrorMessage({ message: 'secret database detail' }, 'en')).not.toContain('secret database detail');
+  });
+});
+
+describe('reading a saved buying cost', () => {
+  it('shows the latest cost, unit and effective date without recalculating it', () => {
+    const reply = productCostReply('unga', {
+      productName: 'Unga', unitCost: 2500, unit: 'kilo', currency: 'TZS', effectiveFrom: '2026-08-13T12:00:00Z',
+    }, 'sw');
+    expect(reply).toContain('TSh 2,500 kwa kilo');
+    expect(reply).toContain('2026');
+  });
+
+  it('states honestly when no cost exists', () => {
+    expect(productCostReply('unga', null, 'sw')).toContain('hakuna bei ya kununua');
+    expect(productCostReply('flour', null, 'en')).toContain('no saved buying cost');
   });
 });

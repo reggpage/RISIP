@@ -33,6 +33,7 @@ afterEach(() => {
 describe('Risip conversational AI core', () => {
   it('exposes bounded tools and no protected finance action', () => {
     expect(ASSISTANT_TOOL_NAMES).toContain('get_product_performance');
+    expect(ASSISTANT_TOOL_NAMES).toContain('get_product_cost');
     expect(ASSISTANT_TOOL_NAMES).toContain('propose_daily_record');
     expect(ASSISTANT_TOOL_NAMES).not.toContain('approve_receipt');
     expect(ASSISTANT_TOOL_NAMES).not.toContain('pay_claim');
@@ -93,6 +94,9 @@ describe('Risip conversational AI core', () => {
     expect(inferAssistantMemory([{
       name: 'get_open_debts', input: { party_name: 'Asha' },
     }])).toMatchObject({ topic: 'customer_debts', entities: { party_name: 'Asha' } });
+    expect(inferAssistantMemory([{
+      name: 'get_product_cost', input: { product_name: 'Nguvu ya sala' },
+    }])).toMatchObject({ topic: 'product_cost', entities: { product: 'Nguvu ya sala' } });
   });
 
   it('detects numbers that were not present in user text or server tool evidence', () => {

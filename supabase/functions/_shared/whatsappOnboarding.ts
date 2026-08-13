@@ -169,14 +169,39 @@ export function advanceOnboarding(
 
 // ── Switching business, for a number that is already linked ────────────────
 
-/** "biashara" / "business" / "switch" asks for the list. */
+/** Ask for the membership list or to change the active business. */
 export function isSwitchRequest(text: string | null): boolean {
-  return /^(biashara|business|switch|badilisha)\b/i.test(clean(text));
+  const said = clean(text).toLowerCase();
+  if (/^(?:biashara|business|switch|badilisha)[.!?]*$/i.test(said)) return true;
+
+  const mentionsBusiness = /\b(?:biashara|business|kampuni|company)\b/i.test(said);
+  const requestsSwitch = /\b(?:badilisha|kubadilisha|badili|chagua|kuchagua|hamia|kuhamia|switch|change|select|choose)\b/i.test(said);
+  const requestsList = /\b(?:orodha|zangu|nilizonazo|list|mine|memberships?)\b/i.test(said);
+  const asksActive = /\b(?:ipi|gani|active|current|natumia|using)\b/i.test(said);
+  return mentionsBusiness && (requestsSwitch || requestsList || asksActive);
 }
 
-/** "ingia" / "login" / "link" asks for a web sign-in link. */
+/**
+ * A direct request for a web sign-in link.
+ *
+ * Keep this deterministic and ahead of the conversational model: issuing a
+ * short-lived session link is control-plane work, not a question the model
+ * should improvise an answer to. People naturally wrap the command in a
+ * sentence, so accept common Swahili/English phrasing without treating every
+ * mention of an unrelated link as a login request.
+ */
 export function isLoginRequest(text: string | null): boolean {
-  return /^(ingia|login|log in|link|weblink)\b/i.test(clean(text));
+  const said = clean(text).toLowerCase();
+  if (/^(?:ingia|login|log in|sign in|weblink)(?:\s+tafadhali|\s+please)?[.!?]*$/i.test(said)) return true;
+  if (/^link[.!?]*$/i.test(said)) return true;
+
+  const mentionsLogin = /\b(?:ingia|kuingia|login|log in|sign in|kulogin|yakulogin)\b/i.test(said);
+  const mentionsDashboard = /\b(?:dashboard|dashibodi)\b/i.test(said);
+  const mentionsLink = /\b(?:link|kiungo|weblink)\b/i.test(said);
+  const requestsAccess = /\b(?:nipe|nipatie|naomba|nataka|nahitaji|nitumie|tuma|fungua|nichek|angalia|nawezaje|jinsi|send|give|get|open|check|access|how|can)\b/i.test(said);
+
+  return (mentionsLogin && (mentionsLink || mentionsDashboard || requestsAccess))
+    || (mentionsDashboard && mentionsLink && requestsAccess);
 }
 
 /**

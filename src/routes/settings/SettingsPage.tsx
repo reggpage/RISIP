@@ -11,6 +11,7 @@ import { CompanyProfileSkeleton, MemberRowSkeleton } from '@/components/ui/Skele
 import { useToast } from '@/components/ui/Toast';
 import LogoCropModal from '@/components/settings/LogoCropModal';
 import WhatsAppConnectCard from '@/components/whatsapp/WhatsAppConnectCard';
+import WhatsAppCompanyInviteCard from '@/components/whatsapp/WhatsAppCompanyInviteCard';
 import { createNotifications } from '@/features/notifications/notifications';
 import { useAuth, signOut } from '@/lib/auth';
 import { roleLabel } from '@/lib/roles';
@@ -769,7 +770,10 @@ export default function SettingsPage() {
           title="WhatsApp"
           description="Send receipt photos to Risip from your own WhatsApp account. You finish the details here in the app."
         >
-          <WhatsAppConnectCard />
+          <div className="space-y-4">
+            <WhatsAppConnectCard />
+            <WhatsAppCompanyInviteCard companyName={company?.name ?? companyName} />
+          </div>
         </SettingsSection>
 
         {/* ── Scanner & Hardware Integration (owner) ──────────────────────── */}

@@ -130,10 +130,18 @@ describe('switching business', () => {
   ];
 
   it('is asked for in either language', () => {
-    for (const s of ['biashara', 'business', 'switch', 'badilisha']) {
+    for (const s of [
+      'biashara', 'business', 'switch', 'badilisha',
+      'nataka kubadilisha biashara',
+      'nipe orodha ya biashara zangu',
+      'switch to another business',
+      'which company am I currently using?',
+    ]) {
       expect(isSwitchRequest(s)).toBe(true);
     }
     expect(isSwitchRequest('nimeuza unga')).toBe(false);
+    expect(isSwitchRequest('biashara yangu imefanyaje leo?')).toBe(false);
+    expect(isSwitchRequest('business sales today')).toBe(false);
   });
 
   it('shows which one is active', () => {
@@ -156,12 +164,25 @@ describe('switching business', () => {
 
 describe('asking for a way in to the web', () => {
   it('recognises the request in either language', () => {
-    for (const s of ['ingia', 'login', 'log in', 'link']) {
+    for (const s of [
+      'ingia',
+      'login',
+      'log in',
+      'link',
+      'Nipe link yakulogin nichek dashboard',
+      'naomba link ya kuingia',
+      'nataka kuingia kwenye dashboard',
+      'send me a login link',
+      'how can I login?',
+      'open the dashboard login link',
+    ]) {
       expect(isLoginRequest(s)).toBe(true);
     }
   });
 
   it('does not fire on ordinary talk', () => {
     expect(isLoginRequest('nimelipa boda 5000')).toBe(false);
+    expect(isLoginRequest('nitumie link ya invoice')).toBe(false);
+    expect(isLoginRequest('dashboard ya mauzo inaonyesha nini?')).toBe(false);
   });
 });

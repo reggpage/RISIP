@@ -1,6 +1,8 @@
 // Thin wrapper over the WhatsApp Cloud API. Network-only; all decision logic that
 // deserves tests lives in ./whatsapp.ts instead.
 
+import { typingIndicatorPayload } from './whatsappApiPayloads.ts';
+
 const DEFAULT_API_VERSION = 'v21.0';
 
 function apiBase(): string {
@@ -55,16 +57,12 @@ export async function showTyping(messageId: string): Promise<void> {
   try {
     await fetch(`${apiBase()}/${phoneNumberId}/messages`, {
       method: 'POST',
+      signal: AbortSignal.timeout(3_000),
       headers: {
         authorization: `Bearer ${accessToken()}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        status: 'read',
-        message_id: messageId,
-        typing_indicator: { type: 'text' },
-      }),
+      body: JSON.stringify(typingIndicatorPayload(messageId)),
     });
   } catch {
     // Cosmetic only.

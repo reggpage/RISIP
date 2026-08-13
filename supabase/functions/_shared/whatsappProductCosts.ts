@@ -124,6 +124,27 @@ export function costSaved(cost: ProductCost, businessName: string, lang: Lang): 
     : `Saved: ${cost.product} TSh ${cost.unitCost.toLocaleString('en-US')}${per} (${businessName}).\nI can now estimate profit on ${cost.product}.`;
 }
 
+export function productCostReply(
+  product: string,
+  row: { productName: string; unitCost: number; unit: string | null; currency: string; effectiveFrom: string } | null,
+  lang: Lang,
+): string {
+  if (!row) {
+    return lang === 'sw'
+      ? `Bado hakuna bei ya kununua iliyohifadhiwa kwa ${product}. Owner au accountant anaweza kuiweka kwa uthibitisho.`
+      : `There is no saved buying cost for ${product} yet. An owner or accountant can set it with confirmation.`;
+  }
+  const currency = row.currency.toUpperCase() === 'TZS' ? (lang === 'sw' ? 'TSh' : 'TZS') : row.currency.toUpperCase();
+  const per = row.unit ? (lang === 'sw' ? ` kwa ${row.unit}` : ` per ${row.unit}`) : '';
+  const date = new Date(row.effectiveFrom);
+  const dateText = Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString(lang === 'sw' ? 'sw-TZ' : 'en-GB', {
+    day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Africa/Dar_es_Salaam',
+  });
+  return lang === 'sw'
+    ? `Bei ya kununua ya ${row.productName}: ${currency} ${row.unitCost.toLocaleString('en-US')}${per}.${dateText ? ` Imeanza kutumika ${dateText}.` : ''}`
+    : `Buying cost for ${row.productName}: ${currency} ${row.unitCost.toLocaleString('en-US')}${per}.${dateText ? ` Effective ${dateText}.` : ''}`;
+}
+
 /** Map database hints to safe user-facing copy; never expose raw Postgres text. */
 export function productCostErrorMessage(error: { message?: string; hint?: string } | null | undefined, lang: Lang): string {
   const hint = error?.hint as ProductCostErrorCode | undefined;
