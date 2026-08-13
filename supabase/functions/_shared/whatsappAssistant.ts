@@ -377,8 +377,10 @@ export async function runConversationalAssistant(args: {
           max_tokens: 900,
           system: [{ type: 'text', text: buildAssistantSystemPrompt(args.context), cache_control: { type: 'ephemeral' } }],
           tools: toolsForModel(model),
-          tool_choice: round === 0 && mustGroundWithTool ? { type: 'any' } : { type: 'auto' },
-          disable_parallel_tool_use: false,
+          tool_choice: {
+            type: round === 0 && mustGroundWithTool ? 'any' : 'auto',
+            disable_parallel_tool_use: false,
+          },
           messages,
         }),
       });

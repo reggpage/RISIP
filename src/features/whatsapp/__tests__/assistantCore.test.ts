@@ -150,7 +150,8 @@ describe('Risip conversational AI core', () => {
       memory: { topic: 'product_performance' },
     });
     const firstMessageRequest = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
-    expect(firstMessageRequest.tool_choice).toEqual({ type: 'any' });
+    expect(firstMessageRequest.tool_choice).toEqual({ type: 'any', disable_parallel_tool_use: false });
+    expect(firstMessageRequest).not.toHaveProperty('disable_parallel_tool_use');
     expect(firstMessageRequest.messages.map((message: { content: string }) => message.content)).toEqual([
       'Nguvu ya sala imeuzwa ngapi leo?',
       'Imeuza vipande 7 leo.',
