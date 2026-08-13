@@ -642,16 +642,6 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Global conversation controls must work even while a draft, project,
-        // or language question is pending. These commands only clear the
-        // conversation state; they never delete a posted ledger record.
-        if (isStopCommand(body)) {
-          await clearConversation(db, identity.id as string);
-          await replyQuietly(phone, t('cancelled', lang));
-          await audit(db, identity, waMessageId, 'cancel_action', 'clear_state', 'applied');
-          await finish('skipped');
-          continue;
-        }
         if (isHelp(body)) {
           await replyQuietly(phone, `${t('help', lang)}\n\n${buildKnowledgeReply(body, lang)}`);
           await audit(db, identity, waMessageId, 'help', 'knowledge_reply', 'applied');
@@ -669,6 +659,28 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<DailyRecordClarification> | null)?.kind === 'daily_record_clarification'
           ? convo.options as DailyRecordClarification
           : null;
+        // A stop command cancels a pending daily-record draft through the same
+        // RPC used by HAPANA/NO. Clarification-only state has no DB draft yet,
+        // so it is safely cleared without creating a ledger event.
+        if (isStopCommand(body)) {
+          if (dailyConversation) {
+            const { error } = await db.rpc('wa_cancel_daily_record_draft', {
+              p_profile_id: identity.profile_id,
+              p_company_id: identity.company_id,
+              p_daily_record_id: dailyConversation.dailyRecordId,
+              p_reason: 'WhatsApp user cancelled daily record draft',
+            });
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, error ? buildDailyRecordPending(dailyConversation.record, lang) : t('cancelled', lang));
+            await audit(db, identity, waMessageId, 'cancel_action', 'daily_record', error ? 'failed' : 'voided');
+          } else {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, t('cancelled', lang));
+            await audit(db, identity, waMessageId, 'cancel_action', 'clear_state', 'applied');
+          }
+          await finish('skipped');
+          continue;
+        }
         if (dailyClarification) {
           const choice = parseDailyRecordPriceChoice(body);
           if (isDailyRecordRejection(body)) {
