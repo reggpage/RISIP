@@ -137,6 +137,10 @@ function splitParts(text: string): string[] {
   return text.split(/\s+(?:na|and)\s+|\s+-\s+|\s*;\s*/i).map((part) => part.trim()).filter(Boolean);
 }
 
+function stripRepeatedSalePrefix(text: string): string {
+  return text.replace(/^(?:leo\s+|today\s+)?(?:nimeuza|uza|mauzo|(?:i\s+)?sold)\s+/i, '').trim();
+}
+
 function lineTotal(line: DailyRecordLine): number {
   return roundMoney(line.quantity * line.unit_amount);
 }
@@ -180,7 +184,10 @@ function parseEnglishUnitLine(text: string): DailyRecordLine | null {
 function parseSaleLines(payload: string): DailyRecordLine[] | null {
   const parts = splitParts(payload);
   if (parts.length === 0) return null;
-  const lines = parts.map((part) => parseSwahiliUnitLine(part) ?? parseEnglishUnitLine(part));
+  const lines = parts.map((part) => {
+    const normalizedPart = stripRepeatedSalePrefix(part);
+    return parseSwahiliUnitLine(normalizedPart) ?? parseEnglishUnitLine(normalizedPart);
+  });
   return lines.every(Boolean) ? lines as DailyRecordLine[] : null;
 }
 
@@ -190,6 +197,7 @@ function parseAmbiguousSaleLines(payload: string): AmbiguousSaleLine[] | null {
   const parts = splitParts(payload);
   if (parts.length === 0) return null;
   const lines = parts.map((part) => {
+    part = stripRepeatedSalePrefix(part);
     const afterDescription = part.match(new RegExp('^(.+?)\\s+(' + QUANTITY_PATTERN + ')\\s+(' + MONEY_PATTERN + ')$', 'i'));
     if (afterDescription) {
       const quantity = Number(afterDescription[2]);
@@ -532,6 +540,29 @@ export function buildDailyRecordConfirmation(record: ParsedDailyRecord, lang: La
     ? 'Jibu *NDIYO* kuthibitisha, au *HAPANA* kughairi.'
     : 'Reply *YES* to confirm, or *NO* to cancel.');
   return lines.join('\n');
+}
+
+export function buildDailyRecordConfirmationChunks(
+  record: ParsedDailyRecord,
+  lang: Lang,
+  maxChars = 3200,
+): string[] {
+  const text = buildDailyRecordConfirmation(record, lang);
+  if (text.length <= maxChars) return [text];
+
+  const chunks: string[] = [];
+  let current = '';
+  for (const line of text.split('\n')) {
+    const next = current ? `${current}\n${line}` : line;
+    if (next.length <= maxChars) {
+      current = next;
+      continue;
+    }
+    if (current) chunks.push(current);
+    current = line;
+  }
+  if (current) chunks.push(current);
+  return chunks;
 }
 
 export function isDailyRecordConfirmation(text: string | null | undefined): boolean {

@@ -41,6 +41,7 @@ import {
 import {
   buildDailyRecordCancelled,
   buildDailyRecordConfirmation,
+  buildDailyRecordConfirmationChunks,
   buildDailyRecordConfirmed,
   buildDailyRecordPending,
   dailyRecordStorageDescription,
@@ -866,6 +867,16 @@ async function replyQuietly(to: string, body: string): Promise<void> {
   }
 }
 
+async function replyDailyRecordConfirmationQuietly(
+  to: string,
+  record: ParsedDailyRecord,
+  lang: Lang,
+): Promise<void> {
+  for (const chunk of buildDailyRecordConfirmationChunks(record, lang)) {
+    await replyQuietly(to, chunk);
+  }
+}
+
 /**
  * Bind a verified WhatsApp number to a profile using a single-use token.
  * The token is compared by hash, so the plaintext never has to be stored.
@@ -1344,7 +1355,7 @@ Deno.serve(async (req) => {
                 expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
                 updated_at: new Date().toISOString(),
               }, { onConflict: 'identity_id' });
-              await replyQuietly(phone, buildDailyRecordConfirmation(guardedRecord, lang));
+              await replyDailyRecordConfirmationQuietly(phone, guardedRecord, lang);
               await audit(db, identity, waMessageId, 'daily_record', 'clarification_resumed', 'pending');
               await finish('skipped');
               continue;
@@ -1389,7 +1400,7 @@ Deno.serve(async (req) => {
             await finish('skipped');
             continue;
           }
-          await replyQuietly(phone, buildDailyRecordConfirmation(dailyConversation.record, lang));
+          await replyDailyRecordConfirmationQuietly(phone, dailyConversation.record, lang);
           await finish('skipped');
           continue;
         }
@@ -1471,7 +1482,10 @@ Deno.serve(async (req) => {
           && !isLoginRequest(body)
           && !parseLanguageCommand(body)
           && intent !== 'cancel_action'
-          && intent !== 'change_language';
+          && intent !== 'change_language'
+          // Daily-record arithmetic is deterministic first. Its dedicated
+          // branch below owns the bounded structured-AI fallback.
+          && !isDailyRecordCandidate(body);
         if (aiEligible) {
           const history = await loadAssistantHistory(db, identity);
           const contextChars = body!.length + history.reduce((sum, message) => sum + message.content.length, 0);
@@ -1603,7 +1617,7 @@ Deno.serve(async (req) => {
                     awaiting: 'payment_source', receipt_id: null, options: state,
                     expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
                   }, { onConflict: 'identity_id' });
-                  await replyQuietly(phone, buildDailyRecordConfirmation(guardedRecord, lang));
+                  await replyDailyRecordConfirmationQuietly(phone, guardedRecord, lang);
                   await audit(db, identity, waMessageId, 'daily_record_ai_fallback', 'create', 'pending');
                   await finish('skipped');
                   continue;
@@ -1642,7 +1656,7 @@ Deno.serve(async (req) => {
               expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
               updated_at: new Date().toISOString(),
             }, { onConflict: 'identity_id' });
-            await replyQuietly(phone, buildDailyRecordConfirmation(guardedRecord, lang));
+            await replyDailyRecordConfirmationQuietly(phone, guardedRecord, lang);
             await audit(db, identity, waMessageId, 'daily_record', 'create', 'pending');
             await finish('skipped');
             continue;
