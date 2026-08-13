@@ -8,6 +8,7 @@ import { useNotifications } from '@/features/notifications/notifications';
 import { signOut } from '@/lib/auth';
 import { hasAnyRole, type UserRole } from '@/lib/roles';
 import { sw } from '@/i18n/sw';
+import { getLang } from '@/lib/lang';
 
 type Item = { to: string; label: string; icon: React.ComponentType<{ className?: string }>; allowed: readonly UserRole[] };
 
@@ -17,7 +18,7 @@ const desktopItems: Item[] = [
   { to: '/receipts', label: sw.nav.receipts, icon: Receipt, allowed: ['worker', 'accountant', 'owner'] },
   { to: '/retirements', label: 'Retirements', icon: HandCoins, allowed: ['owner', 'accountant', 'worker'] },
   { to: '/reimbursements', label: 'Reimbursements', icon: Banknote, allowed: ['owner', 'accountant'] },
-  { to: '/daily-records', label: 'Daily Records / Rekodi za Siku', icon: ClipboardList, allowed: ['owner', 'accountant', 'worker'] },
+  { to: '/daily-records', label: getLang() === 'sw' ? 'Rekodi za Siku' : 'Daily Records', icon: ClipboardList, allowed: ['owner', 'accountant', 'worker'] },
   { to: '/notifications', label: 'Notifications', icon: Bell, allowed: ['owner', 'accountant', 'worker'] },
   { to: '/claims', label: 'Claims', icon: Handshake, allowed: ['owner', 'accountant'] },
   { to: '/invoices', label: sw.nav.invoices, icon: FileText, allowed: ['owner', 'accountant'] },

@@ -3,6 +3,7 @@ import {
   MAX_DAILY_RECORD_AMOUNT,
   buildDailyRecordConfirmation,
   buildDailyRecordConfirmed,
+  detectDailyRecordPriceAnomalies,
   isDailyRecordConfirmation,
   isDailyRecordRejection,
   parseDailyRecord,
@@ -20,6 +21,7 @@ describe('deterministic WhatsApp daily-record parser', () => {
         partyName: null,
         description: 'madaftari 10',
         lines: [],
+        confidence: 0.94,
       },
     });
   });
@@ -195,5 +197,22 @@ describe('deterministic WhatsApp daily-record parser', () => {
     expect(isDailyRecordRejection('Toka')).toBe(true);
     expect(isDailyRecordRejection('Futa')).toBe(true);
     expect(isDailyRecordConfirmation('nimeuza 5000')).toBe(false);
+  });
+
+  it('tolerates common spelling slips and reports deterministic confidence', () => {
+    const parsed = parseDailyRecord('nimeuzza madaftari saba kila moja @9,000', 'sw');
+    expect(parsed).toMatchObject({ kind: 'parsed', record: { amount: 63000, confidence: 0.98 } });
+  });
+
+  it('warns about unusual historical prices without changing the amount', () => {
+    const parsed = parseDailyRecord('nimeuza madaftari 10 kila moja 9000', 'sw');
+    expect(parsed.kind).toBe('parsed');
+    if (parsed.kind !== 'parsed') return;
+    const warnings = detectDailyRecordPriceAnomalies(parsed.record, [
+      { description: 'madaftari', unit_amount: 3000 },
+      { description: 'madaftari', unit_amount: 3000 },
+    ]);
+    expect(warnings).toHaveLength(1);
+    expect(parsed.record.amount).toBe(90000);
   });
 });

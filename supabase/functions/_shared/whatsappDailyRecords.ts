@@ -15,6 +15,9 @@ export type ParsedDailyRecord = {
   description: string | null;
   lines: DailyRecordLine[];
   referenceAmount?: number | null;
+  /** Parser confidence is advisory; server-side arithmetic remains authoritative. */
+  confidence?: number;
+  warnings?: string[];
 };
 
 export type DailyRecordParse =
@@ -47,6 +50,17 @@ type MoneyToken = { raw: string; value: number; start: number; end: number };
 
 function clean(text: string): string {
   return text.toLowerCase().replace(/\r?\n/g, ' - ').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeSpelling(text: string): string {
+  return text
+    .replace(/\bnimeuz+a\b/gi, 'nimeuza')
+    .replace(/\bnimelip+a\b/gi, 'nimelipa')
+    .replace(/\bnimetumi+a\b/gi, 'nimetumia')
+    .replace(/\bamelip+a\b/gi, 'amelipa')
+    .replace(/\bkalip+a\b/gi, 'kalipa')
+    .replace(/\bki?a?la\s+moja\b/gi, 'kila moja')
+    .replace(/[：]/g, ':');
 }
 
 const NUMBER_WORDS: Record<string, string> = {
@@ -325,7 +339,7 @@ function enforceLimit(parsed: ParsedDailyRecord, lang: Lang): DailyRecordParse {
     const isLimit = parsed.amount > MAX_DAILY_RECORD_AMOUNT;
     return { kind: 'clarify', reason: isLimit ? 'limit' : 'amount', question: question(isLimit ? 'limit' : 'amount', lang) };
   }
-  return { kind: 'parsed', record: parsed };
+  return { kind: 'parsed', record: { ...parsed, confidence: parsed.confidence ?? (parsed.lines.length > 0 ? 0.98 : 0.94) } };
 }
 
 export function isDailyRecordCandidate(text: string | null | undefined): boolean {
@@ -334,7 +348,7 @@ export function isDailyRecordCandidate(text: string | null | undefined): boolean
 
 export function parseDailyRecord(text: string | null | undefined, lang: Lang = 'sw'): DailyRecordParse {
   const originalText = String(text ?? '').trim();
-  const value = normalizeNumberWords(clean(originalText));
+  const value = normalizeNumberWords(normalizeSpelling(clean(originalText)));
   if (!value || !looksLikeDailyRecord(value)) return { kind: 'none' };
   if (hasNegativeOrZeroAmount(value)) return { kind: 'clarify', reason: 'amount', question: question('amount', lang) };
 
@@ -394,8 +408,29 @@ export function resumeDailyRecordClarification(
   const total = roundMoney(lines.reduce((sum, line) => sum + lineTotal(line), 0));
   return enforceLimit({
     kind: 'sale', amount: total, partyName: null, description: null,
-    lines,
+    lines, confidence: 0.97,
   }, clarification.lang);
+}
+
+export type HistoricalDailyRecordPrice = { description: string; unit_amount: number };
+
+/** Compare against confirmed company history only. This helper never rejects or
+ * changes a record; callers surface the warning and still require confirmation. */
+export function detectDailyRecordPriceAnomalies(
+  record: ParsedDailyRecord,
+  history: HistoricalDailyRecordPrice[],
+  threshold = 0.5,
+): string[] {
+  const warnings: string[] = [];
+  for (const line of record.lines) {
+    const matches = history.filter((item) => item.description.trim().toLowerCase() === line.description.trim().toLowerCase() && item.unit_amount > 0);
+    if (matches.length < 2) continue;
+    const average = matches.reduce((sum, item) => sum + item.unit_amount, 0) / matches.length;
+    if (Math.abs(line.unit_amount - average) / average >= threshold) {
+      warnings.push(`Unusual price for ${line.description}: ${money(line.unit_amount, 'en')} vs historical average ${money(average, 'en')}.`);
+    }
+  }
+  return warnings;
 }
 
 function kindLabel(kind: DailyRecordKind, lang: Lang): string {
@@ -440,6 +475,11 @@ export function buildDailyRecordConfirmation(record: ParsedDailyRecord, lang: La
   if (record.referenceAmount) {
     const balance = roundMoney(record.referenceAmount - record.amount);
     lines.push((lang === 'sw' ? 'Mabaki ya rejea' : 'Reference balance') + ': ' + money(balance, lang));
+  }
+  if (record.warnings?.length) {
+    lines.push('', lang === 'sw' ? '⚠️ Tahadhari ya bei:' : '⚠️ Price warning:');
+    lines.push(...record.warnings.map((warning) => '- ' + warning));
+    lines.push(lang === 'sw' ? 'Thibitisha kwa makusudi kwa kujibu NDIYO.' : 'Confirm explicitly by replying YES.');
   }
   lines.push((lang === 'sw' ? 'Jumla' : 'Total') + ': *' + money(record.amount, lang) + '*', '');
   lines.push(lang === 'sw'

@@ -84,6 +84,7 @@ export function validateAiCandidate(candidate: unknown): ParsedDailyRecord | nul
     partyName: typeof value.party_name === 'string' ? value.party_name.trim().slice(0, 200) || null : null,
     description: typeof value.description === 'string' ? value.description.trim().slice(0, 2000) || null : null,
     lines,
+    confidence: 0.55,
   };
 }
 

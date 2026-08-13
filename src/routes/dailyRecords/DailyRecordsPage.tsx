@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, MessageCircle, Search, X } from 'lucide-react';
+import { Check, CheckCircle2, Filter, RefreshCw, X } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
+import { Skeleton } from '@/components/ui/Skeleton';
+import WhatsappIcon from '@/components/ui/WhatsappIcon';
 import { useAuth } from '@/lib/auth';
 import { friendlyError } from '@/lib/errors';
 import { formatDateTime, formatMoney } from '@/lib/format';
+import { formatLongDate } from '@/lib/format';
+import { getLang } from '@/lib/lang';
 import { useToast } from '@/components/ui/Toast';
 import {
   confirmDailyRecord,
@@ -17,22 +21,25 @@ import {
 } from '@/features/dailyRecords/dailyRecords';
 import type { DailyRecordAudit, DailyRecordKind, DailyRecordStatus } from '@/types/db';
 
-const kindLabels: Record<DailyRecordKind, string> = {
-  sale: 'Sale / Mauzo',
-  expense: 'Expense / Matumizi',
-  debt_issued: 'Debt issued / Mkopo',
-  customer_payment: 'Customer payment / Malipo',
+const lang = getLang();
+const ui = lang === 'sw' ? {
+  title: 'Rekodi za Siku', description: 'Rekodi za shughuli kutoka WhatsApp na app. Zinatenganishwa na matumizi ya risiti.', refresh: 'Onyesha upya', filter: 'Chuja', filterRecords: 'Chuja rekodi', from: 'Kuanzia', to: 'Hadi', kind: 'Aina', status: 'Hali', source: 'Chanzo', allKinds: 'Aina zote', allStatuses: 'Hali zote', allSources: 'Vyanzo vyote', app: 'App / kwa mkono', other: 'Nyingine', empty: 'Bado hakuna rekodi za siku.', emptyHint: 'Tuma mauzo, matumizi, madeni, au malipo kupitia WhatsApp.', loading: 'Inapakia rekodi za siku…', confirmed: 'Imethibitishwa', pending: 'Inasubiri uthibitisho', voided: 'Imeghairiwa', sale: 'Mauzo', expense: 'Matumizi', debt: 'Mkopo uliotolewa', payment: 'Malipo ya mteja', daily: 'Rekodi ya siku', occurred: 'Ilitokea', created: 'Iliundwa', confirm: 'Thibitisha', saving: 'Inahifadhi…', void: 'Ghairi', details: 'Maelezo ya rekodi ya siku', total: 'Jumla', descriptionLabel: 'Maelezo', party: 'Mhusika', recordedBy: 'Iliyorekodiwa na', calculation: 'Mgawanyo wa hesabu', audit: 'Historia ya ukaguzi', historyLoading: 'Inapakia historia…', auditError: 'Historia ya ukaguzi haikuweza kupakiwa.', close: 'Funga', voidTitle: 'Ghairi rekodi ya siku', voidExplanation: 'Ghairi inaweka rekodi hii kuwa imefutwa kwa matumizi ya hesabu. Haifutwi. Rekodi ya awali na historia ya ukaguzi vinabaki, lakini haijumuishwi kwenye jumla.', reason: 'Sababu', reasonPlaceholder: 'Eleza kwa nini rekodi hii inaghairiwa', cancel: 'Ghairi', voidRecord: 'Ghairi rekodi', voiding: 'Inaghairi…', confirmSuccess: 'Rekodi ya siku imethibitishwa.', voidSuccess: 'Rekodi ya siku imeghairiwa. Historia yake imehifadhiwa.', reasonError: 'Andika sababu yenye maana kabla ya kughairi rekodi hii.', confirmError: 'Imeshindikana kuthibitisha rekodi hii.', voidError: 'Imeshindikana kughairi rekodi hii.', whatsApp: 'WhatsApp', voidReason: 'Sababu ya kughairi', today: 'Leo', yesterday: 'Jana', previousDay: 'Siku iliyopita', nextDay: 'Siku inayofuata', previousWeek: 'Wiki iliyopita',
+} : {
+  title: 'Daily Records', description: 'Operational records from WhatsApp and the app. They stay separate from receipt expenses.', refresh: 'Refresh', filter: 'Filter', filterRecords: 'Filter records', from: 'From', to: 'To', kind: 'Kind', status: 'Status', source: 'Source', allKinds: 'All kinds', allStatuses: 'All statuses', allSources: 'All sources', app: 'App / manual', other: 'Other', empty: 'No daily records yet.', emptyHint: 'Send sales, expenses, debts, or payments on WhatsApp.', loading: 'Loading daily records…', confirmed: 'Confirmed', pending: 'Pending confirmation', voided: 'Voided', sale: 'Sale', expense: 'Expense', debt: 'Debt issued', payment: 'Customer payment', daily: 'Daily record', occurred: 'Occurred', created: 'Created', confirm: 'Confirm', saving: 'Saving…', void: 'Void', details: 'Daily record details', total: 'Total', descriptionLabel: 'Description', party: 'Party', recordedBy: 'Recorded by', calculation: 'Calculation breakdown', audit: 'Audit history', historyLoading: 'Loading history…', auditError: 'Audit history could not be loaded.', close: 'Close', voidTitle: 'Void daily record', voidExplanation: 'Void marks this record as cancelled. It is not deleted. The original record and audit history remain, but it is excluded from totals.', reason: 'Reason', reasonPlaceholder: 'Explain why this record is being voided', cancel: 'Cancel', voidRecord: 'Void record', voiding: 'Voiding…', confirmSuccess: 'Daily record confirmed.', voidSuccess: 'Daily record voided. Its history is preserved.', reasonError: 'Enter a meaningful reason before voiding this record.', confirmError: 'Could not confirm this daily record.', voidError: 'Could not void this daily record.', whatsApp: 'WhatsApp', voidReason: 'Void reason', today: 'Today', yesterday: 'Yesterday', previousDay: 'Previous day', nextDay: 'Next day', previousWeek: 'Previous week',
 };
-
-const statusLabels: Record<DailyRecordStatus, string> = {
-  pending_confirmation: 'Pending confirmation',
-  confirmed: 'Confirmed',
-  voided: 'Voided',
-};
+const kindLabels: Record<DailyRecordKind, string> = { sale: ui.sale, expense: ui.expense, debt_issued: ui.debt, customer_payment: ui.payment };
+const statusLabels: Record<DailyRecordStatus, string> = { pending_confirmation: ui.pending, confirmed: ui.confirmed, voided: ui.voided };
+const partyHint = lang === 'sw'
+  ? 'Mhusika anaweza kuwa mteja, supplier/muuzaji, mlipwaji, mdaiwa, au mlipaji.'
+  : 'Party identifies the customer, supplier/payee, debtor, or payer.';
 
 function isInDateRange(record: DailyRecordWithDetails, from: string, to: string) {
   const day = record.occurred_at.slice(0, 10);
   return (!from || day >= from) && (!to || day <= to);
+}
+
+function dateInput(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 export default function DailyRecordsPage() {
@@ -50,6 +57,12 @@ export default function DailyRecordsPage() {
   const [voiding, setVoiding] = useState<DailyRecordWithDetails | null>(null);
   const [voidReason, setVoidReason] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  function setDay(offset: number) {
+    const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() + offset);
+    const value = dateInput(date); setFrom(value); setTo(value);
+  }
 
   const filtered = useMemo(() => state.records.filter((record) => {
     return isInDateRange(record, from, to)
@@ -62,11 +75,11 @@ export default function DailyRecordsPage() {
     setBusyId(record.id);
     try {
       await confirmDailyRecord(record.id);
-      toast.success('Daily record confirmed.');
+      toast.success(ui.confirmSuccess);
       setSelected(null);
       state.reload();
     } catch (error) {
-      toast.error(friendlyError(error, 'Could not confirm this daily record.'));
+      toast.error(friendlyError(error, ui.confirmError));
     } finally {
       setBusyId(null);
     }
@@ -76,19 +89,19 @@ export default function DailyRecordsPage() {
     if (!voiding) return;
     const reason = voidReason.trim();
     if (reason.length < 3) {
-      toast.error('Enter a meaningful reason before voiding this record.');
+      toast.error(ui.reasonError);
       return;
     }
     setBusyId(voiding.id);
     try {
       await voidDailyRecord(voiding.id, reason);
-      toast.success('Daily record voided. Its history is preserved.');
+      toast.success(ui.voidSuccess);
       setVoiding(null);
       setVoidReason('');
       setSelected(null);
       state.reload();
     } catch (error) {
-      toast.error(friendlyError(error, 'Could not void this daily record.'));
+      toast.error(friendlyError(error, ui.voidError));
     } finally {
       setBusyId(null);
     }
@@ -98,61 +111,47 @@ export default function DailyRecordsPage() {
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-ink">Daily Records / Rekodi za Siku</h1>
-          <p className="mt-1 text-sm text-ink-muted">Operational records from WhatsApp and the app. They stay separate from receipt expenses.</p>
+          <h1 className="text-2xl font-semibold text-ink">{ui.title}</h1>
+          <p className="mt-1 text-sm text-ink-muted">{ui.description}</p>
         </div>
-        <Button variant="secondary" onClick={state.reload} disabled={state.status === 'loading'}>
-          <Search className="h-4 w-4" /> Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" className="sm:hidden" onClick={() => setFiltersOpen(true)}><Filter className="h-4 w-4" /> {ui.filter}</Button>
+          <Button variant="secondary" onClick={state.reload} disabled={state.status === 'loading'}>
+            <RefreshCw className="h-4 w-4" /> {ui.refresh}
+          </Button>
+        </div>
       </div>
 
-      <Card className="mb-6">
-        <CardHeader><CardTitle>Filter records</CardTitle></CardHeader>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <Input label="From" type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-          <Input label="To" type="date" value={to} onChange={(event) => setTo(event.target.value)} />
-          <Select
-            label="Kind"
-            value={kind}
-            onChange={setKind}
-            placeholder="All kinds"
-            options={[{ value: '', label: 'All kinds' }, ...Object.entries(kindLabels).map(([value, label]) => ({ value, label }))]}
-          />
-          <Select
-            label="Status"
-            value={status}
-            onChange={setStatus}
-            placeholder="All statuses"
-            options={[{ value: '', label: 'All statuses' }, ...Object.entries(statusLabels).map(([value, label]) => ({ value, label }))]}
-          />
-          <Select
-            label="Source"
-            value={source}
-            onChange={setSource}
-            placeholder="All sources"
-            options={[
-              { value: '', label: 'All sources' },
-              { value: 'whatsapp', label: 'WhatsApp' },
-              { value: 'app', label: 'App / manual' },
-              { value: 'other', label: 'Other' },
-            ]}
-          />
-        </div>
+      <Card className="mb-6 hidden sm:block">
+        <CardHeader><CardTitle>{ui.filterRecords}</CardTitle></CardHeader>
+        <FilterFields from={from} to={to} kind={kind} status={status} source={source} setFrom={setFrom} setTo={setTo} setKind={setKind} setStatus={setStatus} setSource={setSource} />
       </Card>
+      {filtersOpen && <Modal title={ui.filterRecords} onClose={() => setFiltersOpen(false)}>
+        <FilterFields from={from} to={to} kind={kind} status={status} source={source} setFrom={setFrom} setTo={setTo} setKind={setKind} setStatus={setStatus} setSource={setSource} />
+        <div className="mt-5 flex justify-end"><Button tint="admin" onClick={() => setFiltersOpen(false)}>{ui.filter}</Button></div>
+      </Modal>}
+      <div className="mb-6 flex flex-wrap items-center gap-2" aria-label="Date navigation">
+        <Button variant="ghost" onClick={() => setDay(0)}>{ui.today}</Button>
+        <Button variant="ghost" onClick={() => setDay(-1)}>{ui.yesterday}</Button>
+        <Button variant="ghost" onClick={() => setDay(-2)}>{ui.previousDay}</Button>
+        <Button variant="ghost" onClick={() => setDay(1)}>{ui.nextDay}</Button>
+        <Button variant="ghost" onClick={() => { const date = new Date(); date.setDate(date.getDate() - 7); const value = dateInput(date); setFrom(value); setTo(dateInput(new Date())); }}>{ui.previousWeek}</Button>
+        <span className="ml-auto text-xs text-ink-muted">{from || to ? formatLongDate(from || to, lang) : formatLongDate(new Date().toISOString(), lang)}</span>
+      </div>
 
       {state.status === 'error' && (
         <Card className="mb-4 border-red-200">
-          <p className="text-sm text-red-700">{friendlyError(state.error, 'Could not load daily records. Please try again.')}</p>
+          <p className="text-sm text-red-700">{friendlyError(state.error, ui.description)}</p>
         </Card>
       )}
 
       {state.status === 'loading' && state.records.length === 0 ? (
-        <Card><p className="text-sm text-ink-muted">Loading daily records…</p></Card>
+        <div className="space-y-3" aria-label={ui.loading}><Skeleton className="h-28 w-full" /><Skeleton className="h-28 w-full" /><Skeleton className="h-28 w-full" /></div>
       ) : filtered.length === 0 ? (
         <Card>
           <div className="py-8 text-center">
-            <p className="text-base font-medium text-ink">No daily records yet.</p>
-            <p className="mt-1 text-sm text-ink-muted">Send sales, expenses, debts, or payments on WhatsApp.</p>
+            <p className="text-base font-medium text-ink">{ui.empty}</p>
+            <p className="mt-1 text-sm text-ink-muted">{ui.emptyHint}</p>
           </div>
         </Card>
       ) : (
@@ -190,30 +189,44 @@ export default function DailyRecordsPage() {
 
       {voiding && (
         <Modal title="Void daily record" onClose={() => setVoiding(null)}>
-          <p className="text-sm text-ink-muted">
-            This keeps the original record and audit history, but excludes it from daily summaries.
-          </p>
+          <p className="text-sm text-ink-muted">{ui.voidExplanation}</p>
           <div className="mt-4">
-            <label className="text-sm font-medium text-ink" htmlFor="void-reason">Reason</label>
+            <label className="text-sm font-medium text-ink" htmlFor="void-reason">{ui.reason}</label>
             <textarea
               id="void-reason"
               value={voidReason}
               onChange={(event) => setVoidReason(event.target.value)}
               rows={4}
               className="mt-1 w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-role-admin/30"
-              placeholder="Explain why this record is being voided"
+              placeholder={ui.reasonPlaceholder}
             />
           </div>
           <div className="mt-5 flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setVoiding(null)}>Cancel</Button>
+            <Button variant="ghost" onClick={() => setVoiding(null)}>{ui.cancel}</Button>
             <Button variant="danger" onClick={() => void handleVoid()} disabled={busyId === voiding.id}>
-              {busyId === voiding.id ? 'Voiding…' : 'Void record'}
+              {busyId === voiding.id ? ui.voiding : ui.voidRecord}
             </Button>
           </div>
         </Modal>
       )}
     </div>
   );
+}
+
+function FilterFields({
+  from, to, kind, status, source, setFrom, setTo, setKind, setStatus, setSource,
+}: {
+  from: string; to: string; kind: string; status: string; source: string;
+  setFrom: (value: string) => void; setTo: (value: string) => void; setKind: (value: string) => void;
+  setStatus: (value: string) => void; setSource: (value: string) => void;
+}) {
+  return <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+    <Input label={ui.from} type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
+    <Input label={ui.to} type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+    <Select label={ui.kind} value={kind} onChange={setKind} options={[{ value: '', label: ui.allKinds }, ...Object.entries(kindLabels).map(([value, label]) => ({ value, label }))]} />
+    <Select label={ui.status} value={status} onChange={setStatus} options={[{ value: '', label: ui.allStatuses }, ...Object.entries(statusLabels).map(([value, label]) => ({ value, label }))]} />
+    <Select label={ui.source} value={source} onChange={setSource} options={[{ value: '', label: ui.allSources }, { value: 'whatsapp', label: ui.whatsApp }, { value: 'app', label: ui.app }, { value: 'other', label: ui.other }]} />
+  </div>;
 }
 
 function RecordRow({
@@ -239,8 +252,8 @@ function RecordRow({
             <span className="font-medium text-ink">{kindLabels[record.kind]}</span>
             <StatusBadge status={record.status} />
             {record.source === 'whatsapp' && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
-                <MessageCircle className="h-3 w-3" /> WhatsApp
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-ink-muted" aria-label={ui.whatsApp} title={ui.whatsApp}>
+                <WhatsappIcon className="h-4 w-4" /> {ui.whatsApp}
               </span>
             )}
           </div>
@@ -268,9 +281,8 @@ function RecordRow({
 }
 
 function StatusBadge({ status }: { status: DailyRecordStatus }) {
-  const style = status === 'confirmed'
-    ? 'bg-green-50 text-green-700'
-    : status === 'voided'
+  if (status === 'confirmed') return <span className="inline-flex items-center text-emerald-600" aria-label={ui.confirmed} title={ui.confirmed}><CheckCircle2 className="h-5 w-5" strokeWidth={3} aria-hidden="true" /><span className="sr-only">{ui.confirmed}</span></span>;
+  const style = status === 'voided'
       ? 'bg-red-50 text-red-700'
       : 'bg-amber-50 text-amber-700';
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${style}`}>{statusLabels[status]}</span>;
@@ -314,24 +326,26 @@ function RecordDetailsModal({
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium text-ink">{kindLabels[record.kind]}</span>
         <StatusBadge status={record.status} />
-        {record.source === 'whatsapp' && <span className="text-xs font-medium text-green-700">WhatsApp source</span>}
+        {record.source === 'whatsapp' && <span className="inline-flex items-center gap-1 text-xs font-medium text-ink-muted" aria-label={ui.whatsApp} title={ui.whatsApp}><WhatsappIcon className="h-4 w-4" />{ui.whatsApp}</span>}
       </div>
       <div className="mt-4 rounded-lg bg-surface-muted p-4">
-        <p className="text-xs uppercase tracking-wide text-ink-muted">Total</p>
+        <p className="text-xs uppercase tracking-wide text-ink-muted">{ui.total}</p>
         <p className="mt-1 font-display text-2xl font-semibold text-ink">{formatMoney(record.amount, record.currency)}</p>
       </div>
       <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-        <Detail label="Description" value={record.description || '—'} />
-        <Detail label="Party" value={record.party_name || '—'} />
-        <Detail label="Recorded by" value={record.recordedByName || record.recorded_by || '—'} />
-        <Detail label="Occurred" value={formatDateTime(record.occurred_at)} />
-        <Detail label="Created" value={formatDateTime(record.created_at)} />
-        <Detail label="Source" value={record.source === 'whatsapp' ? `WhatsApp · ${record.source_message_id || 'message'}` : record.source} />
+        <Detail label={ui.descriptionLabel} value={record.description || '—'} />
+        <Detail label={ui.party} value={record.party_name || '—'} />
+        <Detail label={ui.recordedBy} value={record.recordedByName || record.recorded_by || '—'} />
+        <Detail label={ui.occurred} value={`${formatLongDate(record.occurred_at, lang)} · ${formatDateTime(record.occurred_at)}`} />
+        <Detail label={ui.created} value={formatDateTime(record.created_at)} />
+        <Detail label={ui.source} value={record.source === 'whatsapp' ? ui.whatsApp : record.source === 'app' ? ui.app : record.source} />
+        {record.status === 'voided' && <Detail label={ui.voidReason} value={record.void_reason || '—'} />}
       </dl>
+      <p className="mt-2 text-xs text-ink-muted">{partyHint}</p>
 
       {record.lines.length > 0 && (
         <section className="mt-5">
-          <h3 className="text-sm font-semibold text-ink">Calculation breakdown</h3>
+          <h3 className="text-sm font-semibold text-ink">{ui.calculation}</h3>
           <div className="mt-2 divide-y divide-surface-border rounded-lg border border-surface-border">
             {record.lines.map((line) => (
               <div key={line.id} className="flex items-center justify-between gap-3 p-3 text-sm">
@@ -344,8 +358,8 @@ function RecordDetailsModal({
       )}
 
       <section className="mt-5">
-        <h3 className="text-sm font-semibold text-ink">Audit history</h3>
-        {auditError ? <p className="mt-2 text-sm text-red-600">{auditError}</p> : audit.length === 0 ? <p className="mt-2 text-sm text-ink-muted">Loading history…</p> : (
+        <h3 className="text-sm font-semibold text-ink">{ui.audit}</h3>
+        {auditError ? <p className="mt-2 text-sm text-red-600">{auditError}</p> : audit.length === 0 ? <p className="mt-2 text-sm text-ink-muted">{ui.historyLoading}</p> : (
           <ol className="mt-2 space-y-3 border-l border-surface-border pl-4">
             {audit.map((entry) => (
               <li key={entry.id} className="relative text-sm">

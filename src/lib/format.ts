@@ -19,6 +19,15 @@ export function formatDateTime(iso: string | null | undefined): string {
   return new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+export function formatLongDate(iso: string | null | undefined, lang: 'en' | 'sw' = 'en'): string {
+  if (!iso) return '—';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString(lang === 'sw' ? 'sw-TZ' : 'en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+}
+
 // Just the clock time ("14:07") — used to show when a receipt was uploaded.
 export function formatTime(iso: string | null | undefined): string {
   if (!iso) return '';

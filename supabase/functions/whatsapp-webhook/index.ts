@@ -50,8 +50,10 @@ import {
   parseDailyRecordPriceChoice,
   parseDailyRecord,
   resumeDailyRecordClarification,
+  detectDailyRecordPriceAnomalies,
   type DailyRecordClarification,
   type DailyRecordConversation,
+  type ParsedDailyRecord,
 } from '../_shared/whatsappDailyRecords.ts';
 import {
   advanceOnboarding,
@@ -135,6 +137,18 @@ async function createDailyRecordDraft(
     p_lines: record.lines,
   });
   return { id: data ? String(data) : null, error };
+}
+
+async function addHistoricalPriceWarnings(db: Admin, companyId: string, record: ParsedDailyRecord): Promise<ParsedDailyRecord> {
+  if (record.lines.length === 0) return record;
+  const { data: historicalRecords } = await db.from('daily_records')
+    .select('id').eq('company_id', companyId).eq('status', 'confirmed').order('occurred_at', { ascending: false }).limit(200);
+  const ids = (historicalRecords ?? []).map((row) => String((row as { id: string }).id));
+  if (ids.length === 0) return record;
+  const { data: historicalLines } = await db.from('daily_record_lines')
+    .select('description, unit_amount').in('daily_record_id', ids).limit(1000);
+  const warnings = detectDailyRecordPriceAnomalies(record, (historicalLines ?? []) as { description: string; unit_amount: number }[]);
+  return warnings.length > 0 ? { ...record, warnings } : record;
 }
 
 async function activeProjects(db: Admin, companyId: string): Promise<{ id: string; name: string }[]> {
@@ -693,11 +707,12 @@ Deno.serve(async (req) => {
           if (choice) {
             const resumed = resumeDailyRecordClarification(dailyClarification, choice);
             if (resumed.kind === 'parsed') {
+              const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, resumed.record);
               const created = await createDailyRecordDraft(
                 db,
                 identity,
                 dailyClarification.sourceMessageId ?? waMessageId,
-                resumed.record,
+                guardedRecord,
                 lang,
               );
               if (created.error || !created.id) {
@@ -712,7 +727,7 @@ Deno.serve(async (req) => {
                 kind: 'daily_record_confirmation',
                 dailyRecordId: created.id,
                 sourceMessageId: dailyClarification.sourceMessageId ?? waMessageId,
-                record: resumed.record,
+                record: guardedRecord,
               };
               await db.from('whatsapp_conversations').upsert({
                 identity_id: identity.id,
@@ -724,7 +739,7 @@ Deno.serve(async (req) => {
                 expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
                 updated_at: new Date().toISOString(),
               }, { onConflict: 'identity_id' });
-              await replyQuietly(phone, buildDailyRecordConfirmation(resumed.record, lang));
+              await replyQuietly(phone, buildDailyRecordConfirmation(guardedRecord, lang));
               await audit(db, identity, waMessageId, 'daily_record', 'clarification_resumed', 'pending');
               await finish('skipped');
               continue;
@@ -792,17 +807,18 @@ Deno.serve(async (req) => {
             if (!parsed.draft && parsed.reason !== 'ambiguity') {
               const aiRecord = await interpretDailyRecordWithAi(body, lang);
               if (aiRecord) {
-                const created = await createDailyRecordDraft(db, identity, waMessageId, aiRecord, lang);
+                const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, aiRecord);
+                const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang);
                 if (!created.error && created.id) {
                   const state: DailyRecordConversation = {
-                    kind: 'daily_record_confirmation', dailyRecordId: created.id, sourceMessageId: waMessageId, record: aiRecord,
+                    kind: 'daily_record_confirmation', dailyRecordId: created.id, sourceMessageId: waMessageId, record: guardedRecord,
                   };
                   await db.from('whatsapp_conversations').upsert({
                     identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
                     awaiting: 'payment_source', receipt_id: null, options: state,
                     expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
                   }, { onConflict: 'identity_id' });
-                  await replyQuietly(phone, buildDailyRecordConfirmation(aiRecord, lang));
+                  await replyQuietly(phone, buildDailyRecordConfirmation(guardedRecord, lang));
                   await audit(db, identity, waMessageId, 'daily_record_ai_fallback', 'create', 'pending');
                   await finish('skipped');
                   continue;
@@ -815,7 +831,8 @@ Deno.serve(async (req) => {
             continue;
           }
           if (parsed.kind === 'parsed') {
-            const created = await createDailyRecordDraft(db, identity, waMessageId, parsed.record, lang);
+            const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, parsed.record);
+            const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang);
             if (created.error || !created.id) {
               await replyQuietly(phone, lang === 'sw'
                 ? 'Sikuweza kuhifadhi draft hii. Tafadhali jaribu tena.'
@@ -828,7 +845,7 @@ Deno.serve(async (req) => {
               kind: 'daily_record_confirmation',
               dailyRecordId: created.id,
               sourceMessageId: waMessageId,
-              record: parsed.record,
+              record: guardedRecord,
             };
             await db.from('whatsapp_conversations').upsert({
               identity_id: identity.id,
@@ -840,7 +857,7 @@ Deno.serve(async (req) => {
               expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
               updated_at: new Date().toISOString(),
             }, { onConflict: 'identity_id' });
-            await replyQuietly(phone, buildDailyRecordConfirmation(parsed.record, lang));
+            await replyQuietly(phone, buildDailyRecordConfirmation(guardedRecord, lang));
             await audit(db, identity, waMessageId, 'daily_record', 'create', 'pending');
             await finish('skipped');
             continue;
