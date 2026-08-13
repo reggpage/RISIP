@@ -51,11 +51,21 @@ import {
   parseDailyRecordPriceChoice,
   parseDailyRecord,
   resumeDailyRecordClarification,
+  splitWhatsAppText,
   detectDailyRecordPriceAnomalies,
   type DailyRecordClarification,
   type DailyRecordConversation,
   type ParsedDailyRecord,
 } from '../_shared/whatsappDailyRecords.ts';
+import {
+  buildDailyRecordBatchConfirmation,
+  buildDailyRecordBatchConfirmed,
+  buildDailyRecordBatchPending,
+  parseDailyRecordBatch,
+  resumeDailyRecordBatchClarification,
+  type DailyRecordBatchClarification,
+  type DailyRecordBatchConversation,
+} from '../_shared/whatsappDailyRecordBatch.ts';
 import {
   advanceOnboarding,
   businessList,
@@ -299,6 +309,29 @@ async function createDailyRecordDraft(
     p_lines: record.lines,
   });
   return { id: data ? String(data) : null, error };
+}
+
+async function createDailyRecordBatchDrafts(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  messageId: string,
+  records: ParsedDailyRecord[],
+  lang: Lang,
+): Promise<{ ids: string[]; error: unknown }> {
+  const payload = records.map((record) => ({
+    kind: record.kind,
+    amount: record.amount,
+    party_name: record.partyName,
+    description: dailyRecordStorageDescription(record, lang),
+    lines: record.lines,
+  }));
+  const { data, error } = await db.rpc('wa_create_daily_record_batch_drafts', {
+    p_profile_id: identity.profile_id,
+    p_company_id: identity.company_id,
+    p_source_message_id: messageId,
+    p_records: payload,
+  });
+  return { ids: Array.isArray(data) ? data.map(String) : [], error };
 }
 
 async function addHistoricalPriceWarnings(db: Admin, companyId: string, record: ParsedDailyRecord): Promise<ParsedDailyRecord> {
@@ -877,6 +910,16 @@ async function replyDailyRecordConfirmationQuietly(
   }
 }
 
+async function replyDailyRecordBatchConfirmationQuietly(
+  to: string,
+  records: ParsedDailyRecord[],
+  lang: Lang,
+): Promise<void> {
+  for (const chunk of splitWhatsAppText(buildDailyRecordBatchConfirmation(records, lang))) {
+    await replyQuietly(to, chunk);
+  }
+}
+
 /**
  * Bind a verified WhatsApp number to a profile using a single-use token.
  * The token is compared by hash, so the plaintext never has to be stored.
@@ -1278,6 +1321,14 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<DailyRecordClarification> | null)?.kind === 'daily_record_clarification'
           ? convo.options as DailyRecordClarification
           : null;
+        const dailyBatchConversation = convo?.awaiting === 'payment_source'
+          && (convo.options as Partial<DailyRecordBatchConversation> | null)?.kind === 'daily_record_batch_confirmation'
+          ? convo.options as DailyRecordBatchConversation
+          : null;
+        const dailyBatchClarification = convo?.awaiting === 'payment_source'
+          && (convo.options as Partial<DailyRecordBatchClarification> | null)?.kind === 'daily_record_batch_clarification'
+          ? convo.options as DailyRecordBatchClarification
+          : null;
         // A buying price awaiting NDIYO. Its own slot, so it can never be
         // confused with a daily-record draft sitting in payment_source.
         const costConversation = convo?.awaiting === 'product_cost' && convo.options
@@ -1291,7 +1342,20 @@ Deno.serve(async (req) => {
         // RPC used by HAPANA/NO. Clarification-only state has no DB draft yet,
         // so it is safely cleared without creating a ledger event.
         if (isStopCommand(body)) {
-          if (dailyConversation) {
+          if (dailyBatchConversation) {
+            const { error } = await db.rpc('wa_cancel_daily_record_batch', {
+              p_profile_id: identity.profile_id,
+              p_company_id: identity.company_id,
+              p_daily_record_ids: dailyBatchConversation.dailyRecordIds,
+              p_reason: 'WhatsApp user cancelled daily record batch',
+            });
+            await clearConversation(db, identity.id as string);
+            await clearAssistantMemory(db, identity);
+            await replyQuietly(phone, error
+              ? buildDailyRecordBatchPending(dailyBatchConversation.records, lang)
+              : (lang === 'sw' ? 'Sawa. Rekodi zote za ujumbe huu zimeghairiwa.' : 'Okay. All records from this message were cancelled.'));
+            await audit(db, identity, waMessageId, 'cancel_action', 'daily_record_batch', error ? 'failed' : 'voided');
+          } else if (dailyConversation) {
             const { error } = await db.rpc('wa_cancel_daily_record_draft', {
               p_profile_id: identity.profile_id,
               p_company_id: identity.company_id,
@@ -1308,6 +1372,67 @@ Deno.serve(async (req) => {
             await replyQuietly(phone, t('cancelled', lang));
             await audit(db, identity, waMessageId, 'cancel_action', 'clear_state', 'applied');
           }
+          await finish('skipped');
+          continue;
+        }
+        if (dailyBatchClarification) {
+          if (isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, lang === 'sw'
+              ? 'Sawa. Ujumbe wote umeghairiwa; hakuna rekodi mpya iliyohifadhiwa.'
+              : 'Okay. The whole message was cancelled; no new record was saved.');
+            await audit(db, identity, waMessageId, 'daily_record_batch', 'clarification_cancel', 'applied');
+            await finish('skipped');
+            continue;
+          }
+          const resumed = resumeDailyRecordBatchClarification(dailyBatchClarification, body ?? '');
+          if (resumed.kind === 'unsupported_payable' || resumed.kind === 'clarify') {
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'payment_source',
+              receipt_id: null,
+              options: resumed.state,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await replyQuietly(phone, resumed.kind === 'unsupported_payable' ? resumed.message : resumed.question);
+            await audit(db, identity, waMessageId, 'daily_record_batch', 'clarification', resumed.kind);
+            await finish('skipped');
+            continue;
+          }
+          const guardedRecords = await Promise.all(resumed.records.map((record) =>
+            addHistoricalPriceWarnings(db, identity.company_id, record)));
+          const created = await createDailyRecordBatchDrafts(
+            db, identity, dailyBatchClarification.sourceMessageId ?? waMessageId, guardedRecords, lang,
+          );
+          if (created.error || created.ids.length !== guardedRecords.length) {
+            await replyQuietly(phone, lang === 'sw'
+              ? 'Sikuweza kuandaa rekodi hizi pamoja. Hakuna rekodi mpya iliyohifadhiwa; tafadhali jaribu tena.'
+              : 'I could not prepare these records together. No new record was saved; please try again.');
+            await audit(db, identity, waMessageId, 'daily_record_batch', 'create', 'failed');
+            await finish('skipped', 'daily_record_batch_create_failed');
+            continue;
+          }
+          const state: DailyRecordBatchConversation = {
+            kind: 'daily_record_batch_confirmation',
+            sourceMessageId: dailyBatchClarification.sourceMessageId ?? waMessageId,
+            dailyRecordIds: created.ids,
+            records: guardedRecords,
+          };
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'payment_source',
+            receipt_id: null,
+            options: state,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          await replyDailyRecordBatchConfirmationQuietly(phone, guardedRecords, lang);
+          await audit(db, identity, waMessageId, 'daily_record_batch', 'create', 'pending');
           await finish('skipped');
           continue;
         }
@@ -1364,6 +1489,40 @@ Deno.serve(async (req) => {
           await replyQuietly(phone, lang === 'sw'
             ? 'Jibu *bei ya kila moja* au *jumla* ili niendelee na mauzo haya.'
             : 'Reply *unit price* or *total* so I can continue this sale.');
+          await finish('skipped');
+          continue;
+        }
+        if (dailyBatchConversation) {
+          if (isDailyRecordConfirmation(body)) {
+            const { error } = await db.rpc('wa_confirm_daily_record_batch', {
+              p_profile_id: identity.profile_id,
+              p_company_id: identity.company_id,
+              p_daily_record_ids: dailyBatchConversation.dailyRecordIds,
+            });
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, error
+              ? buildDailyRecordBatchPending(dailyBatchConversation.records, lang)
+              : buildDailyRecordBatchConfirmed(dailyBatchConversation.records, lang));
+            await audit(db, identity, waMessageId, 'daily_record_batch', 'confirm', error ? 'pending' : 'applied');
+            await finish('skipped');
+            continue;
+          }
+          if (isDailyRecordRejection(body)) {
+            const { error } = await db.rpc('wa_cancel_daily_record_batch', {
+              p_profile_id: identity.profile_id,
+              p_company_id: identity.company_id,
+              p_daily_record_ids: dailyBatchConversation.dailyRecordIds,
+              p_reason: 'WhatsApp user declined daily record batch',
+            });
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, error
+              ? buildDailyRecordBatchPending(dailyBatchConversation.records, lang)
+              : (lang === 'sw' ? 'Sawa. Rekodi zote za ujumbe huu zimeghairiwa.' : 'Okay. All records from this message were cancelled.'));
+            await audit(db, identity, waMessageId, 'daily_record_batch', 'cancel', error ? 'failed' : 'applied');
+            await finish('skipped');
+            continue;
+          }
+          await replyDailyRecordBatchConfirmationQuietly(phone, dailyBatchConversation.records, lang);
           await finish('skipped');
           continue;
         }
@@ -1582,6 +1741,60 @@ Deno.serve(async (req) => {
         }
 
         if (isDailyRecordCandidate(body)) {
+          const batch = parseDailyRecordBatch(body, lang);
+          if (batch.kind === 'clarify') {
+            const state: DailyRecordBatchClarification = {
+              ...batch.state,
+              sourceMessageId: waMessageId,
+            };
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'payment_source',
+              receipt_id: null,
+              options: state,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await replyQuietly(phone, batch.question);
+            await audit(db, identity, waMessageId, 'daily_record_batch', 'clarify', 'pending');
+            await finish('skipped');
+            continue;
+          }
+          if (batch.kind === 'parsed') {
+            const guardedRecords = await Promise.all(batch.records.map((record) =>
+              addHistoricalPriceWarnings(db, identity.company_id, record)));
+            const created = await createDailyRecordBatchDrafts(db, identity, waMessageId, guardedRecords, lang);
+            if (created.error || created.ids.length !== guardedRecords.length) {
+              await replyQuietly(phone, lang === 'sw'
+                ? 'Sikuweza kuandaa rekodi hizi pamoja. Hakuna rekodi mpya iliyohifadhiwa; tafadhali jaribu tena.'
+                : 'I could not prepare these records together. No new record was saved; please try again.');
+              await audit(db, identity, waMessageId, 'daily_record_batch', 'create', 'failed');
+              await finish('skipped', 'daily_record_batch_create_failed');
+              continue;
+            }
+            const state: DailyRecordBatchConversation = {
+              kind: 'daily_record_batch_confirmation',
+              sourceMessageId: waMessageId,
+              dailyRecordIds: created.ids,
+              records: guardedRecords,
+            };
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'payment_source',
+              receipt_id: null,
+              options: state,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await replyDailyRecordBatchConfirmationQuietly(phone, guardedRecords, lang);
+            await audit(db, identity, waMessageId, 'daily_record_batch', 'create', 'pending');
+            await finish('skipped');
+            continue;
+          }
           const parsed = parseDailyRecord(body, lang);
           if (parsed.kind === 'clarify') {
             if (parsed.draft) {

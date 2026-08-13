@@ -548,6 +548,10 @@ export function buildDailyRecordConfirmationChunks(
   maxChars = 3200,
 ): string[] {
   const text = buildDailyRecordConfirmation(record, lang);
+  return splitWhatsAppText(text, maxChars);
+}
+
+export function splitWhatsAppText(text: string, maxChars = 3200): string[] {
   if (text.length <= maxChars) return [text];
 
   const chunks: string[] = [];
