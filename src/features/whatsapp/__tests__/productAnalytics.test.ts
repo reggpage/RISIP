@@ -16,8 +16,16 @@ const lines: ProductSaleLine[] = [
 describe('WhatsApp product analytics', () => {
   it('distinguishes volume, revenue, and margin requests', () => {
     expect(parseProductAnalyticsRequest('bidhaa gani inauza zaidi?')?.rankBy).toBe('quantity');
+    expect(parseProductAnalyticsRequest('Bidhaa gani inauza sana leo')?.rankBy).toBe('quantity');
+    expect(parseProductAnalyticsRequest('Bidha gani inauza sana leo')?.rankBy).toBe('quantity');
     expect(parseProductAnalyticsRequest('which product gives me the most revenue')?.rankBy).toBe('revenue');
     expect(parseProductAnalyticsRequest('bidhaa gani ilinipa faida kubwa?')?.rankBy).toBe('margin');
+  });
+
+  it('limits a named-product question to that product', () => {
+    expect(parseProductAnalyticsRequest('Nguvu ya sala inauza ngapi leo?')).toMatchObject({
+      rankBy: 'quantity', period: 'today', compareNames: ['nguvu ya sala'],
+    });
   });
 
   it('does not steal an ordinary sale message that mentions a product', () => {
