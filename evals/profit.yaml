@@ -1,0 +1,239 @@
+# Risip AI — evaluation set: profit (group 79–88), plus what building it exposed
+#
+# The trap in this group is a word. A trader says "faida" meaning what is left in
+# the till tonight. An accountant means sales minus the cost of what was sold.
+# Risip can now answer the second one — but only for products whose buying price
+# the trader has told us, and only as an estimate. Saying "faida" without saying
+# "makisio" turns a helpful number into a false one.
+#
+# Two numbers exist, and they must never be swapped:
+#   cash movement    = sales + payments − expenses − stock purchases   (the till)
+#   estimated profit = sales − COGS − expenses                         (the trade)
+# Subtracting stock AND cogs would count the same goods twice.
+#
+# Bar for this group: 10/10, and every must_not holds.
+
+fixtures:
+  # unga costs 900/kilo, sold 10 kilos at 2,500. Expenses 5,000.
+  fully_costed:
+    product_costs:
+      - { product: "unga", unit_cost: 900, unit: "kilo" }
+    daily_records:
+      - { kind: sale,    amount: 25000, status: confirmed,
+          lines: [{ description: "unga", quantity: 10, unit_amount: 2500 }] }
+      - { kind: expense, amount: 5000,  status: confirmed }
+    # sales 25,000 − cogs 9,000 − expenses 5,000 = 11,000 · coverage 1.0
+
+  # Same, plus a restock of 400,000 on the same day.
+  costed_with_restock:
+    product_costs:
+      - { product: "unga", unit_cost: 900, unit: "kilo" }
+    daily_records:
+      - { kind: sale,           amount: 25000,  status: confirmed,
+          lines: [{ description: "unga", quantity: 10, unit_amount: 2500 }] }
+      - { kind: expense,        amount: 5000,   status: confirmed }
+      - { kind: stock_purchase, amount: 400000, status: confirmed }
+    # estimated profit still 11,000 · cash movement −380,000
+
+  # sukari has no price recorded.
+  partly_costed:
+    product_costs:
+      - { product: "unga", unit_cost: 900, unit: "kilo" }
+    daily_records:
+      - { kind: sale, amount: 25000, status: confirmed,
+          lines: [{ description: "unga",   quantity: 10, unit_amount: 2500 }] }
+      - { kind: sale, amount: 18000, status: confirmed,
+          lines: [{ description: "sukari", quantity: 6,  unit_amount: 3000 }] }
+    # coverage 0.58
+
+  # A lump sale with no lines: nothing to price at all.
+  no_costs_at_all:
+    product_costs: []
+    daily_records:
+      - { kind: sale,    amount: 150000, status: confirmed }
+      - { kind: expense, amount: 20000,  status: confirmed }
+    # coverage 0
+
+  # Price rose mid-period: 900 in week 1, 1,100 from week 2.
+  price_changed:
+    product_costs:
+      - { product: "unga", unit_cost: 900,  effective_days_ago: 30 }
+      - { product: "unga", unit_cost: 1100, effective_days_ago: 7 }
+    daily_records:
+      - { kind: sale, amount: 25000, status: confirmed, days_ago: 20,
+          lines: [{ description: "unga", quantity: 10, unit_amount: 2500 }] }
+      - { kind: sale, amount: 25000, status: confirmed, days_ago: 2,
+          lines: [{ description: "unga", quantity: 10, unit_amount: 2500 }] }
+    # the old sale must cost 9,000 and the new one 11,000
+
+cases:
+
+# ── Asking for profit when we can actually answer ───────────────────────────
+
+  - id: 79
+    say: "nimepata faida kiasi gani leo?"
+    lang: sw
+    fixture: fully_costed
+    expect_tool: daily_profit_estimate
+    expect_period: today
+    must_contain: ["11,000", "makisio"]
+    must_not: [say_faida_without_makisio, invent_numbers]
+    # "makisio" is not decoration. The number rests on prices the trader typed and
+    # on every sale being itemised, and neither is guaranteed.
+
+  - id: 80
+    say: "faida ya mwezi huu"
+    lang: sw
+    fixture: fully_costed
+    expect_tool: daily_profit_estimate
+    expect_period: month
+
+  - id: 81
+    say: "profit ya wiki hii"
+    lang: en
+    fixture: fully_costed
+    expect_tool: daily_profit_estimate
+    expect_period: week
+    must_reply_in: en
+    must_contain: ["estimate"]
+
+  - id: 85
+    say: "faida halisi ni kiasi gani"
+    lang: sw
+    fixture: fully_costed
+    expect_tool: daily_profit_estimate
+    # "halisi" means exact. We cannot give exact, so we must say so rather than
+    # let the word pass unchallenged.
+    must_contain: ["makisio"]
+    must_not: [claim_exact_profit]
+
+  - id: 88
+    say: "faida ya leo baada ya kutoa matumizi"
+    lang: sw
+    fixture: fully_costed
+    expect_tool: daily_profit_estimate
+    must_contain: ["5,000"]     # expenses shown, since they asked about them
+
+# ── Profit vs loss, and the restock trap ────────────────────────────────────
+
+  - id: 82
+    say: "je ninapata faida au hasara?"
+    lang: sw
+    fixture: fully_costed
+    expect_tool: daily_profit_estimate
+    must_contain: ["faida"]
+
+  - id: 84
+    say: "nimepoteza pesa mwezi huu?"
+    lang: sw
+    fixture: costed_with_restock
+    expect_tool: daily_profit_estimate
+    must_contain: ["11,000"]
+    must_explain_restock: true
+    must_not: [report_loss_because_of_restock]
+    # The till is 380,000 down, but the trade made 11,000 and the rest is sugar on
+    # the shelf. Reporting that as a loss is the exact mistake 0077 was built to
+    # stop.
+
+  - id: 87
+    say: "gharama zimezidi mauzo?"
+    lang: sw
+    fixture: costed_with_restock
+    expect_tool: daily_profit_estimate
+    must_separate: [expenses, stock_purchases]
+    must_not: [merge_stock_into_expenses]
+
+  - id: 86
+    say: "je biashara inalipa?"
+    lang: sw
+    fixture: fully_costed
+    expect_tool: daily_profit_estimate
+    must_contain: ["makisio"]
+
+# ── Margin ──────────────────────────────────────────────────────────────────
+
+  - id: 83
+    say: "faida yangu ni ngapi baada ya gharama?"
+    lang: sw
+    fixture: fully_costed
+    expect_tool: daily_profit_estimate
+    must_contain: ["11,000"]
+
+# ── Honesty about what the estimate could not see ───────────────────────────
+
+  - id: 301
+    say: "faida ya leo"
+    lang: sw
+    fixture: partly_costed
+    expect_tool: daily_profit_estimate
+    must_name_missing_products: ["sukari"]
+    must_contain: ["sukari"]
+    must_not: [present_partial_profit_as_complete]
+    # Coverage is 58%: the number would be flattering, because sukari's cost is
+    # missing and so is counted as free.
+
+  - id: 302
+    say: "faida ya leo"
+    lang: sw
+    fixture: no_costs_at_all
+    expect_tool: daily_profit_estimate
+    must_refuse_number: true
+    must_offer: set_product_cost
+    must_not: ["130,000"]
+    # Coverage 0. sales − 0 − expenses is not an estimate of profit, it is the
+    # cash difference wearing the word "faida". Ask for a buying price instead.
+
+  - id: 303
+    say: "unga unanigharimu 900 kwa kilo"
+    lang: sw
+    fixture: no_costs_at_all
+    expect_tool: set_product_cost
+    expect_args: { name: "unga", unit_cost: 900, unit: "kilo" }
+    must_confirm: true
+
+  - id: 304
+    say: "unga sasa ni 1100 kwa kilo"
+    lang: sw
+    fixture: fully_costed
+    expect_tool: set_product_cost
+    must_contain: ["900", "1,100"]   # show what it was, not just "saved"
+    must_not: [overwrite_silently]
+
+  - id: 305
+    say: "faida ya mwezi huu"
+    lang: sw
+    fixture: price_changed
+    expect_tool: daily_profit_estimate
+    must_contain: ["20,000"]         # 25,000−9,000 + 25,000−11,000
+    must_not: ["18,000", "22,000"]   # neither price applied to both sales
+    # Each sale is costed at the price in force on its own day. Using today's
+    # price for last month's sales would quietly rewrite history.
+
+# ── The word that must never be borrowed ────────────────────────────────────
+
+  - id: 306
+    say: "leo nimepata kiasi gani?"
+    lang: sw
+    fixture: fully_costed
+    expect_tool: ai_business_summary
+    must_lead_with: sales
+    must_not: [answer_with_profit_only]
+    # "nimepata" is takings, not profit. Lead with 25,000, and offer the estimate.
+
+  - id: 307
+    say: "nionyeshe faida ya kila bidhaa"
+    lang: sw
+    fixture: fully_costed
+    expect_tool: null
+    must_contain: ["bado"]
+    must_not: [invent_per_product_profit]
+    # Per-product margin is computable but not built. Saying so is cheaper than
+    # a number nobody checked.
+
+  - id: 308
+    say: "faida ya leo"
+    lang: sw
+    fixture: fully_costed
+    simulate: tool_error
+    must_contain: ["sijaweza"]
+    must_not: [invent_numbers, answer_from_memory]
