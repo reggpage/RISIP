@@ -28,6 +28,7 @@ export type DailyRecordClarification = {
   sourceMessageId?: string;
   lang: Lang;
   sale: { description: string; quantity: number; amount: number };
+  sales?: Array<{ description: string; quantity: number; amount: number }>;
 };
 
 export type DailyRecordConversation = {
@@ -166,6 +167,33 @@ function parseSaleLines(payload: string): DailyRecordLine[] | null {
   if (parts.length === 0) return null;
   const lines = parts.map((part) => parseSwahiliUnitLine(part) ?? parseEnglishUnitLine(part));
   return lines.every(Boolean) ? lines as DailyRecordLine[] : null;
+}
+
+type AmbiguousSaleLine = { description: string; quantity: number; amount: number };
+
+function parseAmbiguousSaleLines(payload: string): AmbiguousSaleLine[] | null {
+  const parts = splitParts(payload);
+  if (parts.length === 0) return null;
+  const lines = parts.map((part) => {
+    const afterDescription = part.match(new RegExp('^(.+?)\\s+(' + QUANTITY_PATTERN + ')\\s+(' + MONEY_PATTERN + ')$', 'i'));
+    if (afterDescription) {
+      const quantity = Number(afterDescription[2]);
+      const amount = parseMoneyToken(afterDescription[3]);
+      return amount !== null && quantity > 0
+        ? { description: afterDescription[1].trim(), quantity, amount }
+        : null;
+    }
+    const beforeDescription = part.match(new RegExp('^(' + QUANTITY_PATTERN + ')\\s+(.+?)\\s+(' + MONEY_PATTERN + ')$', 'i'));
+    if (beforeDescription) {
+      const quantity = Number(beforeDescription[1]);
+      const amount = parseMoneyToken(beforeDescription[3]);
+      return amount !== null && quantity > 0
+        ? { description: beforeDescription[2].trim(), quantity, amount }
+        : null;
+    }
+    return null;
+  });
+  return lines.every(Boolean) ? lines as AmbiguousSaleLine[] : null;
 }
 
 function saleRecord(text: string): ParsedDailyRecord | null {
@@ -327,13 +355,15 @@ export function parseDailyRecord(text: string | null | undefined, lang: Lang = '
     return { kind: 'clarify', reason: 'amount', question: question('amount', lang) };
   }
   if (/\b(nimeuza|uza|sold|mauzo)\b/i.test(value) && tokens.length >= 2) {
-    const sale = value.match(/^(?:leo\s+)?(?:nimeuza|uza|sold)\s+(.+?)\s+([0-9]+)\s+([0-9][0-9,]*)$/i);
-    const amount = sale ? parseMoneyToken(sale[3]) : null;
-    const quantity = sale ? Number(sale[2]) : null;
-    const description = sale?.[1]?.trim() ?? '';
-    const draft = amount && quantity && quantity > 0 && description
-      ? { kind: 'daily_record_clarification' as const, originalText, lang, sale: { description, quantity, amount } }
+    const payload = value.replace(/^(?:leo\s+)?(?:nimeuza|uza|sold|mauzo)\s+/i, '');
+    const sales = parseAmbiguousSaleLines(payload);
+    const draft: DailyRecordClarification | undefined = sales && sales.length > 0
+      ? { kind: 'daily_record_clarification' as const, originalText, lang, sale: sales[0] }
       : undefined;
+    if (draft && sales) {
+      draft.sale = sales[0];
+      draft.sales = sales;
+    }
     return { kind: 'clarify', reason: 'ambiguity', question: question('ambiguity', lang), draft };
   }
   return { kind: 'clarify', reason: tokens.length ? 'message' : 'amount', question: question(tokens.length ? 'message' : 'amount', lang) };
@@ -352,15 +382,19 @@ export function resumeDailyRecordClarification(
   clarification: DailyRecordClarification,
   choice: DailyRecordPriceChoice,
 ): DailyRecordParse {
-  const { description, quantity, amount } = clarification.sale;
-  if (!Number.isFinite(quantity) || quantity <= 0 || !validAmount(amount)) {
+  const sales = clarification.sales ?? [clarification.sale];
+  if (sales.length === 0 || sales.some((sale) => !Number.isFinite(sale.quantity) || sale.quantity <= 0 || !validAmount(sale.amount))) {
     return { kind: 'clarify', reason: 'amount', question: question('amount', clarification.lang) };
   }
-  const unitAmount = choice === 'unit_price' ? amount : roundMoney(amount / quantity);
-  const total = choice === 'unit_price' ? roundMoney(quantity * amount) : amount;
+  const lines = sales.map(({ description, quantity, amount }) => ({
+    description,
+    quantity,
+    unit_amount: choice === 'unit_price' ? amount : roundMoney(amount / quantity),
+  }));
+  const total = roundMoney(lines.reduce((sum, line) => sum + lineTotal(line), 0));
   return enforceLimit({
     kind: 'sale', amount: total, partyName: null, description: null,
-    lines: [{ description, quantity, unit_amount: unitAmount }],
+    lines,
   }, clarification.lang);
 }
 

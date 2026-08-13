@@ -132,6 +132,15 @@ describe('deterministic WhatsApp daily-record parser', () => {
     });
   });
 
+  it('resumes every ambiguous sale line and recomputes the combined total', () => {
+    const ambiguous = parseDailyRecord('nimeuza madaftari 70 9000 - kalamu 9 500', 'sw');
+    expect(ambiguous.kind).toBe('clarify');
+    if (ambiguous.kind !== 'clarify' || !ambiguous.draft) return;
+    const resumed = resumeDailyRecordClarification(ambiguous.draft, 'unit_price');
+    expect(resumed).toMatchObject({ kind: 'parsed', record: { amount: 634500 } });
+    if (resumed.kind === 'parsed') expect(resumed.record.lines).toHaveLength(2);
+  });
+
   it('normalizes number words, @ prices, new lines, and separators while keeping names', () => {
     expect(parseDailyRecord('nimeuza madaftari saba kila moja @9,000', 'sw')).toMatchObject({
       kind: 'parsed', record: { amount: 63000, lines: [{ description: 'madaftari', quantity: 7, unit_amount: 9000 }] },
