@@ -200,9 +200,9 @@ export function t(key: keyof typeof T, lang: Lang): string {
   return T[key][lang];
 }
 
-function money(amount: number | null | undefined): string | null {
+function money(amount: number | null | undefined, lang: Lang): string | null {
   if (amount === null || amount === undefined || !Number.isFinite(Number(amount))) return null;
-  return `TZS ${Number(amount).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+  return `${lang === 'sw' ? 'TSh' : 'TZS'} ${Number(amount).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 }
 
 /**
@@ -226,7 +226,7 @@ export function buildReceiptReplyV2(input: {
   lines.push(lang === 'sw' ? 'Risiti imepokelewa.' : 'Receipt received.');
   lines.push('');
   if (input.vendor) lines.push(`${lang === 'sw' ? 'Muuzaji' : 'Merchant'}: ${input.vendor}`);
-  const total = money(input.total);
+  const total = money(input.total, lang);
   if (total) lines.push(`${lang === 'sw' ? 'Kiasi' : 'Amount'}: ${total}`);
   if (input.projectName) lines.push(`${lang === 'sw' ? 'Mradi' : 'Project'}: ${input.projectName}`);
   lines.push('');

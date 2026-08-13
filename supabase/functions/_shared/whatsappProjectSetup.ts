@@ -30,7 +30,7 @@ export function projectSetupConfirmation(lang: Lang, projectName: string): strin
 
 export function projectSetupCreatedReply(lang: Lang, projectName: string): string {
   return lang === 'sw'
-    ? `Project "${projectName}" iko tayari. Ninasindika risiti yako sasa.`
+    ? `Project "${projectName}" iko tayari. Nachambua risiti yako sasa.`
     : `Project "${projectName}" is ready. I am processing your receipt now.`;
 }
 

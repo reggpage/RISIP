@@ -5,6 +5,7 @@ import {
   parseProjectSetupChoice,
   parseProjectSetupConfirmation,
   projectSetupConfirmation,
+  projectSetupCreatedReply,
   projectSetupPrompt,
   sanitizeProjectName,
 } from '../../../../supabase/functions/_shared/whatsappProjectSetup';
@@ -41,5 +42,10 @@ describe('WhatsApp project setup', () => {
     expect(canCreateProject('owner')).toBe(true);
     expect(canCreateProject('accountant')).toBe(true);
     expect(canCreateProject('worker')).toBe(false);
+  });
+
+  it('uses the polished Kiswahili processing copy', () => {
+    expect(projectSetupCreatedReply('sw', 'General')).toContain('Nachambua risiti yako sasa');
+    expect(projectSetupCreatedReply('sw', 'General')).not.toContain('Ninasindika');
   });
 });

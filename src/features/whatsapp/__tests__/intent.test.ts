@@ -195,6 +195,11 @@ describe('buildReceiptReplyV2 wording', () => {
     expect(buildReceiptReplyV2({ ...base, lang: 'sw', needsProject: false })).toContain('uwasilishe kwa timu ya fedha');
   });
 
+  it('uses TSh in Swahili amount replies and TZS in English', () => {
+    expect(buildReceiptReplyV2({ ...base, lang: 'sw', needsProject: false })).toContain('TSh 183,024');
+    expect(buildReceiptReplyV2({ ...base, lang: 'en', needsProject: false })).toContain('TZS 183,024');
+  });
+
   it('still produces a usable message when extraction found nothing', () => {
     const reply = buildReceiptReplyV2({ vendor: null, total: null, lang: 'sw', needsProject: false, reviewUrl: 'https://x.test' });
     expect(reply).toContain('Risiti imepokelewa.');
