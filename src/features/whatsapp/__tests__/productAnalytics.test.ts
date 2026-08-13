@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   aggregateProducts,
   parseProductAnalyticsRequest,
+  parseProductAnalyticsFollowUp,
   periodStart,
   productAnalyticsReply,
   rankProducts,
@@ -18,8 +19,21 @@ describe('WhatsApp product analytics', () => {
     expect(parseProductAnalyticsRequest('bidhaa gani inauza zaidi?')?.rankBy).toBe('quantity');
     expect(parseProductAnalyticsRequest('Bidhaa gani inauza sana leo')?.rankBy).toBe('quantity');
     expect(parseProductAnalyticsRequest('Bidha gani inauza sana leo')?.rankBy).toBe('quantity');
+    expect(parseProductAnalyticsRequest('What sold the most today')).toMatchObject({ rankBy: 'quantity', period: 'today' });
+    expect(parseProductAnalyticsRequest('Nguvu ya sala imeuzwa ngapi leo')).toMatchObject({ compareNames: ['nguvu ya sala'] });
     expect(parseProductAnalyticsRequest('which product gives me the most revenue')?.rankBy).toBe('revenue');
     expect(parseProductAnalyticsRequest('bidhaa gani ilinipa faida kubwa?')?.rankBy).toBe('margin');
+  });
+
+  it('continues the previous product question when a pronoun is used', () => {
+    const context = {
+      kind: 'product_analytics_context' as const,
+      request: { rankBy: 'quantity' as const, period: 'today' as const, compareNames: ['nguvu ya sala'] },
+      focusNames: ['nguvu ya sala'],
+    };
+    expect(parseProductAnalyticsFollowUp('Jumla yake?', context)).toEqual({ rankBy: 'revenue', period: 'today', compareNames: ['nguvu ya sala'] });
+    expect(parseProductAnalyticsFollowUp('Faida yake?', context)).toEqual({ rankBy: 'margin', period: 'today', compareNames: ['nguvu ya sala'] });
+    expect(parseProductAnalyticsFollowUp('Wiki hii je?', context)).toEqual({ rankBy: 'quantity', period: 'week', compareNames: ['nguvu ya sala'] });
   });
 
   it('limits a named-product question to that product', () => {
@@ -41,6 +55,10 @@ describe('WhatsApp product analytics', () => {
     expect(rankProducts(items, 'quantity')[0].product).toBe('soda');
     expect(rankProducts(items, 'revenue')[0].product).toBe('soda');
     expect(rankProducts(items, 'margin')[0]).toMatchObject({ product: 'unga', margin: 48000, costed: true });
+  });
+
+  it('removes list punctuation from stored product descriptions', () => {
+    expect(aggregateProducts([{ description: '- nguvu ya sala', quantity: 7, lineTotal: 63000, occurredAt: '2026-08-13T08:00:00Z' }], [])[0].product).toBe('nguvu ya sala');
   });
 
   it('does not rank an uncosted product as profitable', () => {

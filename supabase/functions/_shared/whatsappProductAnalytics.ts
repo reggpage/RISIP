@@ -9,6 +9,12 @@ export type ProductAnalyticsRequest = {
   compareNames: string[];
 };
 
+export type ProductAnalyticsContext = {
+  kind: 'product_analytics_context';
+  request: ProductAnalyticsRequest;
+  focusNames: string[];
+};
+
 export type ProductSaleLine = {
   description: string;
   quantity: number;
@@ -35,7 +41,7 @@ const clean = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N} ]/gu,
 export function parseProductAnalyticsRequest(text: string | null | undefined): ProductAnalyticsRequest | null {
   const value = clean(text ?? '');
   if (!value) return null;
-  const asksProduct = /(?:\b(?:bidhaa|bidha|product|products)\b.*\b(?:gani|which|inauza|inauzika|selling|sold|faida|profit|revenue|mapato)\b)|(?:\b(?:inauza zaidi|inauza sana|inauza ngapi|inauzika sana|best selling|top)\b)/.test(value);
+  const asksProduct = /(?:\b(?:bidhaa|bidha|product|products)\b.*\b(?:gani|which|inauza|inauzika|imeuzwa|iliuzwa|selling|sold|faida|profit|revenue|mapato)\b)|(?:\b(?:inauza zaidi|inauza sana|inauza ngapi|imeuzwa ngapi|iliuzwa ngapi|inauzika sana|best selling|what sold (?:the )?most|top)\b)/.test(value);
   const asksProfit = /\b(faida|margin|profit|earn)\b/.test(value);
   const asksRevenue = /\b(mapato|revenue|money|fedha nyingi|pesa nyingi)\b/.test(value);
   // A bare "faida ya leo" is a period profit question, not a product ranking.
@@ -52,13 +58,39 @@ export function parseProductAnalyticsRequest(text: string | null | undefined): P
         : /\b(mwaka|year)\b/.test(value) ? 'year' : 'month';
   const rankBy: ProductRankBy = asksProfit ? 'margin' : asksRevenue ? 'revenue' : 'quantity';
   const compareMatch = value.match(/^(.+?)\s+(?:au|or)\s+(.+?)(?:\s+(?:ipi|which|inauza|sells|inauzika)\b|\s*$)/u);
-  const namedProductMatch = value.match(/^(.+?)\s+(?:inauza|inauzika)\s+(?:ngapi|sana|zaidi|vipi)\b/u);
+  const namedProductMatch = value.match(/^(.+?)\s+(?:inauza|inauzika|imeuzwa|iliuzwa|sold)\s+(?:ngapi|sana|zaidi|vipi|most)\b/u);
   const namedProduct = namedProductMatch?.[1].trim();
-  const isGenericProductPhrase = Boolean(namedProduct && /^(?:bidhaa|bidha|product|products|kitu)\s+(?:gani|which)\b/.test(namedProduct));
+  const isGenericProductPhrase = Boolean(namedProduct && /^(?:bidhaa|bidha|product|products|kitu|what|which)\b/.test(namedProduct));
   const compareNames = compareMatch
     ? [clean(compareMatch[1]), clean(compareMatch[2])].filter(Boolean).slice(0, 2)
     : namedProduct && !isGenericProductPhrase ? [clean(namedProduct)] : [];
   return { rankBy, period, compareNames };
+}
+
+export function parseProductAnalyticsFollowUp(
+  text: string | null | undefined,
+  context: ProductAnalyticsContext | null | undefined,
+): ProductAnalyticsRequest | null {
+  if (!context || context.kind !== 'product_analytics_context' || context.focusNames.length === 0) return null;
+  const value = clean(text ?? '');
+  if (!value) return null;
+  const period: ProductPeriod = /\b(leo|today)\b/.test(value)
+    ? 'today'
+    : /\b(wiki|week)\b/.test(value)
+      ? 'week'
+      : /\b(mwezi|month)\b/.test(value)
+        ? 'month'
+        : /\b(mwaka|year)\b/.test(value) ? 'year' : context.request.period;
+  const asksRevenue = /^(?:na\s+)?(?:jumla|jumla yake|jumla yao|mapato|mapato yake|mapato yao|revenue|total|total revenue|how much money)(?:\s+(?:ni|is|je))?\??$/.test(value);
+  const asksMargin = /^(?:na\s+)?(?:faida|faida yake|faida yao|profit|margin|what about profit)(?:\s+(?:ni|is|je))?\??$/.test(value);
+  const asksQuantity = /^(?:na\s+)?(?:ngapi|idadi|idadi yake|imeuzwa ngapi|inauza ngapi|quantity|how many)(?:\s+(?:leo|today|je))?\??$/.test(value);
+  const changesPeriodOnly = /^(?:na\s+)?(?:leo|today|wiki hii|this week|mwezi huu|this month|mwaka huu|this year)(?:\s+je)?\??$/.test(value);
+  if (!asksRevenue && !asksMargin && !asksQuantity && !changesPeriodOnly) return null;
+  return {
+    rankBy: asksRevenue ? 'revenue' : asksMargin ? 'margin' : asksQuantity ? 'quantity' : context.request.rankBy,
+    period,
+    compareNames: context.focusNames.slice(0, 2),
+  };
 }
 
 function darParts(now: Date) {
@@ -105,7 +137,7 @@ function currentCost(description: string, occurredAt: string, costs: ProductCost
 export function aggregateProducts(lines: ProductSaleLine[], costs: ProductCostPoint[]): ProductAggregate[] {
   const byProduct = new Map<string, ProductAggregate>();
   for (const line of lines) {
-    const product = line.description.trim();
+    const product = line.description.trim().replace(/^[\s\-–—•*]+/u, '').trim();
     if (!product || line.quantity <= 0 || line.lineTotal <= 0) continue;
     const key = clean(product);
     const unitCost = currentCost(product, line.occurredAt, costs);

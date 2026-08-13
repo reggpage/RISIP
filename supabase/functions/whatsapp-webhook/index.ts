@@ -74,13 +74,19 @@ import {
 } from '../_shared/whatsappProductCosts.ts';
 import {
   aggregateProducts,
+  parseProductAnalyticsFollowUp,
   parseProductAnalyticsRequest,
   periodStart,
   productAnalyticsReply,
+  rankProducts,
+  type ProductAggregate,
+  type ProductAnalyticsContext,
+  type ProductAnalyticsRequest,
   type ProductCostPoint,
   type ProductSaleLine,
 } from '../_shared/whatsappProductAnalytics.ts';
 import { interpretDailyRecordWithAi, MAX_INTERPRETATION_CHARS } from '../_shared/whatsappDailyRecordsAi.ts';
+import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared/whatsappReadIntentAi.ts';
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import {
   buildBusinessesReply,
@@ -244,6 +250,41 @@ async function productAnalytics(
       productKey: String(cost.product_key), unitCost: Number(cost.unit_cost), effectiveFrom: String(cost.effective_from),
     })),
   };
+}
+
+async function rememberProductAnalytics(
+  db: Admin,
+  identity: any,
+  request: ProductAnalyticsRequest,
+  items: ProductAggregate[],
+): Promise<void> {
+  const firstRanked = rankProducts(items, request.rankBy, request.compareNames)[0]?.product;
+  const focusNames = (request.compareNames.length > 0 ? request.compareNames : firstRanked ? [firstRanked] : []).slice(0, 2);
+  if (focusNames.length === 0) return;
+  const context: ProductAnalyticsContext = { kind: 'product_analytics_context', request, focusNames };
+  await db.from('whatsapp_conversations').upsert({
+    identity_id: identity.id,
+    company_id: identity.company_id,
+    profile_id: identity.profile_id,
+    awaiting: 'product_analytics',
+    receipt_id: null,
+    options: context,
+    expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'identity_id' });
+}
+
+async function answerProductAnalytics(
+  db: Admin,
+  identity: any,
+  phone: string,
+  request: ProductAnalyticsRequest,
+  lang: Lang,
+): Promise<void> {
+  const { replyData, costs } = await productAnalytics(db, identity.company_id, request);
+  const items = aggregateProducts(replyData, costs);
+  await replyQuietly(phone, productAnalyticsReply(request, items, lang));
+  await rememberProductAnalytics(db, identity, request, items);
 }
 
 function readPeriodBounds(period: ReadRequest['period']): { from: string; to: string } {
@@ -886,6 +927,10 @@ Deno.serve(async (req) => {
         const costConversation = convo?.awaiting === 'product_cost' && convo.options
           ? { cost: convo.options as unknown as ProductCost }
           : null;
+        const productContext = convo?.awaiting === 'product_analytics'
+          && (convo.options as Partial<ProductAnalyticsContext> | null)?.kind === 'product_analytics_context'
+          ? convo.options as ProductAnalyticsContext
+          : null;
         // A stop command cancels a pending daily-record draft through the same
         // RPC used by HAPANA/NO. Clarification-only state has no DB draft yet,
         // so it is safely cleared without creating a ledger event.
@@ -1066,11 +1111,9 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const productRequest = parseProductAnalyticsRequest(body);
+        const productRequest = parseProductAnalyticsFollowUp(body, productContext) ?? parseProductAnalyticsRequest(body);
         if (productRequest) {
-          const { replyData, costs } = await productAnalytics(db, identity.company_id, productRequest);
-          const items = aggregateProducts(replyData, costs);
-          await replyQuietly(phone, productAnalyticsReply(productRequest, items, lang));
+          await answerProductAnalytics(db, identity, phone, productRequest, lang);
           await audit(db, identity, waMessageId, 'product_analytics', productRequest.rankBy, 'applied');
           await finish('skipped');
           continue;
@@ -1087,6 +1130,35 @@ Deno.serve(async (req) => {
               : 'I could not load that information right now. Please try again later.');
             await audit(db, identity, waMessageId, 'read_only_tool', readRequest.tool, 'failed');
           }
+          await finish('skipped');
+          continue;
+        }
+
+        if (shouldInterpretReadWithAi(body)) {
+          const budget = await consumeAiBudget(db, identity, body.length);
+          if (!budget.allowed) {
+            await replyQuietly(phone, aiBudgetMessage(lang));
+            await audit(db, identity, waMessageId, 'semantic_read_ai', 'budget', 'blocked');
+            await finish('skipped', 'ai_budget_blocked');
+            continue;
+          }
+          const semanticIntent = await interpretReadIntentWithAi(body, lang);
+          if (semanticIntent?.kind === 'product_analytics') {
+            await answerProductAnalytics(db, identity, phone, semanticIntent.request, lang);
+            await audit(db, identity, waMessageId, 'semantic_read_ai', 'product_analytics', 'applied');
+            await finish('skipped');
+            continue;
+          }
+          if (semanticIntent?.kind === 'read_tool') {
+            await replyQuietly(phone, await readOnlyToolReply(db, identity, semanticIntent.request, lang));
+            await audit(db, identity, waMessageId, 'semantic_read_ai', semanticIntent.request.tool, 'applied');
+            await finish('skipped');
+            continue;
+          }
+          await replyQuietly(phone, lang === 'sw'
+            ? 'Sijaelewa vizuri swali hilo la biashara. Taja unachotaka kuona, kwa mfano mauzo, bidhaa, deni, risiti au faida.'
+            : 'I did not fully understand that business question. Say what you want to see, for example sales, products, debts, receipts, or profit.');
+          await audit(db, identity, waMessageId, 'semantic_read_ai', 'unknown', 'clarification');
           await finish('skipped');
           continue;
         }
