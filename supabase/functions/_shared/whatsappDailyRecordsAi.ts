@@ -66,7 +66,8 @@ export function validateAiCandidate(candidate: unknown): ParsedDailyRecord | nul
   if (!candidate || typeof candidate !== 'object') return null;
   const value = candidate as AiCandidate;
   const kind = value.kind;
-  if (kind !== 'sale' && kind !== 'expense' && kind !== 'debt_issued' && kind !== 'customer_payment') return null;
+  const allowed = ['sale', 'expense', 'debt_issued', 'customer_payment', 'stock_purchase'];
+  if (typeof kind !== 'string' || !allowed.includes(kind)) return null;
   const lines = buildLines(value.lines);
   if (lines === null) return null;
   const lineTotal = lines.reduce((sum, line) => sum + Math.round(line.quantity * line.unit_amount * 100) / 100, 0);
@@ -95,8 +96,9 @@ export async function interpretDailyRecordWithAi(text: string, lang: Lang): Prom
   const model = await resolveAnthropicModel(apiKey, Deno.env.get('ANTHROPIC_MODEL'));
   const prompt = `You interpret one Risip business message. Return ONLY JSON, never prose, markdown, actions, or database instructions.
 Language: ${lang}
-Allowed kinds: sale, expense, debt_issued, customer_payment.
-Schema: {"kind":"sale|expense|debt_issued|customer_payment","party_name":string|null,"description":string|null,"amount":number|null,"lines":[{"description":string,"quantity":number,"unit_amount":number}]}
+Allowed kinds: sale, expense, debt_issued, customer_payment, stock_purchase.
+Schema: {"kind":"sale|expense|debt_issued|customer_payment|stock_purchase","party_name":string|null,"description":string|null,"amount":number|null,"lines":[{"description":string,"quantity":number,"unit_amount":number}]}
+stock_purchase is buying goods to resell ("nimenunua stock ya sukari"). expense is running the shop ("nimelipa boda", "umeme"). When the message does not make clear which one it is, return {"kind":"unknown"} rather than choosing — the two read very differently in a report.
 Use lines for itemized or multi-line arithmetic. Do not invent quantity, price, party, or amount. If unclear, return {"kind":"unknown"}.
 Message: ${input}`;
   try {

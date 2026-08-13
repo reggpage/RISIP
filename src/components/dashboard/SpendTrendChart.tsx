@@ -2,6 +2,8 @@ import { useMemo, useRef, useState } from 'react';
 import { BarChart3, LineChart as LineIcon } from 'lucide-react';
 import { formatMoney } from '@/lib/format';
 import { receiptActivityDate } from '@/lib/receiptDates';
+import UnderlineTabs from '@/components/ui/UnderlineTabs';
+import { getLang, type LangCode } from '@/lib/lang';
 import type { Receipt } from '@/types/db';
 
 // Interactive spend-over-time chart. Pure SVG — no chart library. Switch granularity
@@ -16,6 +18,14 @@ const GRAN_CFG: Record<Gran, { label: string; slots: number; caption: string }> 
   week: { label: 'Week', slots: 12, caption: 'Last 12 weeks' },
   month: { label: 'Month', slots: 12, caption: 'Last 12 months' },
   year: { label: 'Year', slots: 5, caption: 'Last 5 years' },
+};
+const GRAN_LABELS: Record<LangCode, Record<Gran, string>> = {
+  en: { day: 'Day', week: 'Week', month: 'Month', year: 'Year' },
+  sw: { day: 'Siku', week: 'Wiki', month: 'Mwezi', year: 'Mwaka' },
+};
+const GRAN_CAPTIONS: Record<LangCode, Record<Gran, string>> = {
+  en: { day: 'Last 30 days', week: 'Last 12 weeks', month: 'Last 12 months', year: 'Last 5 years' },
+  sw: { day: 'Siku 30 zilizopita', week: 'Wiki 12 zilizopita', month: 'Miezi 12 iliyopita', year: 'Miaka 5 iliyopita' },
 };
 
 const VB_W = 640;
@@ -87,7 +97,9 @@ function buildSeries(receipts: Receipt[], gran: Gran): Slot[] {
 }
 
 export default function SpendTrendChart({ receipts }: { receipts: Receipt[] }) {
+  const lang = getLang();
   const [gran, setGran] = useState<Gran>('week');
+  const caption = GRAN_CAPTIONS[lang][gran];
   const [view, setView] = useState<ViewType>('bar');
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<{ x: number; y: number; label: string; total: number } | null>(null);
@@ -147,10 +159,14 @@ export default function SpendTrendChart({ receipts }: { receipts: Receipt[] }) {
       {/* Header: total + delta (left); view toggle + granularity on one aligned row (right). */}
       <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-xs uppercase tracking-wide text-ink-muted">{GRAN_CFG[gran].caption}</div>
+          <div className="text-xs uppercase tracking-wide text-ink-muted">{caption}</div>
           <div className="text-2xl font-semibold text-ink">{formatMoney(windowTotal)}</div>
           <div className={`text-xs font-medium ${!prevHasData ? 'text-ink-muted' : deltaPct >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-            {prevHasData ? `${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(0)}% vs previous ${GRAN_CFG[gran].label.toLowerCase()} window` : GRAN_CFG[gran].caption}
+            {prevHasData
+              ? lang === 'sw'
+                ? `${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(0)}% dhidi ya kipindi cha ${GRAN_LABELS[lang][gran].toLowerCase()}`
+                : `${deltaPct >= 0 ? '+' : ''}${deltaPct.toFixed(0)}% vs previous ${GRAN_CFG[gran].label.toLowerCase()} window`
+              : caption}
           </div>
         </div>
 
@@ -165,14 +181,12 @@ export default function SpendTrendChart({ receipts }: { receipts: Receipt[] }) {
               <LineIcon className="h-4 w-4" />
             </button>
           </div>
-          <div className="inline-flex rounded-lg border border-surface-border bg-surface p-0.5 text-xs">
-            {(Object.keys(GRAN_CFG) as Gran[]).map((g) => (
-              <button key={g} type="button" onClick={() => setGran(g)}
-                className={'rounded-md px-2.5 py-1 font-medium transition ' + (gran === g ? 'bg-role-admin/10 text-role-admin' : 'text-ink-muted hover:text-ink')}>
-                {GRAN_CFG[g].label}
-              </button>
-            ))}
-          </div>
+          <UnderlineTabs
+            tabs={(Object.keys(GRAN_CFG) as Gran[]).map((value) => ({ value, label: GRAN_LABELS[lang][value] }))}
+            value={gran}
+            onChange={setGran}
+            label={lang === 'sw' ? 'Kipindi cha matumizi' : 'Spend Trend time range'}
+          />
         </div>
       </div>
 

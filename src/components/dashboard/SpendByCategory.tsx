@@ -2,10 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import EmptyState from '@/components/ui/EmptyState';
 import { formatMoney } from '@/lib/format';
 import { receiptActivityDate } from '@/lib/receiptDates';
+import UnderlineTabs from '@/components/ui/UnderlineTabs';
+import { getLang } from '@/lib/lang';
 import type { Receipt } from '@/types/db';
 
 type Gran = 'day' | 'week' | 'month' | 'year';
-const GRAN_LABEL: Record<Gran, string> = { day: 'Day', week: 'Week', month: 'Month', year: 'Year' };
+const GRAN_LABEL: Record<'en' | 'sw', Record<Gran, string>> = {
+  en: { day: 'Day', week: 'Week', month: 'Month', year: 'Year' },
+  sw: { day: 'Siku', week: 'Wiki', month: 'Mwezi', year: 'Mwaka' },
+};
 
 // Deterministic tint per category so colours stay consistent across renders.
 const PALETTE = [
@@ -30,11 +35,11 @@ function windowStart(gran: Gran): number {
   return d.getTime();
 }
 
-function periodLabel(gran: Gran) {
+function periodLabel(gran: Gran, lang: 'en' | 'sw') {
   const today = new Date();
-  if (gran === 'day') return 'Today';
-  if (gran === 'week') return 'This week';
-  if (gran === 'month') return new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric' }).format(today);
+  if (gran === 'day') return lang === 'sw' ? 'Leo' : 'Today';
+  if (gran === 'week') return lang === 'sw' ? 'Wiki hii' : 'This week';
+  if (gran === 'month') return new Intl.DateTimeFormat(lang === 'sw' ? 'sw-TZ' : 'en-GB', { month: 'long', year: 'numeric' }).format(today);
   return String(today.getFullYear());
 }
 
@@ -79,6 +84,7 @@ function Row({ item, tint, delay }: { item: CatItem; tint: string; delay: number
 }
 
 export default function SpendByCategory({ receipts }: { receipts: Receipt[] }) {
+  const lang = getLang();
   const [gran, setGran] = useState<Gran>('year');
   const items = useMemo(() => compute(receipts, gran), [receipts, gran]);
   const confirmedCount = useMemo(() => {
@@ -95,24 +101,23 @@ export default function SpendByCategory({ receipts }: { receipts: Receipt[] }) {
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="text-base font-semibold text-ink">Spend by category</h3>
-          <p className="mt-0.5 text-xs text-ink-muted">{periodLabel(gran)} · {confirmedCount} confirmed receipt{confirmedCount === 1 ? '' : 's'}</p>
-          <p className="mt-0.5 text-xs text-ink-muted">Grouped by the day the receipt was recorded.</p>
+          <p className="mt-0.5 text-xs text-ink-muted">{periodLabel(gran, lang)} · {confirmedCount} {lang === 'sw' ? 'risiti zilizothibitishwa' : `confirmed receipt${confirmedCount === 1 ? '' : 's'}`}</p>
+          <p className="mt-0.5 text-xs text-ink-muted">{lang === 'sw' ? 'Zimepangwa kwa siku risiti iliporekodiwa.' : 'Grouped by the day the receipt was recorded.'}</p>
         </div>
-        <div className="inline-flex rounded-lg border border-surface-border bg-surface p-0.5 text-xs">
-          {(Object.keys(GRAN_LABEL) as Gran[]).map((g) => (
-            <button key={g} type="button" onClick={() => setGran(g)}
-              className={'rounded-md px-2 py-1 font-medium transition ' + (gran === g ? 'bg-role-admin/10 text-role-admin' : 'text-ink-muted hover:text-ink')}>
-              {GRAN_LABEL[g]}
-            </button>
-          ))}
-        </div>
+        <UnderlineTabs
+          className="text-xs"
+          tabs={(Object.keys(GRAN_LABEL[lang]) as Gran[]).map((value) => ({ value, label: GRAN_LABEL[lang][value] }))}
+          value={gran}
+          onChange={setGran}
+          label={lang === 'sw' ? 'Kipindi cha matumizi kwa kategoria' : 'Spend by category time range'}
+        />
       </div>
 
       {items.length === 0 ? (
-        <EmptyState title="No spend in this period" description="Try a wider range (Month or Year)." />
+        <EmptyState title={lang === 'sw' ? 'Hakuna matumizi katika kipindi hiki' : 'No spend in this period'} description={lang === 'sw' ? 'Jaribu kipindi kipana zaidi (Mwezi au Mwaka).' : 'Try a wider range (Month or Year).'} />
       ) : (
         <div key={gran} className="flex flex-col gap-3">
-          {items.length === 1 && <p className="text-xs text-ink-muted">All confirmed spend in this period is categorized as {items[0].category}.</p>}
+          {items.length === 1 && <p className="text-xs text-ink-muted">{lang === 'sw' ? `Matumizi yote yaliyothibitishwa katika kipindi hiki yamewekwa kwenye ${items[0].category}.` : `All confirmed spend in this period is categorized as ${items[0].category}.`}</p>}
           {items.map((it, i) => <Row key={it.category} item={it} tint={tintFor(it.category)} delay={i * 80} />)}
         </div>
       )}

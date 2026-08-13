@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Check, CheckCircle2, Filter, RefreshCw, X } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
-import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import { Skeleton } from '@/components/ui/Skeleton';
 import WhatsappIcon from '@/components/ui/WhatsappIcon';
@@ -19,28 +18,20 @@ import {
   voidDailyRecord,
   type DailyRecordWithDetails,
 } from '@/features/dailyRecords/dailyRecords';
+import { isSameLocalDay, moveDailyRecordsDate, startOfLocalDay } from '@/features/dailyRecords/uiRules';
 import type { DailyRecordAudit, DailyRecordKind, DailyRecordStatus } from '@/types/db';
 
 const lang = getLang();
 const ui = lang === 'sw' ? {
-  title: 'Rekodi za Siku', description: 'Rekodi za shughuli kutoka WhatsApp na app. Zinatenganishwa na matumizi ya risiti.', refresh: 'Onyesha upya', filter: 'Chuja', filterRecords: 'Chuja rekodi', from: 'Kuanzia', to: 'Hadi', kind: 'Aina', status: 'Hali', source: 'Chanzo', allKinds: 'Aina zote', allStatuses: 'Hali zote', allSources: 'Vyanzo vyote', app: 'App / kwa mkono', other: 'Nyingine', empty: 'Bado hakuna rekodi za siku.', emptyHint: 'Tuma mauzo, matumizi, madeni, au malipo kupitia WhatsApp.', loading: 'Inapakia rekodi za siku…', confirmed: 'Imethibitishwa', pending: 'Inasubiri uthibitisho', voided: 'Imeghairiwa', sale: 'Mauzo', expense: 'Matumizi', debt: 'Mkopo uliotolewa', payment: 'Malipo ya mteja', daily: 'Rekodi ya siku', occurred: 'Ilitokea', created: 'Iliundwa', confirm: 'Thibitisha', saving: 'Inahifadhi…', void: 'Ghairi', details: 'Maelezo ya rekodi ya siku', total: 'Jumla', descriptionLabel: 'Maelezo', party: 'Mhusika', recordedBy: 'Iliyorekodiwa na', calculation: 'Mgawanyo wa hesabu', audit: 'Historia ya ukaguzi', historyLoading: 'Inapakia historia…', auditError: 'Historia ya ukaguzi haikuweza kupakiwa.', close: 'Funga', voidTitle: 'Ghairi rekodi ya siku', voidExplanation: 'Ghairi inaweka rekodi hii kuwa imefutwa kwa matumizi ya hesabu. Haifutwi. Rekodi ya awali na historia ya ukaguzi vinabaki, lakini haijumuishwi kwenye jumla.', reason: 'Sababu', reasonPlaceholder: 'Eleza kwa nini rekodi hii inaghairiwa', cancel: 'Ghairi', voidRecord: 'Ghairi rekodi', voiding: 'Inaghairi…', confirmSuccess: 'Rekodi ya siku imethibitishwa.', voidSuccess: 'Rekodi ya siku imeghairiwa. Historia yake imehifadhiwa.', reasonError: 'Andika sababu yenye maana kabla ya kughairi rekodi hii.', confirmError: 'Imeshindikana kuthibitisha rekodi hii.', voidError: 'Imeshindikana kughairi rekodi hii.', whatsApp: 'WhatsApp', voidReason: 'Sababu ya kughairi', today: 'Leo', yesterday: 'Jana', previousDay: 'Siku iliyopita', nextDay: 'Siku inayofuata', previousWeek: 'Wiki iliyopita',
+  title: 'Rekodi za Siku', description: 'Rekodi za shughuli kutoka WhatsApp na app. Zinatenganishwa na matumizi ya risiti.', refresh: 'Onyesha upya', filter: 'Chuja', filterRecords: 'Chuja rekodi', kind: 'Aina', status: 'Hali', source: 'Chanzo', allKinds: 'Aina zote', allStatuses: 'Hali zote', allSources: 'Vyanzo vyote', app: 'App / kwa mkono', other: 'Nyingine', empty: 'Bado hakuna rekodi za siku.', emptyHint: 'Tuma mauzo, matumizi, madeni, au malipo kupitia WhatsApp.', loading: 'Inapakia rekodi za siku…', confirmed: 'Imethibitishwa', pending: 'Inasubiri uthibitisho', voided: 'Imeghairiwa', sale: 'Mauzo', expense: 'Matumizi', stockPurchase: 'Ununuzi wa stock', debt: 'Mkopo uliotolewa', payment: 'Malipo ya mteja', daily: 'Rekodi ya siku', occurred: 'Ilitokea', created: 'Iliundwa', confirm: 'Thibitisha', saving: 'Inahifadhi…', void: 'Ghairi', details: 'Maelezo ya rekodi ya siku', total: 'Jumla', descriptionLabel: 'Maelezo', party: 'Mhusika', recordedBy: 'Iliyorekodiwa na', calculation: 'Mgawanyo wa hesabu', audit: 'Historia ya ukaguzi', historyLoading: 'Inapakia historia…', auditError: 'Historia ya ukaguzi haikuweza kupakiwa.', close: 'Funga', voidTitle: 'Ghairi rekodi ya siku', voidExplanation: 'Ghairi inaweka rekodi hii kuwa imefutwa kwa matumizi ya hesabu. Haifutwi. Rekodi ya awali na historia ya ukaguzi vinabaki, lakini haijumuishwi kwenye jumla.', reason: 'Sababu', reasonPlaceholder: 'Eleza kwa nini rekodi hii inaghairiwa', cancel: 'Ghairi', voidRecord: 'Ghairi rekodi', voiding: 'Inaghairi…', confirmSuccess: 'Rekodi ya siku imethibitishwa.', voidSuccess: 'Rekodi ya siku imeghairiwa. Historia yake imehifadhiwa.', reasonError: 'Andika sababu yenye maana kabla ya kughairi rekodi hii.', confirmError: 'Imeshindikana kuthibitisha rekodi hii.', voidError: 'Imeshindikana kughairi rekodi hii.', whatsApp: 'WhatsApp', voidReason: 'Sababu ya kughairi', today: 'Leo', yesterday: 'Jana', previousDay: 'Juzi', back: 'Nyuma', dateNavigation: 'Urambazaji wa tarehe',
 } : {
-  title: 'Daily Records', description: 'Operational records from WhatsApp and the app. They stay separate from receipt expenses.', refresh: 'Refresh', filter: 'Filter', filterRecords: 'Filter records', from: 'From', to: 'To', kind: 'Kind', status: 'Status', source: 'Source', allKinds: 'All kinds', allStatuses: 'All statuses', allSources: 'All sources', app: 'App / manual', other: 'Other', empty: 'No daily records yet.', emptyHint: 'Send sales, expenses, debts, or payments on WhatsApp.', loading: 'Loading daily records…', confirmed: 'Confirmed', pending: 'Pending confirmation', voided: 'Voided', sale: 'Sale', expense: 'Expense', debt: 'Debt issued', payment: 'Customer payment', daily: 'Daily record', occurred: 'Occurred', created: 'Created', confirm: 'Confirm', saving: 'Saving…', void: 'Void', details: 'Daily record details', total: 'Total', descriptionLabel: 'Description', party: 'Party', recordedBy: 'Recorded by', calculation: 'Calculation breakdown', audit: 'Audit history', historyLoading: 'Loading history…', auditError: 'Audit history could not be loaded.', close: 'Close', voidTitle: 'Void daily record', voidExplanation: 'Void marks this record as cancelled. It is not deleted. The original record and audit history remain, but it is excluded from totals.', reason: 'Reason', reasonPlaceholder: 'Explain why this record is being voided', cancel: 'Cancel', voidRecord: 'Void record', voiding: 'Voiding…', confirmSuccess: 'Daily record confirmed.', voidSuccess: 'Daily record voided. Its history is preserved.', reasonError: 'Enter a meaningful reason before voiding this record.', confirmError: 'Could not confirm this daily record.', voidError: 'Could not void this daily record.', whatsApp: 'WhatsApp', voidReason: 'Void reason', today: 'Today', yesterday: 'Yesterday', previousDay: 'Previous day', nextDay: 'Next day', previousWeek: 'Previous week',
+  title: 'Daily Records', description: 'Operational records from WhatsApp and the app. They stay separate from receipt expenses.', refresh: 'Refresh', filter: 'Filter', filterRecords: 'Filter records', kind: 'Kind', status: 'Status', source: 'Source', allKinds: 'All kinds', allStatuses: 'All statuses', allSources: 'All sources', app: 'App / manual', other: 'Other', empty: 'No daily records yet.', emptyHint: 'Send sales, expenses, debts, or payments on WhatsApp.', loading: 'Loading daily records…', confirmed: 'Confirmed', pending: 'Pending confirmation', voided: 'Voided', sale: 'Sale', expense: 'Expense', stockPurchase: 'Stock purchase', debt: 'Debt issued', payment: 'Customer payment', daily: 'Daily record', occurred: 'Occurred', created: 'Created', confirm: 'Confirm', saving: 'Saving…', void: 'Void', details: 'Daily record details', total: 'Total', descriptionLabel: 'Description', party: 'Party', recordedBy: 'Recorded by', calculation: 'Calculation breakdown', audit: 'Audit history', historyLoading: 'Loading history…', auditError: 'Audit history could not be loaded.', close: 'Close', voidTitle: 'Void daily record', voidExplanation: 'Void marks this record as cancelled. It is not deleted. The original record and audit history remain, but it is excluded from totals.', reason: 'Reason', reasonPlaceholder: 'Explain why this record is being voided', cancel: 'Cancel', voidRecord: 'Void record', voiding: 'Voiding…', confirmSuccess: 'Daily record confirmed.', voidSuccess: 'Daily record voided. Its history is preserved.', reasonError: 'Enter a meaningful reason before voiding this record.', confirmError: 'Could not confirm this daily record.', voidError: 'Could not void this daily record.', whatsApp: 'WhatsApp', voidReason: 'Void reason', today: 'Today', yesterday: 'Yesterday', previousDay: 'Previous day', back: 'Back', dateNavigation: 'Date navigation',
 };
-const kindLabels: Record<DailyRecordKind, string> = { sale: ui.sale, expense: ui.expense, debt_issued: ui.debt, customer_payment: ui.payment };
+const kindLabels: Record<DailyRecordKind, string> = { sale: ui.sale, expense: ui.expense, stock_purchase: ui.stockPurchase, debt_issued: ui.debt, customer_payment: ui.payment };
 const statusLabels: Record<DailyRecordStatus, string> = { pending_confirmation: ui.pending, confirmed: ui.confirmed, voided: ui.voided };
 const partyHint = lang === 'sw'
   ? 'Mhusika anaweza kuwa mteja, supplier/muuzaji, mlipwaji, mdaiwa, au mlipaji.'
   : 'Party identifies the customer, supplier/payee, debtor, or payer.';
-
-function isInDateRange(record: DailyRecordWithDetails, from: string, to: string) {
-  const day = record.occurred_at.slice(0, 10);
-  return (!from || day >= from) && (!to || day <= to);
-}
-
-function dateInput(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
 
 export default function DailyRecordsPage() {
   const auth = useAuth();
@@ -48,8 +39,6 @@ export default function DailyRecordsPage() {
   const state = useDailyRecords();
   const role = auth.status === 'signed-in' ? auth.profile?.role : undefined;
   const canManage = role === 'owner' || role === 'accountant';
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
   const [kind, setKind] = useState('');
   const [status, setStatus] = useState('');
   const [source, setSource] = useState('');
@@ -58,18 +47,31 @@ export default function DailyRecordsPage() {
   const [voidReason, setVoidReason] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(() => startOfLocalDay());
 
-  function setDay(offset: number) {
-    const date = new Date(); date.setHours(0, 0, 0, 0); date.setDate(date.getDate() + offset);
-    const value = dateInput(date); setFrom(value); setTo(value);
+  function moveToDate(date: Date) {
+    const safeDate = startOfLocalDay(date);
+    if (safeDate > startOfLocalDay()) return;
+    setSelectedDate(safeDate);
+    state.reload();
+  }
+
+  function setRelativeDay(offset: number) {
+    const date = moveDailyRecordsDate(startOfLocalDay(), offset);
+    if (date) moveToDate(date);
+  }
+
+  function goBackOneDay() {
+    const date = moveDailyRecordsDate(selectedDate, -1);
+    if (date) moveToDate(date);
   }
 
   const filtered = useMemo(() => state.records.filter((record) => {
-    return isInDateRange(record, from, to)
+    return isSameLocalDay(record.occurred_at, selectedDate)
       && (!kind || record.kind === kind)
       && (!status || record.status === status)
       && (!source || record.source === source);
-  }), [from, kind, source, state.records, status, to]);
+  }), [kind, selectedDate, source, state.records, status]);
 
   async function handleConfirm(record: DailyRecordWithDetails) {
     setBusyId(record.id);
@@ -124,19 +126,18 @@ export default function DailyRecordsPage() {
 
       <Card className="mb-6 hidden sm:block">
         <CardHeader><CardTitle>{ui.filterRecords}</CardTitle></CardHeader>
-        <FilterFields from={from} to={to} kind={kind} status={status} source={source} setFrom={setFrom} setTo={setTo} setKind={setKind} setStatus={setStatus} setSource={setSource} />
+        <FilterFields kind={kind} status={status} source={source} setKind={setKind} setStatus={setStatus} setSource={setSource} />
       </Card>
       {filtersOpen && <Modal title={ui.filterRecords} onClose={() => setFiltersOpen(false)}>
-        <FilterFields from={from} to={to} kind={kind} status={status} source={source} setFrom={setFrom} setTo={setTo} setKind={setKind} setStatus={setStatus} setSource={setSource} />
+        <FilterFields kind={kind} status={status} source={source} setKind={setKind} setStatus={setStatus} setSource={setSource} />
         <div className="mt-5 flex justify-end"><Button tint="admin" onClick={() => setFiltersOpen(false)}>{ui.filter}</Button></div>
       </Modal>}
-      <div className="mb-6 flex flex-wrap items-center gap-2" aria-label="Date navigation">
-        <Button variant="ghost" onClick={() => setDay(0)}>{ui.today}</Button>
-        <Button variant="ghost" onClick={() => setDay(-1)}>{ui.yesterday}</Button>
-        <Button variant="ghost" onClick={() => setDay(-2)}>{ui.previousDay}</Button>
-        <Button variant="ghost" onClick={() => setDay(1)}>{ui.nextDay}</Button>
-        <Button variant="ghost" onClick={() => { const date = new Date(); date.setDate(date.getDate() - 7); const value = dateInput(date); setFrom(value); setTo(dateInput(new Date())); }}>{ui.previousWeek}</Button>
-        <span className="ml-auto text-xs text-ink-muted">{from || to ? formatLongDate(from || to, lang) : formatLongDate(new Date().toISOString(), lang)}</span>
+      <div className="mb-6 flex flex-wrap items-center gap-2" aria-label={ui.dateNavigation}>
+        <Button variant="ghost" onClick={() => setRelativeDay(0)}>{ui.today}</Button>
+        <Button variant="ghost" onClick={() => setRelativeDay(-1)}>{ui.yesterday}</Button>
+        <Button variant="ghost" onClick={() => setRelativeDay(-2)}>{ui.previousDay}</Button>
+        <Button variant="ghost" onClick={goBackOneDay}>{ui.back}</Button>
+        <span className="ml-auto text-xs font-medium text-ink">{formatLongDate(selectedDate, lang)}</span>
       </div>
 
       {state.status === 'error' && (
@@ -188,7 +189,7 @@ export default function DailyRecordsPage() {
       )}
 
       {voiding && (
-        <Modal title="Void daily record" onClose={() => setVoiding(null)}>
+        <Modal title={ui.voidTitle} onClose={() => setVoiding(null)}>
           <p className="text-sm text-ink-muted">{ui.voidExplanation}</p>
           <div className="mt-4">
             <label className="text-sm font-medium text-ink" htmlFor="void-reason">{ui.reason}</label>
@@ -214,15 +215,13 @@ export default function DailyRecordsPage() {
 }
 
 function FilterFields({
-  from, to, kind, status, source, setFrom, setTo, setKind, setStatus, setSource,
+  kind, status, source, setKind, setStatus, setSource,
 }: {
-  from: string; to: string; kind: string; status: string; source: string;
-  setFrom: (value: string) => void; setTo: (value: string) => void; setKind: (value: string) => void;
+  kind: string; status: string; source: string;
+  setKind: (value: string) => void;
   setStatus: (value: string) => void; setSource: (value: string) => void;
 }) {
-  return <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-    <Input label={ui.from} type="date" value={from} onChange={(event) => setFrom(event.target.value)} />
-    <Input label={ui.to} type="date" value={to} onChange={(event) => setTo(event.target.value)} />
+  return <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
     <Select label={ui.kind} value={kind} onChange={setKind} options={[{ value: '', label: ui.allKinds }, ...Object.entries(kindLabels).map(([value, label]) => ({ value, label }))]} />
     <Select label={ui.status} value={status} onChange={setStatus} options={[{ value: '', label: ui.allStatuses }, ...Object.entries(statusLabels).map(([value, label]) => ({ value, label }))]} />
     <Select label={ui.source} value={source} onChange={setSource} options={[{ value: '', label: ui.allSources }, { value: 'whatsapp', label: ui.whatsApp }, { value: 'app', label: ui.app }, { value: 'other', label: ui.other }]} />
@@ -245,21 +244,27 @@ function RecordRow({
   onVoid: () => void;
 }) {
   return (
-    <Card className={record.status === 'voided' ? 'opacity-70' : ''}>
+    <Card className={`relative ${record.status === 'voided' ? 'opacity-70' : ''}`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        {record.status === 'confirmed' && (
+          <span className="absolute right-5 top-5 inline-flex items-center text-emerald-600" aria-label={ui.confirmed} title={ui.confirmed}>
+            <CheckCircle2 className="h-5 w-5" strokeWidth={3} aria-hidden="true" />
+            <span className="sr-only">{ui.confirmed}</span>
+          </span>
+        )}
         <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-ink">{kindLabels[record.kind]}</span>
-            <StatusBadge status={record.status} />
+            {record.status !== 'confirmed' && <StatusBadge status={record.status} />}
             {record.source === 'whatsapp' && (
               <span className="inline-flex items-center gap-1 text-xs font-medium text-ink-muted" aria-label={ui.whatsApp} title={ui.whatsApp}>
                 <WhatsappIcon className="h-4 w-4" /> {ui.whatsApp}
               </span>
             )}
           </div>
-          <p className="mt-2 truncate text-sm text-ink-muted">{record.description || record.party_name || 'Daily record'}</p>
+          <p className="mt-2 truncate text-sm text-ink-muted">{record.description || record.party_name || ui.daily}</p>
           <p className="mt-1 text-xs text-ink-muted">
-            {record.recordedByName || 'Recorded user'} · Occurred {formatDateTime(record.occurred_at)} · Created {formatDateTime(record.created_at)}
+            {record.recordedByName || ui.recordedBy} · {ui.occurred} {formatDateTime(record.occurred_at)} · {ui.created} {formatDateTime(record.created_at)}
           </p>
         </button>
         <div className="flex items-center justify-between gap-4 lg:justify-end">
@@ -268,10 +273,10 @@ function RecordRow({
             <div className="flex gap-2">
               {record.status === 'pending_confirmation' && (
                 <Button tint="accountant" onClick={onConfirm} disabled={busy}>
-                  <Check className="h-4 w-4" /> {busy ? 'Saving…' : 'Confirm'}
+                  <Check className="h-4 w-4" /> {busy ? ui.saving : ui.confirm}
                 </Button>
               )}
-              <Button variant="secondary" onClick={onVoid} disabled={busy}>Void</Button>
+              <Button variant="secondary" onClick={onVoid} disabled={busy}>{ui.void}</Button>
             </div>
           )}
         </div>
@@ -281,7 +286,6 @@ function RecordRow({
 }
 
 function StatusBadge({ status }: { status: DailyRecordStatus }) {
-  if (status === 'confirmed') return <span className="inline-flex items-center text-emerald-600" aria-label={ui.confirmed} title={ui.confirmed}><CheckCircle2 className="h-5 w-5" strokeWidth={3} aria-hidden="true" /><span className="sr-only">{ui.confirmed}</span></span>;
   const style = status === 'voided'
       ? 'bg-red-50 text-red-700'
       : 'bg-amber-50 text-amber-700';
@@ -314,7 +318,7 @@ function RecordDetailsModal({
         if (!cancelled) setAudit(rows);
       })
       .catch(() => {
-        if (!cancelled) setAuditError('Audit history could not be loaded.');
+        if (!cancelled) setAuditError(ui.auditError);
       });
     return () => {
       cancelled = true;
@@ -322,10 +326,13 @@ function RecordDetailsModal({
   }, [record.id]);
 
   return (
-    <Modal title="Daily record details" onClose={onClose}>
+    <Modal
+      title={record.status === 'confirmed' ? <span className="inline-flex items-center gap-2"><CheckCircle2 className="h-5 w-5 text-emerald-600" strokeWidth={3} aria-hidden="true" />{ui.details}</span> : ui.details}
+      onClose={onClose}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium text-ink">{kindLabels[record.kind]}</span>
-        <StatusBadge status={record.status} />
+        {record.status !== 'confirmed' && <StatusBadge status={record.status} />}
         {record.source === 'whatsapp' && <span className="inline-flex items-center gap-1 text-xs font-medium text-ink-muted" aria-label={ui.whatsApp} title={ui.whatsApp}><WhatsappIcon className="h-4 w-4" />{ui.whatsApp}</span>}
       </div>
       <div className="mt-4 rounded-lg bg-surface-muted p-4">
@@ -374,8 +381,8 @@ function RecordDetailsModal({
 
       {canManage && record.status !== 'voided' && (
         <div className="mt-6 flex justify-end gap-2">
-          {record.status === 'pending_confirmation' && <Button tint="accountant" onClick={onConfirm} disabled={busy}><Check className="h-4 w-4" /> Confirm</Button>}
-          <Button variant="secondary" onClick={onVoid} disabled={busy}>Void</Button>
+          {record.status === 'pending_confirmation' && <Button tint="accountant" onClick={onConfirm} disabled={busy}><Check className="h-4 w-4" /> {ui.confirm}</Button>}
+          <Button variant="secondary" onClick={onVoid} disabled={busy}>{ui.void}</Button>
         </div>
       )}
     </Modal>
@@ -386,13 +393,13 @@ function Detail({ label, value }: { label: string; value: string }) {
   return <div><dt className="text-xs uppercase tracking-wide text-ink-muted">{label}</dt><dd className="mt-1 break-words text-ink">{value}</dd></div>;
 }
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Modal({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" role="presentation" onMouseDown={onClose}>
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-surface p-5 shadow-xl sm:rounded-2xl" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-surface p-5 shadow-xl sm:rounded-2xl" role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : ui.details} onMouseDown={(event) => event.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-ink">{title}</h2>
-          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-ink-muted hover:bg-surface-muted hover:text-ink" aria-label="Close">
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-ink-muted hover:bg-surface-muted hover:text-ink" aria-label={ui.close}>
             <X className="h-5 w-5" />
           </button>
         </div>

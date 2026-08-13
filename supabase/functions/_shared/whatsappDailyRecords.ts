@@ -1,6 +1,7 @@
 import type { Lang } from './whatsappIntent.ts';
 
-export type DailyRecordKind = 'sale' | 'expense' | 'debt_issued' | 'customer_payment';
+export type DailyRecordKind =
+  | 'sale' | 'expense' | 'debt_issued' | 'customer_payment' | 'stock_purchase';
 
 export type DailyRecordLine = {
   description: string;
@@ -266,6 +267,37 @@ function expenseRecord(text: string): ParsedDailyRecord | null {
     : null;
 }
 
+/**
+ * Buying goods to resell, as opposed to spending on running the shop.
+ *
+ * Deliberately narrow: it only claims a message that says "stock" or "bidhaa"
+ * outright. "nimenunua mkaa 7000" stays an expense, because charcoal is stock in
+ * a charcoal shop and a cooking cost everywhere else, and the parser cannot know
+ * which. That ambiguity is resolved by asking — once, upstream — not by guessing
+ * here. Guessing wrong in either direction moves money between two lines of the
+ * report that a trader reads very differently.
+ */
+function stockPurchaseRecord(text: string): ParsedDailyRecord | null {
+  const payload = stripPrefix(
+    text,
+    /^(?:nimenunua|nimeongeza|nimeingiza|bought|purchased|added)\s+/i,
+  );
+  if (!payload) return null;
+  // The explicit signal. Without it we do not claim the message.
+  if (!/\b(stock|stoo|bidhaa|mzigo)\b/i.test(payload)) return null;
+
+  const tokens = moneyTokens(payload);
+  if (tokens.length === 0) return null;
+  const amount = tokens[tokens.length - 1].value;
+  if (!validAmount(amount)) return null;
+
+  const description = stripMoney(payload)
+    .replace(/^(?:ya|za|wa|of|for)\s+/i, '')
+    .replace(/[:]+$/, '')
+    .trim() || null;
+  return { kind: 'stock_purchase', amount, partyName: null, description, lines: [] };
+}
+
 function partyName(text: string): string | null {
   return titleCase(text.match(/^([\p{L}][\p{L}'-]*)\s+/u)?.[1] ?? null);
 }
@@ -307,7 +339,10 @@ function customerPaymentRecord(text: string): ParsedDailyRecord | null {
 }
 
 function looksLikeDailyRecord(text: string): boolean {
-  return /\b(nimeuza|uza|sold|mauzo|nimelipa|nimetumia|expense|paid|spent|mkopo|loan|ananidai|deni|amelipa|kalipa|customer payment)\b/i.test(text);
+  // The buying verbs are here as well as in the dispatch below, because this gate
+  // runs first: without them "nimenunua stock ya sukari 50000" never reached the
+  // parser at all and was silently dropped.
+  return /\b(nimeuza|uza|sold|mauzo|nimelipa|nimetumia|expense|paid|spent|mkopo|loan|ananidai|deni|amelipa|kalipa|customer payment|nimenunua|nimeongeza|nimeingiza|bought|purchased|stock|stoo|bidhaa|mzigo)\b/i.test(text);
 }
 
 function hasNegativeOrZeroAmount(text: string): boolean {
@@ -359,6 +394,11 @@ export function parseDailyRecord(text: string | null | undefined, lang: Lang = '
     parsed = debtRecord(value);
   } else if (/\b(nimeuza|uza|sold|mauzo)\b/i.test(value)) {
     parsed = saleRecord(value);
+  } else if (/\b(stock|stoo|bidhaa|mzigo)\b/i.test(value)
+             && /\b(nimenunua|nimeongeza|nimeingiza|bought|purchased|added)\b/i.test(value)) {
+    // Before expense on purpose: "nimenunua stock ya sukari 50000" is an
+    // investment in goods, not a running cost.
+    parsed = stockPurchaseRecord(value);
   } else if (/\b(nimelipa|nimetumia|expense|paid|spent)\b/i.test(value)) {
     parsed = expenseRecord(value);
   }
@@ -435,9 +475,15 @@ export function detectDailyRecordPriceAnomalies(
 
 function kindLabel(kind: DailyRecordKind, lang: Lang): string {
   if (lang === 'sw') {
-    return ({ sale: 'Mauzo', expense: 'Matumizi', debt_issued: 'Mkopo uliotolewa', customer_payment: 'Malipo ya mteja' })[kind];
+    return ({
+      sale: 'Mauzo', expense: 'Matumizi', stock_purchase: 'Ununuzi wa stock',
+      debt_issued: 'Mkopo uliotolewa', customer_payment: 'Malipo ya mteja',
+    })[kind];
   }
-  return ({ sale: 'Sale', expense: 'Expense', debt_issued: 'Debt issued', customer_payment: 'Customer payment' })[kind];
+  return ({
+    sale: 'Sale', expense: 'Expense', stock_purchase: 'Stock purchase',
+    debt_issued: 'Debt issued', customer_payment: 'Customer payment',
+  })[kind];
 }
 
 function money(amount: number, lang: Lang): string {

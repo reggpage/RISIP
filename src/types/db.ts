@@ -333,7 +333,11 @@ export type AppNotification = {
   created_at: string;
 };
 
-export type DailyRecordKind = 'sale' | 'expense' | 'debt_issued' | 'customer_payment';
+// 'stock_purchase' is money out like 'expense', but kept apart: buying stock is
+// an investment in goods to sell, not a running cost, and mixing them made every
+// restocking day read as a loss.
+export type DailyRecordKind =
+  | 'sale' | 'expense' | 'debt_issued' | 'customer_payment' | 'stock_purchase';
 export type DailyRecordStatus = 'pending_confirmation' | 'confirmed' | 'voided';
 export type DailyRecordSource = 'app' | 'whatsapp' | 'other';
 

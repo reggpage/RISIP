@@ -19,9 +19,9 @@ export function formatDateTime(iso: string | null | undefined): string {
   return new Date(iso).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-export function formatLongDate(iso: string | null | undefined, lang: 'en' | 'sw' = 'en'): string {
-  if (!iso) return '—';
-  const date = new Date(iso);
+export function formatLongDate(value: string | Date | null | undefined, lang: 'en' | 'sw' = 'en'): string {
+  if (!value) return '—';
+  const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
   return date.toLocaleDateString(lang === 'sw' ? 'sw-TZ' : 'en-GB', {
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',

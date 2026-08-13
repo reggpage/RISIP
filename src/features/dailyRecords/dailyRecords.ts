@@ -10,8 +10,16 @@ export type DailyRecordWithDetails = DailyRecord & {
 export type DailyRecordSummary = {
   sales: number;
   expenses: number;
+  /**
+   * Buying stock, kept apart from day-to-day expenses. Both are money out, but
+   * mixing them made every restocking day look like a disaster: 500,000 of stock
+   * next to 5,000 of boda fare told a story about the buying calendar rather than
+   * about the business.
+   */
+  stockPurchases: number;
   debtIssued: number;
   customerPayments: number;
+  /** Money in minus money out. Stock counts as out — it left the till. */
   cashMovement: number;
 };
 
@@ -41,14 +49,18 @@ export function getDailyRecordSummary(
     today.filter((record) => record.kind === kind).reduce((total, record) => total + asNumber(record.amount), 0);
   const sales = sum('sale');
   const expenses = sum('expense');
+  const stockPurchases = sum('stock_purchase');
   const customerPayments = sum('customer_payment');
 
   return {
     sales,
     expenses,
+    stockPurchases,
     debtIssued: sum('debt_issued'),
     customerPayments,
-    cashMovement: sales + customerPayments - expenses,
+    // Stock must be subtracted here. Leaving it out would tell a trader who just
+    // spent 500,000 restocking that they still hold it.
+    cashMovement: sales + customerPayments - expenses - stockPurchases,
   };
 }
 
