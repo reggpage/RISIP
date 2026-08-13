@@ -2,8 +2,8 @@
 //
 //   GET  → Meta's subscription challenge (hub.verify_token / hub.challenge).
 //   POST → message events. We verify the signature against the RAW body, record
-//          the message idempotently, and return 200 fast. No AI runs here: Meta
-//          retries anything slow or non-200, which would double-file receipts.
+//          the message idempotently, and return 200. Receipt images are queued;
+//          linked free text may use the bounded conversational AI tool loop.
 //
 // Two message shapes matter:
 //   "LINK <token>" text → binds this WhatsApp number to a Risip profile.
@@ -70,6 +70,7 @@ import {
   costSaved,
   parseProductCost,
   productCostErrorMessage,
+  validateProductCostCandidate,
   type ProductCost,
 } from '../_shared/whatsappProductCosts.ts';
 import {
@@ -85,9 +86,16 @@ import {
   type ProductCostPoint,
   type ProductSaleLine,
 } from '../_shared/whatsappProductAnalytics.ts';
-import { interpretDailyRecordWithAi, MAX_INTERPRETATION_CHARS } from '../_shared/whatsappDailyRecordsAi.ts';
+import { interpretDailyRecordWithAi, MAX_INTERPRETATION_CHARS, validateAiCandidate } from '../_shared/whatsappDailyRecordsAi.ts';
 import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared/whatsappReadIntentAi.ts';
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
+import {
+  canUseCompanyFinanceReads,
+  runConversationalAssistant,
+  type AssistantHistoryMessage,
+  type AssistantIdentityContext,
+  type AssistantToolExecution,
+} from '../_shared/whatsappAssistant.ts';
 import {
   buildBusinessesReply,
   buildBusinessSummaryReply,
@@ -123,11 +131,113 @@ import {
 
 type Admin = ReturnType<typeof createClient>;
 
+type ResolvedWhatsAppIdentity = {
+  id: string;
+  identity_id: string;
+  profile_id: string;
+  company_id: string;
+  company_name: string;
+  role: string;
+  lang: Lang;
+  approval_flow_enabled: boolean;
+  reversal_enabled: boolean;
+  payouts_enabled: boolean;
+  revoked_at: string | null;
+};
+
 function admin(): Admin {
   const url = Deno.env.get('SUPABASE_URL');
   const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!url || !key) throw new Error('server misconfigured');
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+async function resolveWhatsAppContext(
+  db: Admin,
+  rawIdentity: { id: string; revoked_at?: string | null } | null,
+): Promise<ResolvedWhatsAppIdentity | null> {
+  if (!rawIdentity?.id) return null;
+  const { data, error } = await db.rpc('wa_resolve_context', { p_identity_id: rawIdentity.id });
+  if (error || !data || typeof data !== 'object') return null;
+  const value = data as Record<string, unknown>;
+  if (!value.profile_id || !value.company_id || !value.identity_id) return null;
+  return {
+    id: String(value.identity_id),
+    identity_id: String(value.identity_id),
+    profile_id: String(value.profile_id),
+    company_id: String(value.company_id),
+    company_name: String(value.company_name ?? 'Risip business'),
+    role: String(value.role ?? 'worker'),
+    lang: value.lang === 'sw' ? 'sw' : 'en',
+    approval_flow_enabled: value.approval_flow_enabled === true,
+    reversal_enabled: value.reversal_enabled === true,
+    payouts_enabled: value.payouts_enabled === true,
+    revoked_at: rawIdentity.revoked_at ?? null,
+  };
+}
+
+function assistantIdentityContext(identity: ResolvedWhatsAppIdentity): AssistantIdentityContext {
+  return {
+    identityId: identity.id,
+    profileId: identity.profile_id,
+    companyId: identity.company_id,
+    companyName: identity.company_name,
+    role: identity.role,
+    lang: identity.lang,
+    approvalFlowEnabled: identity.approval_flow_enabled,
+    reversalEnabled: identity.reversal_enabled,
+    payoutsEnabled: identity.payouts_enabled,
+  };
+}
+
+async function loadAssistantHistory(db: Admin, identity: ResolvedWhatsAppIdentity): Promise<AssistantHistoryMessage[]> {
+  const { data: thread } = await db.from('whatsapp_ai_threads')
+    .select('identity_id')
+    .eq('identity_id', identity.id)
+    .eq('company_id', identity.company_id)
+    .gte('expires_at', new Date().toISOString())
+    .maybeSingle();
+  if (!thread) return [];
+  const { data, error } = await db.from('whatsapp_ai_messages')
+    .select('role, content, created_at')
+    .eq('identity_id', identity.id)
+    .eq('company_id', identity.company_id)
+    .gte('expires_at', new Date().toISOString())
+    .order('created_at', { ascending: false })
+    .limit(12);
+  if (error) return [];
+  return (data ?? []).reverse().flatMap((row: { role: string; content: string }) =>
+    row.role === 'user' || row.role === 'assistant'
+      ? [{ role: row.role, content: String(row.content) } as AssistantHistoryMessage]
+      : []);
+}
+
+async function storeAssistantExchange(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  waMessageId: string,
+  userText: string,
+  assistantText: string,
+  memory: { topic: string | null; entities: Record<string, unknown>; lastTool: string | null },
+): Promise<boolean> {
+  const { error } = await db.rpc('wa_store_ai_exchange', {
+    p_identity_id: identity.id,
+    p_company_id: identity.company_id,
+    p_wa_message_id: waMessageId,
+    p_user_text: userText,
+    p_assistant_text: assistantText,
+    p_topic: memory.topic,
+    p_entities: memory.entities,
+    p_last_tool: memory.lastTool,
+  });
+  return !error;
+}
+
+async function clearAssistantMemory(db: Admin, identity: ResolvedWhatsAppIdentity): Promise<void> {
+  await db.rpc('wa_clear_ai_context', {
+    p_identity_id: identity.id,
+    p_company_id: identity.company_id,
+  });
 }
 
 
@@ -281,10 +391,24 @@ async function answerProductAnalytics(
   request: ProductAnalyticsRequest,
   lang: Lang,
 ): Promise<void> {
+  await replyQuietly(phone, await productAnalyticsToolReply(db, identity, request, lang));
+}
+
+async function productAnalyticsToolReply(
+  db: Admin,
+  identity: any,
+  request: ProductAnalyticsRequest,
+  lang: Lang,
+): Promise<string> {
+  if (!canUseCompanyFinanceReads(String(identity.role ?? 'worker'))) {
+    return lang === 'sw'
+      ? 'Taarifa za mauzo ya bidhaa za kampuni nzima zinaonekana kwa owner au accountant tu.'
+      : 'Company-wide product sales information is available only to an owner or accountant.';
+  }
   const { replyData, costs } = await productAnalytics(db, identity.company_id, request);
   const items = aggregateProducts(replyData, costs);
-  await replyQuietly(phone, productAnalyticsReply(request, items, lang));
   await rememberProductAnalytics(db, identity, request, items);
+  return productAnalyticsReply(request, items, lang);
 }
 
 function readPeriodBounds(period: ReadRequest['period']): { from: string; to: string } {
@@ -310,6 +434,12 @@ async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest,
   const { from, to } = readPeriodBounds(request.period);
   const companyId = String(identity.company_id);
   const profileId = String(identity.profile_id);
+  const financeOnly = new Set(['ai_business_summary', 'ai_debtors', 'ai_debtor_detail', 'daily_profit_estimate', 'ai_pending_approvals']);
+  if (financeOnly.has(request.tool) && !canUseCompanyFinanceReads(String(identity.role ?? 'worker'))) {
+    return lang === 'sw'
+      ? 'Taarifa za kampuni nzima zinaonekana kwa owner au accountant tu. Unaweza kuniuliza kuhusu risiti zako, petty cash yako au reimbursement yako.'
+      : 'Company-wide financial information is available only to an owner or accountant. You can ask about your own receipts, petty cash, or reimbursement.';
+  }
 
   if (request.tool === 'ai_my_businesses') {
     const { data: memberships, error } = await db.from('company_members')
@@ -353,10 +483,6 @@ async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest,
   }
 
   if (request.tool === 'ai_pending_approvals') {
-    const { data: profile } = await db.from('profiles').select('role').eq('id', profileId).eq('company_id', companyId).maybeSingle();
-    if (!profile || !['owner', 'accountant'].includes(String(profile.role))) {
-      return lang === 'sw' ? 'Taarifa za approvals zinaonekana kwa owner au accountant tu.' : 'Approval inbox information is only available to the owner or accountant.';
-    }
     const { count, error } = await db.from('receipts').select('id', { count: 'exact', head: true })
       .eq('company_id', companyId).in('status', ['pending_review', 'submitted']);
     return error ? (lang === 'sw' ? 'Sikuweza kupata approvals zinazosubiri.' : 'I could not load pending approvals.') : buildPendingApprovalsReply(count ?? 0, lang);
@@ -398,6 +524,148 @@ async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest,
     productKey: cost.product_key, unitCost: Number(cost.unit_cost), effectiveFrom: cost.effective_from,
   })) as ReadProductCost[];
   return buildProfitReply(calculateProfitEstimate(rows, lines, costs), request.period, lang);
+}
+
+function assistantPeriod(value: unknown): ReadRequest['period'] {
+  return value === 'week' || value === 'month' || value === 'year' ? value : 'today';
+}
+
+function assistantProductNames(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim().slice(0, 100)).filter(Boolean).slice(0, 2)
+    : [];
+}
+
+async function executeAssistantTool(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  waMessageId: string,
+  lang: Lang,
+  name: string,
+  input: Record<string, unknown>,
+): Promise<AssistantToolExecution> {
+  if (name === 'get_business_summary') {
+    return { content: await readOnlyToolReply(db, identity, { tool: 'ai_business_summary', period: assistantPeriod(input.period) }, lang) };
+  }
+  if (name === 'get_product_performance') {
+    const metric = input.metric === 'revenue' || input.metric === 'margin' ? input.metric : 'quantity';
+    return {
+      content: await productAnalyticsToolReply(db, identity, {
+        rankBy: metric,
+        period: assistantPeriod(input.period),
+        compareNames: assistantProductNames(input.product_names),
+      }, lang),
+    };
+  }
+  if (name === 'get_open_debts') {
+    const partyName = typeof input.party_name === 'string' ? input.party_name.trim().slice(0, 100) || null : null;
+    return {
+      content: await readOnlyToolReply(db, identity, {
+        tool: partyName ? 'ai_debtor_detail' : 'ai_debtors',
+        period: 'today',
+        partyName,
+      }, lang),
+    };
+  }
+  if (name === 'get_my_receipts') {
+    const status = input.status === 'confirmed' || input.status === 'submitted' ? input.status : null;
+    return { content: await readOnlyToolReply(db, identity, { tool: 'ai_my_receipts', period: assistantPeriod(input.period), status }, lang) };
+  }
+  if (name === 'get_my_petty_cash_balance') {
+    return { content: await readOnlyToolReply(db, identity, { tool: 'ai_petty_cash_balance', period: 'today' }, lang) };
+  }
+  if (name === 'get_my_reimbursements') {
+    return { content: await readOnlyToolReply(db, identity, { tool: 'ai_owed_to_me', period: 'today' }, lang) };
+  }
+  if (name === 'get_my_businesses') {
+    return { content: await readOnlyToolReply(db, identity, { tool: 'ai_my_businesses', period: 'today' }, lang) };
+  }
+  if (name === 'get_pending_approvals') {
+    return { content: await readOnlyToolReply(db, identity, { tool: 'ai_pending_approvals', period: 'today' }, lang) };
+  }
+  if (name === 'search_risip_help') {
+    const query = typeof input.query === 'string' ? input.query.slice(0, 500) : '';
+    return { content: buildKnowledgeReply(query, lang) };
+  }
+  if (name === 'propose_product_cost') {
+    if (!canUseCompanyFinanceReads(identity.role)) {
+      const denied = lang === 'sw'
+        ? 'Ni owner au accountant pekee anayeweza kuweka bei ya kununua bidhaa.'
+        : 'Only an owner or accountant can set a product buying cost.';
+      return { content: denied, isError: true, terminalReply: denied };
+    }
+    const cost = validateProductCostCandidate(input);
+    if (!cost) {
+      const clarification = lang === 'sw'
+        ? 'Taja jina la bidhaa, bei yake ya kununua, na unit kama ipo. Mfano: unga unanigharimu TSh 900 kwa kilo.'
+        : 'State the product, its buying cost, and the unit if known. For example: flour costs me TSh 900 per kilo.';
+      return { content: clarification, isError: true, terminalReply: clarification };
+    }
+    const { data: previous } = await db.from('product_costs')
+      .select('unit_cost')
+      .eq('company_id', identity.company_id)
+      .eq('product_key', cost.product.trim().toLowerCase())
+      .order('effective_from', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id,
+      company_id: identity.company_id,
+      profile_id: identity.profile_id,
+      awaiting: 'product_cost',
+      receipt_id: null,
+      options: cost,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+    const confirmation = costConfirmation(
+      cost,
+      identity.company_name,
+      previous ? Number((previous as { unit_cost: number }).unit_cost) : null,
+      lang,
+    );
+    return { content: confirmation, terminalReply: confirmation };
+  }
+  if (name === 'propose_daily_record') {
+    const parsed = validateAiCandidate(input);
+    if (!parsed) {
+      const clarification = lang === 'sw'
+        ? 'Sijaweza kuthibitisha kiasi na hesabu zake. Taja aina ya rekodi, bidhaa au matumizi, quantity na bei—na useme kama bei ni jumla au ya kila moja.'
+        : 'I could not validate the amount and its arithmetic. State the record type, item or expense, quantity and price—and say whether the price is the total or per item.';
+      return { content: clarification, isError: true, terminalReply: clarification };
+    }
+    const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, parsed);
+    const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang);
+    if (created.error || !created.id) {
+      const failed = lang === 'sw'
+        ? 'Sikuweza kuhifadhi draft hii. Hakuna rekodi iliyothibitishwa; tafadhali jaribu tena.'
+        : 'I could not save this draft. No record was confirmed; please try again.';
+      return { content: failed, isError: true, terminalReply: failed };
+    }
+    const state: DailyRecordConversation = {
+      kind: 'daily_record_confirmation',
+      dailyRecordId: created.id,
+      sourceMessageId: waMessageId,
+      record: guardedRecord,
+    };
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id,
+      company_id: identity.company_id,
+      profile_id: identity.profile_id,
+      awaiting: 'payment_source',
+      receipt_id: null,
+      options: state,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+    const confirmation = `${identity.company_name} — ${buildDailyRecordConfirmation(guardedRecord, lang)}`;
+    return { content: confirmation, terminalReply: confirmation };
+  }
+  return {
+    content: lang === 'sw' ? 'Tool hiyo haipatikani.' : 'That tool is not available.',
+    isError: true,
+  };
 }
 
 async function activeProjects(db: Admin, companyId: string): Promise<{ id: string; name: string }[]> {
@@ -820,15 +1088,16 @@ Deno.serve(async (req) => {
         }
 
         // Resolve identity once; used by both branches below.
-        const { data: identity } = await db
+        const { data: rawIdentity } = await db
           .from('whatsapp_identities')
-          .select('id, profile_id, company_id, lang, revoked_at')
+          .select('id, revoked_at')
           .eq('phone_e164', phone)
           .is('revoked_at', null)
           .maybeSingle();
 
         const body: string | null = message?.text?.body ?? null;
-        const lang: Lang = (identity?.lang as Lang | null) ?? detectLanguage(body) ?? 'en';
+        const identity = await resolveWhatsAppContext(db, rawIdentity as { id: string; revoked_at: string | null } | null);
+        const lang: Lang = identity?.lang ?? detectLanguage(body) ?? 'en';
         const finish = (status: string, error?: string) =>
           db.from('whatsapp_messages')
             .update({
@@ -836,6 +1105,22 @@ Deno.serve(async (req) => {
               processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
             })
             .eq('wa_message_id', waMessageId);
+
+        if (rawIdentity && !identity) {
+          await replyQuietly(phone, lang === 'sw'
+            ? 'Akaunti hii imeunganishwa, lakini haina biashara hai yenye membership halali. Fungua Risip uchague biashara, kisha jaribu tena.'
+            : 'This account is linked, but it has no valid active business membership. Open Risip, choose a business, then try again.');
+          await finish('skipped', 'invalid_active_company');
+          continue;
+        }
+
+        if (identity) {
+          await db.from('whatsapp_messages').update({
+            profile_id: identity.profile_id,
+            company_id: identity.company_id,
+            updated_at: new Date().toISOString(),
+          }).eq('wa_message_id', waMessageId);
+        }
 
         // ── Receipt image (with its optional caption) ─────────────────────
         if (message?.type === 'image' && message?.image?.id) {
@@ -943,10 +1228,12 @@ Deno.serve(async (req) => {
               p_reason: 'WhatsApp user cancelled daily record draft',
             });
             await clearConversation(db, identity.id as string);
+            await clearAssistantMemory(db, identity);
             await replyQuietly(phone, error ? buildDailyRecordPending(dailyConversation.record, lang) : t('cancelled', lang));
             await audit(db, identity, waMessageId, 'cancel_action', 'daily_record', error ? 'failed' : 'voided');
           } else {
             await clearConversation(db, identity.id as string);
+            await clearAssistantMemory(db, identity);
             await replyQuietly(phone, t('cancelled', lang));
             await audit(db, identity, waMessageId, 'cancel_action', 'clear_state', 'applied');
           }
@@ -1111,6 +1398,59 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // ── Risip conversational AI ─────────────────────────────────────
+        // Protected control/confirmation states stay deterministic above.
+        // Every other linked free-text business turn is interpreted by the
+        // model first, with bounded client tools and recent company-scoped
+        // conversation history. The deterministic parsers below remain the
+        // availability fallback when the provider or budget is unavailable.
+        let conversationalAiBudgetBlocked = false;
+        const aiEligible = Boolean(body?.trim())
+          && (!convo || convo.awaiting === 'product_analytics')
+          && !isSwitchRequest(body)
+          && !isLoginRequest(body)
+          && !parseLanguageCommand(body)
+          && intent !== 'cancel_action'
+          && intent !== 'change_language';
+        if (aiEligible) {
+          const history = await loadAssistantHistory(db, identity);
+          const contextChars = body!.length + history.reduce((sum, message) => sum + message.content.length, 0);
+          const budget = await consumeAiBudget(db, identity, contextChars);
+          if (budget.allowed) {
+            const assistant = await runConversationalAssistant({
+              context: assistantIdentityContext(identity),
+              history,
+              userText: body!,
+              executeTool: (name, input) => executeAssistantTool(db, identity, waMessageId, lang, name, input),
+            });
+            // A record-looking sentence may never be acknowledged as saved by
+            // prose alone. If the model did not call the proposal tool, let the
+            // existing deterministic validator/clarifier below take over.
+            const unsafeRecordProse = assistant
+              && isDailyRecordCandidate(body)
+              && !assistant.toolNames.includes('propose_daily_record');
+            if (assistant && !unsafeRecordProse) {
+              await replyQuietly(phone, assistant.reply);
+              const remembered = await storeAssistantExchange(
+                db, identity, waMessageId, body!, assistant.reply, assistant.memory,
+              );
+              await audit(
+                db,
+                identity,
+                waMessageId,
+                'conversational_ai',
+                assistant.toolNames.join(',') || 'answer',
+                remembered ? (assistant.usedSafeFallback ? 'safe_fallback' : 'applied') : 'memory_failed',
+              );
+              await finish('skipped');
+              continue;
+            }
+          } else {
+            conversationalAiBudgetBlocked = true;
+            await audit(db, identity, waMessageId, 'conversational_ai', 'budget', 'fallback');
+          }
+        }
+
         const productRequest = parseProductAnalyticsFollowUp(body, productContext) ?? parseProductAnalyticsRequest(body);
         if (productRequest) {
           await answerProductAnalytics(db, identity, phone, productRequest, lang);
@@ -1134,7 +1474,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        if (shouldInterpretReadWithAi(body)) {
+        if (!aiEligible && shouldInterpretReadWithAi(body)) {
           const budget = await consumeAiBudget(db, identity, body.length);
           if (!budget.allowed) {
             await replyQuietly(phone, aiBudgetMessage(lang));
@@ -1313,6 +1653,7 @@ Deno.serve(async (req) => {
 
         if (intent === 'cancel_action') {
           await clearConversation(db, identity.id as string);
+          await clearAssistantMemory(db, identity);
           await replyQuietly(phone, t('cancelled', lang));
           await audit(db, identity, waMessageId, 'cancel_action', 'clear_state', 'applied');
           await finish('skipped');
@@ -1446,7 +1787,9 @@ Deno.serve(async (req) => {
         }
 
         // Nothing pending: help, or a polite scope boundary.
-        await replyQuietly(phone, intent === 'help' ? `${t('help', lang)}\n\n${buildKnowledgeReply(body, lang)}` : t('onlyRisip', lang));
+        await replyQuietly(phone, conversationalAiBudgetBlocked
+          ? aiBudgetMessage(lang)
+          : (intent === 'help' ? `${t('help', lang)}\n\n${buildKnowledgeReply(body, lang)}` : t('onlyRisip', lang)));
         await finish('skipped');
       }
     }

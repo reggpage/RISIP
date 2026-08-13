@@ -20,6 +20,17 @@ export type ProductCost = {
 
 export type ProductCostErrorCode = 'not_linked' | 'no_active_company' | 'not_authorized' | 'no_product' | 'invalid_cost' | 'unknown';
 
+export function validateProductCostCandidate(candidate: unknown): ProductCost | null {
+  if (!candidate || typeof candidate !== 'object') return null;
+  const value = candidate as { product?: unknown; unit_cost?: unknown; unit?: unknown };
+  const product = typeof value.product === 'string' ? clean(value.product).slice(0, 80) : '';
+  const unitCost = typeof value.unit_cost === 'number' ? value.unit_cost : Number.NaN;
+  const unit = typeof value.unit === 'string' ? clean(value.unit).toLowerCase().slice(0, 20) || null : null;
+  if (product.length < 2 || !/[\p{L}]/u.test(product)) return null;
+  if (!Number.isFinite(unitCost) || unitCost <= 0 || unitCost > 1_000_000_000) return null;
+  return { product, unitCost: Math.round(unitCost * 100) / 100, unit };
+}
+
 const clean = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
 
 /** 12,500 · 12500 · 12.500 → 12500 */

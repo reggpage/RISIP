@@ -12,9 +12,12 @@ const PREFERRED_MODELS = [
   'claude-3-5-sonnet-20241022',
 ];
 
-export async function resolveAnthropicModel(apiKey: string, requested?: string): Promise<string> {
+export async function resolveAnthropicModel(apiKey: string, requested?: string, preferRequested = false): Promise<string> {
   const configured = Deno.env.get('ANTHROPIC_MODEL');
-  const preferred = [configured, requested, ...PREFERRED_MODELS].filter(
+  const preferred = [
+    ...(preferRequested ? [requested, configured] : [configured, requested]),
+    ...PREFERRED_MODELS,
+  ].filter(
     (value): value is string => Boolean(value),
   );
 

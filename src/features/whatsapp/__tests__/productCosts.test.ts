@@ -4,6 +4,7 @@ import {
   costSaved,
   parseProductCost,
   productCostErrorMessage,
+  validateProductCostCandidate,
 } from '../../../../supabase/functions/_shared/whatsappProductCosts';
 
 // A buying price silently changes every profit figure that follows it, so the
@@ -11,6 +12,14 @@ import {
 // a cost, or the reverse, would be invisible until the numbers were already wrong.
 
 describe('telling Risip what a product costs to buy', () => {
+  it('validates an AI-interpreted cost with the same hard bounds', () => {
+    expect(validateProductCostCandidate({ product: 'Nguvu ya sala', unit_cost: 7000, unit: 'kitabu' })).toEqual({
+      product: 'Nguvu ya sala', unitCost: 7000, unit: 'kitabu',
+    });
+    expect(validateProductCostCandidate({ product: 'x', unit_cost: 7000, unit: null })).toBeNull();
+    expect(validateProductCostCandidate({ product: 'Nguvu ya sala', unit_cost: -1, unit: null })).toBeNull();
+  });
+
   it('reads the way a trader actually says it', () => {
     expect(parseProductCost('unga unanigharimu 900 kwa kilo')).toEqual({
       product: 'unga', unitCost: 900, unit: 'kilo',
