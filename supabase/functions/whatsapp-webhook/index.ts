@@ -1417,11 +1417,13 @@ Deno.serve(async (req) => {
           const contextChars = body!.length + history.reduce((sum, message) => sum + message.content.length, 0);
           const budget = await consumeAiBudget(db, identity, contextChars);
           if (budget.allowed) {
+            let assistantFailure = 'unknown_failure';
             const assistant = await runConversationalAssistant({
               context: assistantIdentityContext(identity),
               history,
               userText: body!,
               executeTool: (name, input) => executeAssistantTool(db, identity, waMessageId, lang, name, input),
+              onFailure: (code) => { assistantFailure = code; },
             });
             // A record-looking sentence may never be acknowledged as saved by
             // prose alone. If the model did not call the proposal tool, let the
@@ -1444,6 +1446,9 @@ Deno.serve(async (req) => {
               );
               await finish('skipped');
               continue;
+            }
+            if (!assistant) {
+              await audit(db, identity, waMessageId, 'conversational_ai', 'provider', assistantFailure);
             }
           } else {
             conversationalAiBudgetBlocked = true;

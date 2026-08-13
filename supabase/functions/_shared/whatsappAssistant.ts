@@ -118,14 +118,14 @@ export const ASSISTANT_TOOLS: ToolDefinition[] = [
     {
       metric: { type: 'string', enum: ['quantity', 'revenue', 'margin'] },
       period: periodSchema,
-      product_names: { type: 'array', items: { type: 'string', maxLength: 100 }, maxItems: 2 },
+      product_names: { type: 'array', items: { type: 'string' }, description: 'At most two product names; the server validates and truncates them.' },
     },
     ['metric', 'period', 'product_names'],
   ),
   tool(
     'get_open_debts',
     'Read confirmed open customer debts. Use party_name for one debtor, otherwise null for the list. Do not use for supplier claims or amounts the business owes employees.',
-    { party_name: { type: ['string', 'null'], maxLength: 100 } },
+    { party_name: { type: ['string', 'null'], description: 'One debtor name, or null for all open debtors.' } },
     ['party_name'],
   ),
   tool(
@@ -144,16 +144,16 @@ export const ASSISTANT_TOOLS: ToolDefinition[] = [
   tool(
     'search_risip_help',
     'Retrieve Risip product guidance, permissions and workflow help. Use when the question is about how Risip works rather than live business data.',
-    { query: { type: 'string', minLength: 1, maxLength: 500 } },
+    { query: { type: 'string', description: 'A non-empty Risip help question; the server enforces the length limit.' } },
     ['query'],
   ),
   tool(
     'propose_product_cost',
     'Interpret a request to set the buying cost of a product. This changes future profit estimates, so it only prepares an explicit YES/NDIYO confirmation and is available to owner/accountant. Never use a selling price or a completed stock purchase as the buying cost.',
     {
-      product: { type: 'string', minLength: 2, maxLength: 80 },
-      unit_cost: { type: 'number', exclusiveMinimum: 0 },
-      unit: { type: ['string', 'null'], maxLength: 20 },
+      product: { type: 'string', description: 'Product name; the server validates and limits its length.' },
+      unit_cost: { type: 'number', description: 'Positive buying cost. The server rejects zero, negative and unrealistic values.' },
+      unit: { type: ['string', 'null'], description: 'Short unit label or null.' },
     },
     ['product', 'unit_cost', 'unit'],
   ),
@@ -162,18 +162,18 @@ export const ASSISTANT_TOOLS: ToolDefinition[] = [
     'Interpret a request to record a sale, expense, customer debt, customer payment, or stock purchase. This creates only a pending draft and the server asks for explicit YES/NDIYO confirmation. Never call for a question about existing data. Never invent missing quantity, price, amount, party or product.',
     {
       kind: { type: 'string', enum: ['sale', 'expense', 'debt_issued', 'customer_payment', 'stock_purchase'] },
-      party_name: { type: ['string', 'null'], maxLength: 200 },
-      description: { type: ['string', 'null'], maxLength: 2000 },
-      amount: { type: ['number', 'null'], exclusiveMinimum: 0 },
+      party_name: { type: ['string', 'null'], description: 'Customer, debtor, payer or payee name when known.' },
+      description: { type: ['string', 'null'], description: 'Brief record description.' },
+      amount: { type: ['number', 'null'], description: 'Positive explicit total, or null when lines determine the total.' },
       lines: {
         type: 'array',
-        maxItems: 50,
+        description: 'At most 50 lines. The server recalculates and validates every line and total.',
         items: {
           type: 'object',
           properties: {
-            description: { type: 'string', minLength: 1, maxLength: 200 },
-            quantity: { type: 'number', exclusiveMinimum: 0 },
-            unit_amount: { type: 'number', exclusiveMinimum: 0 },
+            description: { type: 'string', description: 'Non-empty product or expense line description.' },
+            quantity: { type: 'number', description: 'Positive quantity.' },
+            unit_amount: { type: 'number', description: 'Positive unit amount.' },
           },
           required: ['description', 'quantity', 'unit_amount'],
           additionalProperties: false,
@@ -340,10 +340,14 @@ export async function runConversationalAssistant(args: {
   history: AssistantHistoryMessage[];
   userText: string;
   executeTool: AssistantToolExecutor;
+  onFailure?: (code: string) => void;
 }): Promise<AssistantRunResult | null> {
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
   const userText = args.userText.trim().slice(0, MAX_USER_CHARS);
-  if (!apiKey || !userText) return null;
+  if (!apiKey || !userText) {
+    args.onFailure?.(!apiKey ? 'missing_api_key' : 'empty_user_text');
+    return null;
+  }
 
   const model = await resolveAnthropicModel(
     apiKey,
@@ -379,14 +383,26 @@ export async function runConversationalAssistant(args: {
         }),
       });
     } catch {
+      args.onFailure?.('provider_network_error');
       return null;
     }
-    if (!response.ok) return null;
+    if (!response.ok) {
+      let errorType = 'unknown_error';
+      try {
+        const errorPayload = await response.json() as { error?: { type?: string } };
+        errorType = String(errorPayload.error?.type ?? errorType).replace(/[^a-z0-9_]+/gi, '_').slice(0, 60);
+      } catch { /* status and generic type are enough for safe telemetry */ }
+      args.onFailure?.(`provider_${response.status}_${errorType}`);
+      return null;
+    }
     const payload = await response.json() as AnthropicResponse;
     const calls = toolCalls(payload.content);
 
     if (calls.length === 0) {
-      if (mustGroundWithTool && executed.length === 0) return null;
+      if (mustGroundWithTool && executed.length === 0) {
+        args.onFailure?.('missing_required_tool_call');
+        return null;
+      }
       const reply = textFrom(payload.content) || unavailable(args.context.lang);
       const ungrounded = findUngroundedNumbers(reply, evidence);
       if (ungrounded.length > 0) {
@@ -460,5 +476,6 @@ export async function runConversationalAssistant(args: {
       })),
     });
   }
+  args.onFailure?.('tool_loop_exhausted');
   return null;
 }

@@ -38,6 +38,10 @@ describe('Risip conversational AI core', () => {
     expect(ASSISTANT_TOOL_NAMES).not.toContain('reverse_receipt');
     expect(ASSISTANT_TOOL_NAMES).not.toContain('void_daily_record');
     expect(ASSISTANT_TOOLS.every((tool) => tool.input_schema && tool.strict === true)).toBe(true);
+    const serializedSchemas = JSON.stringify(ASSISTANT_TOOLS.map((tool) => tool.input_schema));
+    for (const unsupported of ['minLength', 'maxLength', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'minItems', 'maxItems', 'pattern']) {
+      expect(serializedSchemas).not.toContain(`\"${unsupported}\"`);
+    }
   });
 
   it('injects active business, role, flags, language and semantic-follow-up rules', () => {
@@ -177,5 +181,25 @@ describe('Risip conversational AI core', () => {
       executeTool: async () => ({ content: evidence }),
     });
     expect(result).toMatchObject({ reply: evidence, usedSafeFallback: true });
+  });
+
+  it('reports a safe provider failure code without exposing prompts or secrets', async () => {
+    (globalThis as { Deno?: unknown }).Deno = {
+      env: { get: (name: string) => name === 'ANTHROPIC_API_KEY' ? 'test-key' : undefined },
+    };
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'claude-sonnet-5' }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { type: 'invalid_request_error', message: 'private detail' } }), { status: 400 }));
+    const onFailure = vi.fn();
+    const result = await runConversationalAssistant({
+      context,
+      history: [],
+      userText: 'Mauzo ya leo?',
+      executeTool: async () => ({ content: 'unused' }),
+      onFailure,
+    });
+    expect(result).toBeNull();
+    expect(onFailure).toHaveBeenCalledWith('provider_400_invalid_request_error');
+    expect(JSON.stringify(onFailure.mock.calls)).not.toContain('private detail');
   });
 });
