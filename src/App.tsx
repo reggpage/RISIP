@@ -26,6 +26,7 @@ import SettingsPage from '@/routes/settings/SettingsPage';
 import NotificationsPage from '@/routes/notifications/NotificationsPage';
 import RetirementsPage from '@/routes/retirements/RetirementsPage';
 import ReimbursementsPage from '@/routes/reimbursements/ReimbursementsPage';
+import DailyRecordsPage from '@/routes/dailyRecords/DailyRecordsPage';
 
 export default function App() {
   return (
@@ -78,6 +79,7 @@ export default function App() {
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/retirements" element={<RetirementsPage />} />
         <Route path="/reimbursements" element={<ReimbursementsPage />} />
+        <Route path="/daily-records" element={<DailyRecordsPage />} />
         <Route
           path="/claims"
           element={

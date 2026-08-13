@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import StaffDashboard from '@/routes/dashboard/StaffDashboard';
 import { useAuth } from '@/lib/auth';
 import { Link } from 'react-router-dom';
-import { Receipt, Users, FileText, Wallet } from 'lucide-react';
+import { Receipt, Users, FileText, Wallet, TrendingUp, CreditCard, HandCoins, ArrowLeftRight } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { CategoryBarSkeleton, ListItemSkeleton, MetricCardSkeleton } from '@/components/ui/Skeleton';
 import Select from '@/components/ui/Select';
@@ -14,6 +14,7 @@ import { useDashboardData } from '@/features/dashboard/useDashboardData';
 import { useProjects } from '@/features/projects/useProjects';
 import { formatMoney } from '@/lib/format';
 import { sw } from '@/i18n/sw';
+import { getDailyRecordSummary, useDailyRecords } from '@/features/dailyRecords/dailyRecords';
 
 export default function Dashboard() {
   const auth = useAuth();
@@ -29,6 +30,8 @@ function CompanyDashboard() {
   const { state: projectsState } = useProjects();
   const [projectId, setProjectId] = useState<string>('');
   const data = useDashboardData(projectId || undefined);
+  const dailyRecords = useDailyRecords();
+  const dailySummary = getDailyRecordSummary(dailyRecords.records);
 
   const activeProjects =
     projectsState.status === 'ready' ? projectsState.projects.filter((p) => p.status === 'active') : [];
@@ -88,6 +91,29 @@ function CompanyDashboard() {
               icon={<FileText className="h-5 w-5" />}
             />
           </>
+        )}
+      </div>
+
+      <div className="mb-6">
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-ink">Today’s daily records</h2>
+            <p className="text-xs text-ink-muted">Separate from receipt expenses · confirmed records only</p>
+          </div>
+          <Link to="/daily-records" className="text-sm font-medium text-role-admin hover:underline">View records →</Link>
+        </div>
+        {dailyRecords.status === 'loading' && dailyRecords.records.length === 0 ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, i) => <MetricCardSkeleton key={i} />)}
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <MetricCard label="Today sales" value={formatMoney(dailySummary.sales)} icon={<TrendingUp className="h-5 w-5" />} hint="Daily records only" />
+            <MetricCard label="Today expenses" value={formatMoney(dailySummary.expenses)} icon={<Wallet className="h-5 w-5" />} hint="Not receipt expenses" />
+            <MetricCard label="Open debts / debt issued" value={formatMoney(dailySummary.debtIssued)} icon={<HandCoins className="h-5 w-5" />} hint="Confirmed debt issued" />
+            <MetricCard label="Customer payments" value={formatMoney(dailySummary.customerPayments)} icon={<CreditCard className="h-5 w-5" />} hint="Does not create sales" />
+            <MetricCard label="Cash movement estimate" value={formatMoney(dailySummary.cashMovement)} icon={<ArrowLeftRight className="h-5 w-5" />} hint="Sales + payments − daily expenses" />
+          </div>
         )}
       </div>
 

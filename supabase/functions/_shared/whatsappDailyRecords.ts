@@ -338,7 +338,7 @@ export function buildDailyRecordConfirmation(record: ParsedDailyRecord, lang: La
     const balance = roundMoney(record.referenceAmount - record.amount);
     lines.push((lang === 'sw' ? 'Mabaki ya rejea' : 'Reference balance') + ': ' + money(balance, lang));
   }
-  lines.push((lang === 'sw' ? 'Jumla' : 'Total') + ': ' + money(record.amount, lang), '');
+  lines.push((lang === 'sw' ? 'Jumla' : 'Total') + ': *' + money(record.amount, lang) + '*', '');
   lines.push(lang === 'sw'
     ? 'Jibu *NDIYO* kuthibitisha, au *HAPANA* kughairi.'
     : 'Reply *YES* to confirm, or *NO* to cancel.');
@@ -355,8 +355,8 @@ export function isDailyRecordRejection(text: string | null | undefined): boolean
 
 export function buildDailyRecordConfirmed(record: ParsedDailyRecord, lang: Lang): string {
   return lang === 'sw'
-    ? 'Sawa. ' + kindLabel(record.kind, lang) + ' ya ' + money(record.amount, lang) + ' imethibitishwa.'
-    : 'Done. The ' + kindLabel(record.kind, lang).toLowerCase() + ' of ' + money(record.amount, lang) + ' is confirmed.';
+    ? 'Sawa. ' + kindLabel(record.kind, lang) + ' ya *' + money(record.amount, lang) + '* imethibitishwa.\n\nAngalia rekodi zako: https://risip.online/daily-records'
+    : 'Done. The ' + kindLabel(record.kind, lang).toLowerCase() + ' of *' + money(record.amount, lang) + '* is confirmed.\n\nView your records: https://risip.online/daily-records';
 }
 
 export function buildDailyRecordPending(record: ParsedDailyRecord, lang: Lang): string {

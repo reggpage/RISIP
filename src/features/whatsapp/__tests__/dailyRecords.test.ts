@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_DAILY_RECORD_AMOUNT,
   buildDailyRecordConfirmation,
+  buildDailyRecordConfirmed,
   isDailyRecordConfirmation,
   isDailyRecordRejection,
   parseDailyRecord,
@@ -128,7 +129,17 @@ describe('deterministic WhatsApp daily-record parser', () => {
     if (parsed.kind === 'parsed') {
       const reply = buildDailyRecordConfirmation(parsed.record, 'sw');
       expect(reply).toContain('nguvu ya sala: 70 × TSh 9,000 = TSh 630,000');
-      expect(reply).toContain('Jumla: TSh 630,000');
+      expect(reply).toContain('Jumla: *TSh 630,000*');
+    }
+  });
+
+  it('adds a records link and bold total after confirmation', () => {
+    const parsed = parseDailyRecord('nimeuza madaftari 10 kila moja 3000', 'sw');
+    expect(parsed.kind).toBe('parsed');
+    if (parsed.kind === 'parsed') {
+      const reply = buildDailyRecordConfirmed(parsed.record, 'sw');
+      expect(reply).toContain('*TSh 30,000*');
+      expect(reply).toContain('https://risip.online/daily-records');
     }
   });
 

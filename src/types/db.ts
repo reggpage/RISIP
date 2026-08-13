@@ -333,6 +333,57 @@ export type AppNotification = {
   created_at: string;
 };
 
+export type DailyRecordKind = 'sale' | 'expense' | 'debt_issued' | 'customer_payment';
+export type DailyRecordStatus = 'pending_confirmation' | 'confirmed' | 'voided';
+export type DailyRecordSource = 'app' | 'whatsapp' | 'other';
+
+export type DailyRecord = {
+  id: string;
+  company_id: string;
+  project_id: string | null;
+  recorded_by: string | null;
+  source: DailyRecordSource;
+  source_message_id: string | null;
+  kind: DailyRecordKind;
+  status: DailyRecordStatus;
+  amount: number;
+  currency: string;
+  party_name: string | null;
+  description: string | null;
+  occurred_at: string;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  voided_by: string | null;
+  voided_at: string | null;
+  void_reason: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DailyRecordLine = {
+  id: string;
+  daily_record_id: string;
+  line_number: number;
+  description: string;
+  quantity: number;
+  unit_amount: number;
+  line_total: number;
+  created_at: string;
+};
+
+export type DailyRecordAudit = {
+  id: string;
+  daily_record_id: string;
+  company_id: string;
+  actor_id: string | null;
+  action: 'created' | 'confirmed' | 'voided';
+  from_status: DailyRecordStatus | null;
+  to_status: DailyRecordStatus;
+  reason: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
 // ─── Database shape for the typed Supabase client ──────────────────────────────
 // supabase-js requires the schema to satisfy GenericSchema (Tables, Views, Functions).
 // GenericTable requires Row, Insert, Update, AND Relationships (even if empty []).
@@ -503,6 +554,24 @@ export type Database = {
         Update: Partial<AppNotification>;
         Relationships: [];
       };
+      daily_records: {
+        Row: DailyRecord;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      daily_record_lines: {
+        Row: DailyRecordLine;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      daily_record_audit_log: {
+        Row: DailyRecordAudit;
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -558,6 +627,8 @@ export type Database = {
       };
       /** Count of company invoices this month — callable by staff (no row exposure). */
       invoices_this_month_count: { Args: { p_project?: string | null }; Returns: number };
+      confirm_daily_record: { Args: { p_daily_record_id: string }; Returns: string };
+      void_daily_record: { Args: { p_daily_record_id: string; p_reason: string }; Returns: string };
       /** Leader (capped by project budget) or owner allocates petty cash to a project member. */
       allocate_project_petty_cash: {
         Args: { p_project: string; p_user: string; p_amount: number; p_description?: string | null };
