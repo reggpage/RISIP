@@ -1,0 +1,317 @@
+// A1 read-only tools for the WhatsApp assistant.
+//
+// This module is deliberately database-free. The edge function owns tenant
+// scoping and querying; these pure calculations make it possible to test the
+// arithmetic without a service-role client and keep the assistant from ever
+// treating a model response as an accounting source.
+
+export type ReadToolName =
+  | 'ai_business_summary'
+  | 'ai_debtors'
+  | 'daily_profit_estimate'
+  | 'ai_debtor_detail'
+  | 'ai_my_receipts'
+  | 'ai_petty_cash_balance'
+  | 'ai_owed_to_me'
+  | 'ai_my_businesses'
+  | 'ai_pending_approvals';
+
+export type ReadPeriod = 'today' | 'week' | 'month' | 'year';
+
+export type ReadRequest = {
+  tool: ReadToolName;
+  period: ReadPeriod;
+  status?: string | null;
+  partyName?: string | null;
+};
+
+export type ReadDailyRow = {
+  kind: string;
+  status: string;
+  amount: number;
+  partyName?: string | null;
+  occurredAt?: string | null;
+};
+
+export type ReadDailyLine = {
+  description: string;
+  quantity: number;
+  lineTotal: number;
+  occurredAt: string;
+};
+
+export type ReadProductCost = {
+  productKey: string;
+  unitCost: number;
+  effectiveFrom: string;
+};
+
+export type BusinessSummary = {
+  sales: number;
+  expenses: number;
+  debtIssued: number;
+  customerPayments: number;
+  stockPurchases: number;
+  cashMovement: number;
+};
+
+export type Debtor = {
+  partyName: string;
+  issued: number;
+  paid: number;
+  balance: number;
+};
+
+export type ProfitEstimate = {
+  sales: number;
+  expenses: number;
+  cogs: number;
+  costedSales: number;
+  coverage: number;
+  estimatedProfit: number;
+  productsMissingCost: string[];
+};
+
+export type ReceiptSummary = {
+  id: string;
+  status: string;
+  amount: number | null;
+  vendor: string | null;
+  createdAt: string;
+};
+
+export type BusinessMembership = {
+  companyId: string;
+  companyName: string;
+  role: string;
+};
+
+function normalise(text: string): string {
+  return text
+    .toLocaleLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function hasAny(text: string, words: string[]): boolean {
+  return words.some((word) => text.includes(word));
+}
+
+function parsePeriod(text: string): ReadPeriod {
+  if (hasAny(text, ['mwaka', 'year', 'annual'])) return 'year';
+  if (hasAny(text, ['mwezi', 'month', 'monthly'])) return 'month';
+  if (hasAny(text, ['wiki', 'week', 'weekly'])) return 'week';
+  return 'today';
+}
+
+/** Deterministic routing for A1. No AI is consulted to choose a read tool. */
+export function parseReadRequest(input: string | null | undefined): ReadRequest | null {
+  const text = normalise(String(input ?? ''));
+  if (!text) return null;
+  const period = parsePeriod(text);
+
+  if (hasAny(text, ['ninaidai risip', 'risip inanidai', 'my reimbursement', 'reimbursements yangu'])) {
+    return { tool: 'ai_owed_to_me', period };
+  }
+  if (hasAny(text, ['biashara zangu', 'my businesses', 'switch business', 'badili biashara'])) {
+    return { tool: 'ai_my_businesses', period };
+  }
+  if (hasAny(text, ['pending approval', 'awaiting approval', 'risiti za kuapprove', 'risiti zinazosubiri', 'zinazosubiri kuangaliwa'])) {
+    return { tool: 'ai_pending_approvals', period };
+  }
+  if (hasAny(text, ['petty cash', 'salio la cash', 'cash balance', 'salio langu la pesa'])) {
+    return { tool: 'ai_petty_cash_balance', period };
+  }
+  if (hasAny(text, ['risiti zangu', 'my receipts', 'receipt status', 'status ya risiti'])) {
+    const status = hasAny(text, ['confirmed', 'imethibitishwa'])
+      ? 'confirmed'
+      : hasAny(text, ['pending', 'inasubiri', 'submitted']) ? 'submitted' : null;
+    return { tool: 'ai_my_receipts', period, status };
+  }
+  const detailMatch = text.match(/^deni la ([a-z][a-z ]{1,60}?) (?:ni|lina|imebakia|imebaki)\b/)
+    ?? text.match(/^([a-z][a-z ]{1,60}?) anadaiwa(?: kiasi gani| kiasi| nini)?\b/);
+  const detailName = detailMatch?.[1].trim();
+  if (detailName && !['nani', 'who', 'which'].includes(detailName)) {
+    return { tool: 'ai_debtor_detail', period, partyName: detailName };
+  }
+  if (hasAny(text, ['nani anadaiwa', 'nani ananidai', 'wanaonidai', 'onyesha wadeni', 'list ya madeni', 'who owes me', 'hajanilipa', 'nina madeni', 'madeni yangu', 'madeni ya'])) {
+    return { tool: 'ai_debtors', period };
+  }
+  if (hasAny(text, ['faida', 'profit', 'margin', 'biashara inalipa', 'gharama zimezidi'])) {
+    return { tool: 'daily_profit_estimate', period };
+  }
+  if (hasAny(text, ['muhtasari', 'summary', 'imekuwaje', 'what happened', 'mauzo ya leo', 'sales today', 'business summary'])) {
+    return { tool: 'ai_business_summary', period };
+  }
+  return null;
+}
+
+function money(value: number, lang: 'sw' | 'en'): string {
+  const currency = lang === 'sw' ? 'TSh' : 'TSh';
+  return `${currency} ${Math.round(value).toLocaleString('en-US')}`;
+}
+
+export function periodLabel(period: ReadPeriod, lang: 'sw' | 'en'): string {
+  const labels = lang === 'sw'
+    ? { today: 'leo', week: 'wiki hii', month: 'mwezi huu', year: 'mwaka huu' }
+    : { today: 'today', week: 'this week', month: 'this month', year: 'this year' };
+  return labels[period];
+}
+
+export function calculateBusinessSummary(rows: ReadDailyRow[]): BusinessSummary {
+  const confirmed = rows.filter((row) => row.status === 'confirmed');
+  const total = (kind: string) => confirmed
+    .filter((row) => row.kind === kind)
+    .reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0);
+  const sales = total('sale');
+  const expenses = total('expense');
+  const debtIssued = total('debt_issued');
+  const customerPayments = total('customer_payment');
+  const stockPurchases = total('stock_purchase');
+  return {
+    sales,
+    expenses,
+    debtIssued,
+    customerPayments,
+    stockPurchases,
+    cashMovement: sales + customerPayments - expenses - stockPurchases,
+  };
+}
+
+export function calculateDebtors(rows: ReadDailyRow[]): Debtor[] {
+  const byParty = new Map<string, Debtor>();
+  for (const row of rows) {
+    if (row.status !== 'confirmed') continue;
+    const partyName = String(row.partyName ?? '').trim();
+    if (!partyName) continue;
+    const key = normalise(partyName);
+    if (!key) continue;
+    const current = byParty.get(key) ?? { partyName, issued: 0, paid: 0, balance: 0 };
+    if (row.kind === 'debt_issued') current.issued += Math.max(0, Number(row.amount) || 0);
+    if (row.kind === 'customer_payment') current.paid += Math.max(0, Number(row.amount) || 0);
+    current.balance = current.issued - current.paid;
+    byParty.set(key, current);
+  }
+  return [...byParty.values()]
+    .filter((debtor) => debtor.balance > 0)
+    .sort((a, b) => b.balance - a.balance || a.partyName.localeCompare(b.partyName));
+}
+
+export function calculateProfitEstimate(
+  rows: ReadDailyRow[],
+  lines: ReadDailyLine[],
+  costs: ReadProductCost[],
+): ProfitEstimate {
+  const confirmed = rows.filter((row) => row.status === 'confirmed');
+  const sales = confirmed.filter((row) => row.kind === 'sale').reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const expenses = confirmed.filter((row) => row.kind === 'expense').reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const findCost = (line: ReadDailyLine): number | null => {
+    const key = normalise(line.description);
+    const saleTime = new Date(line.occurredAt).getTime();
+    const match = costs
+      .filter((cost) => normalise(cost.productKey) === key && new Date(cost.effectiveFrom).getTime() <= saleTime)
+      .sort((a, b) => new Date(b.effectiveFrom).getTime() - new Date(a.effectiveFrom).getTime())[0];
+    return match ? Number(match.unitCost) : null;
+  };
+  let cogs = 0;
+  let costedSales = 0;
+  const missing = new Set<string>();
+  for (const line of lines) {
+    if (line.quantity <= 0 || line.lineTotal <= 0) continue;
+    const unitCost = findCost(line);
+    if (unitCost === null) {
+      missing.add(line.description.trim());
+      continue;
+    }
+    cogs += line.quantity * unitCost;
+    costedSales += line.lineTotal;
+  }
+  return {
+    sales,
+    expenses,
+    cogs: Math.round(cogs * 100) / 100,
+    costedSales: Math.round(costedSales * 100) / 100,
+    coverage: sales > 0 ? Math.round((costedSales / sales) * 10000) / 10000 : 0,
+    estimatedProfit: Math.round((sales - cogs - expenses) * 100) / 100,
+    productsMissingCost: [...missing].sort(),
+  };
+}
+
+export function buildBusinessSummaryReply(summary: BusinessSummary, period: ReadPeriod, lang: 'sw' | 'en'): string {
+  const label = periodLabel(period, lang);
+  if (lang === 'sw') {
+    return `Muhtasari wa ${label}:\nMauzo: ${money(summary.sales, lang)}\nMatumizi ya rekodi za siku: ${money(summary.expenses, lang)}\nMalipo ya wateja: ${money(summary.customerPayments, lang)}\nDeni lililotolewa: ${money(summary.debtIssued, lang)} (si fedha iliyopokelewa)\nMabadiliko ya fedha yanayokadiriwa: ${money(summary.cashMovement, lang)}\n\nHaya ni rekodi za siku; gharama za risiti zinaonyeshwa kando.`;
+  }
+  return `Summary for ${label}:\nSales: ${money(summary.sales, lang)}\nDaily-record expenses: ${money(summary.expenses, lang)}\nCustomer payments: ${money(summary.customerPayments, lang)}\nDebt issued: ${money(summary.debtIssued, lang)} (not cash received)\nEstimated cash movement: ${money(summary.cashMovement, lang)}\n\nThese are daily records; receipt expenses are shown separately.`;
+}
+
+export function buildDebtorsReply(debtors: Debtor[], lang: 'sw' | 'en'): string {
+  if (debtors.length === 0) {
+    return lang === 'sw' ? 'Sina rekodi ya deni lililofunguka kwa sasa.' : 'I have no confirmed open customer debts right now.';
+  }
+  const rows = debtors.slice(0, 10).map((debtor, index) => `${index + 1}. ${debtor.partyName} — ${money(debtor.balance, lang)}`);
+  const total = debtors.reduce((sum, debtor) => sum + debtor.balance, 0);
+  return lang === 'sw'
+    ? `Wateja wanaokudai:\n${rows.join('\n')}\n\nJumla iliyo wazi: ${money(total, lang)}`
+    : `Customers who owe you:\n${rows.join('\n')}\n\nTotal outstanding: ${money(total, lang)}`;
+}
+
+export function buildDebtorDetailReply(debtor: Debtor | null, partyName: string, lang: 'sw' | 'en'): string {
+  if (!debtor) return lang === 'sw' ? `Sina rekodi ya deni la ${partyName}.` : `I have no confirmed debt record for ${partyName}.`;
+  if (debtor.balance <= 0) return lang === 'sw' ? `${partyName} hana deni lililo wazi kwa sasa.` : `${partyName} has no open balance right now.`;
+  return lang === 'sw'
+    ? `${partyName} anadaiwa ${money(debtor.balance, lang)}. Jumla ya deni: ${money(debtor.issued, lang)}; amelipa: ${money(debtor.paid, lang)}.`
+    : `${partyName} owes ${money(debtor.balance, lang)}. Issued: ${money(debtor.issued, lang)}; paid: ${money(debtor.paid, lang)}.`;
+}
+
+export function buildProfitReply(profit: ProfitEstimate, period: ReadPeriod, lang: 'sw' | 'en'): string {
+  const label = periodLabel(period, lang);
+  if (profit.sales <= 0) {
+    return lang === 'sw' ? `Sina mauzo yaliyothibitishwa ya ${label} ya kukadiria faida.` : `I have no confirmed sales for ${label} to estimate profit.`;
+  }
+  const coverage = Math.round(profit.coverage * 100);
+  const missing = profit.productsMissingCost.length > 0
+    ? (lang === 'sw'
+      ? `\nBei za kununua hazijarekodiwa kwa: ${profit.productsMissingCost.join(', ')}. Hivyo hii ni makisio yenye taarifa pungufu.`
+      : `\nBuying costs are missing for: ${profit.productsMissingCost.join(', ')}. This estimate is therefore incomplete.`)
+    : '';
+  return lang === 'sw'
+    ? `Makisio ya faida ya ${label}:\nMauzo: ${money(profit.sales, lang)}\nCOGS iliyokadiriwa: ${money(profit.cogs, lang)}\nMatumizi: ${money(profit.expenses, lang)}\nFaida inayokadiriwa: ${money(profit.estimatedProfit, lang)}\nCoverage ya mauzo: ${coverage}%${missing}`
+    : `Estimated profit for ${label}:\nSales: ${money(profit.sales, lang)}\nEstimated COGS: ${money(profit.cogs, lang)}\nExpenses: ${money(profit.expenses, lang)}\nEstimated profit: ${money(profit.estimatedProfit, lang)}\nSales coverage: ${coverage}%${missing}`;
+}
+
+export function buildReceiptsReply(receipts: ReceiptSummary[], lang: 'sw' | 'en'): string {
+  if (receipts.length === 0) return lang === 'sw' ? 'Sina risiti zako zilizoonekana kwa sasa.' : 'I could not find your receipts right now.';
+  const rows = receipts.slice(0, 10).map((receipt, index) => {
+    const amount = receipt.amount === null ? '-' : money(receipt.amount, lang);
+    return `${index + 1}. ${receipt.vendor || (lang === 'sw' ? 'Risiti' : 'Receipt')} — ${amount} — ${receipt.status}`;
+  });
+  return lang === 'sw' ? `Risiti zako za karibuni:\n${rows.join('\n')}` : `Your recent receipts:\n${rows.join('\n')}`;
+}
+
+export function buildPettyCashReply(balance: number | null, lang: 'sw' | 'en'): string {
+  if (balance === null) return lang === 'sw' ? 'Huna petty cash account iliyopatikana katika biashara hii.' : 'No petty-cash account was found for you in this business.';
+  return lang === 'sw' ? `Salio lako la petty cash ni ${money(balance, lang)}.` : `Your petty-cash balance is ${money(balance, lang)}.`;
+}
+
+export function buildOwedToMeReply(amount: number, count: number, lang: 'sw' | 'en'): string {
+  return lang === 'sw'
+    ? `Risip inakudai ${money(amount, lang)} kwa risiti ${count} za matumizi ya pesa zako ambazo bado hazijalipwa.`
+    : `Risip owes you ${money(amount, lang)} across ${count} personal-expense receipts that have not been reimbursed.`;
+}
+
+export function buildBusinessesReply(businesses: BusinessMembership[], lang: 'sw' | 'en'): string {
+  if (businesses.length === 0) return lang === 'sw' ? 'Huna biashara zilizounganishwa.' : 'You have no linked businesses.';
+  const rows = businesses.map((business, index) => `${index + 1}. ${business.companyName} — ${business.role}`);
+  return lang === 'sw' ? `Biashara zako:\n${rows.join('\n')}` : `Your businesses:\n${rows.join('\n')}`;
+}
+
+export function buildPendingApprovalsReply(count: number, lang: 'sw' | 'en'): string {
+  return lang === 'sw'
+    ? `Kuna risiti ${count} zinazosubiri hatua ya finance.`
+    : `There are ${count} receipts waiting for a finance decision.`;
+}

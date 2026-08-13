@@ -80,8 +80,27 @@ import {
   type ProductCostPoint,
   type ProductSaleLine,
 } from '../_shared/whatsappProductAnalytics.ts';
-import { interpretDailyRecordWithAi } from '../_shared/whatsappDailyRecordsAi.ts';
+import { interpretDailyRecordWithAi, MAX_INTERPRETATION_CHARS } from '../_shared/whatsappDailyRecordsAi.ts';
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
+import {
+  buildBusinessesReply,
+  buildBusinessSummaryReply,
+  buildDebtorDetailReply,
+  buildDebtorsReply,
+  buildOwedToMeReply,
+  buildPendingApprovalsReply,
+  buildPettyCashReply,
+  buildProfitReply,
+  buildReceiptsReply,
+  calculateBusinessSummary,
+  calculateDebtors,
+  calculateProfitEstimate,
+  parseReadRequest,
+  type ReadDailyLine,
+  type ReadDailyRow,
+  type ReadProductCost,
+  type ReadRequest,
+} from '../_shared/whatsappReadTools.ts';
 import {
   isProjectSetupState,
   parseProjectSetupChoice,
@@ -166,6 +185,24 @@ async function addHistoricalPriceWarnings(db: Admin, companyId: string, record: 
   return warnings.length > 0 ? { ...record, warnings } : record;
 }
 
+async function consumeAiBudget(db: Admin, identity: any, inputChars: number): Promise<{ allowed: boolean; reason?: string }> {
+  const { data, error } = await db.rpc('consume_whatsapp_ai_budget', {
+    p_company_id: identity.company_id,
+    p_identity_id: identity.id,
+    p_input_chars: Math.min(Math.max(1, inputChars), MAX_INTERPRETATION_CHARS),
+  });
+  if (error || !data || data.allowed !== true) {
+    return { allowed: false, reason: error ? 'budget_unavailable' : String(data?.reason ?? 'daily_limit') };
+  }
+  return { allowed: true };
+}
+
+function aiBudgetMessage(lang: Lang): string {
+  return lang === 'sw'
+    ? 'Nimefikia kikomo cha msaidizi wa AI kwa leo. Risip bado inafanya kazi; tuma ujumbe ulio wazi au jaribu tena kesho.'
+    : 'The AI fallback limit for this business has been reached today. Risip is still working; send a clearer message or try again tomorrow.';
+}
+
 async function productAnalytics(
   db: Admin,
   companyId: string,
@@ -207,6 +244,119 @@ async function productAnalytics(
       productKey: String(cost.product_key), unitCost: Number(cost.unit_cost), effectiveFrom: String(cost.effective_from),
     })),
   };
+}
+
+function readPeriodBounds(period: ReadRequest['period']): { from: string; to: string } {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  if (period === 'week') {
+    const day = start.getUTCDay() || 7;
+    start.setUTCDate(start.getUTCDate() - day + 1);
+  } else if (period === 'month') {
+    start.setUTCDate(1);
+  } else if (period === 'year') {
+    start.setUTCMonth(0, 1);
+  }
+  return { from: start.toISOString(), to: now.toISOString() };
+}
+
+/**
+ * A1 tools are read-only and tenant-scoped from the already-resolved WhatsApp
+ * identity. No user text is used as a company id, and no branch in this helper
+ * writes a row or calls a finance mutation RPC.
+ */
+async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest, lang: Lang): Promise<string> {
+  const { from, to } = readPeriodBounds(request.period);
+  const companyId = String(identity.company_id);
+  const profileId = String(identity.profile_id);
+
+  if (request.tool === 'ai_my_businesses') {
+    const { data: memberships, error } = await db.from('company_members')
+      .select('company_id, role').eq('profile_id', profileId).is('deactivated_at', null);
+    if (error) return lang === 'sw' ? 'Sikuweza kupata orodha ya biashara zako sasa.' : 'I could not load your businesses right now.';
+    const ids = (memberships ?? []).map((row: { company_id: string }) => row.company_id);
+    if (ids.length === 0) return buildBusinessesReply([], lang);
+    const { data: companies, error: companyError } = await db.from('companies').select('id, name').in('id', ids);
+    if (companyError) return lang === 'sw' ? 'Sikuweza kupata orodha ya biashara zako sasa.' : 'I could not load your businesses right now.';
+    const names = new Map((companies ?? []).map((row: { id: string; name: string }) => [row.id, row.name]));
+    return buildBusinessesReply((memberships ?? []).map((row: { company_id: string; role: string }) => ({
+      companyId: row.company_id, companyName: names.get(row.company_id) ?? 'Business', role: row.role,
+    })), lang);
+  }
+
+  if (request.tool === 'ai_petty_cash_balance') {
+    const { data, error } = await db.from('petty_cash_accounts').select('current_balance')
+      .eq('company_id', companyId).eq('user_id', profileId).maybeSingle();
+    return error ? buildPettyCashReply(null, lang) : buildPettyCashReply(data ? Number(data.current_balance) : null, lang);
+  }
+
+  if (request.tool === 'ai_owed_to_me') {
+    const { data, error } = await db.from('receipts').select('total_amount')
+      .eq('company_id', companyId).eq('uploaded_by', profileId).eq('status', 'confirmed')
+      .eq('payment_method', 'cash_personal').is('reimbursed_at', null).limit(5000);
+    if (error) return lang === 'sw' ? 'Sikuweza kupata taarifa ya madai yako sasa.' : 'I could not load what Risip owes you right now.';
+    const amount = (data ?? []).reduce((sum: number, row: { total_amount: number | null }) => sum + Number(row.total_amount ?? 0), 0);
+    return buildOwedToMeReply(amount, (data ?? []).length, lang);
+  }
+
+  if (request.tool === 'ai_my_receipts') {
+    let query = db.from('receipts').select('id, status, total_amount, vendor_name, created_at')
+      .eq('company_id', companyId).eq('uploaded_by', profileId).gte('created_at', from).lt('created_at', to)
+      .order('created_at', { ascending: false }).limit(10);
+    if (request.status) query = query.eq('status', request.status);
+    const { data, error } = await query;
+    if (error) return lang === 'sw' ? 'Sikuweza kupata risiti zako sasa.' : 'I could not load your receipts right now.';
+    return buildReceiptsReply((data ?? []).map((row: { id: string; status: string; total_amount: number | null; vendor_name: string | null; created_at: string }) => ({
+      id: row.id, status: row.status, amount: row.total_amount === null ? null : Number(row.total_amount), vendor: row.vendor_name, createdAt: row.created_at,
+    })), lang);
+  }
+
+  if (request.tool === 'ai_pending_approvals') {
+    const { data: profile } = await db.from('profiles').select('role').eq('id', profileId).eq('company_id', companyId).maybeSingle();
+    if (!profile || !['owner', 'accountant'].includes(String(profile.role))) {
+      return lang === 'sw' ? 'Taarifa za approvals zinaonekana kwa owner au accountant tu.' : 'Approval inbox information is only available to the owner or accountant.';
+    }
+    const { count, error } = await db.from('receipts').select('id', { count: 'exact', head: true })
+      .eq('company_id', companyId).in('status', ['pending_review', 'submitted']);
+    return error ? (lang === 'sw' ? 'Sikuweza kupata approvals zinazosubiri.' : 'I could not load pending approvals.') : buildPendingApprovalsReply(count ?? 0, lang);
+  }
+
+  const rangeQuery = db.from('daily_records').select('id, kind, status, amount, party_name, occurred_at')
+    .eq('company_id', companyId).eq('status', 'confirmed');
+  const dailyQuery = request.tool === 'ai_debtors'
+    ? rangeQuery.order('occurred_at', { ascending: true }).limit(10000)
+    : rangeQuery.gte('occurred_at', from).lt('occurred_at', to).order('occurred_at', { ascending: true }).limit(10000);
+  const { data: dailyRows, error: dailyError } = await dailyQuery;
+  if (dailyError) return lang === 'sw' ? 'Sikuweza kupata taarifa za biashara sasa.' : 'I could not load business records right now.';
+  const rows = (dailyRows ?? []).map((row: { kind: string; status: string; amount: number; party_name: string | null; occurred_at: string }) => ({
+    kind: row.kind, status: row.status, amount: Number(row.amount), partyName: row.party_name, occurredAt: row.occurred_at,
+  })) as ReadDailyRow[];
+
+  if (request.tool === 'ai_business_summary') return buildBusinessSummaryReply(calculateBusinessSummary(rows), request.period, lang);
+  if (request.tool === 'ai_debtors' || request.tool === 'ai_debtor_detail') {
+    const debtors = calculateDebtors(rows);
+    if (request.tool === 'ai_debtor_detail') {
+      const wanted = String(request.partyName ?? '').trim().toLocaleLowerCase();
+      const debtor = debtors.find((row) => row.partyName.toLocaleLowerCase() === wanted) ?? null;
+      return buildDebtorDetailReply(debtor, request.partyName ?? '', lang);
+    }
+    return buildDebtorsReply(debtors, lang);
+  }
+
+  const ids = (dailyRows ?? []).map((row: { id: string }) => row.id);
+  const { data: rawLines } = ids.length > 0
+    ? await db.from('daily_record_lines').select('daily_record_id, description, quantity, line_total').in('daily_record_id', ids).limit(20000)
+    : { data: [] };
+  const occurredById = new Map((dailyRows ?? []).map((row: { id: string; occurred_at: string }) => [row.id, row.occurred_at]));
+  const lines = (rawLines ?? []).map((line: { daily_record_id: string; description: string; quantity: number; line_total: number }) => ({
+    description: line.description, quantity: Number(line.quantity), lineTotal: Number(line.line_total), occurredAt: occurredById.get(line.daily_record_id) ?? from,
+  })) as ReadDailyLine[];
+  const { data: rawCosts } = await db.from('product_costs').select('product_key, unit_cost, effective_from')
+    .eq('company_id', companyId).order('effective_from', { ascending: true }).limit(10000);
+  const costs = (rawCosts ?? []).map((cost: { product_key: string; unit_cost: number; effective_from: string }) => ({
+    productKey: cost.product_key, unitCost: Number(cost.unit_cost), effectiveFrom: cost.effective_from,
+  })) as ReadProductCost[];
+  return buildProfitReply(calculateProfitEstimate(rows, lines, costs), request.period, lang);
 }
 
 async function activeProjects(db: Admin, companyId: string): Promise<{ id: string; name: string }[]> {
@@ -926,6 +1076,21 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        const readRequest = parseReadRequest(body);
+        if (readRequest) {
+          try {
+            await replyQuietly(phone, await readOnlyToolReply(db, identity, readRequest, lang));
+            await audit(db, identity, waMessageId, 'read_only_tool', readRequest.tool, 'applied');
+          } catch {
+            await replyQuietly(phone, lang === 'sw'
+              ? 'Sikuweza kupata taarifa hiyo sasa. Jaribu tena baadaye.'
+              : 'I could not load that information right now. Please try again later.');
+            await audit(db, identity, waMessageId, 'read_only_tool', readRequest.tool, 'failed');
+          }
+          await finish('skipped');
+          continue;
+        }
+
         if (isDailyRecordCandidate(body)) {
           const parsed = parseDailyRecord(body, lang);
           if (parsed.kind === 'clarify') {
@@ -942,6 +1107,13 @@ Deno.serve(async (req) => {
               }, { onConflict: 'identity_id' });
             }
             if (!parsed.draft && parsed.reason !== 'ambiguity') {
+              const budget = await consumeAiBudget(db, identity, body.length);
+              if (!budget.allowed) {
+                await replyQuietly(phone, aiBudgetMessage(lang));
+                await audit(db, identity, waMessageId, 'daily_record_ai_fallback', 'budget', 'blocked');
+                await finish('skipped', 'ai_budget_blocked');
+                continue;
+              }
               const aiRecord = await interpretDailyRecordWithAi(body, lang);
               if (aiRecord) {
                 const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, aiRecord);

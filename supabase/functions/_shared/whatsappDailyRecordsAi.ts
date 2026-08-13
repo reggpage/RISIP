@@ -10,7 +10,7 @@ import { resolveAnthropicModel } from './anthropicModel.ts';
 declare const Deno: { env: { get(name: string): string | undefined } };
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const MAX_INTERPRETATION_CHARS = 1200;
+export const MAX_INTERPRETATION_CHARS = 1200;
 
 type AiCandidate = {
   kind?: string;

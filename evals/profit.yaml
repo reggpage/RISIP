@@ -196,6 +196,7 @@ cases:
     lang: sw
     fixture: fully_costed
     expect_tool: set_product_cost
+    must_confirm: true
     must_contain: ["900", "1,100"]   # show what it was, not just "saved"
     must_not: [overwrite_silently]
 

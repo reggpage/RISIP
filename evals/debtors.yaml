@@ -185,6 +185,7 @@ cases:
     fixture: two_debtors            # "Asha" already exists
     expect_tool: ai_record_debt_issued
     must_ask_same_person: true      # "Una mteja Asha. Ni yule yule?"
+    must_confirm: true
     must_not: [silently_merge, silently_split]
 
   - id: 206b
@@ -193,6 +194,7 @@ cases:
     fixture: two_debtors
     expect_tool: ai_record_debt_issued
     expect_args: { party_matches_existing: "Asha" }
+    must_confirm: true
     must_not: [ask_same_person]     # case alone is not ambiguity
 
   - id: 207
@@ -248,6 +250,7 @@ cases:
     lang: sw
     fixture: two_debtors
     expect_tool: ai_void_daily_record
+    must_confirm: true
     must_ask_which_record: true
     must_require_reason: true       # private.is_meaningful_reason already enforces this
     must_not: [void_without_reason, void_all_records]
