@@ -65,6 +65,21 @@ import {
   type OnboardingStep,
 } from '../_shared/whatsappOnboarding.ts';
 import { waSyntheticEmail } from '../_shared/waIdentityEmail.ts';
+import {
+  costConfirmation,
+  costSaved,
+  parseProductCost,
+  productCostErrorMessage,
+  type ProductCost,
+} from '../_shared/whatsappProductCosts.ts';
+import {
+  aggregateProducts,
+  parseProductAnalyticsRequest,
+  periodStart,
+  productAnalyticsReply,
+  type ProductCostPoint,
+  type ProductSaleLine,
+} from '../_shared/whatsappProductAnalytics.ts';
 import { interpretDailyRecordWithAi } from '../_shared/whatsappDailyRecordsAi.ts';
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import {
@@ -149,6 +164,49 @@ async function addHistoricalPriceWarnings(db: Admin, companyId: string, record: 
     .select('description, unit_amount').in('daily_record_id', ids).limit(1000);
   const warnings = detectDailyRecordPriceAnomalies(record, (historicalLines ?? []) as { description: string; unit_amount: number }[]);
   return warnings.length > 0 ? { ...record, warnings } : record;
+}
+
+async function productAnalytics(
+  db: Admin,
+  companyId: string,
+  request: import('../_shared/whatsappProductAnalytics.ts').ProductAnalyticsRequest,
+): Promise<{ replyData: ProductSaleLine[]; costs: ProductCostPoint[] }> {
+  const from = periodStart(request.period).toISOString();
+  const { data: records } = await db.from('daily_records')
+    .select('id, occurred_at')
+    .eq('company_id', companyId)
+    .eq('kind', 'sale')
+    .eq('status', 'confirmed')
+    .gte('occurred_at', from)
+    .lt('occurred_at', new Date().toISOString())
+    .order('occurred_at', { ascending: true })
+    .limit(2000);
+  const rows = (records ?? []) as Array<{ id: string; occurred_at: string }>;
+  if (rows.length === 0) return { replyData: [], costs: [] };
+  const byId = new Map(rows.map((row) => [row.id, row.occurred_at]));
+  const { data: lines } = await db.from('daily_record_lines')
+    .select('daily_record_id, description, quantity, line_total')
+    .in('daily_record_id', rows.map((row) => row.id))
+    .limit(10000);
+  const replyData = ((lines ?? []) as Array<{ daily_record_id: string; description: string; quantity: number; line_total: number }>)
+    .map((line) => ({
+      description: String(line.description ?? '').trim(),
+      quantity: Number(line.quantity),
+      lineTotal: Number(line.line_total),
+      occurredAt: byId.get(line.daily_record_id) ?? new Date().toISOString(),
+    }))
+    .filter((line) => line.description && line.quantity > 0 && line.lineTotal > 0);
+  const { data: costs } = await db.from('product_costs')
+    .select('product_key, unit_cost, effective_from')
+    .eq('company_id', companyId)
+    .order('effective_from', { ascending: true })
+    .limit(5000);
+  return {
+    replyData,
+    costs: ((costs ?? []) as Array<{ product_key: string; unit_cost: number; effective_from: string }>).map((cost) => ({
+      productKey: String(cost.product_key), unitCost: Number(cost.unit_cost), effectiveFrom: String(cost.effective_from),
+    })),
+  };
 }
 
 async function activeProjects(db: Admin, companyId: string): Promise<{ id: string; name: string }[]> {
@@ -673,6 +731,11 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<DailyRecordClarification> | null)?.kind === 'daily_record_clarification'
           ? convo.options as DailyRecordClarification
           : null;
+        // A buying price awaiting NDIYO. Its own slot, so it can never be
+        // confused with a daily-record draft sitting in payment_source.
+        const costConversation = convo?.awaiting === 'product_cost' && convo.options
+          ? { cost: convo.options as unknown as ProductCost }
+          : null;
         // A stop command cancels a pending daily-record draft through the same
         // RPC used by HAPANA/NO. Clarification-only state has no DB draft yet,
         // so it is safely cleared without creating a ledger event.
@@ -785,6 +848,80 @@ Deno.serve(async (req) => {
             continue;
           }
           await replyQuietly(phone, buildDailyRecordConfirmation(dailyConversation.record, lang));
+          await finish('skipped');
+          continue;
+        }
+
+        // ── A buying price ──────────────────────────────────────────────
+        // Before the daily-record parser, because "unga unanigharimu 900 kwa
+        // kilo" contains a product and a number and would otherwise be read as
+        // something that moved money. Nothing here moves money: it records what a
+        // product costs, which is what makes the profit estimate possible at all.
+        if (costConversation) {
+          const pending = costConversation.cost;
+          if (isDailyRecordConfirmation(body)) {
+            const { data: saved, error } = await db.rpc('wa_set_product_cost', {
+              p_phone: phone, p_name: pending.product,
+              p_unit_cost: pending.unitCost, p_unit: pending.unit,
+            });
+            await clearConversation(db, identity.id as string);
+            const business = (saved as { company_name?: string } | null)?.company_name ?? '';
+            await replyQuietly(phone, error ? productCostErrorMessage(error, lang) : costSaved(pending, business, lang));
+            await audit(db, identity, waMessageId, 'product_cost', pending.product, error ? 'failed' : 'applied');
+            await finish('skipped');
+            continue;
+          }
+          if (isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, lang === 'sw' ? 'Sawa, sijaandika.' : 'Fine, nothing saved.');
+            await audit(db, identity, waMessageId, 'product_cost', pending.product, 'cancelled');
+            await finish('skipped');
+            continue;
+          }
+        }
+
+        const costCandidate = parseProductCost(body);
+        if (costCandidate) {
+          // The previous price is read here so the confirmation can show what it
+          // was changing from. "Saved" alone hides a number that quietly rewrites
+          // every profit figure after it.
+          const { data: prev } = await db
+            .from('product_costs')
+            .select('unit_cost')
+            .eq('company_id', identity.company_id)
+            .eq('product_key', costCandidate.product.trim().toLowerCase())
+            .order('effective_from', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const { data: company } = await db
+            .from('companies').select('name').eq('id', identity.company_id).maybeSingle();
+
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            options: costCandidate,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+
+          await replyQuietly(phone, costConfirmation(
+            costCandidate,
+            (company as { name?: string } | null)?.name ?? '',
+            prev ? Number((prev as { unit_cost: number }).unit_cost) : null,
+            lang,
+          ));
+          await finish('skipped');
+          continue;
+        }
+
+        const productRequest = parseProductAnalyticsRequest(body);
+        if (productRequest) {
+          const { replyData, costs } = await productAnalytics(db, identity.company_id, productRequest);
+          const items = aggregateProducts(replyData, costs);
+          await replyQuietly(phone, productAnalyticsReply(productRequest, items, lang));
+          await audit(db, identity, waMessageId, 'product_analytics', productRequest.rankBy, 'applied');
           await finish('skipped');
           continue;
         }

@@ -1,0 +1,136 @@
+// "unga unanigharimu 900 kwa kilo" — telling Risip what a product costs to buy.
+//
+// Without this the product_costs table stays empty and the profit estimate can
+// never say anything, because nobody has a way to answer the one question it
+// needs. A trader lives in WhatsApp, so the answer has to be reachable there.
+//
+// Deliberately narrow, for the same reason the stock parser is: a buying price
+// silently changes every future profit figure, so a message has to say plainly
+// that it is a cost before we treat it as one. "nimeuza unga 900" is a sale and
+// must never land here.
+
+export type Lang = 'en' | 'sw';
+
+export type ProductCost = {
+  product: string;
+  unitCost: number;
+  /** "kilo", "kipande" — descriptive only. Nothing converts between units. */
+  unit: string | null;
+};
+
+export type ProductCostErrorCode = 'not_linked' | 'no_active_company' | 'not_authorized' | 'no_product' | 'invalid_cost' | 'unknown';
+
+const clean = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
+
+/** 12,500 · 12500 · 12.500 → 12500 */
+function money(raw: string): number | null {
+  const digits = raw.replace(/[,\s]/g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(digits)) return null;
+  const value = Number(digits);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+// Every shape means the same thing: this product costs me this much to buy.
+//   unga unanigharimu 900 kwa kilo
+//   unga inanigharimu 900
+//   bei ya kununua unga ni 900
+//   ninanunua unga kwa 900 kwa kilo
+//   unga buying price 900 per kilo
+//   cost of unga is 900
+const PATTERNS: { re: RegExp; product: number; amount: number; unit: number }[] = [
+  // <product> unanigharimu|inanigharimu|unagharimu <amount> [kwa <unit>]
+  { re: /^(.+?)\s+(?:una|ina|u|i)?nigharimu\s+([\d.,]+)(?:\s+(?:kwa|per|kila)\s+([\p{L}]+))?$/iu,
+    product: 1, amount: 2, unit: 3 },
+  // bei ya kununua <product> ni <amount> [kwa <unit>]
+  { re: /^bei\s+ya\s+kununua\s+(.+?)\s+(?:ni\s+)?([\d.,]+)(?:\s+(?:kwa|per|kila)\s+([\p{L}]+))?$/iu,
+    product: 1, amount: 2, unit: 3 },
+  // ninanunua|nanunua <product> kwa <amount> [kwa <unit>]
+  { re: /^(?:nina|na|ni)nunua\s+(.+?)\s+kwa\s+([\d.,]+)(?:\s+(?:kwa|per|kila)\s+([\p{L}]+))?$/iu,
+    product: 1, amount: 2, unit: 3 },
+  // <product> gharama (ya kununua) <amount> [kwa <unit>]
+  { re: /^(.+?)\s+gharama(?:\s+ya\s+kununua)?\s+(?:ni\s+)?([\d.,]+)(?:\s+(?:kwa|per|kila)\s+([\p{L}]+))?$/iu,
+    product: 1, amount: 2, unit: 3 },
+  // <product> buying price [is] <amount> [per <unit>]
+  { re: /^(.+?)\s+(?:buying\s+price|cost\s+price)\s+(?:is\s+)?([\d.,]+)(?:\s+(?:per|a)\s+([\p{L}]+))?$/iu,
+    product: 1, amount: 2, unit: 3 },
+  // cost of <product> is <amount> [per <unit>]
+  { re: /^cost\s+of\s+(.+?)\s+is\s+([\d.,]+)(?:\s+(?:per|a)\s+([\p{L}]+))?$/iu,
+    product: 1, amount: 2, unit: 3 },
+];
+
+// Words that mean the message is about selling or spending, not about a cost
+// price. If one of these opens the message we do not claim it, whatever else it
+// contains — a mis-read here rewrites every future profit figure.
+const NOT_A_COST = /^(?:nimeuza|niliuza|uza|sold|mauzo|nimelipa|nimetumia|paid|spent|nimenunua\s+stock|amechukua|amelipa)\b/i;
+
+export function parseProductCost(text: string | null | undefined): ProductCost | null {
+  const said = clean(text);
+  if (!said || NOT_A_COST.test(said)) return null;
+
+  for (const { re, product, amount, unit } of PATTERNS) {
+    const m = re.exec(said);
+    if (!m) continue;
+
+    const name = clean(m[product])
+      .replace(/^(?:bei\s+ya\s+)?/i, '')
+      .replace(/[:,.]+$/, '')
+      .trim();
+    const value = money(m[amount] ?? '');
+    if (!value || name.length < 2 || name.length > 80) return null;
+    // A product name that is only digits is a parse gone wrong, not a product.
+    if (!/[\p{L}]/u.test(name)) return null;
+
+    return {
+      product: name,
+      unitCost: value,
+      unit: m[unit] ? clean(m[unit]).toLowerCase().slice(0, 20) : null,
+    };
+  }
+  return null;
+}
+
+/** Asked before saving, because this number changes every report that follows. */
+export function costConfirmation(
+  cost: ProductCost, businessName: string, previous: number | null, lang: Lang,
+): string {
+  const price = cost.unitCost.toLocaleString('en-US');
+  const per = cost.unit ? (lang === 'sw' ? ` kwa ${cost.unit}` : ` per ${cost.unit}`) : '';
+  const was = previous !== null
+    ? (lang === 'sw'
+        ? `\nIlikuwa TSh ${previous.toLocaleString('en-US')}${per}.`
+        : `\nIt was TSh ${previous.toLocaleString('en-US')}${per}.`)
+    : '';
+
+  return lang === 'sw'
+    ? `${businessName} — ${cost.product} inakugharimu TSh ${price}${per}.${was}\n\nNi sahihi? NDIYO / HAPANA`
+    : `${businessName} — ${cost.product} costs you TSh ${price}${per}.${was}\n\nIs that right? YES / NO`;
+}
+
+export function costSaved(cost: ProductCost, businessName: string, lang: Lang): string {
+  const per = cost.unit ? (lang === 'sw' ? ` kwa ${cost.unit}` : ` per ${cost.unit}`) : '';
+  return lang === 'sw'
+    ? `Nimeandika: ${cost.product} TSh ${cost.unitCost.toLocaleString('en-US')}${per} (${businessName}).\nSasa naweza kukadiria faida ya ${cost.product}.`
+    : `Saved: ${cost.product} TSh ${cost.unitCost.toLocaleString('en-US')}${per} (${businessName}).\nI can now estimate profit on ${cost.product}.`;
+}
+
+/** Map database hints to safe user-facing copy; never expose raw Postgres text. */
+export function productCostErrorMessage(error: { message?: string; hint?: string } | null | undefined, lang: Lang): string {
+  const hint = error?.hint as ProductCostErrorCode | undefined;
+  const sw: Record<ProductCostErrorCode, string> = {
+    not_linked: 'Namba hii bado haijaunganishwa na Risip.',
+    no_active_company: 'Hakuna biashara hai iliyochaguliwa kwenye Risip.',
+    not_authorized: 'Ni owner au accountant pekee anayeweza kuweka bei ya kununua.',
+    no_product: 'Sikuweza kutambua jina la bidhaa. Taja bidhaa na bei yake.',
+    invalid_cost: 'Bei ya kununua lazima iwe kubwa kuliko sifuri.',
+    unknown: 'Sikuweza kuhifadhi bei hiyo. Tafadhali jaribu tena.',
+  };
+  const en: Record<ProductCostErrorCode, string> = {
+    not_linked: 'This number is not linked to Risip.',
+    no_active_company: 'No active business is selected in Risip.',
+    not_authorized: 'Only an owner or accountant can set a buying price.',
+    no_product: 'I could not identify the product name. Include the product and its price.',
+    invalid_cost: 'The buying price must be greater than zero.',
+    unknown: 'I could not save that buying price. Please try again.',
+  };
+  return (lang === 'sw' ? sw : en)[hint && hint in sw ? hint : 'unknown'];
+}

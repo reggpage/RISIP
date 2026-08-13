@@ -1,0 +1,192 @@
+# Risip AI — evaluation set: products (group 89–96)
+#
+# "What sells most" and "what earns most" are different questions, and a trader
+# who confuses them stocks the wrong thing. Soda may move 200 units a week at 100
+# shillings of margin; cement may move 4 bags at 8,000. Volume says soda, money
+# says cement.
+#
+# Now that product_costs exists, Risip can answer both — but only for products
+# with a buying price. Ranking by margin while half the products have no cost
+# would put the priced ones on top for no reason other than being priced, which
+# is worse than not ranking at all.
+#
+# Bar for this group: 8/8, and every must_not holds.
+
+fixtures:
+  # unga: 30 kilos sold at 2,500, costs 900  → revenue 75,000, margin 48,000
+  # soda: 200 sold at 1,000, costs 900       → revenue 200,000, margin 20,000
+  volume_vs_margin:
+    product_costs:
+      - { product: "unga", unit_cost: 900,  unit: "kilo" }
+      - { product: "soda", unit_cost: 900,  unit: "chupa" }
+    daily_records:
+      - { kind: sale, amount: 75000,  status: confirmed,
+          lines: [{ description: "unga", quantity: 30,  unit_amount: 2500 }] }
+      - { kind: sale, amount: 200000, status: confirmed,
+          lines: [{ description: "soda", quantity: 200, unit_amount: 1000 }] }
+
+  # sukari sells well but has no buying price recorded.
+  partly_costed:
+    product_costs:
+      - { product: "unga", unit_cost: 900, unit: "kilo" }
+    daily_records:
+      - { kind: sale, amount: 75000, status: confirmed,
+          lines: [{ description: "unga",   quantity: 30, unit_amount: 2500 }] }
+      - { kind: sale, amount: 90000, status: confirmed,
+          lines: [{ description: "sukari", quantity: 30, unit_amount: 3000 }] }
+
+  # Nothing itemised: lump sums only.
+  no_lines:
+    product_costs: []
+    daily_records:
+      - { kind: sale, amount: 150000, status: confirmed }
+      - { kind: sale, amount: 90000,  status: confirmed }
+
+  empty: { product_costs: [], daily_records: [] }
+
+cases:
+
+# ── Volume ──────────────────────────────────────────────────────────────────
+
+  - id: 89
+    say: "bidhaa gani inauza zaidi?"
+    lang: sw
+    fixture: volume_vs_margin
+    expect_tool: ai_top_products
+    expect_args: { rank_by: quantity }
+    must_contain: ["soda"]
+    must_state_basis: quantity
+    # "inauza zaidi" is about movement. Answer movement, and say that is what was
+    # measured, because the money answer is the opposite here.
+
+  - id: 90
+    say: "kitu gani kinauzika sana?"
+    lang: sw
+    fixture: volume_vs_margin
+    expect_tool: ai_top_products
+    expect_args: { rank_by: quantity }
+    must_contain: ["soda"]
+
+  - id: 91
+    say: "best selling product"
+    lang: en
+    fixture: volume_vs_margin
+    expect_tool: ai_top_products
+    must_reply_in: en
+    must_contain: ["soda"]
+
+  - id: 95
+    say: "nionyeshe bidhaa zote ninazouza"
+    lang: sw
+    fixture: volume_vs_margin
+    expect_tool: ai_top_products
+    expect_args: { limit: null }
+    must_contain: ["unga", "soda"]
+
+  - id: 94
+    say: "top 5 bidhaa zangu"
+    lang: sw
+    fixture: volume_vs_margin
+    expect_tool: ai_top_products
+    expect_args: { limit: 5 }
+
+# ── Money, which is a different answer ──────────────────────────────────────
+
+  - id: 96
+    say: "bidhaa gani ilinipa faida kubwa?"
+    lang: sw
+    fixture: volume_vs_margin
+    expect_tool: ai_top_products
+    expect_args: { rank_by: margin }
+    must_contain: ["unga", "48,000", "makisio"]
+    must_not: [rank_by_quantity, say_soda_is_most_profitable]
+    # soda moved 200 units and earned 20,000. unga moved 30 and earned 48,000.
+    # Answering "soda" here would send the trader to restock the wrong thing.
+
+  - id: 401
+    say: "bidhaa gani inaniingizia pesa zaidi?"
+    lang: sw
+    fixture: volume_vs_margin
+    expect_tool: ai_top_products
+    expect_args: { rank_by: revenue }
+    must_contain: ["soda", "200,000"]
+    # Revenue, not margin: "inaingiza pesa" is money through the till.
+
+# ── The comparison a trader has not thought to ask for ──────────────────────
+
+  - id: 402
+    say: "bidhaa gani inauza zaidi?"
+    lang: sw
+    fixture: volume_vs_margin
+    expect_tool: ai_top_products
+    must_mention_margin_differs: true
+    # Volume says soda, margin says unga. Answering only the question asked is
+    # correct but unhelpful when the other answer is the opposite and one line
+    # can say so.
+
+# ── What is missing must be said, not hidden ────────────────────────────────
+
+  - id: 93
+    say: "bidhaa gani hainiuzii?"
+    lang: sw
+    fixture: volume_vs_margin
+    expect_tool: ai_top_products
+    must_sort: ascending
+    must_not: [invent_products_never_sold]
+    # We only know what was sold. A product nobody has ever recorded is invisible
+    # to us, and claiming it "does not sell" would be a guess about stock we have
+    # never seen.
+
+  - id: 403
+    say: "bidhaa gani ilinipa faida kubwa?"
+    lang: sw
+    fixture: partly_costed
+    expect_tool: ai_top_products
+    expect_args: { rank_by: margin }
+    must_name_missing_costs: ["sukari"]
+    must_not: [rank_uncosted_last_silently, imply_sukari_earns_nothing]
+    # sukari has no buying price, so its margin is unknown — not zero. Ranking it
+    # last without saying why would tell the trader to drop a product that may be
+    # their best.
+
+  - id: 404
+    say: "bidhaa gani inauza zaidi?"
+    lang: sw
+    fixture: no_lines
+    expect_tool: ai_top_products
+    must_contain: ["bado"]
+    must_offer: itemise_sales
+    must_not: ["150,000", "90,000"]
+    # Lump sums have no products in them. The honest answer is that we cannot
+    # tell yet, and how to make it possible.
+
+  - id: 405
+    say: "kitu gani kinauzika sana?"
+    lang: sw
+    fixture: empty
+    expect_tool: ai_top_products
+    must_contain: ["hujaandika"]
+    must_not: ["Hakuna bidhaa inayouzika"]
+    # Nothing recorded is not the same as nothing selling.
+
+# ── Comparing two named products ────────────────────────────────────────────
+
+  - id: 92
+    say: "unga au sukari ipi inauza zaidi?"
+    lang: sw
+    fixture: partly_costed
+    expect_tool: ai_top_products
+    must_compare_only: ["unga", "sukari"]
+    must_contain: ["unga", "sukari"]
+    # Both moved 30 units. Say so rather than picking one, and separate them by
+    # revenue since the quantities tie.
+
+# ── Failure honesty ─────────────────────────────────────────────────────────
+
+  - id: 406
+    say: "bidhaa gani inauza zaidi?"
+    lang: sw
+    fixture: volume_vs_margin
+    simulate: tool_error
+    must_contain: ["sijaweza"]
+    must_not: [invent_numbers, answer_from_memory]
