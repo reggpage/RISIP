@@ -38,6 +38,17 @@ import {
   type ProjectRef,
 } from '../_shared/whatsappIntent.ts';
 import {
+  buildDailyRecordCancelled,
+  buildDailyRecordConfirmation,
+  buildDailyRecordConfirmed,
+  buildDailyRecordPending,
+  isDailyRecordCandidate,
+  isDailyRecordConfirmation,
+  isDailyRecordRejection,
+  parseDailyRecord,
+  type DailyRecordConversation,
+} from '../_shared/whatsappDailyRecords.ts';
+import {
   advanceOnboarding,
   businessList,
   isLoginRequest,
@@ -597,6 +608,101 @@ Deno.serve(async (req) => {
           await replyQuietly(phone, await handleOnboarding(db, phone, body, false));
           await finish('skipped', 'onboarding');
           continue;
+        }
+
+        // Daily-record draft confirmation uses the existing payment_source
+        // conversation slot. Receipt/project state stays mutually exclusive.
+        const dailyConversation = convo?.awaiting === 'payment_source'
+          && (convo.options as Partial<DailyRecordConversation> | null)?.kind === 'daily_record_confirmation'
+          ? convo.options as DailyRecordConversation
+          : null;
+        if (dailyConversation) {
+          if (isDailyRecordConfirmation(body)) {
+            const { error } = await db.rpc('wa_confirm_daily_record', {
+              p_profile_id: identity.profile_id,
+              p_company_id: identity.company_id,
+              p_daily_record_id: dailyConversation.dailyRecordId,
+            });
+            await clearConversation(db, identity.id as string);
+            if (error) {
+              await replyQuietly(phone, buildDailyRecordPending(dailyConversation.record, lang));
+              await audit(db, identity, waMessageId, 'daily_record', 'confirm', 'pending');
+            } else {
+              await replyQuietly(phone, buildDailyRecordConfirmed(dailyConversation.record, lang));
+              await audit(db, identity, waMessageId, 'daily_record', 'confirm', 'applied');
+            }
+            await finish('skipped');
+            continue;
+          }
+          if (isDailyRecordRejection(body)) {
+            const { error } = await db.rpc('wa_cancel_daily_record_draft', {
+              p_profile_id: identity.profile_id,
+              p_company_id: identity.company_id,
+              p_daily_record_id: dailyConversation.dailyRecordId,
+              p_reason: 'WhatsApp user declined daily record draft',
+            });
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, error
+              ? buildDailyRecordPending(dailyConversation.record, lang)
+              : buildDailyRecordCancelled(lang));
+            await audit(db, identity, waMessageId, 'daily_record', 'cancel', error ? 'failed' : 'applied');
+            await finish('skipped');
+            continue;
+          }
+          await replyQuietly(phone, buildDailyRecordConfirmation(dailyConversation.record, lang));
+          await finish('skipped');
+          continue;
+        }
+
+        if (isDailyRecordCandidate(body)) {
+          const parsed = parseDailyRecord(body, lang);
+          if (parsed.kind === 'clarify') {
+            await replyQuietly(phone, parsed.question);
+            await audit(db, identity, waMessageId, 'daily_record', 'clarify', parsed.reason);
+            await finish('skipped');
+            continue;
+          }
+          if (parsed.kind === 'parsed') {
+            const { data: dailyRecordId, error } = await db.rpc('wa_create_daily_record_draft', {
+              p_profile_id: identity.profile_id,
+              p_company_id: identity.company_id,
+              p_kind: parsed.record.kind,
+              p_amount: parsed.record.amount,
+              p_party_name: parsed.record.partyName,
+              p_description: parsed.record.description,
+              p_occurred_at: new Date().toISOString(),
+              p_source_message_id: waMessageId,
+              p_lines: parsed.record.lines,
+            });
+            if (error || !dailyRecordId) {
+              await replyQuietly(phone, lang === 'sw'
+                ? 'Sikuweza kuhifadhi draft hii. Tafadhali jaribu tena.'
+                : 'I could not save this draft. Please try again.');
+              await audit(db, identity, waMessageId, 'daily_record', 'create', 'failed');
+              await finish('skipped', 'daily_record_create_failed');
+              continue;
+            }
+            const state: DailyRecordConversation = {
+              kind: 'daily_record_confirmation',
+              dailyRecordId: String(dailyRecordId),
+              sourceMessageId: waMessageId,
+              record: parsed.record,
+            };
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'payment_source',
+              receipt_id: null,
+              options: state,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await replyQuietly(phone, buildDailyRecordConfirmation(parsed.record, lang));
+            await audit(db, identity, waMessageId, 'daily_record', 'create', 'pending');
+            await finish('skipped');
+            continue;
+          }
         }
 
         // ── Which business am I recording into? ─────────────────────────
