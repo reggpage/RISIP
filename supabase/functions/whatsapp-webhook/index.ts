@@ -102,6 +102,18 @@ import { interpretDailyRecordWithAi, MAX_INTERPRETATION_CHARS, validateAiCandida
 import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared/whatsappReadIntentAi.ts';
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import {
+  type LogoutState,
+  logoutCancelled,
+  logoutConfirmation,
+  logoutDisambiguation,
+  logoutDone,
+  logoutFailed,
+  logoutNotLinked,
+  logoutReask,
+  parseDisambiguationChoice,
+  parseLogoutIntent,
+} from '../_shared/whatsappLogout.ts';
+import {
   canUseCompanyFinanceReads,
   runConversationalAssistant,
   shouldDeferRecordLikeReply,
@@ -288,6 +300,51 @@ async function loadConversation(db: Admin, identityId: string) {
 
 async function clearConversation(db: Admin, identityId: string): Promise<void> {
   await db.from('whatsapp_conversations').delete().eq('identity_id', identityId);
+}
+
+/** Parks the logout question on the ordinary timer, so an abandoned one expires. */
+async function parkLogout(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  step: LogoutState['step'],
+): Promise<void> {
+  const state: LogoutState = { kind: 'logout', step, businessName: identity.company_name };
+  await db.from('whatsapp_conversations').upsert({
+    identity_id: identity.id,
+    company_id: identity.company_id,
+    profile_id: identity.profile_id,
+    awaiting: 'logout_confirm',
+    receipt_id: null,
+    options: state,
+    expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'identity_id' });
+}
+
+/**
+ * Unlinks the number. The conversation row is deleted by wa_logout itself, so
+ * the state is cleared by the same transaction that revokes the identity — a
+ * failure cannot leave a stale "are you sure?" behind an already-live number.
+ */
+async function performLogout(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  phone: string,
+  lang: Lang,
+): Promise<{ reply: string; outcome: string }> {
+  const { error } = await db.rpc('wa_logout', { p_phone: phone });
+  if (error) {
+    // Either way the question has been answered, so it must not stay parked:
+    // a stale "are you sure?" in front of a still-live number is worse than
+    // making them ask again.
+    await clearConversation(db, identity.id as string);
+    const notLinked = String(error.message ?? '').includes('not linked');
+    return {
+      reply: notLinked ? logoutNotLinked(lang) : logoutFailed(lang),
+      outcome: notLinked ? 'not_linked' : 'failed',
+    };
+  }
+  return { reply: logoutDone(identity.company_name, lang), outcome: 'applied' };
 }
 
 async function createDailyRecordDraft(
@@ -1338,6 +1395,69 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<ProductAnalyticsContext> | null)?.kind === 'product_analytics_context'
           ? convo.options as ProductAnalyticsContext
           : null;
+        // ── Signing out ──────────────────────────────────────────────────
+        // The phone number is the credential, so this unlinks it. It runs
+        // before the stop command on purpose: bare "toka" means both "cancel
+        // this" and "let me out", and until now it silently meant the first.
+        const logoutPending = convo?.awaiting === 'logout_confirm'
+          && (convo.options as Partial<LogoutState> | null)?.kind === 'logout'
+          ? convo.options as LogoutState
+          : null;
+
+        if (logoutPending) {
+          if (logoutPending.step === 'disambiguate') {
+            const choice = parseDisambiguationChoice(body);
+            if (choice === 'logout') {
+              await parkLogout(db, identity, 'confirm');
+              await replyQuietly(phone, logoutConfirmation(identity.company_name, lang));
+              await audit(db, identity, waMessageId, 'logout', 'confirm_asked', 'applied');
+            } else if (choice === 'cancel') {
+              // Nothing was pending when the question was asked — that is why it
+              // was asked at all — so this only drops the question itself.
+              await clearConversation(db, identity.id as string);
+              await replyQuietly(phone, t('cancelled', lang));
+              await audit(db, identity, waMessageId, 'logout', 'meant_cancel', 'applied');
+            } else {
+              await replyQuietly(phone, logoutReask('disambiguate', lang));
+              await audit(db, identity, waMessageId, 'logout', 'reask', 'skipped');
+            }
+            await finish('skipped');
+            continue;
+          }
+
+          if (isDailyRecordConfirmation(body)) {
+            const result = await performLogout(db, identity, phone, lang);
+            await replyQuietly(phone, result.reply);
+            await audit(db, identity, waMessageId, 'logout', 'unlink', result.outcome);
+          } else if (isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, logoutCancelled(lang));
+            await audit(db, identity, waMessageId, 'logout', 'declined', 'applied');
+          } else {
+            await replyQuietly(phone, logoutReask('confirm', lang));
+            await audit(db, identity, waMessageId, 'logout', 'reask', 'skipped');
+          }
+          await finish('skipped');
+          continue;
+        }
+
+        const logoutIntent = parseLogoutIntent(body);
+        // Any live conversation state means something is genuinely pending, and
+        // "toka" keeps its old cancel meaning there — a person mid-draft almost
+        // always means that one. With nothing pending there is nothing to
+        // cancel, so the word is worth a question. Only an unmistakable
+        // "logout"/"ondoa namba" overrides a draft.
+        if (logoutIntent === 'explicit' || (logoutIntent === 'ambiguous' && !convo)) {
+          const step: LogoutState['step'] = logoutIntent === 'explicit' ? 'confirm' : 'disambiguate';
+          await parkLogout(db, identity, step);
+          await replyQuietly(phone, step === 'confirm'
+            ? logoutConfirmation(identity.company_name, lang)
+            : logoutDisambiguation(lang));
+          await audit(db, identity, waMessageId, 'logout', step === 'confirm' ? 'confirm_asked' : 'disambiguate', 'applied');
+          await finish('skipped');
+          continue;
+        }
+
         // A stop command cancels a pending daily-record draft through the same
         // RPC used by HAPANA/NO. Clarification-only state has no DB draft yet,
         // so it is safely cleared without creating a ledger event.

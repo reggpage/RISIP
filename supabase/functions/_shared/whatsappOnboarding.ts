@@ -60,16 +60,20 @@ const T = {
     en: 'Open Risip on your phone or computer, go to Settings → WhatsApp, then send me the code it shows.',
   },
   notUnderstood: {
-    sw: 'Sijaelewa. Jibu kwa namba.',
-    en: 'I did not understand. Please reply with a number.',
+    sw: 'Samahani, sijakuelewa vizuri. Jibu 1, 2 au 3 — au niambie kwa maneno, mfano “nataka kufungua duka langu”.',
+    en: 'Sorry, I did not quite follow. Reply 1, 2 or 3 — or just tell me, for example “I want to start my shop”.',
   },
   tooShort: {
-    sw: 'Jina hilo ni fupi mno. Jaribu tena.',
-    en: 'That name is too short. Try again.',
+    sw: 'Naomba jina kamili la biashara, mfano “Duka la Asha”.',
+    en: 'Please send the full business name, for example “Asha’s Shop”.',
+  },
+  tooShortName: {
+    sw: 'Naomba jina lako, mfano “Asha Mkwawa”.',
+    en: 'Please send your name, for example “Asha Mkwawa”.',
   },
   badCode: {
-    sw: 'Kodi ina herufi 8. Angalia tena.',
-    en: 'A code is 8 characters. Please check it.',
+    sw: 'Kodi ya mwaliko ina herufi na namba 8, mfano AB12CD34. Angalia tena, au mwombe owner akutumie mpya.',
+    en: 'An invite code is 8 letters and numbers, for example AB12CD34. Please check it, or ask the owner to send a fresh one.',
   },
 } as const;
 
@@ -83,6 +87,36 @@ export function startOnboarding(): OnboardingResult {
 }
 
 const clean = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
+
+/**
+ * The exact alphabet create_company_invite_code draws from: no O, I, L, 0 or 1,
+ * because a code gets read aloud and typed on a phone keypad. Matching the
+ * generator is also what makes a code recognisable in a sentence — most real
+ * words contain one of the excluded letters, so "BOOKSHOP" cannot pass for one.
+ *
+ * Roughly one code in nine is all letters, so this must not require a digit.
+ */
+const CODE_CHARS = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/;
+
+/**
+ * Pulls an invite code out of however the person sent it: bare, lowercase, or
+ * wrapped in a sentence ("kodi yangu ni ab12cd34").
+ *
+ * `anywhere` is false where a stray match would derail the conversation, and
+ * true once we have actually asked for a code and the answer should contain one.
+ */
+export function findInviteCode(text: string | null | undefined, anywhere = false): string | null {
+  const said = clean(text).toUpperCase();
+  // Codes get pasted split by a space or a hyphen, so the whole message with
+  // its separators removed is tried first and counts as "the message is a code".
+  const squashed = said.replace(/[^A-Z0-9]/g, '');
+  if (CODE_CHARS.test(squashed)) return squashed;
+  if (!anywhere) return null;
+  for (const token of said.split(/[^A-Z0-9]+/)) {
+    if (CODE_CHARS.test(token)) return token;
+  }
+  return null;
+}
 
 export function advanceOnboarding(
   step: OnboardingStep,
@@ -108,13 +142,23 @@ export function advanceOnboarding(
     }
 
     case 'menu': {
-      if (/^1$|biashara mpya|new business/i.test(said)) {
-        return { step: 'create_name', reply: T.askBusiness[lang], action: { kind: 'none' }, draft };
+      // Somebody who was sent a code usually just pastes it. Answering "please
+      // choose 1, 2 or 3" to a person who has already told us everything we
+      // needed is the most robotic thing this flow could do, so take it.
+      const pasted = findInviteCode(said);
+      if (pasted) {
+        return { step: 'join_person', reply: T.askPerson[lang], action: { kind: 'none' }, draft: { ...draft, code: pasted } };
       }
-      if (/^2$|jiunge|join|kodi|code/i.test(said)) {
+      // Joining is checked first because its words are the specific ones. Both
+      // answers contain "biashara", so testing for it early would swallow the
+      // other one.
+      if (/^2$|jiung|kujiunga|mwaliko|nimealikwa|nilialikwa|invit|\bkodi\b|\bcode\b|\bjoin\b/i.test(said)) {
         return { step: 'join_code', reply: T.askCode[lang], action: { kind: 'none' }, draft };
       }
-      if (/^3$|akaunti|account/i.test(said)) {
+      if (/^1$|fungua|kufungua|anzisha|kuanzisha|nianze|\bmpya\b|\bduka\b|kampuni|biashara|new business|\bstart\b|\bopen\b|\bcreate\b/i.test(said)) {
+        return { step: 'create_name', reply: T.askBusiness[lang], action: { kind: 'none' }, draft };
+      }
+      if (/^3$|akaunti|account|tayari|nimesajili|nimeshasajili|already|registered/i.test(said)) {
         return { step: 'menu', reply: T.alreadyHave[lang], action: { kind: 'explain_linking' }, draft };
       }
       return stay(T.notUnderstood[lang] + '\n\n' + T.menu[lang]);
@@ -131,7 +175,7 @@ export function advanceOnboarding(
     }
 
     case 'create_person': {
-      if (said.length < 2) return stay(T.tooShort[lang]);
+      if (said.length < 2) return stay(T.tooShortName[lang]);
       return {
         step: 'create_person',
         reply: '',
@@ -145,8 +189,8 @@ export function advanceOnboarding(
     }
 
     case 'join_code': {
-      const code = said.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      if (code.length !== 8) return stay(T.badCode[lang]);
+      const code = findInviteCode(said, true);
+      if (!code) return stay(T.badCode[lang]);
       return {
         step: 'join_person',
         reply: T.askPerson[lang],
@@ -156,7 +200,7 @@ export function advanceOnboarding(
     }
 
     case 'join_person': {
-      if (said.length < 2) return stay(T.tooShort[lang]);
+      if (said.length < 2) return stay(T.tooShortName[lang]);
       return {
         step: 'join_person',
         reply: '',

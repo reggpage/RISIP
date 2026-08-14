@@ -431,3 +431,83 @@ altered by anything in this layer.
    policy.
 3. **Web language.** Sync `whatsapp_identities.lang` into a persisted profile
    preference, or leave the two stores separate?
+
+---
+
+# Part 3 — Logging out (as built, 2026-08-14)
+
+## Why it needed designing at all
+
+A probe of the phrases people actually typed at the live number found four
+questions in ten answered with the generic fallback, two of them about leaving:
+`"logout"` and `"nataka kutoka"` matched nothing.
+
+Worse than nothing, in one case. Bare **"toka"** already matched `isStopCommand`
+— the cancel-a-draft command — so somebody typing it to mean *let me out* was
+told their draft had been cancelled and stayed fully linked.
+
+## What logout means here
+
+The phone number **is** the credential, so signing out has to mean **unlinking
+it**. The two real reasons anyone asks are *my phone was stolen* and *this
+employee has left*; clearing a chat session answers neither, because the number
+could still record sales the next morning.
+
+`wa_logout(phone)` (migration `0083`) removes: the identity, any unused login
+link, any unused linking token, the conversation state, and the assistant's
+memory of the thread.
+
+It keeps, deliberately: the profile, the company membership, and every receipt,
+daily record and audit row that person ever created. **Leaving a business is not
+the same as erasing what you did there**, and the books must not move because
+somebody changed phone.
+
+## The "toka" rule
+
+One word genuinely means two things, so it gets one short question rather than a
+guess:
+
+| What they typed | What is pending | What happens |
+|---|---|---|
+| `toka` | a draft | cancel — unchanged behaviour |
+| `toka` | nothing | ask: *1. cancel  2. remove this number* |
+| `logout`, `ondoa namba`, `sign out`, `jiondoe` | anything | confirm, then unlink |
+
+An explicit logout overrides a pending draft; an ambiguous one never does.
+
+The confirmation names what survives before it asks, because somebody unlinking
+a stolen phone needs to know their records are safe, and somebody doing it by
+accident needs to know it is not free to undo. The question is parked in the
+ordinary conversation slot (`awaiting = 'logout_confirm'`, migration `0085`), so
+an abandoned logout expires on the normal timer instead of leaving a person
+half-signed-out.
+
+## Retrieval, which was the deeper problem
+
+Kiswahili is agglutinative — `deni → madeni`, `jiunge → kujiunga` — and exact
+token matching cannot see through any of it. Retrieval now scores **exact 3,
+stem 2, near-miss 1** after stripping the common noun-class and infinitive
+prefixes.
+
+The prefix list is kept short on purpose. `ji` and `ki` were tried and removed:
+they turn `jiunga` into `unga` and `kitabu` into `tabu`, which is how a question
+about *joining a business* starts matching *flour*.
+
+Two corpus gaps were also just absent rather than mis-ranked: **`faida` appeared
+in no keyword list at all**, so the most common finance question in the language
+the app is written in could not be retrieved; and there was no chunk about
+logging out, because there was no logout.
+
+## Registration, in the words people use
+
+The menu accepted a digit and little else, so anyone who answered it the way
+they talk got *"I did not understand"*. It now reads sentences
+(`nataka kufungua duka langu`, `nimealikwa na bosi wangu`), and a person who
+simply **pastes the code they were sent** skips the menu instead of being asked
+to pick 1, 2 or 3 first.
+
+Invite codes are recognised lowercase, spaced or hyphenated. The matcher uses
+the generator's own alphabet — no `O`, `I`, `L`, `0`, `1`, because a code gets
+read aloud and typed on a keypad — which is also what stops `BOOKSHOP` passing
+for one. An earlier "must contain a digit" rule was **wrong and was caught before
+shipping**: roughly one real code in nine is all letters.
