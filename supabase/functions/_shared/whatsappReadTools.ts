@@ -5,6 +5,8 @@
 // arithmetic without a service-role client and keep the assistant from ever
 // treating a model response as an accounting source.
 
+import { type ResolvedRange, resolveDateRange } from './whatsappDateRange.ts';
+
 export type ReadToolName =
   | 'ai_business_summary'
   | 'ai_debtors'
@@ -23,6 +25,12 @@ export type ReadRequest = {
   period: ReadPeriod;
   status?: string | null;
   partyName?: string | null;
+  /**
+   * A real window when the person named one ("juzi", "wiki iliyopita",
+   * "tarehe 7 Mei 2025"). `period` stays for the four coarse defaults, so
+   * nothing that already worked has to change.
+   */
+  range?: ResolvedRange | null;
 };
 
 export type ReadDailyRow = {
@@ -109,43 +117,46 @@ function parsePeriod(text: string): ReadPeriod {
 }
 
 /** Deterministic routing for A1. No AI is consulted to choose a read tool. */
-export function parseReadRequest(input: string | null | undefined): ReadRequest | null {
+export function parseReadRequest(input: string | null | undefined, now = new Date()): ReadRequest | null {
   const text = normalise(String(input ?? ''));
   if (!text) return null;
   const period = parsePeriod(text);
+  // The person's own words about time win over the four coarse buckets.
+  const range = resolveDateRange(String(input ?? ''), now);
+  const withRange = (request: Omit<ReadRequest, 'range'>): ReadRequest => ({ ...request, range });
 
   if (hasAny(text, ['ninaidai risip', 'risip inanidai', 'my reimbursement', 'reimbursements yangu'])) {
-    return { tool: 'ai_owed_to_me', period };
+    return withRange({ tool: 'ai_owed_to_me', period });
   }
   if (hasAny(text, ['biashara zangu', 'my businesses', 'switch business', 'badili biashara'])) {
-    return { tool: 'ai_my_businesses', period };
+    return withRange({ tool: 'ai_my_businesses', period });
   }
   if (hasAny(text, ['pending approval', 'awaiting approval', 'risiti za kuapprove', 'risiti zinazosubiri', 'zinazosubiri kuangaliwa'])) {
-    return { tool: 'ai_pending_approvals', period };
+    return withRange({ tool: 'ai_pending_approvals', period });
   }
   if (hasAny(text, ['petty cash', 'salio la cash', 'cash balance', 'salio langu la pesa'])) {
-    return { tool: 'ai_petty_cash_balance', period };
+    return withRange({ tool: 'ai_petty_cash_balance', period });
   }
   if (hasAny(text, ['risiti zangu', 'my receipts', 'receipt status', 'status ya risiti'])) {
     const status = hasAny(text, ['confirmed', 'imethibitishwa'])
       ? 'confirmed'
       : hasAny(text, ['pending', 'inasubiri', 'submitted']) ? 'submitted' : null;
-    return { tool: 'ai_my_receipts', period, status };
+    return withRange({ tool: 'ai_my_receipts', period, status });
   }
   const detailMatch = text.match(/^deni la ([a-z][a-z ]{1,60}?) (?:ni|lina|imebakia|imebaki)\b/)
     ?? text.match(/^([a-z][a-z ]{1,60}?) anadaiwa(?: kiasi gani| kiasi| nini)?\b/);
   const detailName = detailMatch?.[1].trim();
   if (detailName && !['nani', 'who', 'which'].includes(detailName)) {
-    return { tool: 'ai_debtor_detail', period, partyName: detailName };
+    return withRange({ tool: 'ai_debtor_detail', period, partyName: detailName });
   }
   if (hasAny(text, ['nani anadaiwa', 'nani ananidai', 'wanaonidai', 'onyesha wadeni', 'list ya madeni', 'who owes me', 'hajanilipa', 'nina madeni', 'madeni yangu', 'madeni ya'])) {
-    return { tool: 'ai_debtors', period };
+    return withRange({ tool: 'ai_debtors', period });
   }
   if (hasAny(text, ['faida', 'profit', 'margin', 'biashara inalipa', 'gharama zimezidi'])) {
-    return { tool: 'daily_profit_estimate', period };
+    return withRange({ tool: 'daily_profit_estimate', period });
   }
   if (hasAny(text, ['muhtasari', 'summary', 'imekuwaje', 'what happened', 'mauzo ya leo', 'sales today', 'business summary'])) {
-    return { tool: 'ai_business_summary', period };
+    return withRange({ tool: 'ai_business_summary', period });
   }
   return null;
 }
@@ -155,7 +166,15 @@ function money(value: number, lang: 'sw' | 'en'): string {
   return `${currency} ${Math.round(value).toLocaleString('en-US')}`;
 }
 
-export function periodLabel(period: ReadPeriod, lang: 'sw' | 'en'): string {
+/**
+ * What to call the window in the reply.
+ *
+ * A named range says its own name ("juzi", "tarehe 7 Mei 2025"), so a figure is
+ * never labelled with the wrong day — reporting Tuesday's takings under the word
+ * "leo" would be worse than refusing.
+ */
+export function periodLabel(period: ReadPeriod, lang: 'sw' | 'en', range?: ResolvedRange | null): string {
+  if (range) return lang === 'sw' ? range.sw : range.en;
   const labels = lang === 'sw'
     ? { today: 'leo', week: 'wiki hii', month: 'mwezi huu', year: 'mwaka huu' }
     : { today: 'today', week: 'this week', month: 'this month', year: 'this year' };
@@ -241,8 +260,8 @@ export function calculateProfitEstimate(
   };
 }
 
-export function buildBusinessSummaryReply(summary: BusinessSummary, period: ReadPeriod, lang: 'sw' | 'en'): string {
-  const label = periodLabel(period, lang);
+export function buildBusinessSummaryReply(summary: BusinessSummary, period: ReadPeriod, lang: 'sw' | 'en', range?: ResolvedRange | null): string {
+  const label = periodLabel(period, lang, range);
   if (lang === 'sw') {
     return `Muhtasari wa ${label}:\nMauzo: ${money(summary.sales, lang)}\nMatumizi ya rekodi za siku: ${money(summary.expenses, lang)}\nMalipo ya wateja: ${money(summary.customerPayments, lang)}\nDeni lililotolewa: ${money(summary.debtIssued, lang)} (si fedha iliyopokelewa)\nMabadiliko ya fedha yanayokadiriwa: ${money(summary.cashMovement, lang)}\n\nHaya ni rekodi za siku; gharama za risiti zinaonyeshwa kando.`;
   }
@@ -268,8 +287,8 @@ export function buildDebtorDetailReply(debtor: Debtor | null, partyName: string,
     : `${partyName} owes ${money(debtor.balance, lang)}. Issued: ${money(debtor.issued, lang)}; paid: ${money(debtor.paid, lang)}.`;
 }
 
-export function buildProfitReply(profit: ProfitEstimate, period: ReadPeriod, lang: 'sw' | 'en'): string {
-  const label = periodLabel(period, lang);
+export function buildProfitReply(profit: ProfitEstimate, period: ReadPeriod, lang: 'sw' | 'en', range?: ResolvedRange | null): string {
+  const label = periodLabel(period, lang, range);
   if (profit.sales <= 0) {
     return lang === 'sw' ? `Sina mauzo yaliyothibitishwa ya ${label} ya kukadiria faida.` : `I have no confirmed sales for ${label} to estimate profit.`;
   }
@@ -304,10 +323,11 @@ export function buildReceiptsReply(
   const rows = receipts.slice(0, 10).map((receipt, index) => {
     const amount = receipt.amount === null ? '-' : money(receipt.amount, lang);
     const head = `${index + 1}. ${receipt.vendor || (lang === 'sw' ? 'Risiti' : 'Receipt')} — ${amount} — ${receipt.status}`;
-    // Only the unfinished ones, so a long confirmed list does not become ten URLs.
-    return base && receipt.status !== 'confirmed'
-      ? `${head}\n   ${base}/receipts?receipt=${receipt.id}`
-      : head;
+    // Every receipt, not just the unfinished ones. Asked for a link to a
+    // confirmed receipt, the assistant answered "risiti hii haina link ya moja
+    // kwa moja" and offered the whole list instead — which is not the receipt
+    // the person asked for.
+    return base ? `${head}\n   ${base}/receipts?receipt=${receipt.id}` : head;
   });
   const heading = lang === 'sw' ? 'Risiti zako za karibuni:' : 'Your recent receipts:';
   const all = base

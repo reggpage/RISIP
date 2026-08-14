@@ -82,6 +82,20 @@ type AnthropicResponse = {
 
 const periodSchema = { type: 'string', enum: ['today', 'week', 'month', 'year'] };
 
+/**
+ * The user’s own words about time, passed through untouched.
+ *
+ * The four-value enum could not express “juzi”, “wiki iliyopita” or a date, so
+ * those questions were refused outright on the live number — twice in one
+ * conversation. The server resolves this string in Africa/Dar_es_Salaam and
+ * ignores it when it names no period, so a wrong guess costs nothing: it simply
+ * falls back to the enum.
+ */
+const whenSchema = {
+  type: ['string', 'null'],
+  description: 'Copy the user’s own words about time, e.g. "juzi", "jana asubuhi", "wiki iliyopita", "mwezi uliopita", "tarehe 7 Mei 2025", "siku 7 zilizopita". Null when they named no time.',
+};
+
 export const ASSISTANT_TOOL_NAMES = [
   'get_business_summary',
   'get_product_performance',
@@ -121,8 +135,8 @@ export const ASSISTANT_TOOLS: ToolDefinition[] = [
   tool(
     'get_business_summary',
     'Read confirmed daily-record sales, expenses, customer payments, debt issued, stock purchases and cash-movement estimate. Use for how the business performed in a period. Never use old chat numbers.',
-    { period: periodSchema },
-    ['period'],
+    { period: periodSchema, when: whenSchema },
+    ['period', 'when'],
   ),
   tool(
     'get_product_performance',
@@ -130,9 +144,10 @@ export const ASSISTANT_TOOLS: ToolDefinition[] = [
     {
       metric: { type: 'string', enum: ['quantity', 'revenue', 'margin'] },
       period: periodSchema,
+      when: whenSchema,
       product_names: { type: 'array', items: { type: 'string' }, description: 'At most two product names; the server validates and truncates them.' },
     },
-    ['metric', 'period', 'product_names'],
+    ['metric', 'period', 'when', 'product_names'],
   ),
   tool(
     'get_product_cost',
@@ -151,9 +166,10 @@ export const ASSISTANT_TOOLS: ToolDefinition[] = [
     'Read only receipts visible to this WhatsApp user. Use for receipt status or recent receipt questions.',
     {
       period: periodSchema,
+      when: whenSchema,
       status: { type: ['string', 'null'], enum: ['confirmed', 'submitted', null] },
     },
-    ['period', 'status'],
+    ['period', 'when', 'status'],
   ),
   tool('get_my_petty_cash_balance', 'Read this user’s own petty-cash balance.', {}, []),
   tool('get_my_reimbursements', 'Read the total for this user’s confirmed personal-money receipts that have not been reimbursed.', {}, []),

@@ -101,6 +101,7 @@ import {
 import { interpretDailyRecordWithAi, MAX_INTERPRETATION_CHARS, validateAiCandidate } from '../_shared/whatsappDailyRecordsAi.ts';
 import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared/whatsappReadIntentAi.ts';
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
+import { type ResolvedRange, isFuture, rangeLabel, resolveDateRange, withinTimeOfDay } from '../_shared/whatsappDateRange.ts';
 import {
   type LogoutState,
   logoutCancelled,
@@ -504,18 +505,26 @@ async function productAnalyticsToolReply(
   return productAnalyticsReply(request, items, lang);
 }
 
-function readPeriodBounds(period: ReadRequest['period']): { from: string; to: string } {
+/**
+ * The window a question is about.
+ *
+ * A named range ("juzi", "wiki iliyopita", "tarehe 7 Mei 2025") wins; otherwise
+ * one of the four coarse defaults is used. Both now start at midnight in
+ * Africa/Dar_es_Salaam rather than UTC — three hours apart, which is enough to
+ * file an evening sale on the wrong day.
+ */
+function readPeriodBounds(request: ReadRequest): { from: string; to: string } {
   const now = new Date();
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  if (period === 'week') {
-    const day = start.getUTCDay() || 7;
-    start.setUTCDate(start.getUTCDate() - day + 1);
-  } else if (period === 'month') {
-    start.setUTCDate(1);
-  } else if (period === 'year') {
-    start.setUTCMonth(0, 1);
+  if (request.range) {
+    return { from: request.range.from.toISOString(), to: request.range.to.toISOString() };
   }
-  return { from: start.toISOString(), to: now.toISOString() };
+  const fallback = resolveDateRange(
+    request.period === 'today' ? 'leo'
+      : request.period === 'week' ? 'wiki hii'
+      : request.period === 'month' ? 'mwezi huu' : 'mwaka huu',
+    now,
+  )!;
+  return { from: fallback.from.toISOString(), to: now.toISOString() };
 }
 
 /**
@@ -524,7 +533,15 @@ function readPeriodBounds(period: ReadRequest['period']): { from: string; to: st
  * writes a row or calls a finance mutation RPC.
  */
 async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest, lang: Lang): Promise<string> {
-  const { from, to } = readPeriodBounds(request.period);
+  // There are no records from the future. Saying so is better than quietly
+  // returning zero, which reads as "your shop sold nothing".
+  if (request.range && isFuture(request.range)) {
+    const label = rangeLabel(request.range, lang);
+    return lang === 'sw'
+      ? `${label.charAt(0).toUpperCase()}${label.slice(1)} bado haijafika, kwa hiyo hakuna rekodi zake. Ungependa nikuonyeshe za leo?`
+      : `${label} has not happened yet, so there are no records for it. Would you like today instead?`;
+  }
+  const { from, to } = readPeriodBounds(request);
   const companyId = String(identity.company_id);
   const profileId = String(identity.profile_id);
   const financeOnly = new Set(['ai_business_summary', 'ai_debtors', 'ai_debtor_detail', 'daily_profit_estimate', 'ai_pending_approvals']);
@@ -592,7 +609,7 @@ async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest,
     kind: row.kind, status: row.status, amount: Number(row.amount), partyName: row.party_name, occurredAt: row.occurred_at,
   })) as ReadDailyRow[];
 
-  if (request.tool === 'ai_business_summary') return buildBusinessSummaryReply(calculateBusinessSummary(rows), request.period, lang);
+  if (request.tool === 'ai_business_summary') return buildBusinessSummaryReply(calculateBusinessSummary(rows), request.period, lang, request.range);
   if (request.tool === 'ai_debtors' || request.tool === 'ai_debtor_detail') {
     const debtors = calculateDebtors(rows);
     if (request.tool === 'ai_debtor_detail') {
@@ -616,7 +633,16 @@ async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest,
   const costs = (rawCosts ?? []).map((cost: { product_key: string; unit_cost: number; effective_from: string }) => ({
     productKey: cost.product_key, unitCost: Number(cost.unit_cost), effectiveFrom: cost.effective_from,
   })) as ReadProductCost[];
-  return buildProfitReply(calculateProfitEstimate(rows, lines, costs), request.period, lang);
+  return buildProfitReply(calculateProfitEstimate(rows, lines, costs), request.period, lang, request.range);
+}
+
+/**
+ * The user's own time words, resolved server-side. Null when they named no
+ * period, in which case the coarse enum decides — so the model getting this
+ * wrong can only ever fall back to today's behaviour.
+ */
+function assistantRange(value: unknown): ResolvedRange | null {
+  return typeof value === 'string' ? resolveDateRange(value) : null;
 }
 
 function assistantPeriod(value: unknown): ReadRequest['period'] {
@@ -639,7 +665,7 @@ async function executeAssistantTool(
   input: Record<string, unknown>,
 ): Promise<AssistantToolExecution> {
   if (name === 'get_business_summary') {
-    return { content: await readOnlyToolReply(db, identity, { tool: 'ai_business_summary', period: assistantPeriod(input.period) }, lang) };
+    return { content: await readOnlyToolReply(db, identity, { tool: 'ai_business_summary', period: assistantPeriod(input.period), range: assistantRange(input.when) }, lang) };
   }
   if (name === 'get_product_performance') {
     const metric = input.metric === 'revenue' || input.metric === 'margin' ? input.metric : 'quantity';
@@ -694,7 +720,7 @@ async function executeAssistantTool(
   }
   if (name === 'get_my_receipts') {
     const status = input.status === 'confirmed' || input.status === 'submitted' ? input.status : null;
-    return { content: await readOnlyToolReply(db, identity, { tool: 'ai_my_receipts', period: assistantPeriod(input.period), status }, lang) };
+    return { content: await readOnlyToolReply(db, identity, { tool: 'ai_my_receipts', period: assistantPeriod(input.period), status, range: assistantRange(input.when) }, lang) };
   }
   if (name === 'get_my_petty_cash_balance') {
     return { content: await readOnlyToolReply(db, identity, { tool: 'ai_petty_cash_balance', period: 'today' }, lang) };

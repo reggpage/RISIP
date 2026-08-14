@@ -76,9 +76,11 @@ describe('receipt links', () => {
     expect(reply).toContain('https://risip.online/receipts?receipt=aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa');
   });
 
-  it('does not turn a confirmed list into ten URLs', () => {
+  it('links a confirmed receipt too', () => {
+    // Asked for the link to a confirmed receipt, the assistant said it had none
+    // and offered the whole list — which is not the receipt that was asked for.
     const reply = buildReceiptsReply(receipts, 'sw', 'https://risip.online');
-    expect(reply).not.toContain('receipt=bbbbbbbb-2222-4bbb-8bbb-bbbbbbbbbbbb');
+    expect(reply).toContain('receipt=bbbbbbbb-2222-4bbb-8bbb-bbbbbbbbbbbb');
   });
 
   it('always offers the receipts page itself', () => {
