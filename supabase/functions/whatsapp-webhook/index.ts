@@ -101,6 +101,16 @@ import {
 import { interpretDailyRecordWithAi, MAX_INTERPRETATION_CHARS, validateAiCandidate } from '../_shared/whatsappDailyRecordsAi.ts';
 import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared/whatsappReadIntentAi.ts';
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
+import {
+  type CostPrompt,
+  costAccepted,
+  costQuestion,
+  costSkipped,
+  costUnclear,
+  isSkip,
+  parseCostAnswer,
+  toCostPrompt,
+} from '../_shared/whatsappCostPrompt.ts';
 import { type ResolvedRange, isFuture, rangeLabel, resolveDateRange, withinTimeOfDay } from '../_shared/whatsappDateRange.ts';
 import {
   type LogoutState,
@@ -301,6 +311,46 @@ async function loadConversation(db: Admin, identityId: string) {
 
 async function clearConversation(db: Admin, identityId: string): Promise<void> {
   await db.from('whatsapp_conversations').delete().eq('identity_id', identityId);
+}
+
+/**
+ * Asks what a just-sold product costs to buy, when there is one worth asking
+ * about. Everything here is best-effort: the sale is already saved, and a
+ * failure means only that the question is not asked.
+ */
+async function askForBuyingPrice(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  phone: string,
+  dailyRecordId: string,
+  waMessageId: string,
+  lang: Lang,
+): Promise<void> {
+  try {
+    const { data, error } = await db.rpc('wa_next_cost_prompt', {
+      p_phone: phone,
+      p_daily_record_id: dailyRecordId,
+    });
+    if (error) return;
+    const prompt = toCostPrompt(data);
+    if (!prompt) return;
+
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id,
+      company_id: identity.company_id,
+      profile_id: identity.profile_id,
+      awaiting: 'product_cost',
+      receipt_id: null,
+      options: prompt,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+
+    await replyQuietly(phone, costQuestion(prompt, lang));
+    await audit(db, identity, waMessageId, 'product_cost', 'asked', prompt.productKey);
+  } catch {
+    /* Never let an optional question disturb a saved record. */
+  }
 }
 
 /** Parks the logout question on the ordinary timer, so an abandoned one expires. */
@@ -1414,7 +1464,14 @@ Deno.serve(async (req) => {
           : null;
         // A buying price awaiting NDIYO. Its own slot, so it can never be
         // confused with a daily-record draft sitting in payment_source.
-        const costConversation = convo?.awaiting === 'product_cost' && convo.options
+        // Two different things live in the product_cost slot, so both are tagged.
+        // A question Risip asked ("unainunua kwa shingapi?") is answered with a
+        // bare price; a claim the person volunteered still needs NDIYO.
+        const costPrompt = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<CostPrompt> | null)?.kind === 'cost_prompt'
+          ? convo.options as CostPrompt
+          : null;
+        const costConversation = convo?.awaiting === 'product_cost' && convo.options && !costPrompt
           ? { cost: convo.options as unknown as ProductCost }
           : null;
         const productContext = convo?.awaiting === 'product_analytics'
@@ -1686,6 +1743,10 @@ Deno.serve(async (req) => {
             } else {
               await replyQuietly(phone, buildDailyRecordConfirmed(dailyConversation.record, lang));
               await audit(db, identity, waMessageId, 'daily_record', 'confirm', 'applied');
+              // The record is safely saved first. Asking what the product costs
+              // is a separate, optional favour — if any of it fails, the sale is
+              // still recorded and the person is simply not asked.
+              await askForBuyingPrice(db, identity, phone, dailyConversation.dailyRecordId, waMessageId, lang);
             }
             await finish('skipped');
             continue;
@@ -1715,6 +1776,41 @@ Deno.serve(async (req) => {
         // kilo" contains a product and a number and would otherwise be read as
         // something that moved money. Nothing here moves money: it records what a
         // product costs, which is what makes the profit estimate possible at all.
+        // An answer to a price question Risip itself asked. No NDIYO here: the
+        // question was the confirmation, and asking "are you sure?" straight
+        // after somebody answered a direct question is the robotic move.
+        if (costPrompt) {
+          if (isSkip(body)) {
+            await db.rpc('wa_skip_cost_prompt', { p_phone: phone, p_product: costPrompt.product });
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, costSkipped(lang));
+            await audit(db, identity, waMessageId, 'product_cost', 'skipped', costPrompt.productKey);
+            await finish('skipped');
+            continue;
+          }
+          const answered = parseCostAnswer(body);
+          if (answered === null) {
+            // Not a price and not a skip. Almost always a new instruction, so
+            // the question is dropped rather than held over the conversation.
+            await clearConversation(db, identity.id as string);
+            await db.rpc('wa_skip_cost_prompt', { p_phone: phone, p_product: costPrompt.product });
+            await replyQuietly(phone, costUnclear(costPrompt, lang));
+            await audit(db, identity, waMessageId, 'product_cost', 'unclear', costPrompt.productKey);
+            await finish('skipped');
+            continue;
+          }
+          const { error } = await db.rpc('wa_set_product_cost', {
+            p_phone: phone, p_name: costPrompt.product, p_unit_cost: answered, p_unit: null,
+          });
+          await clearConversation(db, identity.id as string);
+          await replyQuietly(phone, error
+            ? productCostErrorMessage(error, lang)
+            : costAccepted(costPrompt, answered, lang));
+          await audit(db, identity, waMessageId, 'product_cost', costPrompt.productKey, error ? 'failed' : 'applied');
+          await finish('skipped');
+          continue;
+        }
+
         if (costConversation) {
           const pending = costConversation.cost;
           if (isDailyRecordConfirmation(body)) {
