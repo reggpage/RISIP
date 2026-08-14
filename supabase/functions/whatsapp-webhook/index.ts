@@ -572,7 +572,7 @@ async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest,
     if (error) return lang === 'sw' ? 'Sikuweza kupata risiti zako sasa.' : 'I could not load your receipts right now.';
     return buildReceiptsReply((data ?? []).map((row: { id: string; status: string; total_amount: number | null; vendor_name: string | null; created_at: string }) => ({
       id: row.id, status: row.status, amount: row.total_amount === null ? null : Number(row.total_amount), vendor: row.vendor_name, createdAt: row.created_at,
-    })), lang);
+    })), lang, appUrl());
   }
 
   if (request.tool === 'ai_pending_approvals') {

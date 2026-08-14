@@ -284,13 +284,36 @@ export function buildProfitReply(profit: ProfitEstimate, period: ReadPeriod, lan
     : `Estimated profit for ${label}:\nSales: ${money(profit.sales, lang)}\nEstimated COGS: ${money(profit.cogs, lang)}\nExpenses: ${money(profit.expenses, lang)}\nEstimated profit: ${money(profit.estimatedProfit, lang)}\nSales coverage: ${coverage}%${missing}`;
 }
 
-export function buildReceiptsReply(receipts: ReceiptSummary[], lang: 'sw' | 'en'): string {
+/**
+ * A receipt that is not yet confirmed is waiting for the person to finish
+ * something, so it gets the deep link that takes them straight to it. The id was
+ * always fetched and never shown, which is why the assistant used to say it
+ * could not send a link — it had none to send, though one exists.
+ *
+ * `/receipts?receipt=<id>` is the ordinary authenticated view. It carries no
+ * bypass token, so it is safe in a chat: it only opens for someone already
+ * entitled to see that receipt.
+ */
+export function buildReceiptsReply(
+  receipts: ReceiptSummary[],
+  lang: 'sw' | 'en',
+  appUrl?: string | null,
+): string {
   if (receipts.length === 0) return lang === 'sw' ? 'Sina risiti zako zilizoonekana kwa sasa.' : 'I could not find your receipts right now.';
+  const base = String(appUrl ?? '').replace(/\/+$/, '');
   const rows = receipts.slice(0, 10).map((receipt, index) => {
     const amount = receipt.amount === null ? '-' : money(receipt.amount, lang);
-    return `${index + 1}. ${receipt.vendor || (lang === 'sw' ? 'Risiti' : 'Receipt')} — ${amount} — ${receipt.status}`;
+    const head = `${index + 1}. ${receipt.vendor || (lang === 'sw' ? 'Risiti' : 'Receipt')} — ${amount} — ${receipt.status}`;
+    // Only the unfinished ones, so a long confirmed list does not become ten URLs.
+    return base && receipt.status !== 'confirmed'
+      ? `${head}\n   ${base}/receipts?receipt=${receipt.id}`
+      : head;
   });
-  return lang === 'sw' ? `Risiti zako za karibuni:\n${rows.join('\n')}` : `Your recent receipts:\n${rows.join('\n')}`;
+  const heading = lang === 'sw' ? 'Risiti zako za karibuni:' : 'Your recent receipts:';
+  const all = base
+    ? (lang === 'sw' ? `\n\nZote: ${base}/receipts` : `\n\nAll of them: ${base}/receipts`)
+    : '';
+  return `${heading}\n${rows.join('\n')}${all}`;
 }
 
 export function buildPettyCashReply(balance: number | null, lang: 'sw' | 'en'): string {
