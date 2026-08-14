@@ -741,6 +741,32 @@ export type Database = {
         Args: { p_password: string };
         Returns: undefined;
       };
+      /**
+       * Everything the company sells, derived from confirmed sale lines and the
+       * buying prices on record. Numerics arrive as strings over PostgREST.
+       */
+      company_product_catalog: {
+        Args: { p_from: string | null; p_to: string | null };
+        Returns: Array<{
+          product_key: string;
+          product_name: string;
+          unit: string | null;
+          quantity_sold: string;
+          revenue: string;
+          sale_lines: number;
+          last_sold_at: string | null;
+          measured: boolean;
+          unit_cost: string | null;
+          cost_effective_from: string | null;
+          avg_unit_price: string | null;
+          estimated_margin: string | null;
+        }>;
+      };
+      /** Finance-only: append a new buying price. Never overwrites the old one. */
+      set_product_cost: {
+        Args: { p_name: string; p_unit_cost: number; p_unit: string | null; p_note: string | null };
+        Returns: { id: string; product: string; unit_cost: number; previous_cost: number | null };
+      };
     };
     Enums: {
       user_role: UserRole;
