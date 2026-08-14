@@ -102,6 +102,14 @@ import { interpretDailyRecordWithAi, MAX_INTERPRETATION_CHARS, validateAiCandida
 import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared/whatsappReadIntentAi.ts';
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import {
+  type ProductCostBatch,
+  costBatchCancelled,
+  costBatchConfirmation,
+  costBatchFailed,
+  costBatchSaved,
+  parseProductCostBatch,
+} from '../_shared/whatsappCostBatch.ts';
+import {
   type CostPrompt,
   costAccepted,
   costQuestion,
@@ -1471,7 +1479,12 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<CostPrompt> | null)?.kind === 'cost_prompt'
           ? convo.options as CostPrompt
           : null;
-        const costConversation = convo?.awaiting === 'product_cost' && convo.options && !costPrompt
+        const costBatchPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<ProductCostBatch> | null)?.kind === 'product_cost_batch'
+          ? convo.options as ProductCostBatch
+          : null;
+        const costConversation = convo?.awaiting === 'product_cost' && convo.options
+          && !costPrompt && !costBatchPending
           ? { cost: convo.options as unknown as ProductCost }
           : null;
         const productContext = convo?.awaiting === 'product_analytics'
@@ -1578,7 +1591,23 @@ Deno.serve(async (req) => {
           await finish('skipped');
           continue;
         }
-        if (dailyBatchClarification) {
+        // A pending question must not swallow a change of subject. Asked to
+        // clarify a debt, the trader instead pasted 36 buying prices; the
+        // clarification consumed the whole message and asked the same question
+        // again, and not one price was saved. A person who has plainly moved on
+        // gets the new thing done, and is told the old question was let go.
+        const changedSubject = (dailyBatchClarification || dailyClarification)
+          ? parseProductCostBatch(body)
+          : null;
+        if (changedSubject) {
+          await clearConversation(db, identity.id as string);
+          await replyQuietly(phone, lang === 'sw'
+            ? 'Nimeacha swali la awali.'
+            : 'I have let the earlier question go.');
+          await audit(db, identity, waMessageId, 'daily_record_batch', 'abandoned_for_costs', 'applied');
+        }
+
+        if (dailyBatchClarification && !changedSubject) {
           if (isDailyRecordRejection(body)) {
             await clearConversation(db, identity.id as string);
             await replyQuietly(phone, lang === 'sw'
@@ -1639,7 +1668,7 @@ Deno.serve(async (req) => {
           await finish('skipped');
           continue;
         }
-        if (dailyClarification) {
+        if (dailyClarification && !changedSubject) {
           const choice = parseDailyRecordPriceChoice(body);
           if (isDailyRecordRejection(body)) {
             await clearConversation(db, identity.id as string);
@@ -1779,6 +1808,35 @@ Deno.serve(async (req) => {
         // An answer to a price question Risip itself asked. No NDIYO here: the
         // question was the confirmation, and asking "are you sure?" straight
         // after somebody answered a direct question is the robotic move.
+        // NDIYO on a whole price list. One transaction, so a half-applied list
+        // can never leave the coverage figure reporting a number nobody chose.
+        if (costBatchPending) {
+          if (isDailyRecordConfirmation(body)) {
+            const { data: saved, error } = await db.rpc('wa_set_product_costs', {
+              p_phone: phone,
+              p_items: costBatchPending.costs.map((cost) => ({
+                product: cost.product, unit_cost: cost.unitCost, unit: cost.unit,
+              })),
+            });
+            await clearConversation(db, identity.id as string);
+            const result = saved as { saved?: number; company_name?: string } | null;
+            await replyQuietly(phone, error
+              ? (productCostErrorMessage(error, lang) || costBatchFailed(lang))
+              : costBatchSaved(result?.saved ?? costBatchPending.costs.length, result?.company_name ?? '', lang));
+            await audit(db, identity, waMessageId, 'product_cost_batch',
+              String(costBatchPending.costs.length), error ? 'failed' : 'applied');
+          } else if (isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, costBatchCancelled(lang));
+            await audit(db, identity, waMessageId, 'product_cost_batch', 'cancel', 'applied');
+          } else {
+            await replyQuietly(phone, costBatchConfirmation(costBatchPending, lang));
+            await audit(db, identity, waMessageId, 'product_cost_batch', 'reask', 'skipped');
+          }
+          await finish('skipped');
+          continue;
+        }
+
         if (costPrompt) {
           if (isSkip(body)) {
             await db.rpc('wa_skip_cost_prompt', { p_phone: phone, p_product: costPrompt.product });
@@ -1832,6 +1890,27 @@ Deno.serve(async (req) => {
             await finish('skipped');
             continue;
           }
+        }
+
+        // A whole price list in one message. Checked before the single-price
+        // path and before the record parser, because a 36-line paste matched
+        // neither and was silently dropped.
+        const costBatch = parseProductCostBatch(body);
+        if (costBatch) {
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: costBatch,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          await replyQuietly(phone, costBatchConfirmation(costBatch, lang));
+          await audit(db, identity, waMessageId, 'product_cost_batch', String(costBatch.costs.length), 'pending');
+          await finish('skipped');
+          continue;
         }
 
         const costCandidate = parseProductCost(body);
