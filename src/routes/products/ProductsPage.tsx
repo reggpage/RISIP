@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { Skeleton } from '@/components/ui/Skeleton';
+import UnderlineTabs from '@/components/ui/UnderlineTabs';
 import EmptyState from '@/components/ui/EmptyState';
 import { useAuth } from '@/lib/auth';
 import { formatDate, formatMoney } from '@/lib/format';
@@ -40,7 +41,7 @@ const ui = lang === 'sw' ? {
   emptyHint: 'Rekodi mauzo kupitia WhatsApp au app, na bidhaa zitajitokeza hapa zenyewe.',
   noMatch: 'Hakuna bidhaa yenye jina hilo.',
   onlyFinance: 'Bei za kununua zinaonekana kwa owner na accountant tu.',
-  measured: 'Inapimwa', counted: 'Inahesabiwa',
+  measured: 'Inapimwa', counted: 'Inahesabiwa', period: 'Kipindi',
 } : {
   title: 'Products',
   description: 'Everything you sell, built from confirmed sales.',
@@ -61,7 +62,7 @@ const ui = lang === 'sw' ? {
   emptyHint: 'Record sales on WhatsApp or in the app and products appear here on their own.',
   noMatch: 'No product matches that name.',
   onlyFinance: 'Buying prices are visible to an owner or accountant only.',
-  measured: 'Measured', counted: 'Counted',
+  measured: 'Measured', counted: 'Counted', period: 'Period',
 };
 
 const ranges: { value: CatalogRange; label: string }[] = [
@@ -81,7 +82,7 @@ function Figure({ label, value, tone = 'ink', hint }: {
 }) {
   const colour = tone === 'muted' ? 'text-ink-muted'
     : tone === 'good' ? 'text-emerald-600'
-    : tone === 'bad' ? 'text-rose-600' : 'text-ink';
+    : tone === 'bad' ? 'text-red-600' : 'text-ink';
   return (
     <div className="min-w-0">
       <div className="text-[11px] uppercase tracking-wide text-ink-muted">{label}</div>
@@ -94,11 +95,11 @@ function Figure({ label, value, tone = 'ink', hint }: {
 function SummaryTile({ label, value, hint, tone }: {
   label: string; value: string; hint?: string; tone?: 'warn' | 'bad';
 }) {
-  const accent = tone === 'bad' ? 'text-rose-600' : tone === 'warn' ? 'text-amber-600' : 'text-ink';
+  const accent = tone === 'bad' ? 'text-red-600' : tone === 'warn' ? 'text-amber-600' : 'text-ink';
   return (
     <Card className="p-4">
       <div className="text-xs text-ink-muted">{label}</div>
-      <div className={`mt-1 text-2xl font-semibold tabular-nums ${accent}`}>{value}</div>
+      <div className={`mt-1 font-display text-2xl font-semibold tabular-nums ${accent}`}>{value}</div>
       {hint ? <div className="mt-1 text-[11px] leading-snug text-ink-muted">{hint}</div> : null}
     </Card>
   );
@@ -123,7 +124,7 @@ function ProductRow({ product, canPrice, onPrice }: {
             </span>
           ) : null}
           {below ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700">
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-700">
               <TrendingDown className="h-3 w-3" aria-hidden />{ui.belowCostBadge}
             </span>
           ) : null}
@@ -180,14 +181,14 @@ export default function ProductsPage() {
   }, [state.products, query]);
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="mx-auto max-w-6xl p-4 sm:p-6">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold text-ink">{ui.title}</h1>
-          <p className="text-sm text-ink-muted">{ui.description}</p>
+          <h1 className="text-2xl font-semibold text-ink">{ui.title}</h1>
+          <p className="mt-1 text-sm text-ink-muted">{ui.description}</p>
         </div>
         <Button variant="secondary" onClick={() => void state.reload()}>
-          <RefreshCw className="mr-2 h-4 w-4" aria-hidden />{ui.refresh}
+          <RefreshCw className="h-4 w-4" aria-hidden />{ui.refresh}
         </Button>
       </div>
 
@@ -210,22 +211,9 @@ export default function ProductsPage() {
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-lg border border-surface-border bg-surface p-0.5">
-          {ranges.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => setRange(option.value)}
-              className={`rounded-md px-3 py-1.5 text-sm ${
-                range === option.value ? 'bg-brand text-white' : 'text-ink-muted hover:text-ink'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <div className="relative min-w-[12rem] flex-1">
+      <div className="mt-5 flex flex-wrap items-end gap-3">
+        <UnderlineTabs tabs={ranges} value={range} onChange={setRange} label={ui.period} className="flex-1" />
+        <div className="relative w-full min-w-[12rem] sm:w-64">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" aria-hidden />
           <Input
             value={query}

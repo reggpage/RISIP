@@ -119,7 +119,7 @@ export default function ProductCostDialog({ product, onClose, onSaved }: {
         </div>
 
         {margin !== null ? (
-          <p className={`mt-3 text-sm ${aboveSelling ? 'text-rose-600' : 'text-emerald-600'}`}>
+          <p className={`mt-3 text-sm ${aboveSelling ? 'text-red-600' : 'text-emerald-600'}`}>
             {aboveSelling ? ui.aboveSelling : `${ui.margin} ${formatMoney(margin)}.`}
           </p>
         ) : null}
