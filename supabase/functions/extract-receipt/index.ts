@@ -394,7 +394,13 @@ Deno.serve(async (req) => {
           .neq('status', 'duplicate')
           .maybeSingle()
         : { data: null };
-      if (original && isSamePhysicalReceipt(normalized, original)) {
+      // A code the model guessed at can collide by accident. A code decoded from
+      // the QR, or confirmed by TRA, cannot: it is one transaction, and a
+      // collision means this really is the same physical receipt. Treat those as
+      // certain rather than putting them through the OCR-doubt path, which is
+      // what filed a third copy of one fuel receipt as a fresh expense.
+      const codeIsCertain = Boolean(qrCode) || tra.status === 'verified';
+      if (original && (codeIsCertain || isSamePhysicalReceipt(normalized, original))) {
         await admin.from('receipts').update({
           ...updates,
           status: 'duplicate',

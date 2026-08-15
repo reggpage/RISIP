@@ -191,18 +191,26 @@ export async function fetchTraReceipt(
     });
     if (!first.ok) return { ok: false, reason: 'unreachable' };
 
-    // No session cookie is a problem with this client or the portal, NOT a
-    // verdict about the code. Reporting it as "TRA does not know this code" was
-    // wrong, and it flagged a correctly-read code as a misreading.
+    // The portal sets NO cookie. Verified against it directly: the code page
+    // returns 200 with no Set-Cookie at all, and the second request still
+    // answers with the receipt from an empty cookie jar — so the code is
+    // remembered server-side against the caller, not carried by the client.
+    //
+    // Requiring a cookie was therefore rejecting every single lookup, which is
+    // why correctly-read codes came back unverified. Any cookie that does appear
+    // is still passed along, in case that ever changes.
     const cookie = cookieHeader(first);
-    if (!cookie) return { ok: false, reason: 'unreachable' };
 
     const second = await fetchImpl(
       `${BASE}/Verify/Verified?Secret=${encodeURIComponent(secret)}`,
       {
         signal: controller.signal,
         redirect: 'follow',
-        headers: { ...browserish, cookie, referer: `${BASE}/${encodeURIComponent(code)}` },
+        headers: {
+          ...browserish,
+          referer: `${BASE}/${encodeURIComponent(code)}`,
+          ...(cookie ? { cookie } : {}),
+        },
       },
     );
     if (!second.ok) return { ok: false, reason: 'unreachable' };
@@ -211,9 +219,13 @@ export async function fetchTraReceipt(
     // replied with was its entry form rather than a receipt.
     const receipt = parseTraReceipt(await second.text());
     if (!receipt) return { ok: false, reason: 'not_found' };
-    // A portal that answered about a different code is not an answer about this one.
+
+    // Because the session is held against the caller rather than in a cookie,
+    // two lookups running at once could cross and return each other's receipt.
+    // A mismatch is that, not a verdict about this code, so it is reported as
+    // transient — retrying is right; flagging the code as misread is not.
     if (receipt.verificationCode && receipt.verificationCode !== code) {
-      return { ok: false, reason: 'not_found' };
+      return { ok: false, reason: 'unreachable' };
     }
     return { ok: true, receipt };
   } catch {

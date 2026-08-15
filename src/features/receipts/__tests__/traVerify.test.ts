@@ -114,8 +114,7 @@ describe('the two-step lookup', () => {
     const fake = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       const href = String(url);
       calls.push(href);
-      if (href.endsWith('/18935E214576')) return page(TRA_FORM, 'SESSION=abc123; Path=/; HttpOnly');
-      expect((init?.headers as Record<string, string>)?.cookie).toBe('SESSION=abc123');
+      if (href.endsWith('/18935E214576')) return page(TRA_FORM);
       return page(TRA_HTML);
     });
 
@@ -130,14 +129,14 @@ describe('the two-step lookup', () => {
     const calls: string[] = [];
     const fake = vi.fn(async (url: string | URL) => {
       calls.push(String(url));
-      return calls.length === 1 ? page(TRA_FORM, 'S=1') : page(TRA_HTML);
+      return calls.length === 1 ? page(TRA_FORM) : page(TRA_HTML);
     });
     await fetchTraReceipt('18935E214576', '9:05:03', fake as unknown as typeof fetch);
     expect(calls[1]).toContain('09%3A05%3A03');
   });
 
   it('says not_found when the portal returns the form instead of a receipt', async () => {
-    const fake = vi.fn(async () => page(TRA_FORM, 'S=1'));
+    const fake = vi.fn(async () => page(TRA_FORM));
     expect(await fetchTraReceipt('1097A5E214A5', '14:52:56', fake as unknown as typeof fetch))
       .toEqual({ ok: false, reason: 'not_found' });
   });
@@ -145,9 +144,11 @@ describe('the two-step lookup', () => {
   it('refuses to accept an answer about a different code', async () => {
     // A portal that hands back somebody else's receipt has not answered ours.
     let first = true;
-    const fake = vi.fn(async () => { const r = first ? page(TRA_FORM, 'S=1') : page(TRA_HTML); first = false; return r; });
+    const fake = vi.fn(async () => { const r = first ? page(TRA_FORM) : page(TRA_HTML); first = false; return r; });
+    // Transient, not a verdict: the session is held against the caller, so two
+    // lookups at once can cross and hand back each other's receipt.
     expect(await fetchTraReceipt('AAAAAA111111', '14:52:56', fake as unknown as typeof fetch))
-      .toEqual({ ok: false, reason: 'not_found' });
+      .toEqual({ ok: false, reason: 'unreachable' });
   });
 
   it('never throws when the portal is down or slow', async () => {
@@ -233,34 +234,48 @@ describe('the session cookie, read the way runtimes offer it', () => {
   });
 });
 
-describe('a missing session is not a verdict about the code', () => {
-  it('reports unreachable, not not_found, when no cookie comes back', async () => {
-    // The distinction matters: not_found flags the verification code as a
-    // misreading, and a correctly-read code was being flagged that way because
-    // of a bug in this client.
-    const fake = async () => new Response('<html>form</html>', { status: 200 });
-    expect(await fetchTraReceipt('G2KTYC85636', '15:22:19', fake as unknown as typeof fetch))
-      .toEqual({ ok: false, reason: 'unreachable' });
+describe('the portal keeps no session in a cookie', () => {
+  it('looks the receipt up even though nothing set a cookie', async () => {
+    // Verified against the live portal: the code page returns 200 with no
+    // Set-Cookie, and the second request still answers from an empty jar.
+    // Requiring a cookie was rejecting every lookup.
+    let first = true;
+    const fake = async () => {
+      const response = new Response(first ? TRA_FORM : TRA_HTML, { status: 200 });
+      first = false;
+      return response;
+    };
+    const result = await fetchTraReceipt('18935E214576', '14:52:56', fake as unknown as typeof fetch);
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.receipt.totalInclTax).toBe(58000);
   });
 
   it('still reports not_found when the portal answers with its form', async () => {
-    let first = true;
-    const fake = async () => {
-      const headers = new Headers();
-      if (first) { headers.append('set-cookie', 'S=1; Path=/'); first = false; }
-      return new Response(TRA_FORM, { status: 200, headers });
-    };
+    const fake = async () => new Response(TRA_FORM, { status: 200 });
     expect(await fetchTraReceipt('G2KTYC85636', '15:22:19', fake as unknown as typeof fetch))
       .toEqual({ ok: false, reason: 'not_found' });
   });
 
-  it('sends a user agent, since the portal is a browser-facing page', async () => {
+  it('passes a cookie along if one ever appears', async () => {
     const seen: RequestInit[] = [];
+    let first = true;
     const fake = async (_url: string | URL, init?: RequestInit) => {
       seen.push(init ?? {});
       const headers = new Headers();
-      if (seen.length === 1) headers.append('set-cookie', 'S=1; Path=/');
-      return new Response(seen.length === 1 ? TRA_FORM : TRA_HTML, { status: 200, headers });
+      if (first) { headers.append('set-cookie', 'S=1; Path=/'); first = false; return new Response(TRA_FORM, { headers }); }
+      return new Response(TRA_HTML);
+    };
+    await fetchTraReceipt('18935E214576', '14:52:56', fake as unknown as typeof fetch);
+    expect((seen[1].headers as Record<string, string>).cookie).toBe('S=1');
+  });
+
+  it('sends a user agent and a referer, since the portal is browser-facing', async () => {
+    const seen: RequestInit[] = [];
+    let first = true;
+    const fake = async (_url: string | URL, init?: RequestInit) => {
+      seen.push(init ?? {});
+      const body = first ? TRA_FORM : TRA_HTML; first = false;
+      return new Response(body, { status: 200 });
     };
     await fetchTraReceipt('18935E214576', '14:52:56', fake as unknown as typeof fetch);
     expect((seen[0].headers as Record<string, string>)['user-agent']).toMatch(/Mozilla/);
