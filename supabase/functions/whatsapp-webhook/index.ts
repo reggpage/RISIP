@@ -104,6 +104,17 @@ import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import { findNameWarnings, nameWarningText } from '../_shared/whatsappProductNames.ts';
 import { parseTypedVerificationCode, typedCodeRejected } from '../_shared/typedCode.ts';
 import {
+  type StockCountBatch,
+  parseStockCountBatch,
+  stockCountBatchCancelled,
+  stockCountBatchConfirmation,
+  stockCountBatchSaved,
+} from '../_shared/whatsappStockBatch.ts';
+import {
+  riderQuestionNotice,
+  splitRiderQuestion,
+} from '../_shared/whatsappMixedTopics.ts';
+import {
   parseSellingPrice,
   priceBandNotice,
   sellingPriceSaved,
@@ -1449,6 +1460,56 @@ Deno.serve(async (req) => {
             })
             .eq('wa_message_id', waMessageId);
 
+        // ── One message, two topics ───────────────────────────────────────
+        // "nimeuza daftari 5 kwa 7500, faida ya leo ni ngapi?" used to be
+        // claimed whole by the first parser that matched, and the question was
+        // dropped without a word. The split is only trusted when the action
+        // half genuinely reaches a write parser — otherwise the whole message
+        // goes to the read path untouched, which already handles it.
+        const rider = splitRiderQuestion(body);
+        const claimsWrite = (said: string) => Boolean(
+          parseStockCountBatch(said) ?? parseStockCount(said) ?? parseSellingPrice(said)
+          ?? parseProductCostBatch(said) ?? parseProductCost(said),
+        ) || isDailyRecordCandidate(said);
+        const mixed = rider && claimsWrite(rider.action) ? rider : null;
+        const writeBody = mixed ? mixed.action : body;
+        let riderPending = mixed !== null;
+        /**
+         * The write branches reply through this, so the rider question is named
+         * once — on the first reply the message produces — and then answered.
+         */
+        const reply = async (to: string, text: string) => {
+          if (!mixed || !riderPending) return replyQuietly(to, text);
+          riderPending = false;
+          await replyQuietly(to, text + riderQuestionNotice(mixed.question, lang));
+          if (!identity) return;
+          // Read-only, so it runs now rather than after the confirmation. The
+          // notice above already says the figure excludes what is pending.
+          const product = parseProductAnalyticsRequest(mixed.question);
+          if (product) {
+            await answerProductAnalytics(db, identity, to, product, lang);
+            await audit(db, identity, waMessageId, 'rider_question', 'product_analytics', 'applied');
+            return;
+          }
+          const read = parseReadRequest(mixed.question);
+          if (read) {
+            try {
+              await replyQuietly(to, await readOnlyToolReply(db, identity, read, lang));
+              await audit(db, identity, waMessageId, 'rider_question', read.tool, 'applied');
+            } catch {
+              await replyQuietly(to, lang === 'sw'
+                ? 'Sikuweza kupata jibu la swali lako la pili sasa. Liulize peke yake.'
+                : 'I could not answer your second question just now. Ask it on its own.');
+              await audit(db, identity, waMessageId, 'rider_question', read.tool, 'failed');
+            }
+            return;
+          }
+          await replyQuietly(to, lang === 'sw'
+            ? 'Swali lako la pili sikulielewa. Liulize peke yake ili nikujibu vizuri.'
+            : 'I did not understand your second question. Ask it on its own so I can answer properly.');
+          await audit(db, identity, waMessageId, 'rider_question', 'unknown', 'clarification');
+        };
+
         if (rawIdentity && !identity) {
           await replyQuietly(phone, lang === 'sw'
             ? 'Akaunti hii imeunganishwa, lakini haina biashara hai yenye membership halali. Fungua Risip uchague biashara, kisha jaribu tena.'
@@ -1578,12 +1639,16 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<CostPrompt> | null)?.kind === 'cost_prompt'
           ? convo.options as CostPrompt
           : null;
+        const stockBatchPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<StockCountBatch> | null)?.kind === 'stock_count_batch'
+          ? convo.options as StockCountBatch
+          : null;
         const costBatchPending = convo?.awaiting === 'product_cost'
           && (convo.options as Partial<ProductCostBatch> | null)?.kind === 'product_cost_batch'
           ? convo.options as ProductCostBatch
           : null;
         const costConversation = convo?.awaiting === 'product_cost' && convo.options
-          && !costPrompt && !costBatchPending
+          && !costPrompt && !costBatchPending && !stockBatchPending
           ? { cost: convo.options as unknown as ProductCost }
           : null;
         const productContext = convo?.awaiting === 'product_analytics'
@@ -1907,6 +1972,33 @@ Deno.serve(async (req) => {
         // An answer to a price question Risip itself asked. No NDIYO here: the
         // question was the confirmation, and asking "are you sure?" straight
         // after somebody answered a direct question is the robotic move.
+        if (stockBatchPending) {
+          if (isDailyRecordConfirmation(body)) {
+            const { data: saved, error } = await db.rpc('wa_record_stock_counts', {
+              p_phone: phone,
+              p_items: stockBatchPending.counts.map((c) => ({
+                product: c.product, quantity: c.quantity, unit: c.unit,
+              })),
+            });
+            await clearConversation(db, identity.id as string);
+            const result = saved as { saved?: number; company_name?: string } | null;
+            await replyQuietly(phone, error
+              ? productCostErrorMessage(error, lang)
+              : stockCountBatchSaved(result?.saved ?? stockBatchPending.counts.length, result?.company_name ?? '', lang));
+            await audit(db, identity, waMessageId, 'stock_count_batch',
+              String(stockBatchPending.counts.length), error ? 'failed' : 'applied');
+          } else if (isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, stockCountBatchCancelled(lang));
+            await audit(db, identity, waMessageId, 'stock_count_batch', 'cancel', 'applied');
+          } else {
+            await replyQuietly(phone, stockCountBatchConfirmation(stockBatchPending, lang));
+            await audit(db, identity, waMessageId, 'stock_count_batch', 'reask', 'skipped');
+          }
+          await finish('skipped');
+          continue;
+        }
+
         // NDIYO on a whole price list. One transaction, so a half-applied list
         // can never leave the coverage figure reporting a number nobody chose.
         if (costBatchPending) {
@@ -2064,11 +2156,29 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        const stockBatch = parseStockCountBatch(writeBody);
+        if (stockBatch) {
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: stockBatch,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          await reply(phone, stockCountBatchConfirmation(stockBatch, lang));
+          await audit(db, identity, waMessageId, 'stock_count_batch', String(stockBatch.counts.length), 'pending');
+          await finish('skipped');
+          continue;
+        }
+
         // A physical count. Checked before the record parser because "nina
         // daftari 90" states what is on the shelf, not what moved — and reading
         // it as a movement would be the one mistake that silently rewrites a
         // stock figure the trader is about to rely on.
-        const stockCount = parseStockCount(body);
+        const stockCount = parseStockCount(writeBody);
         if (stockCount) {
           const { data: saved, error } = await db.rpc('wa_record_stock_count', {
             p_phone: phone,
@@ -2077,11 +2187,11 @@ Deno.serve(async (req) => {
             p_unit: stockCount.unit,
           });
           if (error) {
-            await replyQuietly(phone, productCostErrorMessage(error, lang));
+            await reply(phone, productCostErrorMessage(error, lang));
             await audit(db, identity, waMessageId, 'stock_count', stockCount.product, 'failed');
           } else {
             const previous = (saved as { previous?: number | null } | null)?.previous;
-            await replyQuietly(phone, stockCountConfirmation(
+            await reply(phone, stockCountConfirmation(
               stockCount, previous === null || previous === undefined ? null : Number(previous), lang,
             ));
             await audit(db, identity, waMessageId, 'stock_count', stockCount.product, 'applied');
@@ -2093,7 +2203,7 @@ Deno.serve(async (req) => {
         // What the shop CHARGES, as opposed to what it pays. Checked before the
         // record parser because a price list names a product and numbers just
         // like a sale does, and reading it as a sale would invent revenue.
-        const sellingPrice = parseSellingPrice(body);
+        const sellingPrice = parseSellingPrice(writeBody);
         if (sellingPrice) {
           const { data: saved, error } = await db.rpc('wa_set_selling_price', {
             p_phone: phone,
@@ -2103,11 +2213,11 @@ Deno.serve(async (req) => {
             p_min_qty: sellingPrice.minQty,
           });
           if (error) {
-            await replyQuietly(phone, productCostErrorMessage(error, lang));
+            await reply(phone, productCostErrorMessage(error, lang));
             await audit(db, identity, waMessageId, 'selling_price', sellingPrice.product, 'failed');
           } else {
             void saved;
-            await replyQuietly(phone, sellingPriceSaved(sellingPrice, lang));
+            await reply(phone, sellingPriceSaved(sellingPrice, lang));
             await audit(db, identity, waMessageId, 'selling_price', sellingPrice.product, 'applied');
           }
           await finish('skipped');
@@ -2117,7 +2227,7 @@ Deno.serve(async (req) => {
         // A whole price list in one message. Checked before the single-price
         // path and before the record parser, because a 36-line paste matched
         // neither and was silently dropped.
-        const costBatch = parseProductCostBatch(body);
+        const costBatch = parseProductCostBatch(writeBody);
         if (costBatch) {
           await db.from('whatsapp_conversations').upsert({
             identity_id: identity.id,
@@ -2129,13 +2239,13 @@ Deno.serve(async (req) => {
             expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
             updated_at: new Date().toISOString(),
           }, { onConflict: 'identity_id' });
-          await replyQuietly(phone, costBatchConfirmation(costBatch, lang));
+          await reply(phone, costBatchConfirmation(costBatch, lang));
           await audit(db, identity, waMessageId, 'product_cost_batch', String(costBatch.costs.length), 'pending');
           await finish('skipped');
           continue;
         }
 
-        const costCandidate = parseProductCost(body);
+        const costCandidate = parseProductCost(writeBody);
         if (costCandidate) {
           // The previous price is read here so the confirmation can show what it
           // was changing from. "Saved" alone hides a number that quietly rewrites
@@ -2161,7 +2271,7 @@ Deno.serve(async (req) => {
             updated_at: new Date().toISOString(),
           }, { onConflict: 'identity_id' });
 
-          await replyQuietly(phone, costConfirmation(
+          await reply(phone, costConfirmation(
             costCandidate,
             (company as { name?: string } | null)?.name ?? '',
             prev ? Number((prev as { unit_cost: number }).unit_cost) : null,
@@ -2207,7 +2317,7 @@ Deno.serve(async (req) => {
             const unsafeRecordProse = assistant
               && shouldDeferRecordLikeReply(isDailyRecordCandidate(body), assistant.toolNames);
             if (assistant && !unsafeRecordProse) {
-              await replyQuietly(phone, assistant.reply);
+              await reply(phone, assistant.reply);
               const remembered = await storeAssistantExchange(
                 db, identity, waMessageId, body!, assistant.reply, assistant.memory,
               );
@@ -2242,10 +2352,10 @@ Deno.serve(async (req) => {
         const readRequest = parseReadRequest(body);
         if (readRequest) {
           try {
-            await replyQuietly(phone, await readOnlyToolReply(db, identity, readRequest, lang));
+            await reply(phone, await readOnlyToolReply(db, identity, readRequest, lang));
             await audit(db, identity, waMessageId, 'read_only_tool', readRequest.tool, 'applied');
           } catch {
-            await replyQuietly(phone, lang === 'sw'
+            await reply(phone, lang === 'sw'
               ? 'Sikuweza kupata taarifa hiyo sasa. Jaribu tena baadaye.'
               : 'I could not load that information right now. Please try again later.');
             await audit(db, identity, waMessageId, 'read_only_tool', readRequest.tool, 'failed');
@@ -2257,7 +2367,7 @@ Deno.serve(async (req) => {
         if (!aiEligible && shouldInterpretReadWithAi(body)) {
           const budget = await consumeAiBudget(db, identity, body.length);
           if (!budget.allowed) {
-            await replyQuietly(phone, aiBudgetMessage(lang, budget.resetAt, budget.reason));
+            await reply(phone, aiBudgetMessage(lang, budget.resetAt, budget.reason));
             await audit(db, identity, waMessageId, 'semantic_read_ai', 'budget', 'blocked');
             await finish('skipped', 'ai_budget_blocked');
             continue;
@@ -2270,12 +2380,12 @@ Deno.serve(async (req) => {
             continue;
           }
           if (semanticIntent?.kind === 'read_tool') {
-            await replyQuietly(phone, await readOnlyToolReply(db, identity, semanticIntent.request, lang));
+            await reply(phone, await readOnlyToolReply(db, identity, semanticIntent.request, lang));
             await audit(db, identity, waMessageId, 'semantic_read_ai', semanticIntent.request.tool, 'applied');
             await finish('skipped');
             continue;
           }
-          await replyQuietly(phone, lang === 'sw'
+          await reply(phone, lang === 'sw'
             ? 'Sijaelewa vizuri swali hilo la biashara. Taja unachotaka kuona, kwa mfano mauzo, bidhaa, deni, risiti au faida.'
             : 'I did not fully understand that business question. Say what you want to see, for example sales, products, debts, receipts, or profit.');
           await audit(db, identity, waMessageId, 'semantic_read_ai', 'unknown', 'clarification');
@@ -2283,8 +2393,8 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        if (isDailyRecordCandidate(body)) {
-          const batch = parseDailyRecordBatch(body, lang);
+        if (isDailyRecordCandidate(writeBody)) {
+          const batch = parseDailyRecordBatch(writeBody, lang);
           if (batch.kind === 'clarify') {
             const state: DailyRecordBatchClarification = {
               ...batch.state,
@@ -2300,7 +2410,7 @@ Deno.serve(async (req) => {
               expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
               updated_at: new Date().toISOString(),
             }, { onConflict: 'identity_id' });
-            await replyQuietly(phone, batch.question);
+            await reply(phone, batch.question);
             await audit(db, identity, waMessageId, 'daily_record_batch', 'clarify', 'pending');
             await finish('skipped');
             continue;
@@ -2310,7 +2420,7 @@ Deno.serve(async (req) => {
               addHistoricalPriceWarnings(db, identity.company_id, record)));
             const created = await createDailyRecordBatchDrafts(db, identity, waMessageId, guardedRecords, lang);
             if (created.error || created.ids.length !== guardedRecords.length) {
-              await replyQuietly(phone, lang === 'sw'
+              await reply(phone, lang === 'sw'
                 ? 'Sikuweza kuandaa rekodi hizi pamoja. Hakuna rekodi mpya iliyohifadhiwa; tafadhali jaribu tena.'
                 : 'I could not prepare these records together. No new record was saved; please try again.');
               await audit(db, identity, waMessageId, 'daily_record_batch', 'create', 'failed');
@@ -2338,7 +2448,7 @@ Deno.serve(async (req) => {
             await finish('skipped');
             continue;
           }
-          const parsed = parseDailyRecord(body, lang);
+          const parsed = parseDailyRecord(writeBody, lang);
           if (parsed.kind === 'clarify') {
             if (parsed.draft) {
               await db.from('whatsapp_conversations').upsert({
@@ -2355,7 +2465,7 @@ Deno.serve(async (req) => {
             if (!parsed.draft && parsed.reason !== 'ambiguity') {
               const budget = await consumeAiBudget(db, identity, body.length);
               if (!budget.allowed) {
-                await replyQuietly(phone, aiBudgetMessage(lang, budget.resetAt, budget.reason));
+                await reply(phone, aiBudgetMessage(lang, budget.resetAt, budget.reason));
                 await audit(db, identity, waMessageId, 'daily_record_ai_fallback', 'budget', 'blocked');
                 await finish('skipped', 'ai_budget_blocked');
                 continue;
@@ -2380,7 +2490,7 @@ Deno.serve(async (req) => {
                 }
               }
             }
-            await replyQuietly(phone, parsed.question);
+            await reply(phone, parsed.question);
             await audit(db, identity, waMessageId, 'daily_record', 'clarify', parsed.reason);
             await finish('skipped');
             continue;
@@ -2389,7 +2499,7 @@ Deno.serve(async (req) => {
             const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, parsed.record);
             const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang);
             if (created.error || !created.id) {
-              await replyQuietly(phone, lang === 'sw'
+              await reply(phone, lang === 'sw'
                 ? 'Sikuweza kuhifadhi draft hii. Tafadhali jaribu tena.'
                 : 'I could not save this draft. Please try again.');
               await audit(db, identity, waMessageId, 'daily_record', 'create', 'failed');
@@ -2424,7 +2534,7 @@ Deno.serve(async (req) => {
           const { data: rows } = await db.rpc('wa_memberships', { p_phone: phone });
           const list = (rows ?? []) as { company_id: string; company_name: string; role: string; is_active: boolean }[];
           if (list.length <= 1) {
-            await replyQuietly(phone, lang === 'sw'
+            await reply(phone, lang === 'sw'
               ? `Una biashara moja tu: ${list[0]?.company_name ?? '-'}`
               : `You only have one business: ${list[0]?.company_name ?? '-'}`);
           } else {
@@ -2437,7 +2547,7 @@ Deno.serve(async (req) => {
               expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
               updated_at: new Date().toISOString(),
             }, { onConflict: 'identity_id' });
-            await replyQuietly(phone, businessList(list, lang));
+            await reply(phone, businessList(list, lang));
           }
           await finish('skipped', 'business_list');
           continue;
@@ -2447,7 +2557,7 @@ Deno.serve(async (req) => {
           const options = (convo.options ?? []) as { id: string; name: string }[];
           const idx = parseBusinessChoice(body, options.length);
           if (idx === null) {
-            await replyQuietly(phone, businessList(
+            await reply(phone, businessList(
               options.map((o) => ({ company_name: o.name, role: '', is_active: false })), lang));
             await finish('skipped', 'business_choice_unclear');
             continue;
@@ -2458,7 +2568,7 @@ Deno.serve(async (req) => {
             p_phone: phone, p_company: options[idx].id,
           });
           await clearConversation(db, identity.id as string);
-          await replyQuietly(phone, swErr
+          await reply(phone, swErr
             ? swErr.message
             : (lang === 'sw' ? `Sasa unatumia: ${name}` : `You are now using: ${name}`));
           await audit(db, identity, waMessageId, 'switch_business', String(options[idx].id), swErr ? 'failed' : 'applied');
@@ -2472,7 +2582,7 @@ Deno.serve(async (req) => {
           // language they picked here. The browser keeps its own override.
           await db.rpc('wa_set_language', { p_phone: phone, p_lang: next });
           await clearConversation(db, identity.id as string);
-          await replyQuietly(phone, t('languageSet', next));
+          await reply(phone, t('languageSet', next));
           await audit(db, identity, waMessageId, 'change_language', next, 'applied');
           await finish('skipped');
           continue;
@@ -2481,7 +2591,7 @@ Deno.serve(async (req) => {
         if (intent === 'cancel_action') {
           await clearConversation(db, identity.id as string);
           await clearAssistantMemory(db, identity);
-          await replyQuietly(phone, t('cancelled', lang));
+          await reply(phone, t('cancelled', lang));
           await audit(db, identity, waMessageId, 'cancel_action', 'clear_state', 'applied');
           await finish('skipped');
           continue;
@@ -2497,11 +2607,11 @@ Deno.serve(async (req) => {
             await db.from('whatsapp_identities').update({ lang: picked, updated_at: new Date().toISOString() })
               .eq('id', identity.id);
             await clearConversation(db, identity.id as string);
-            await replyQuietly(phone, `${t('languageSet', picked)}\n\n${t('help', picked)}`);
+            await reply(phone, `${t('languageSet', picked)}\n\n${t('help', picked)}`);
             await finish('skipped');
             continue;
           }
-          await replyQuietly(phone, t('chooseLanguage', lang));
+          await reply(phone, t('chooseLanguage', lang));
           await finish('skipped');
           continue;
         }
@@ -2518,15 +2628,15 @@ Deno.serve(async (req) => {
               const next: ProjectSetupState = { ...setup, stage: 'name' };
               await db.from('whatsapp_conversations').update({ options: next, updated_at: new Date().toISOString() })
                 .eq('identity_id', identity.id);
-              await replyQuietly(phone, projectSetupNamePrompt(lang));
+              await reply(phone, projectSetupNamePrompt(lang));
             } else if (choice === 1 || choice === 2) {
               const projectName = choice === 1 ? 'General' : (sanitizeProjectName(companyName) ?? 'General');
               const next: ProjectSetupState = { ...setup, stage: 'confirm', projectName };
               await db.from('whatsapp_conversations').update({ options: next, updated_at: new Date().toISOString() })
                 .eq('identity_id', identity.id);
-              await replyQuietly(phone, projectSetupConfirmation(lang, projectName));
+              await reply(phone, projectSetupConfirmation(lang, projectName));
             } else {
-              await replyQuietly(phone, projectSetupPrompt(lang, companyName));
+              await reply(phone, projectSetupPrompt(lang, companyName));
             }
             await finish('skipped');
             continue;
@@ -2535,7 +2645,7 @@ Deno.serve(async (req) => {
           if (setup.stage === 'name') {
             const projectName = sanitizeProjectName(body);
             if (!projectName) {
-              await replyQuietly(phone, lang === 'sw'
+              await reply(phone, lang === 'sw'
                 ? 'Jina la project ni fupi sana. Jaribu tena.'
                 : 'That project name is too short. Try again.');
               await finish('skipped');

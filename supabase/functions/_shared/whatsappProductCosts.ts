@@ -26,12 +26,25 @@ export type ProductCostErrorCode =
   | 'invalid_quantity'
   | 'unknown';
 
+/**
+ * A unit is a word. "50" is not.
+ *
+ * The AI tool path used to hand any string through, and one production row ended
+ * up measured in '50'. Because a product may only ever have one unit, that made
+ * the product uncountable for good: every later count was told it was measured
+ * in 50. Better to keep no unit than to keep a wrong one.
+ */
+export function normaliseUnit(raw: string | null | undefined): string | null {
+  const unit = clean(raw).toLowerCase().slice(0, 20);
+  return unit && /[\p{L}]/u.test(unit) ? unit : null;
+}
+
 export function validateProductCostCandidate(candidate: unknown): ProductCost | null {
   if (!candidate || typeof candidate !== 'object') return null;
   const value = candidate as { product?: unknown; unit_cost?: unknown; unit?: unknown };
   const product = typeof value.product === 'string' ? clean(value.product).slice(0, 80) : '';
   const unitCost = typeof value.unit_cost === 'number' ? value.unit_cost : Number.NaN;
-  const unit = typeof value.unit === 'string' ? clean(value.unit).toLowerCase().slice(0, 20) || null : null;
+  const unit = normaliseUnit(typeof value.unit === 'string' ? value.unit : null);
   if (product.length < 2 || !/[\p{L}]/u.test(product)) return null;
   if (!Number.isFinite(unitCost) || unitCost <= 0 || unitCost > 1_000_000_000) return null;
   return { product, unitCost: Math.round(unitCost * 100) / 100, unit };

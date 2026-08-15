@@ -97,7 +97,7 @@ describe('WhatsApp mixed daily-record batches', () => {
     expect(migration).toContain("v_source || '#' || v_item.ordinality::text");
     expect(migration).toContain('jsonb_array_length(p_records) > 10');
     expect(migration).toContain('to service_role');
-    expect(webhook).toContain('const batch = parseDailyRecordBatch(body, lang);');
+    expect(webhook).toContain('const batch = parseDailyRecordBatch(writeBody, lang);');
     expect(webhook).toContain("db.rpc('wa_create_daily_record_batch_drafts'");
     expect(webhook).toContain("db.rpc('wa_confirm_daily_record_batch'");
     expect(webhook).toContain("db.rpc('wa_cancel_daily_record_batch'");

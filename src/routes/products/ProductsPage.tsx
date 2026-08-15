@@ -57,7 +57,7 @@ const ui = lang === 'sw' ? {
   showArchived: 'Onyesha zilizofichwa', archivedBadge: 'Imefichwa',
   archived: 'Bidhaa imefichwa. Mauzo yake ya zamani bado yanahesabiwa.',
   restored: 'Bidhaa imerudishwa kwenye orodha.',
-  onHand: 'Zilizopo', notCounted: 'Hazijahesabiwa', count: 'Hesabu', recount: 'Hesabu tena',
+  onHand: 'Store', notCounted: 'Hazijahesabiwa', count: 'Hesabu', recount: 'Hesabu tena',
   stockWrong: 'Zimeuzwa zaidi ya zilizopo',
   noDelete: 'Hakuna kufuta. Bidhaa yenye mauzo halisi ikifutwa, mapato ya miezi iliyopita yangebadilika kimya.',
 } : {
@@ -85,7 +85,7 @@ const ui = lang === 'sw' ? {
   showArchived: 'Show hidden', archivedBadge: 'Hidden',
   archived: 'Product hidden. Its past sales still count.',
   restored: 'Product is back on the list.',
-  onHand: 'On hand', notCounted: 'Not counted', count: 'Count', recount: 'Recount',
+  onHand: 'Store', notCounted: 'Not counted', count: 'Count', recount: 'Recount',
   stockWrong: 'Sold more than counted',
   noDelete: 'There is no delete. Removing a product with real sales would silently change months already reported.',
 };
