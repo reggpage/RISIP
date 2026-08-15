@@ -7,6 +7,11 @@ export type DailyRecordLine = {
   description: string;
   quantity: number;
   unit_amount: number;
+  /**
+   * "kilo", "lita", "gunia" — descriptive only, never converted. Present when
+   * the trader named one, so three litres are not reported as three pieces.
+   */
+  unit?: string | null;
 };
 
 export type ParsedDailyRecord = {
@@ -145,6 +150,78 @@ function lineTotal(line: DailyRecordLine): number {
   return roundMoney(line.quantity * line.unit_amount);
 }
 
+/**
+ * Units of weight, volume, length and the containers traders actually sell by.
+ *
+ * Kept to words that are only ever units, so a product cannot be mistaken for
+ * one. "Debe", "gunia" and "ndoo" are containers rather than true measures, but
+ * that is how goods are sold here and nothing converts between them anyway —
+ * the word is carried through exactly as the trader said it.
+ */
+const MEASURE_UNITS = [
+  'kilo', 'kilos', 'kg', 'kgs', 'gramu', 'gram', 'grams',
+  'lita', 'litre', 'litres', 'liter', 'liters', 'ml',
+  'mita', 'metre', 'metres', 'meter', 'meters', 'futi',
+  'gunia', 'magunia', 'sack', 'sacks', 'debe', 'madebe',
+  'ndoo', 'pakiti', 'packet', 'packets', 'boksi', 'box',
+  'rimu', 'reams', 'ream', 'bando', 'dazeni', 'dozen',
+];
+const UNIT_PATTERN = `(?:${MEASURE_UNITS.join('|')})`;
+
+/**
+ * A price per unit is exact; a total divided by a quantity is not. 7,500 for 2.5
+ * kilos is 3,000 a kilo with nothing left over, but 7,000 for 3 litres is
+ * 2,333.33 and the three lines no longer add back to 7,000.
+ *
+ * The draft RPC rejects a record whose lines miss the stated amount by more than
+ * a cent, and rightly so. Where the division does not come out we keep today's
+ * behaviour — the total is recorded without a line — rather than quietly filing
+ * an amount the trader never said.
+ */
+function unitPriceFromTotal(total: number, quantity: number): number | null {
+  if (!(quantity > 0)) return null;
+  const unitAmount = roundMoney(total / quantity);
+  return Math.abs(roundMoney(unitAmount * quantity) - total) <= 0.01 ? unitAmount : null;
+}
+
+/**
+ * Goods sold by weight or volume, in the orders people write them:
+ *
+ *   sukari 2.5 kilo kwa 7500      quantity before the unit, total price
+ *   mafuta lita 3 kwa 21000       unit before the quantity, total price
+ *   unga kilo 5 kila kilo 2600    price stated per unit, which needs no division
+ *   sukari 3 kilo kila moja 3000  the same, said the other way
+ */
+function parseMeasuredLine(text: string): DailyRecordLine | null {
+  const perUnit = text.match(new RegExp(
+    '^(.+?)\\s+(?:(' + UNIT_PATTERN + ')\\s+(' + QUANTITY_PATTERN + ')|(' + QUANTITY_PATTERN + ')\\s+(' + UNIT_PATTERN + '))'
+    + '\\s+(?:kila|per|each)\\s+(?:moja|item|' + UNIT_PATTERN + ')(?:\\s+ni)?\\s+(' + MONEY_PATTERN + ')$',
+    'i',
+  ));
+  if (perUnit) {
+    const quantity = Number(perUnit[3] ?? perUnit[4]);
+    const unit = (perUnit[2] ?? perUnit[5] ?? '').toLowerCase();
+    const unitAmount = parseMoneyToken(perUnit[6]);
+    if (Number.isFinite(quantity) && quantity > 0 && unitAmount !== null) {
+      return { description: perUnit[1].trim(), quantity, unit_amount: unitAmount, unit };
+    }
+  }
+
+  const withTotal = text.match(new RegExp(
+    '^(.+?)\\s+(?:(' + UNIT_PATTERN + ')\\s+(' + QUANTITY_PATTERN + ')|(' + QUANTITY_PATTERN + ')\\s+(' + UNIT_PATTERN + '))'
+    + '\\s+(?:kwa|for|jumla|total)\\s+(' + MONEY_PATTERN + ')$',
+    'i',
+  ));
+  if (!withTotal) return null;
+  const quantity = Number(withTotal[3] ?? withTotal[4]);
+  const unit = (withTotal[2] ?? withTotal[5] ?? '').toLowerCase();
+  const total = parseMoneyToken(withTotal[6]);
+  if (!Number.isFinite(quantity) || quantity <= 0 || total === null) return null;
+  const unitAmount = unitPriceFromTotal(total, quantity);
+  if (unitAmount === null) return null;
+  return { description: withTotal[1].trim(), quantity, unit_amount: unitAmount, unit };
+}
+
 function parseSwahiliUnitLine(text: string): DailyRecordLine | null {
   const match = text.match(new RegExp(
     '^(.+?)\\s+(' + QUANTITY_PATTERN + ')\\s+kila moja(?:\\s+ni)?\\s+(' + MONEY_PATTERN + ')$',
@@ -186,7 +263,11 @@ function parseSaleLines(payload: string): DailyRecordLine[] | null {
   if (parts.length === 0) return null;
   const lines = parts.map((part) => {
     const normalizedPart = stripRepeatedSalePrefix(part);
-    return parseSwahiliUnitLine(normalizedPart) ?? parseEnglishUnitLine(normalizedPart);
+    // Measured goods are tried first: "sukari 2.5 kilo kwa 7500" would otherwise
+    // fall through to the total-only path and never become a line at all.
+    return parseMeasuredLine(normalizedPart)
+      ?? parseSwahiliUnitLine(normalizedPart)
+      ?? parseEnglishUnitLine(normalizedPart);
   });
   return lines.every(Boolean) ? lines as DailyRecordLine[] : null;
 }
@@ -520,7 +601,10 @@ export function buildDailyRecordConfirmation(record: ParsedDailyRecord, lang: La
       if (line.quantity === 1 && record.kind === 'expense') {
         lines.push('- ' + name + ': ' + money(line.unit_amount, lang));
       } else {
-        lines.push('- ' + name + ': ' + line.quantity + ' × ' + money(line.unit_amount, lang) + ' = ' + money(lineTotal(line), lang));
+        // The unit is shown so the trader can check the reading before
+        // confirming: "2.5 × 3,000" could be kilos or pieces, and only they know.
+        const measure = line.unit ? ' ' + line.unit : '';
+        lines.push('- ' + name + ': ' + line.quantity + measure + ' × ' + money(line.unit_amount, lang) + ' = ' + money(lineTotal(line), lang));
       }
     }
   } else if (record.description) {
