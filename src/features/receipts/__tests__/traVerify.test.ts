@@ -111,7 +111,7 @@ describe('the two-step lookup', () => {
 
   it('starts a session on the code, then asks with the time', async () => {
     const calls: string[] = [];
-    const fake = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+    const fake = vi.fn(async (url: string | URL | Request) => {
       const href = String(url);
       calls.push(href);
       if (href.endsWith('/18935E214576')) return page(TRA_FORM);
