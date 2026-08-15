@@ -15,8 +15,6 @@
 import jsQR from 'npm:jsqr@1.4.0';
 import { decode as decodeJpeg } from 'npm:jpeg-js@0.4.4';
 
-/** Above this, a photo is downsampled before decoding rather than held whole. */
-const MAX_PIXELS = 2_000_000;
 /** jpeg-js allocates eagerly; a cap keeps a huge photo from taking the function down. */
 const MAX_DECODE_MB = 256;
 
