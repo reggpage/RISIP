@@ -375,11 +375,39 @@ function stockPurchaseRecord(text: string): ParsedDailyRecord | null {
   // The explicit signal. Without it we do not claim the message.
   if (!/\b(stock|stoo|bidhaa|mzigo)\b/i.test(payload)) return null;
 
+  // What came in, and how much of it. Stock purchases used to record only a
+  // total, which is why stock-on-hand could not exist: you cannot subtract sales
+  // from a number nobody counted. The same line shapes as a sale are accepted —
+  // "daftari 100 kila moja 900", "sukari kilo 50 kwa 130000" — so a trader does
+  // not have to learn a second grammar for goods coming in.
+  const goods = payload
+    .replace(/\b(?:stock|stoo|mzigo)\b/gi, ' ')
+    .replace(/\bbidhaa\b/gi, ' ')
+    .replace(/^\s*(?:ya|za|wa|of|for)\s+/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const stockLines = goods ? parseSaleLines(goods) : null;
+  if (stockLines) {
+    const amount = roundMoney(stockLines.reduce((sum, line) => sum + lineTotal(line), 0));
+    if (validAmount(amount)) {
+      return {
+        kind: 'stock_purchase',
+        amount,
+        partyName: null,
+        description: stockLines.length === 1 ? null : goods,
+        lines: stockLines,
+      };
+    }
+  }
+
   const tokens = moneyTokens(payload);
   if (tokens.length === 0) return null;
   const amount = tokens[tokens.length - 1].value;
   if (!validAmount(amount)) return null;
 
+  // No quantity anywhere in the message. The purchase is still recorded — the
+  // money is real — but it cannot contribute to stock counts, and the reply
+  // says so rather than leaving the trader to wonder why the count did not move.
   const description = stripMoney(payload)
     .replace(/^(?:ya|za|wa|of|for)\s+/i, '')
     .replace(/[:]+$/, '')

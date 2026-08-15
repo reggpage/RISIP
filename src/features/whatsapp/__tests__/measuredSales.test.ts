@@ -96,3 +96,43 @@ describe('nothing that already worked may break', () => {
     expect(parseDailyRecord('Bei ya kununua Sukari ni 2000')?.kind).not.toBe('parsed');
   });
 });
+
+describe('stock coming in, with quantities', () => {
+  const stock = (text: string) => {
+    const parsed = parseDailyRecord(text);
+    return parsed?.kind === 'parsed' && parsed.record.kind === 'stock_purchase' ? parsed.record : null;
+  };
+
+  it('records what came in and how much of it', () => {
+    // A stock purchase used to store only a total, which is why stock-on-hand
+    // could not exist: you cannot subtract sales from a number nobody counted.
+    const record = stock('nimenunua stock ya daftari 100 kila moja 900');
+    expect(record?.lines).toEqual([{ description: 'daftari', quantity: 100, unit_amount: 900 }]);
+    expect(record?.amount).toBe(90000);
+  });
+
+  it('takes stock by weight and volume too', () => {
+    expect(stock('nimenunua stock sukari kilo 50 kwa 130000')?.lines[0])
+      .toEqual({ description: 'sukari', quantity: 50, unit_amount: 2600, unit: 'kilo' });
+    expect(stock('nimenunua stock ya mafuta lita 20 kwa 140000')?.lines[0]?.unit).toBe('lita');
+  });
+
+  it('reads several goods in one delivery', () => {
+    const record = stock('nimenunua stock ya daftari 100 kila moja 900 na kalamu 200 kila moja 300');
+    expect(record?.lines).toHaveLength(2);
+    expect(record?.amount).toBe(150000);
+  });
+
+  it('still records a purchase that names no quantity', () => {
+    // The money is real even when the count cannot use it. Refusing the record
+    // would lose a genuine expense; the stock report names the gap instead.
+    const record = stock('nimenunua stock ya sukari 500000');
+    expect(record?.amount).toBe(500000);
+    expect(record?.lines).toEqual([]);
+  });
+
+  it('does not claim a purchase that never said stock', () => {
+    // Charcoal is stock in a charcoal shop and a cooking cost everywhere else.
+    expect(stock('nimenunua mkaa 7000')).toBeNull();
+  });
+});
