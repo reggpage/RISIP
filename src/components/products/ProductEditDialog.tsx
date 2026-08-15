@@ -27,6 +27,7 @@ const ui = lang === 'sw' ? {
   unit: 'Kipimo',
   unitPieces: 'Vipande (kawaida)',
   unitHint: 'Vitu vinavyohesabiwa acha "Vipande". Chagua kingine tu kama unauza kwa uzito au ujazo.',
+  unitGoverns: 'Hesabu na bei ya kununua zote zitakuwa kwa kipimo hiki.',
   note: 'Maelezo', noteHint: 'Si lazima. Mfano: kuhesabu mwisho wa mwezi.',
   saveCount: 'Hifadhi hesabu',
   countSaved: 'Hesabu imehifadhiwa.',
@@ -52,6 +53,7 @@ const ui = lang === 'sw' ? {
   unit: 'Unit',
   unitPieces: 'Pieces (default)',
   unitHint: 'For things you count, leave it on "Pieces". Choose another only if you sell by weight or volume.',
+  unitGoverns: 'The count and the buying price will both be in this unit.',
   note: 'Note', noteHint: 'Optional. For example: month-end count.',
   saveCount: 'Save count',
   countSaved: 'Count saved.',
@@ -147,8 +149,22 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
         <h2 className="text-base font-semibold text-ink">{ui.title}</h2>
         <p className="mt-1 text-sm text-ink-muted">{product.productName}</p>
 
+        {/* The unit belongs to the PRODUCT, not to the count or the price, so
+            it sits above the tabs where it governs both. It was one box per tab,
+            which let somebody count Unga in kilo and price it per gunia — the
+            products page then said gunia, the stock page said kilo, and the
+            margin multiplied a sack price by a kilo quantity. The server
+            refuses a mismatch now; this is the half that stops it being asked. */}
+        <div className="mt-3">
+          <span className="text-sm text-ink">{ui.unit}</span>
+          <Select value={unit} onChange={setUnit} options={UNIT_OPTIONS} className="mt-1" />
+          <span className="mt-1 block text-[11px] leading-snug text-ink-muted">
+            {ui.unitHint} {unit ? ui.unitGoverns : ''}
+          </span>
+        </div>
+
         <UnderlineTabs
-          className="mt-3"
+          className="mt-4"
           label={ui.tabs}
           value={tab}
           onChange={setTab}
@@ -168,7 +184,7 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
             </div>
             <div className="mt-3 space-y-3">
               <label className="block">
-                <span className="text-sm text-ink">{ui.quantity}</span>
+                <span className="text-sm text-ink">{ui.quantity}{unit ? ` (${unit})` : ``}</span>
                 <Input
                   value={quantity}
                   onChange={(event) => setQuantity(event.target.value)}
@@ -178,11 +194,6 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
                 />
                 <span className="mt-1 block text-[11px] text-ink-muted">{ui.zeroOk}</span>
               </label>
-              <div>
-                <span className="text-sm text-ink">{ui.unit}</span>
-                <Select value={unit} onChange={setUnit} options={UNIT_OPTIONS} className="mt-1" />
-                <span className="mt-1 block text-[11px] leading-snug text-ink-muted">{ui.unitHint}</span>
-              </div>
               <label className="block">
                 <span className="text-sm text-ink">{ui.note}</span>
                 <Input value={note} onChange={(event) => setNote(event.target.value)} className="mt-1" />
@@ -215,7 +226,7 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
             ) : null}
             <div className="mt-3 space-y-3">
               <label className="block">
-                <span className="text-sm text-ink">{ui.cost}</span>
+                <span className="text-sm text-ink">{ui.cost}{unit ? ` — kwa ${unit} moja` : ``}</span>
                 <Input
                   value={cost}
                   onChange={(event) => setCost(event.target.value)}
@@ -224,11 +235,6 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
                   className="mt-1"
                 />
               </label>
-              <div>
-                <span className="text-sm text-ink">{ui.unit}</span>
-                <Select value={unit} onChange={setUnit} options={UNIT_OPTIONS} className="mt-1" />
-                <span className="mt-1 block text-[11px] leading-snug text-ink-muted">{ui.unitHint}</span>
-              </div>
             </div>
             {margin !== null ? (
               <p className={`mt-3 text-sm ${aboveSelling ? 'text-red-600' : 'text-emerald-600'}`}>
