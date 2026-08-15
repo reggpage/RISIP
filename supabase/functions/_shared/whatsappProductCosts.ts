@@ -18,7 +18,13 @@ export type ProductCost = {
   unit: string | null;
 };
 
-export type ProductCostErrorCode = 'not_linked' | 'no_active_company' | 'not_authorized' | 'no_product' | 'invalid_cost' | 'unknown';
+export type ProductCostErrorCode =
+  | 'not_linked' | 'no_active_company' | 'not_authorized' | 'no_product'
+  | 'invalid_cost'
+  /** A price or count offered in a unit the product is not measured in. */
+  | 'unit_mismatch'
+  | 'invalid_quantity'
+  | 'unknown';
 
 export function validateProductCostCandidate(candidate: unknown): ProductCost | null {
   if (!candidate || typeof candidate !== 'object') return null;
@@ -154,6 +160,8 @@ export function productCostErrorMessage(error: { message?: string; hint?: string
     not_authorized: 'Ni owner au accountant pekee anayeweza kuweka bei ya kununua.',
     no_product: 'Sikuweza kutambua jina la bidhaa. Taja bidhaa na bei yake.',
     invalid_cost: 'Bei ya kununua lazima iwe kubwa kuliko sifuri.',
+    unit_mismatch: 'Bidhaa hii ina kipimo chake tayari. Tumia kipimo kile kile.',
+    invalid_quantity: 'Idadi haiwezi kuwa chini ya sifuri.',
     unknown: 'Sikuweza kuhifadhi bei hiyo. Tafadhali jaribu tena.',
   };
   const en: Record<ProductCostErrorCode, string> = {
@@ -162,7 +170,22 @@ export function productCostErrorMessage(error: { message?: string; hint?: string
     not_authorized: 'Only an owner or accountant can set a buying price.',
     no_product: 'I could not identify the product name. Include the product and its price.',
     invalid_cost: 'The buying price must be greater than zero.',
+    unit_mismatch: 'This product already has a unit. Use the same one.',
+    invalid_quantity: 'A quantity cannot be less than zero.',
     unknown: 'I could not save that buying price. Please try again.',
   };
+
+  // The server names BOTH units, and that is the useful half — "measured in
+  // kilo, not per gunia" tells the trader exactly what to convert. Collapsing it
+  // into a generic "try again" is the swallowed-error-body mistake.
+  if (hint === 'unit_mismatch') {
+    const units = /measured in ([\p{L}]+)[\s\S]*?not (?:per |in )([\p{L}]+)/u.exec(String(error?.message ?? ''));
+    if (units) {
+      return lang === 'sw'
+        ? `Bidhaa hii inapimwa kwa ${units[1]}, si ${units[2]}. Tumia ${units[1]}.`
+        : `This product is measured in ${units[1]}, not ${units[2]}. Use ${units[1]}.`;
+    }
+  }
+
   return (lang === 'sw' ? sw : en)[hint && hint in sw ? hint : 'unknown'];
 }

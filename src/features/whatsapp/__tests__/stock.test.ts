@@ -7,6 +7,7 @@ import {
   stockReply,
   type StockRow,
 } from '../../../../supabase/functions/_shared/whatsappStock';
+import { productCostErrorMessage } from '../../../../supabase/functions/_shared/whatsappProductCosts';
 
 const row = (overrides: Partial<StockRow> = {}): StockRow => ({
   productName: 'Daftari',
@@ -133,5 +134,29 @@ describe('confirming a count', () => {
       .not.toMatch(/Nilikuwa nadhani/);
     expect(stockCountConfirmation({ product: 'Daftari', quantity: 90, unit: null }, null, 'sw'))
       .not.toMatch(/Nilikuwa nadhani/);
+  });
+});
+
+describe('the unit-mismatch message keeps the useful half', () => {
+  it('names both units instead of collapsing to "try again"', () => {
+    // The server says which unit the product uses and which was offered. That
+    // is exactly what the trader needs to convert; a generic retry is not.
+    const error = {
+      hint: 'unit_mismatch',
+      message: 'this product is measured in kilo — a buying price must be per kilo, not per gunia',
+    };
+    expect(productCostErrorMessage(error, 'sw')).toBe('Bidhaa hii inapimwa kwa kilo, si gunia. Tumia kilo.');
+    expect(productCostErrorMessage(error, 'en')).toBe('This product is measured in kilo, not gunia. Use kilo.');
+  });
+
+  it('falls back safely when the message is not the shape it expects', () => {
+    const reply = productCostErrorMessage({ hint: 'unit_mismatch', message: 'something else' }, 'sw');
+    expect(reply).toMatch(/kipimo/);
+    expect(reply).not.toMatch(/undefined/);
+  });
+
+  it('still handles the codes it already knew', () => {
+    expect(productCostErrorMessage({ hint: 'not_authorized' }, 'sw')).toMatch(/owner au accountant/);
+    expect(productCostErrorMessage(null, 'sw')).toMatch(/jaribu tena/);
   });
 });

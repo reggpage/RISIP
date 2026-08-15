@@ -42,7 +42,7 @@ const ui = lang === 'sw' ? {
   priceSaved: 'Bei ya kununua imehifadhiwa.',
   priceInvalid: 'Andika bei kubwa kuliko sifuri.',
   history: 'Bei ya zamani haitafutwa. Rekodi za nyuma zinabaki na bei zilizokuwa zikitumika siku hizo.',
-  saving: 'Inahifadhi…', close: 'Funga',
+  saving: 'Inahifadhi…', close: 'Funga', perUnit: (u: string) => ` — kwa ${u} moja`,
 } : {
   title: 'Edit product',
   tabs: 'Choose what to change',
@@ -67,7 +67,7 @@ const ui = lang === 'sw' ? {
   priceSaved: 'Buying price saved.',
   priceInvalid: 'Enter a price greater than zero.',
   history: 'The old price is not deleted. Past records keep the price that applied on their own day.',
-  saving: 'Saving…', close: 'Close',
+  saving: 'Saving…', close: 'Close', perUnit: (u: string) => ` — per ${u}`,
 };
 
 /**
@@ -226,7 +226,7 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
             ) : null}
             <div className="mt-3 space-y-3">
               <label className="block">
-                <span className="text-sm text-ink">{ui.cost}{unit ? ` — kwa ${unit} moja` : ``}</span>
+                <span className="text-sm text-ink">{ui.cost}{unit ? ui.perUnit(unit) : ``}</span>
                 <Input
                   value={cost}
                   onChange={(event) => setCost(event.target.value)}
