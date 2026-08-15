@@ -2439,7 +2439,45 @@ Deno.serve(async (req) => {
             await finish('skipped');
             continue;
           }
+          if (batch.kind === 'unreadable') {
+            await reply(phone, batch.message);
+            await audit(db, identity, waMessageId, 'daily_record_batch', 'clarify', 'unreadable');
+            await finish('skipped');
+            continue;
+          }
           if (batch.kind === 'parsed') {
+            if (batch.records.length === 1) {
+              const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, batch.records[0]);
+              const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang);
+              if (created.error || !created.id) {
+                await reply(phone, lang === 'sw'
+                  ? 'Sikuweza kuhifadhi draft hii. Tafadhali jaribu tena.'
+                  : 'I could not save this draft. Please try again.');
+                await audit(db, identity, waMessageId, 'daily_record', 'create', 'failed');
+                await finish('skipped', 'daily_record_create_failed');
+                continue;
+              }
+              const state: DailyRecordConversation = {
+                kind: 'daily_record_confirmation',
+                dailyRecordId: created.id,
+                sourceMessageId: waMessageId,
+                record: guardedRecord,
+              };
+              await db.from('whatsapp_conversations').upsert({
+                identity_id: identity.id,
+                company_id: identity.company_id,
+                profile_id: identity.profile_id,
+                awaiting: 'payment_source',
+                receipt_id: null,
+                options: state,
+                expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'identity_id' });
+              await replyDailyRecordConfirmationQuietly(phone, guardedRecord, lang);
+              await audit(db, identity, waMessageId, 'daily_record', 'create', 'pending');
+              await finish('skipped');
+              continue;
+            }
             const guardedRecords = await Promise.all(batch.records.map((record) =>
               addHistoricalPriceWarnings(db, identity.company_id, record)));
             const created = await createDailyRecordBatchDrafts(db, identity, waMessageId, guardedRecords, lang);

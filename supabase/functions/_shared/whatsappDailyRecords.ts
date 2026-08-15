@@ -312,6 +312,12 @@ function saleRecord(text: string): ParsedDailyRecord | null {
     return { kind: 'sale', amount, partyName: null, description: null, lines: unitLines };
   }
 
+  // Repeated "kwa <amount>" clauses are a list of item totals. The batch
+  // parser owns that shape; the generic trailing-total rule below must never
+  // collapse the list into one sale using only the final amount.
+  const statedTotals = payload.match(new RegExp('\\b(?:kwa|for)\\s+' + MONEY_PATTERN, 'gi')) ?? [];
+  if (statedTotals.length > 1) return null;
+
   const explicitTotal = payload.match(new RegExp('^(.+?)\\s+(?:kwa|for|jumla|total)\\s+(' + MONEY_PATTERN + ')$', 'i'));
   if (explicitTotal) {
     const amount = parseMoneyToken(explicitTotal[2]);

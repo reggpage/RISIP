@@ -18,6 +18,50 @@ const mixed = [
 ].join('\n');
 
 describe('WhatsApp mixed daily-record batches', () => {
+  it('parses comma-separated sale totals as separate lines without dropping money', () => {
+    const parsed = parseDailyRecordBatch(
+      'nimeuza daftari 5 kwa 7500, kalamu 3 kwa 1500',
+      'sw',
+    );
+    expect(parsed).toMatchObject({
+      kind: 'parsed',
+      records: [{
+        kind: 'sale',
+        amount: 9_000,
+        lines: [
+          { description: 'daftari', quantity: 5, unit_amount: 1_500 },
+          { description: 'kalamu', quantity: 3, unit_amount: 500 },
+        ],
+      }],
+    });
+  });
+
+  it('parses na-separated sale totals as separate lines', () => {
+    const parsed = parseDailyRecordBatch(
+      'nimeuza daftari 5 kwa 7500 na kalamu 3 kwa 1500',
+      'sw',
+    );
+    expect(parsed).toMatchObject({
+      kind: 'parsed',
+      records: [{ kind: 'sale', amount: 9_000 },
+      ],
+    });
+  });
+
+  it('refuses the whole sale list and names any item whose numbers were not understood', () => {
+    const parsed = parseDailyRecordBatch(
+      'nimeuza daftari 5 kwa 7500, kalamu 3 kwa 1500, rula 4 kwa bei fulani 2000',
+      'sw',
+    );
+    expect(parsed).toMatchObject({
+      kind: 'unreadable',
+      unreadable: ['rula 4 kwa bei fulani 2000'],
+    });
+    if (parsed.kind !== 'unreadable') return;
+    expect(parsed.message).toContain('rula 4 kwa bei fulani 2000');
+    expect(parsed.message).toContain('Hakuna rekodi mpya iliyohifadhiwa');
+  });
+
   it('understands the known sale and expense sections and asks targeted debt questions', () => {
     const parsed = parseDailyRecordBatch(mixed, 'sw');
     expect(parsed.kind).toBe('clarify');
@@ -98,6 +142,9 @@ describe('WhatsApp mixed daily-record batches', () => {
     expect(migration).toContain('jsonb_array_length(p_records) > 10');
     expect(migration).toContain('to service_role');
     expect(webhook).toContain('const batch = parseDailyRecordBatch(writeBody, lang);');
+    expect(webhook).toContain("if (batch.kind === 'unreadable')");
+    expect(webhook).toContain('if (batch.records.length === 1)');
+    expect(webhook).toContain('createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang)');
     expect(webhook).toContain("db.rpc('wa_create_daily_record_batch_drafts'");
     expect(webhook).toContain("db.rpc('wa_confirm_daily_record_batch'");
     expect(webhook).toContain("db.rpc('wa_cancel_daily_record_batch'");

@@ -80,6 +80,12 @@ describe('deterministic WhatsApp daily-record parser', () => {
     });
   });
 
+  it('never collapses a repeated kwa-total sale list to its final amount', () => {
+    const parsed = parseDailyRecord('nimeuza daftari 5 kwa 7500, kalamu 3 kwa 1500', 'sw');
+    expect(parsed.kind).toBe('clarify');
+    if (parsed.kind === 'parsed') expect(parsed.record.amount).not.toBe(1_500);
+  });
+
   it('parses debts and customer payments with the named party', () => {
     expect(parseDailyRecord('Asha amechukua madaftari kwa mkopo 24000 atalipa Ijumaa', 'sw')).toMatchObject({
       kind: 'parsed',

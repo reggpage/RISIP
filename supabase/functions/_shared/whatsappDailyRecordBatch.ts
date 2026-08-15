@@ -36,6 +36,7 @@ export type DailyRecordBatchConversation = {
 export type DailyRecordBatchParse =
   | { kind: 'parsed'; records: ParsedDailyRecord[] }
   | { kind: 'clarify'; state: DailyRecordBatchClarification; question: string }
+  | { kind: 'unreadable'; unreadable: string[]; message: string }
   | { kind: 'none' };
 
 export type DailyRecordBatchResolution =
@@ -44,6 +45,7 @@ export type DailyRecordBatchResolution =
   | { kind: 'unsupported_payable'; state: DailyRecordBatchClarification; message: string };
 
 const MONEY = /(?:@\s*)?(?:(?:tshs?|tzs|sh)\s*)?[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:k\b)?\s*(?:\/=)?/gi;
+const QUANTITY = '[0-9]+(?:\\.[0-9]+)?';
 
 function parseMoney(raw: string): number | null {
   let value = raw.toLowerCase().replace(/\s+/g, '').replace(/\/=\s*$/, '');
@@ -63,6 +65,85 @@ function titleCase(value: string): string {
   return value.split(/\s+/u).filter(Boolean)
     .map((word) => word.charAt(0).toLocaleUpperCase() + word.slice(1))
     .join(' ');
+}
+
+function stripSalePrefix(value: string): string {
+  return value.replace(/^(?:leo\s+|today\s+)?(?:nimeuza|uza|mauzo|(?:i\s+)?sold)\s+/iu, '').trim();
+}
+
+/**
+ * A single-line list such as:
+ *
+ *   nimeuza daftari 5 kwa 7500, kalamu 3 kwa 1500
+ *
+ * states a total for each item, not a unit price. This parser is intentionally
+ * strict: every segment must account for its product, quantity and stated
+ * total. A partial parse is returned as unreadable rather than allowing the
+ * generic single-record parser to treat the final amount as the whole sale.
+ */
+function inlineSaleTotalLine(raw: string): DailyRecordLine | null {
+  const value = stripSalePrefix(raw);
+  const match = value.match(new RegExp(
+    '^(.+?)\\s+(' + QUANTITY + ')\\s+(?:kwa|for)\\s+(' + MONEY.source + ')$',
+    'iu',
+  ));
+  if (!match) return null;
+
+  const quantity = Number(match[2]);
+  const total = parseMoney(match[3]);
+  if (!Number.isFinite(quantity) || quantity <= 0 || !total || total > MAX_DAILY_RECORD_AMOUNT) return null;
+
+  const unitAmount = Math.round((total / quantity) * 100) / 100;
+  if (Math.abs(Math.round((quantity * unitAmount - total) * 100) / 100) > 0.01) return null;
+  return { description: match[1].trim(), quantity, unit_amount: unitAmount };
+}
+
+function inlineSaleList(
+  text: string,
+  lang: Lang,
+): Exclude<DailyRecordBatchParse, { kind: 'clarify' | 'none' }> | null {
+  if (/\r?\n/u.test(text)) return null;
+  if (!/^(?:leo\s+|today\s+)?(?:nimeuza|uza|mauzo|(?:i\s+)?sold)\b/iu.test(text.trim())) return null;
+
+  const payload = stripSalePrefix(text.trim());
+  // A comma inside 7,500 is not a separator because the lookahead requires a
+  // letter. "na/and" is considered only in a message containing at least two
+  // quantity/amount pairs; this avoids splitting a single product name.
+  const parts = payload
+    .split(/,\s*(?=[\p{L}])|\s+(?:na|and)\s+/iu)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const numericTokens = [...payload.matchAll(new RegExp(MONEY.source, 'gi'))];
+  if (parts.length < 2 || numericTokens.length < 4) return null;
+
+  const lines = parts.map(inlineSaleTotalLine);
+  const unreadable = parts.filter((_, index) => !lines[index]);
+  if (unreadable.length > 0) {
+    const listed = unreadable.map((line) => `• ${line}`).join('\n');
+    return {
+      kind: 'unreadable',
+      unreadable,
+      message: lang === 'sw'
+        ? `Sijaweza kusoma sehemu hizi za mauzo kwa uhakika:\n${listed}\n\nHakuna rekodi mpya iliyohifadhiwa. Tuma orodha tena ukitaja bidhaa, idadi na jumla ya kila bidhaa.`
+        : `I could not read these sale items with confidence:\n${listed}\n\nNo new record was saved. Send the list again with each product, quantity and item total.`,
+    };
+  }
+
+  const parsedLines = lines as DailyRecordLine[];
+  const amount = Math.round(parsedLines.reduce((sum, line) => sum + line.quantity * line.unit_amount, 0) * 100) / 100;
+  if (amount <= 0 || amount > MAX_DAILY_RECORD_AMOUNT) {
+    return {
+      kind: 'unreadable',
+      unreadable: parts,
+      message: lang === 'sw'
+        ? 'Jumla ya orodha hii haiko ndani ya kiwango salama. Hakuna rekodi mpya iliyohifadhiwa.'
+        : 'This list total is outside the safe range. No new record was saved.',
+    };
+  }
+  return {
+    kind: 'parsed',
+    records: [{ kind: 'sale', amount, partyName: null, description: null, lines: parsedLines, confidence: 0.99 }],
+  };
 }
 
 function expenseLine(raw: string): DailyRecordLine | null {
@@ -139,6 +220,9 @@ export function buildBatchDebtClarification(state: DailyRecordBatchClarification
 }
 
 export function parseDailyRecordBatch(text: string | null | undefined, lang: Lang): DailyRecordBatchParse {
+  const inline = inlineSaleList(String(text ?? ''), lang);
+  if (inline) return inline;
+
   const rawLines = String(text ?? '').split(/\r?\n/u).map((line) => line.trim()).filter(Boolean);
   if (rawLines.length < 2) return { kind: 'none' };
 

@@ -8,6 +8,10 @@ import { parseProductCost } from '../../../../supabase/functions/_shared/whatsap
 import { isDailyRecordCandidate } from '../../../../supabase/functions/_shared/whatsappDailyRecords';
 
 describe('a message that carries an instruction and a question', () => {
+  it('does not tear a comma-separated sale list into a fake rider topic', () => {
+    expect(splitRiderQuestion('nimeuza daftari 5 kwa 7500, kalamu 3 kwa 1500')).toBeNull();
+  });
+
   it('splits the ordinary case: a sale and a question about today', () => {
     const mixed = splitRiderQuestion('nimeuza daftari 5 kwa 7500, faida ya leo ni ngapi?');
     expect(mixed?.action).toBe('nimeuza daftari 5 kwa 7500');
