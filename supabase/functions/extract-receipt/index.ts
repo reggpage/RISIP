@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { compareWithTra, fetchTraReceipt } from '../_shared/traVerify.ts';
 import { json, preflight } from '../_shared/cors.ts';
 import { CATEGORIES, normalizeMoney, normalizeTanzaniaReceipt } from '../_shared/tanzaniaReceiptKnowledge.ts';
 import { extractedStatusReason, resolveExtractedStatus } from '../_shared/receiptStatus.ts';
@@ -289,6 +290,55 @@ Deno.serve(async (req) => {
   );
   const finalStatus = resolveExtractedStatus(needsReview, approvalFlow);
 
+  // ── Ask TRA what the receipt actually says ──────────────────────────────
+  // On a real receipt the model got five of seven fields wrong, including the
+  // total (8,000 short on 58,000) and the verification code, which is the global
+  // duplicate key. Where TRA answers, its figures are the ones stored; where it
+  // does not, the model's reading is kept and the receipt is flagged rather than
+  // silently trusted. A portal that is down must never stop a receipt being
+  // recorded, so every failure here is soft.
+  let tra: { status: string; at: string | null; differences: unknown | null } = {
+    status: 'not_applicable', at: null, differences: null,
+  };
+  if (normalized.verification_code && normalized.receipt_time) {
+    const lookup = await fetchTraReceipt(normalized.verification_code, normalized.receipt_time);
+    if (lookup.ok) {
+      const differences = compareWithTra({
+        vendorName: normalized.vendor_name,
+        vendorTin: normalized.vendor_tin,
+        receiptNumber: normalized.receipt_number,
+        totalInclTax: normalized.total_amount,
+        verificationCode: normalized.verification_code,
+        receiptDate: normalized.receipt_date,
+      }, lookup.receipt);
+
+      // TRA is the issuer of record. Only overwrite what it actually stated.
+      const official = lookup.receipt;
+      if (official.vendorName) normalized.vendor_name = official.vendorName;
+      if (official.vendorTin) normalized.vendor_tin = official.vendorTin;
+      if (official.vendorVrn) normalized.vendor_vrn = official.vendorVrn;
+      if (official.receiptNumber) normalized.receipt_number = official.receiptNumber;
+      if (official.receiptDate) normalized.receipt_date = official.receiptDate;
+      if (official.receiptTime) normalized.receipt_time = official.receiptTime;
+      if (official.totalInclTax !== null) normalized.total_amount = official.totalInclTax;
+      if (official.totalTax !== null) normalized.tax_amount = official.totalTax;
+      if (official.verificationCode) normalized.verification_code = official.verificationCode;
+
+      // Verified figures are TRA's own, so the model's uncertainty about them no
+      // longer needs a human to look.
+      for (const field of ['total_amount', 'verification_code', 'vendor_name', 'vendor_tin', 'receipt_number']) {
+        const at = lowConfidence.indexOf(field);
+        if (at >= 0) lowConfidence.splice(at, 1);
+      }
+      tra = { status: 'verified', at: new Date().toISOString(), differences: differences.length ? differences : null };
+    } else {
+      tra = { status: lookup.reason === 'unreachable' ? 'unreachable' : 'not_found', at: null, differences: null };
+      // A code TRA does not recognise is almost always a misread one, and it is
+      // the field the duplicate guard depends on. Say so instead of assuming.
+      if (lookup.reason === 'not_found') lowConfidence.push('verification_code');
+    }
+  }
+
   const updates = {
     vendor_name: normalized.vendor_name,
     vendor_tin: normalized.vendor_tin,
@@ -303,6 +353,9 @@ Deno.serve(async (req) => {
     low_confidence_fields: [...new Set(lowConfidence)],
     raw_ai_response: claudeJson,
     status: finalStatus,
+    tra_status: tra.status,
+    tra_verified_at: tra.at,
+    tra_differences: tra.differences,
   };
 
   const { error: updErr } = await admin.from('receipts').update(updates).eq('id', receiptId);
