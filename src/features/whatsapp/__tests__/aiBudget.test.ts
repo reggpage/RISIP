@@ -18,7 +18,7 @@ describe('A2 AI fallback budget boundary', () => {
     expect(webhook).toContain('const budget = await consumeAiBudget(db, identity, body.length);');
     expect(webhook).toContain('if (!budget.allowed)');
     expect(webhook).toContain('const aiRecord = await interpretDailyRecordWithAi(body, lang);');
-    expect(webhook).toContain('&& !isDailyRecordCandidate(body);');
+    expect(webhook).toContain('&& !isDailyRecordCandidate(body)');
   });
 
   it('normalizes the server reset timestamp and has an exact UTC-day fallback', () => {

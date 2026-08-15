@@ -1504,6 +1504,25 @@ Deno.serve(async (req) => {
             }
             return;
           }
+          // MEASURED FAILURE: the two parsers above cover a narrow set of exact
+          // phrases, so "nionyeshe risiti za leo" — which the assistant answers
+          // perfectly well — came back as "I did not understand", in the same
+          // breath as an answer. The assistant gets the question too.
+          const budget = await consumeAiBudget(db, identity, mixed.question.length);
+          const assistant = budget.allowed
+            ? await runConversationalAssistant({
+              context: assistantIdentityContext(identity),
+              history: [],
+              userText: mixed.question,
+              executeTool: (name, input) => executeAssistantTool(db, identity, waMessageId, lang, name, input),
+              onFailure: () => {},
+            })
+            : null;
+          if (assistant) {
+            await replyQuietly(to, assistant.reply);
+            await audit(db, identity, waMessageId, 'rider_question', 'conversational_ai', 'applied');
+            return;
+          }
           await replyQuietly(to, lang === 'sw'
             ? 'Swali lako la pili sikulielewa. Liulize peke yake ili nikujibu vizuri.'
             : 'I did not understand your second question. Ask it on its own so I can answer properly.');
@@ -2297,7 +2316,12 @@ Deno.serve(async (req) => {
           && intent !== 'change_language'
           // Daily-record arithmetic is deterministic first. Its dedicated
           // branch below owns the bounded structured-AI fallback.
-          && !isDailyRecordCandidate(body);
+          && !isDailyRecordCandidate(body)
+          // A mixed message belongs to the write chain below. MEASURED FAILURE:
+          // "nimeuza nguvu ya sala 2 kwa 20000 kisha nionyeshe risiti za leo"
+          // was claimed here by the read half, the receipts were listed, and the
+          // SALE WAS NEVER RECORDED. The instruction has to win.
+          && !mixed;
         if (aiEligible) {
           const history = await loadAssistantHistory(db, identity);
           const contextChars = body!.length + history.reduce((sum, message) => sum + message.content.length, 0);
@@ -2341,7 +2365,7 @@ Deno.serve(async (req) => {
           }
         }
 
-        const productRequest = parseProductAnalyticsFollowUp(body, productContext) ?? parseProductAnalyticsRequest(body);
+        const productRequest = mixed ? null : (parseProductAnalyticsFollowUp(body, productContext) ?? parseProductAnalyticsRequest(body));
         if (productRequest) {
           await answerProductAnalytics(db, identity, phone, productRequest, lang);
           await audit(db, identity, waMessageId, 'product_analytics', productRequest.rankBy, 'applied');
@@ -2349,7 +2373,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const readRequest = parseReadRequest(body);
+        const readRequest = mixed ? null : parseReadRequest(body);
         if (readRequest) {
           try {
             await reply(phone, await readOnlyToolReply(db, identity, readRequest, lang));
