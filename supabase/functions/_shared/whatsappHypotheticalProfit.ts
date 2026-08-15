@@ -8,6 +8,14 @@ export type HypotheticalProfitInput = {
   unitCost: number | null;
   retailPrice: number | null;
   wholesalePrice: number | null;
+  /**
+   * What the shop actually got per unit, on average, on the sales it has made.
+   *
+   * A fallback only. A price the shop set is a decision it can stand behind; an
+   * average is a description of the past, so an estimate built on one has to say
+   * where the number came from.
+   */
+  avgUnitPrice?: number | null;
 };
 
 const money = (value: number) => `TSh ${Math.round(value).toLocaleString('en-US')}`;
@@ -31,10 +39,16 @@ export function parseHypotheticalProfitRequest(text: string | null | undefined):
 }
 
 export function buildHypotheticalProfitReply(input: HypotheticalProfitInput, lang: Lang): string {
+  const average = input.avgUnitPrice ?? null;
+  // The shop's own price wins. Where it never set one, what it has actually been
+  // charging is a better answer than a refusal — as long as the reply says so.
+  const sellingPrice = input.retailPrice ?? average;
+  const estimated = input.retailPrice === null && average !== null;
+
   const missing: string[] = [];
   if (!input.hasCount || input.onHand === null) missing.push(lang === 'sw' ? 'stock count ya kuanzia' : 'a starting stock count');
   if (input.unitCost === null) missing.push(lang === 'sw' ? 'bei ya kununua' : 'the buying cost');
-  if (input.retailPrice === null) missing.push(lang === 'sw' ? 'bei ya kuuza' : 'the selling price');
+  if (sellingPrice === null) missing.push(lang === 'sw' ? 'bei ya kuuza' : 'the selling price');
   if (missing.length > 0) {
     const list = missing.map((item) => `- ${item}`).join('\n');
     return lang === 'sw'
@@ -50,15 +64,23 @@ export function buildHypotheticalProfitReply(input: HypotheticalProfitInput, lan
       : `${input.productName} has no sellable stock right now (${quantity.toLocaleString('en-US')}${unitText}).`;
   }
 
-  const retailProfit = quantity * (input.retailPrice! - input.unitCost!);
-  const retailLine = `${quantity.toLocaleString('en-US')}${unitText} × (${money(input.retailPrice!)} − ${money(input.unitCost!)}) = *${money(retailProfit)}*`;
+  const retailProfit = quantity * (sellingPrice! - input.unitCost!);
+  const retailLine = `${quantity.toLocaleString('en-US')}${unitText} × (${money(sellingPrice!)} − ${money(input.unitCost!)}) = *${money(retailProfit)}*`;
+  const label = estimated
+    ? (lang === 'sw' ? 'Kwa wastani' : 'At your average')
+    : (lang === 'sw' ? 'Retail' : 'Retail');
   const lines = lang === 'sw'
-    ? [`Makisio ya ${input.productName} ukiuza stock yote:`, `- Retail: ${retailLine}`]
-    : [`Estimate for selling all ${input.productName} stock:`, `- Retail: ${retailLine}`];
+    ? [`Makisio ya ${input.productName} ukiuza stock yote:`, `- ${label}: ${retailLine}`]
+    : [`Estimate for selling all ${input.productName} stock:`, `- ${label}: ${retailLine}`];
   if (input.wholesalePrice !== null && input.wholesalePrice !== input.retailPrice) {
     const wholesaleProfit = quantity * (input.wholesalePrice - input.unitCost!);
     const wholesaleLine = `${quantity.toLocaleString('en-US')}${unitText} × (${money(input.wholesalePrice)} − ${money(input.unitCost!)}) = *${money(wholesaleProfit)}*`;
     lines.push(lang === 'sw' ? `- Wholesale: ${wholesaleLine}` : `- Wholesale: ${wholesaleLine}`);
+  }
+  if (estimated) {
+    lines.push(lang === 'sw'
+      ? `_Bado hujaweka bei ya kuuza ya ${input.productName}; nimetumia wastani wa bei ulizouzia. Ukiiweka nitatumia yako._`
+      : `_You have not set a selling price for ${input.productName}; this uses the average you have actually charged. Set one and I will use it._`);
   }
   lines.push(lang === 'sw'
     ? 'Haya ni makisio; hayajaandika mauzo mapya.'

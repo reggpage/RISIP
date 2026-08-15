@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -9,8 +9,10 @@ import { friendlyError } from '@/lib/errors';
 import { formatMoney } from '@/lib/format';
 import { getLang } from '@/lib/lang';
 import {
+  fetchSellingPrice,
   recordStockCount,
   setProductCost,
+  setSellingPrice,
   type CatalogProduct,
   type StockLevel,
 } from '@/features/products/products';
@@ -19,7 +21,7 @@ const lang = getLang();
 const ui = lang === 'sw' ? {
   title: 'Hariri bidhaa',
   tabs: 'Chagua unachotaka kubadilisha',
-  countTab: 'Hesabu stock', priceTab: 'Bei ya kununua',
+  countTab: 'Hesabu stock', priceTab: 'Bei ya kununua', sellTab: 'Bei ya kuuza',
   // Count
   countIntro: 'Andika ulizonazo rafuni sasa hivi. Kuanzia hapo Risip itafuatilia yenyewe.',
   quantity: 'Ninazo', zeroOk: 'Sifuri ni sawa — inamaanisha rafu ni tupu.',
@@ -42,11 +44,23 @@ const ui = lang === 'sw' ? {
   priceSaved: 'Bei ya kununua imehifadhiwa.',
   priceInvalid: 'Andika bei kubwa kuliko sifuri.',
   history: 'Bei ya zamani haitafutwa. Rekodi za nyuma zinabaki na bei zilizokuwa zikitumika siku hizo.',
+  // Selling
+  sellIntro: 'Bei unayouzia. Ukituma mauzo WhatsApp bila kutaja bei, nitatumia hizi.',
+  retail: 'Rejareja', retailHint: 'Bei ya mteja wa kawaida.',
+  wholesale: 'Jumla', wholesaleHint: 'Si lazima. Bei ya mteja wa mara kwa mara au wa idadi kubwa.',
+  minQty: 'Kuanzia idadi', minQtyHint: 'Acha wazi kama bei ya jumla ni ya mteja, si ya idadi.',
+  saveSelling: 'Hifadhi bei ya kuuza',
+  sellingSaved: 'Bei ya kuuza imehifadhiwa.',
+  retailInvalid: 'Andika bei ya rejareja kubwa kuliko sifuri.',
+  wholesaleTooHigh: 'Bei ya jumla haiwezi kuzidi ya rejareja.',
+  minQtyNeedsWholesale: 'Idadi ya kuanzia inahitaji bei ya jumla.',
+  noSelling: 'Bado hujaweka bei ya kuuza ya bidhaa hii.',
+  marginAtRetail: 'Faida kwa kimoja (rejareja)',
   saving: 'Inahifadhi…', close: 'Funga', perUnit: (u: string) => ` — kwa ${u} moja`,
 } : {
   title: 'Edit product',
   tabs: 'Choose what to change',
-  countTab: 'Count stock', priceTab: 'Buying price',
+  countTab: 'Count stock', priceTab: 'Buying price', sellTab: 'Selling price',
   countIntro: 'Enter what is on the shelf right now. Risip keeps count from there.',
   quantity: 'I have', zeroOk: 'Zero is fine — it means the shelf is empty.',
   believed: 'Risip believed there were', neverCounted: 'This product has never been counted.',
@@ -67,6 +81,17 @@ const ui = lang === 'sw' ? {
   priceSaved: 'Buying price saved.',
   priceInvalid: 'Enter a price greater than zero.',
   history: 'The old price is not deleted. Past records keep the price that applied on their own day.',
+  sellIntro: 'What you charge. When a WhatsApp sale names no price, I use these.',
+  retail: 'Retail', retailHint: 'The ordinary customer price.',
+  wholesale: 'Wholesale', wholesaleHint: 'Optional. For a regular customer, or a bulk buyer.',
+  minQty: 'From quantity', minQtyHint: 'Leave empty if the trade price is by customer, not by quantity.',
+  saveSelling: 'Save selling price',
+  sellingSaved: 'Selling price saved.',
+  retailInvalid: 'Enter a retail price greater than zero.',
+  wholesaleTooHigh: 'The wholesale price cannot be above the retail one.',
+  minQtyNeedsWholesale: 'A starting quantity needs a wholesale price.',
+  noSelling: 'You have not set a selling price for this product yet.',
+  marginAtRetail: 'Margin per item (retail)',
   saving: 'Saving…', close: 'Close', perUnit: (u: string) => ` — per ${u}`,
 };
 
@@ -94,7 +119,7 @@ const UNIT_OPTIONS = [
   { value: 'dazeni', label: 'dazeni' },
 ];
 
-type Tab = 'count' | 'price';
+type Tab = 'count' | 'price' | 'selling';
 
 export default function ProductEditDialog({ product, level, initialTab = 'count', onClose, onSaved }: {
   product: CatalogProduct;
@@ -122,6 +147,52 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
   const priceValid = Number.isFinite(parsedCost) && parsedCost > 0;
   const margin = priceValid && product.avgUnitPrice !== null ? product.avgUnitPrice - parsedCost : null;
   const aboveSelling = margin !== null && margin < 0;
+
+  // Selling price. Loaded on open rather than carried on the catalogue row: the
+  // row is built from what happened, and this is a decision that lives apart
+  // from it.
+  const [retail, setRetail] = useState('');
+  const [wholesale, setWholesale] = useState('');
+  const [minQty, setMinQty] = useState('');
+  const [sellingLoaded, setSellingLoaded] = useState(false);
+  const [hasSelling, setHasSelling] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetchSellingPrice(product.productKey)
+      .then((row) => {
+        if (!alive) return;
+        if (row) {
+          setRetail(String(row.retailPrice));
+          setWholesale(row.wholesalePrice === null ? '' : String(row.wholesalePrice));
+          setMinQty(row.wholesaleMinQty === null ? '' : String(row.wholesaleMinQty));
+          setHasSelling(true);
+        }
+        setSellingLoaded(true);
+      })
+      .catch(() => { if (alive) setSellingLoaded(true); });
+    return () => { alive = false; };
+  }, [product.productKey]);
+
+  const parsedRetail = Number(retail.replace(/,/g, ''));
+  const parsedWholesale = wholesale.trim() === '' ? null : Number(wholesale.replace(/,/g, ''));
+  const parsedMinQty = minQty.trim() === '' ? null : Number(minQty.replace(/,/g, ''));
+  const retailValid = Number.isFinite(parsedRetail) && parsedRetail > 0;
+  const retailMargin = retailValid && product.unitCost !== null ? parsedRetail - product.unitCost : null;
+
+  async function saveSelling() {
+    if (!retailValid) { toast.error(ui.retailInvalid); return; }
+    if (parsedWholesale !== null && (!Number.isFinite(parsedWholesale) || parsedWholesale > parsedRetail)) {
+      toast.error(ui.wholesaleTooHigh); return;
+    }
+    if (parsedMinQty !== null && parsedWholesale === null) { toast.error(ui.minQtyNeedsWholesale); return; }
+    setBusy(true);
+    try {
+      await setSellingPrice(product.productName, parsedRetail, parsedWholesale, parsedMinQty);
+      toast.success(ui.sellingSaved);
+      onSaved();
+    } catch (error) { toast.error(friendlyError(error)); } finally { setBusy(false); }
+  }
 
   async function saveCount() {
     if (!countValid) { toast.error(ui.countInvalid); return; }
@@ -171,6 +242,7 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
           tabs={[
             { value: 'count', label: ui.countTab },
             { value: 'price', label: ui.priceTab },
+            { value: 'selling', label: ui.sellTab },
           ]}
         />
 
@@ -208,7 +280,9 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
               </Button>
             </div>
           </>
-        ) : (
+        ) : null}
+
+        {tab === 'price' ? (
           <>
             <p className="mt-3 text-xs text-ink-muted">{ui.priceIntro}</p>
             {product.unitCost !== null ? (
@@ -249,7 +323,60 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
               </Button>
             </div>
           </>
-        )}
+        ) : null}
+
+        {tab === 'selling' ? (
+          <>
+            <p className="mt-3 text-xs text-ink-muted">{ui.sellIntro}</p>
+            {sellingLoaded && !hasSelling ? (
+              <div className="mt-3 rounded-lg bg-surface-muted px-3 py-2 text-xs text-ink-muted">{ui.noSelling}</div>
+            ) : null}
+            <div className="mt-3 space-y-3">
+              <label className="block">
+                <span className="text-sm text-ink">{ui.retail}{unit ? ui.perUnit(unit) : ``}</span>
+                <Input
+                  value={retail}
+                  onChange={(event) => setRetail(event.target.value)}
+                  inputMode="decimal"
+                  className="mt-1"
+                />
+                <span className="mt-1 block text-[11px] text-ink-muted">{ui.retailHint}</span>
+              </label>
+              <label className="block">
+                <span className="text-sm text-ink">{ui.wholesale}</span>
+                <Input
+                  value={wholesale}
+                  onChange={(event) => setWholesale(event.target.value)}
+                  inputMode="decimal"
+                  className="mt-1"
+                />
+                <span className="mt-1 block text-[11px] text-ink-muted">{ui.wholesaleHint}</span>
+              </label>
+              <label className="block">
+                <span className="text-sm text-ink">{ui.minQty}</span>
+                <Input
+                  value={minQty}
+                  onChange={(event) => setMinQty(event.target.value)}
+                  inputMode="decimal"
+                  className="mt-1"
+                />
+                <span className="mt-1 block text-[11px] text-ink-muted">{ui.minQtyHint}</span>
+              </label>
+            </div>
+            {retailMargin !== null ? (
+              <p className={`mt-3 text-sm ${retailMargin < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                {ui.marginAtRetail} {formatMoney(retailMargin)}.
+              </p>
+            ) : null}
+            <p className="mt-3 text-[11px] leading-snug text-ink-muted">{ui.history}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="ghost" onClick={onClose} disabled={busy}>{ui.close}</Button>
+              <Button onClick={() => void saveSelling()} disabled={busy || !retailValid}>
+                {busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />{ui.saving}</> : ui.saveSelling}
+              </Button>
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
   );

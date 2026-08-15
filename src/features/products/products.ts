@@ -290,3 +290,51 @@ export async function recordStockCount(name: string, quantity: number, unit: str
   if (error) throw error;
   return data as unknown as { id: string; product: string; quantity: number };
 }
+
+export type SellingPriceRow = {
+  retailPrice: number;
+  wholesalePrice: number | null;
+  wholesaleMinQty: number | null;
+};
+
+/**
+ * What the shop has decided to charge — not what it happened to get.
+ *
+ * Kept apart from the buying cost on purpose. The cost is a fact about a
+ * supplier; this is a decision about a customer, and the WhatsApp assistant
+ * prices a sale from it when the message states quantities only.
+ */
+export async function setSellingPrice(
+  name: string,
+  retail: number,
+  wholesale: number | null,
+  minQty: number | null,
+) {
+  const { data, error } = await supabase.rpc('set_selling_price', {
+    p_name: name,
+    p_retail: retail,
+    p_wholesale: wholesale,
+    p_min_qty: minQty,
+  });
+  if (error) throw error;
+  return data as unknown as { id: string; product: string };
+}
+
+/** The price currently in force, or null when the shop never set one. */
+export async function fetchSellingPrice(productKey: string): Promise<SellingPriceRow | null> {
+  const { data, error } = await supabase
+    .from('product_selling_prices')
+    .select('retail_price, wholesale_price, wholesale_min_qty')
+    .eq('product_key', productKey)
+    .order('effective_from', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    retailPrice: Number(data.retail_price),
+    wholesalePrice: data.wholesale_price === null ? null : Number(data.wholesale_price),
+    wholesaleMinQty: data.wholesale_min_qty === null ? null : Number(data.wholesale_min_qty),
+  };
+}

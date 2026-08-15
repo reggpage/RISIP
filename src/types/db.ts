@@ -395,6 +395,28 @@ export type DailyRecordAudit = {
 export type Database = {
   public: {
     Tables: {
+      /**
+       * Append-only price list. A change is a new row with a later
+       * effective_from, so a report run last month still shows the price that
+       * was in force then.
+       */
+      product_selling_prices: {
+        Row: {
+          id: string;
+          company_id: string;
+          product_key: string;
+          product_name: string;
+          retail_price: number;
+          wholesale_price: number | null;
+          wholesale_min_qty: number | null;
+          currency: string;
+          effective_from: string;
+          created_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       companies: {
         Row: Company;
         Insert: Partial<Company> & { name: string; hq_location: string };
@@ -789,6 +811,23 @@ export type Database = {
       set_product_cost: {
         Args: { p_name: string; p_unit_cost: number; p_unit: string | null; p_note: string | null };
         Returns: { id: string; product: string; unit_cost: number; previous_cost: number | null };
+      };
+      /**
+       * Finance-only: what the shop has DECIDED to charge.
+       *
+       * Kept apart from set_product_cost because they answer different
+       * questions — one is a fact about a supplier, the other a decision about
+       * a customer. The WhatsApp assistant prices a quantities-only sale from
+       * this one.
+       */
+      set_selling_price: {
+        Args: {
+          p_name: string;
+          p_retail: number;
+          p_wholesale: number | null;
+          p_min_qty: number | null;
+        };
+        Returns: { id: string; product: string };
       };
     };
     Enums: {

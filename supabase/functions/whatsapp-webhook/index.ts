@@ -103,6 +103,21 @@ import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import { findNameWarnings, nameWarningText } from '../_shared/whatsappProductNames.ts';
 import {
+  addProductNeedsCost,
+  parseAddProduct,
+  productAlreadyExists,
+  productLooksLikeExisting,
+} from '../_shared/whatsappAddProduct.ts';
+import {
+  parseQuantityOnlySale,
+  priceLine,
+  quantitySaleConfirmation,
+  quantitySaleMissingPrices,
+  type PricedLine,
+  type ProductPricing,
+  type QuantitySale,
+} from '../_shared/whatsappQuantitySale.ts';
+import {
   normalizeProductReadResolution,
   productReadClarification,
   productReadMatchNotice,
@@ -231,6 +246,86 @@ type ResolvedWhatsAppIdentity = {
   payouts_enabled: boolean;
   revoked_at: string | null;
 };
+
+/**
+ * Prices a quantities-only sale from the shop's own price list.
+ *
+ * Every name is resolved the same forgiving way a read is, so "nguvu ya sala"
+ * typed six different ways still finds the price that was set for it. A product
+ * with no price is named on its own — the sale is refused whole rather than
+ * saved half-priced, because a sale missing a line is a sale nobody can audit.
+ */
+async function priceQuantitySale(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  sale: QuantitySale,
+  lang: Lang,
+): Promise<
+  | { kind: 'priced'; record: ParsedDailyRecord; lines: PricedLine[] }
+  | { kind: 'blocked'; message: string }
+  | { kind: 'skip' }
+> {
+  const resolvedItems: { key: string; name: string; quantity: number }[] = [];
+  for (const item of sale.items) {
+    const resolved = await resolveProductForRead(db, identity, item.product);
+    if (resolved.error) return { kind: 'skip' };
+    if (resolved.resolution.kind === 'ambiguous') {
+      return { kind: 'blocked', message: productReadClarification(resolved.resolution, lang) };
+    }
+    // An unknown product is not this parser's business — the ordinary path can
+    // still ask for a price and record it under the name as typed.
+    if (resolved.resolution.kind === 'not_found') return { kind: 'skip' };
+    resolvedItems.push({
+      key: resolved.resolution.match.productKey,
+      name: resolved.resolution.match.productName,
+      quantity: item.quantity,
+    });
+  }
+
+  const { data, error } = await db.rpc('wa_product_pricing', {
+    p_company_id: identity.company_id,
+    p_product_keys: resolvedItems.map((item) => item.key),
+  });
+  if (error) return { kind: 'skip' };
+
+  const pricing = new Map<string, ProductPricing>();
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    pricing.set(String(row.product_key), {
+      retail: row.retail_price == null ? null : Number(row.retail_price),
+      wholesale: row.wholesale_price == null ? null : Number(row.wholesale_price),
+      wholesaleMinQty: row.wholesale_min_qty == null ? null : Number(row.wholesale_min_qty),
+    });
+  }
+
+  const lines: PricedLine[] = [];
+  const missing: string[] = [];
+  for (const item of resolvedItems) {
+    const known = pricing.get(item.key) ?? { retail: null, wholesale: null, wholesaleMinQty: null };
+    const line = priceLine({ product: item.name, quantity: item.quantity }, known);
+    if (line) lines.push(line); else missing.push(item.name);
+  }
+  if (missing.length > 0) {
+    return { kind: 'blocked', message: quantitySaleMissingPrices(missing, lang) };
+  }
+
+  const amount = Math.round(lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0) * 100) / 100;
+  return {
+    kind: 'priced',
+    lines,
+    record: {
+      kind: 'sale',
+      amount,
+      partyName: null,
+      description: null,
+      lines: lines.map((line) => ({
+        description: line.product,
+        quantity: line.quantity,
+        unit_amount: line.unitPrice,
+      })),
+      confidence: 0.99,
+    },
+  };
+}
 
 async function resolveProductForRead(
   db: Admin,
@@ -728,9 +823,7 @@ async function hypotheticalProfitToolReply(
     db.from('product_costs').select('unit_cost').eq('company_id', identity.company_id)
       .eq('product_key', match.productKey).order('effective_from', { ascending: false })
       .order('created_at', { ascending: false }).limit(1).maybeSingle(),
-    db.from('product_selling_prices').select('retail_price, wholesale_price').eq('company_id', identity.company_id)
-      .eq('product_key', match.productKey).order('effective_from', { ascending: false })
-      .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    db.rpc('wa_product_pricing', { p_company_id: identity.company_id, p_product_keys: [match.productKey] }),
   ]);
   if (stockResult.error || costResult.error || priceResult.error) {
     return lang === 'sw'
@@ -739,15 +832,16 @@ async function hypotheticalProfitToolReply(
   }
   const stock = ((stockResult.data ?? []) as Array<Record<string, unknown>>)[0] ?? null;
   const cost = costResult.data as { unit_cost?: number } | null;
-  const price = priceResult.data as { retail_price?: number; wholesale_price?: number | null } | null;
+  const price = ((priceResult.data ?? []) as Array<Record<string, unknown>>)[0] ?? null;
   return productReadMatchNotice(resolved.resolution, lang) + buildHypotheticalProfitReply({
     productName: match.productName,
     onHand: stock ? Number(stock.on_hand) : null,
     hasCount: Boolean(stock?.has_count),
     unit: stock?.unit ? String(stock.unit) : null,
     unitCost: cost?.unit_cost === undefined ? null : Number(cost.unit_cost),
-    retailPrice: price?.retail_price === undefined ? null : Number(price.retail_price),
+    retailPrice: price?.retail_price == null ? null : Number(price.retail_price),
     wholesalePrice: price?.wholesale_price == null ? null : Number(price.wholesale_price),
+    avgUnitPrice: price?.avg_unit_price == null ? null : Number(price.avg_unit_price),
   }, lang);
 }
 
@@ -2319,6 +2413,67 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // Adding a product is checked before anything records money, because
+        // the whole value of it is refusing to create the near-duplicate.
+        const addProduct = parseAddProduct(writeBody);
+        if (addProduct) {
+          const resolved = await resolveProductForRead(db, identity, addProduct.product);
+          if (!resolved.error && resolved.resolution.kind === 'matched') {
+            const match = resolved.resolution.match;
+            if (match.matchKind === 'exact') {
+              const [stockResult, pricingResult] = await Promise.all([
+                db.rpc('wa_stock_on_hand', { p_company_id: identity.company_id, p_product: match.productKey }),
+                db.rpc('wa_product_pricing', { p_company_id: identity.company_id, p_product_keys: [match.productKey] }),
+              ]);
+              const stock = ((stockResult.data ?? []) as Array<Record<string, unknown>>)[0] ?? null;
+              const pricing = ((pricingResult.data ?? []) as Array<Record<string, unknown>>)[0] ?? null;
+              await reply(phone, productAlreadyExists(match.productName, {
+                soldQuantity: pricing?.sold_quantity == null ? 0 : Number(pricing.sold_quantity),
+                onHand: stock?.has_count ? Number(stock.on_hand) : null,
+                unitCost: pricing?.unit_cost == null ? null : Number(pricing.unit_cost),
+              }, lang));
+              await audit(db, identity, waMessageId, 'add_product', 'exists', 'refused');
+              await finish('skipped');
+              continue;
+            }
+            await reply(phone, productLooksLikeExisting(addProduct.product, match.productName, lang));
+            await audit(db, identity, waMessageId, 'add_product', 'near_duplicate', 'clarification');
+            await finish('skipped');
+            continue;
+          }
+          if (!resolved.error && resolved.resolution.kind === 'ambiguous') {
+            await reply(phone, productReadClarification(resolved.resolution, lang));
+            await audit(db, identity, waMessageId, 'add_product', 'ambiguous', 'clarification');
+            await finish('skipped');
+            continue;
+          }
+          if (addProduct.unitCost === null) {
+            await reply(phone, addProductNeedsCost(addProduct.product, lang));
+            await audit(db, identity, waMessageId, 'add_product', 'needs_cost', 'clarification');
+            await finish('skipped');
+            continue;
+          }
+          const { error: addError } = await db.rpc('wa_set_product_cost', {
+            p_phone: identity.wa_phone,
+            p_product: addProduct.product,
+            p_unit_cost: addProduct.unitCost,
+            p_unit: addProduct.unit,
+            p_effective_from: null,
+          });
+          if (addError) {
+            await reply(phone, productCostErrorMessage(addError, lang));
+            await audit(db, identity, waMessageId, 'add_product', 'create', 'failed');
+            await finish('skipped');
+            continue;
+          }
+          await reply(phone, costSaved(
+            { product: addProduct.product, unitCost: addProduct.unitCost, unit: addProduct.unit },
+            identity.company_name, lang));
+          await audit(db, identity, waMessageId, 'add_product', 'create', 'applied');
+          await finish('skipped');
+          continue;
+        }
+
         const stockBatch = parseStockCountBatch(writeBody);
         if (stockBatch) {
           await db.from('whatsapp_conversations').upsert({
@@ -2662,6 +2817,47 @@ Deno.serve(async (req) => {
             await finish('skipped');
             continue;
           }
+          // A sale that states quantities and no money is priced from the shop's
+          // own list before anything asks the trader to retype a price they
+          // already gave. Only reached when no parser above claimed the message.
+          const quantitySale = parseQuantityOnlySale(writeBody);
+          if (quantitySale) {
+            const priced = await priceQuantitySale(db, identity, quantitySale, lang);
+            if (priced.kind === 'blocked') {
+              await reply(phone, priced.message);
+              await audit(db, identity, waMessageId, 'quantity_sale', 'priced', 'clarification');
+              await finish('skipped');
+              continue;
+            }
+            if (priced.kind === 'priced') {
+              const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, priced.record);
+              const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang);
+              if (!created.error && created.id) {
+                const state: DailyRecordConversation = {
+                  kind: 'daily_record_confirmation',
+                  dailyRecordId: created.id,
+                  sourceMessageId: waMessageId,
+                  record: guardedRecord,
+                };
+                await db.from('whatsapp_conversations').upsert({
+                  identity_id: identity.id,
+                  company_id: identity.company_id,
+                  profile_id: identity.profile_id,
+                  awaiting: 'payment_source',
+                  receipt_id: null,
+                  options: state,
+                  expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'identity_id' });
+                await replyQuietly(phone, quantitySaleConfirmation(priced.lines, lang));
+                await audit(db, identity, waMessageId, 'quantity_sale', 'create', 'pending');
+                await finish('skipped');
+                continue;
+              }
+            }
+            // Anything else falls through to the parsers below, unchanged.
+          }
+
           const parsed = parseDailyRecord(writeBody, lang);
           if (parsed.kind === 'clarify') {
             if (parsed.draft) {
