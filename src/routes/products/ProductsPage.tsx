@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Archive, ArchiveRestore, ClipboardCheck, Merge, Package, Plus, RefreshCw, Search, TrendingDown } from 'lucide-react';
+import { AlertTriangle, Archive, Package, Pencil, Plus, RefreshCw, Search, TrendingDown } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -26,10 +26,10 @@ import {
   type CatalogProduct,
   type CatalogRange,
 } from '@/features/products/products';
-import ProductCostDialog from '@/components/products/ProductCostDialog';
+import ProductEditDialog from '@/components/products/ProductEditDialog';
+import ProductRowMenu from '@/components/products/ProductRowMenu';
 import ProductMergeDialog from '@/components/products/ProductMergeDialog';
 import AddProductDialog from '@/components/products/AddProductDialog';
-import StockCountDialog from '@/components/products/StockCountDialog';
 
 const lang = getLang();
 const ui = lang === 'sw' ? {
@@ -43,7 +43,7 @@ const ui = lang === 'sw' ? {
   coverageHint: 'Sehemu ya mauzo ambayo makisio ya faida yanaweza kuiona.',
   sold: 'Imeuzwa', revenue: 'Mapato', buying: 'Kununua', selling: 'Kuuza', margin: 'Faida',
   lastSold: 'Mauzo ya mwisho', never: 'Bado haijauzwa',
-  setCost: 'Weka bei ya kununua', editCost: 'Badilisha bei',
+  setCost: 'Weka bei ya kununua', editCost: 'Badilisha bei', edit: 'Hariri',
   unknown: 'Haijulikani',
   needsCostBadge: 'Bei ya kununua inakosekana',
   belowCostBadge: 'Chini ya gharama',
@@ -71,7 +71,7 @@ const ui = lang === 'sw' ? {
   coverageHint: 'The share of sales the profit estimate can actually see.',
   sold: 'Sold', revenue: 'Revenue', buying: 'Buying', selling: 'Selling', margin: 'Margin',
   lastSold: 'Last sold', never: 'Not sold yet',
-  setCost: 'Set buying price', editCost: 'Change price',
+  setCost: 'Set buying price', editCost: 'Change price', edit: 'Edit',
   unknown: 'Unknown',
   needsCostBadge: 'Buying price missing',
   belowCostBadge: 'Below cost',
@@ -130,15 +130,14 @@ function SummaryTile({ label, value, hint, tone }: {
   );
 }
 
-function ProductRow({ product, level, canPrice, onPrice, onMerge, onArchive, onRestore, onCount }: {
+function ProductRow({ product, level, canPrice, onEdit, onMerge, onArchive, onRestore }: {
   product: CatalogProduct;
   level: StockLevel | null;
   canPrice: boolean;
-  onPrice: (product: CatalogProduct) => void;
+  onEdit: (product: CatalogProduct, tab: 'count' | 'price') => void;
   onMerge: (product: CatalogProduct) => void;
   onArchive: (product: CatalogProduct) => void;
   onRestore: (product: CatalogProduct) => void;
-  onCount: (product: CatalogProduct) => void;
 }) {
   const missing = needsCost(product);
   const below = soldBelowCost(product);
@@ -200,28 +199,22 @@ function ProductRow({ product, level, canPrice, onPrice, onMerge, onArchive, onR
       </div>
 
       {canPrice ? (
-        <div className="flex flex-wrap items-center gap-1.5 sm:w-56 sm:justify-end">
-          {product.archived ? (
-            <Button variant="secondary" onClick={() => onRestore(product)}>
-              <ArchiveRestore className="h-4 w-4" aria-hidden />{ui.restore}
-            </Button>
-          ) : (
-            <>
-              <Button variant={missing ? 'primary' : 'secondary'} onClick={() => onPrice(product)}>
-                {missing ? ui.setCost : ui.editCost}
-              </Button>
-              <Button variant="secondary" onClick={() => onCount(product)}>
-                <ClipboardCheck className="h-4 w-4" aria-hidden />
-                {level?.hasCount ? ui.recount : ui.count}
-              </Button>
-              <Button variant="ghost" aria-label={`${ui.merge} ${product.productName}`} onClick={() => onMerge(product)}>
-                <Merge className="h-4 w-4" aria-hidden />
-              </Button>
-              <Button variant="ghost" aria-label={`${ui.archive} ${product.productName}`} onClick={() => onArchive(product)}>
-                <Archive className="h-4 w-4" aria-hidden />
-              </Button>
-            </>
-          )}
+        <div className="flex items-center gap-1.5 sm:w-40 sm:justify-end">
+          {/* One everyday button. Counting and pricing are the two things done
+              often, and they are two tabs of one card rather than two buttons
+              competing for the same corner of a busy row. */}
+          <Button
+            variant={missing ? 'primary' : 'secondary'}
+            onClick={() => onEdit(product, missing ? 'price' : 'count')}
+          >
+            <Pencil className="h-4 w-4" aria-hidden />{ui.edit}
+          </Button>
+          <ProductRowMenu
+            product={product}
+            onMerge={onMerge}
+            onArchive={onArchive}
+            onRestore={onRestore}
+          />
         </div>
       ) : null}
     </div>
@@ -234,10 +227,9 @@ export default function ProductsPage() {
   const canPrice = role === 'owner' || role === 'accountant';
   const [range, setRange] = useState<CatalogRange>('all');
   const [query, setQuery] = useState('');
-  const [pricing, setPricing] = useState<CatalogProduct | null>(null);
+  const [editing, setEditing] = useState<{ product: CatalogProduct; tab: 'count' | 'price' } | null>(null);
   const [merging, setMerging] = useState<CatalogProduct | null>(null);
   const [adding, setAdding] = useState(false);
-  const [counting, setCounting] = useState<CatalogProduct | null>(null);
   const stock = useStockLevels();
   const [showArchived, setShowArchived] = useState(false);
   const toast = useToast();
@@ -354,11 +346,10 @@ export default function ProductsPage() {
               product={product}
               level={levelFor(product.productKey)}
               canPrice={canPrice}
-              onPrice={setPricing}
+              onEdit={(item, tab) => setEditing({ product: item, tab })}
               onMerge={setMerging}
               onArchive={(item) => void hide(item)}
               onRestore={(item) => void restore(item)}
-              onCount={setCounting}
             />
           ))
         )}
@@ -368,11 +359,13 @@ export default function ProductsPage() {
           deliberately not there. */}
       {canPrice ? <p className="mt-3 text-[11px] leading-snug text-ink-muted">{ui.noDelete}</p> : null}
 
-      {pricing ? (
-        <ProductCostDialog
-          product={pricing}
-          onClose={() => setPricing(null)}
-          onSaved={() => { setPricing(null); void state.reload(); }}
+      {editing ? (
+        <ProductEditDialog
+          product={editing.product}
+          level={levelFor(editing.product.productKey)}
+          initialTab={editing.tab}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); void state.reload(); void stock.reload(); }}
         />
       ) : null}
 
@@ -382,15 +375,6 @@ export default function ProductsPage() {
           all={state.products}
           onClose={() => setMerging(null)}
           onDone={() => { setMerging(null); void state.reload(); }}
-        />
-      ) : null}
-
-      {counting ? (
-        <StockCountDialog
-          product={counting}
-          level={levelFor(counting.productKey)}
-          onClose={() => setCounting(null)}
-          onSaved={() => { setCounting(null); void stock.reload(); }}
         />
       ) : null}
 
