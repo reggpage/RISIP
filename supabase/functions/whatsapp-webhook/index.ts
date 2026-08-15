@@ -103,6 +103,12 @@ import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import { findNameWarnings, nameWarningText } from '../_shared/whatsappProductNames.ts';
 import {
+  parseStockCount,
+  stockCountConfirmation,
+  stockListReply,
+  stockReply,
+} from '../_shared/whatsappStock.ts';
+import {
   type ProductCostBatch,
   costBatchCancelled,
   costBatchConfirmation,
@@ -816,6 +822,28 @@ async function executeAssistantTool(
   }
   if (name === 'get_my_businesses') {
     return { content: await readOnlyToolReply(db, identity, { tool: 'ai_my_businesses', period: 'today' }, lang) };
+  }
+  if (name === 'get_stock_on_hand') {
+    const asked = typeof input.product_name === 'string' ? input.product_name.trim().slice(0, 80) : '';
+    const { data, error } = await db.rpc('wa_stock_on_hand', {
+      p_company_id: identity.company_id,
+      p_product: asked || null,
+    });
+    if (error) {
+      return { content: lang === 'sw' ? 'Sikuweza kupata hesabu ya stock sasa.' : 'I could not load stock right now.' };
+    }
+    const rows = ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+      productName: String(row.product_name ?? ''),
+      unit: row.unit ? String(row.unit) : null,
+      measured: Boolean(row.measured),
+      onHand: Number(row.on_hand ?? 0),
+      hasCount: Boolean(row.has_count),
+      countedAt: row.counted_at ? String(row.counted_at) : null,
+      boughtSince: Number(row.bought_since ?? 0),
+      soldSince: Number(row.sold_since ?? 0),
+      incompletePurchases: Boolean(row.incomplete_purchases),
+    }));
+    return { content: asked ? stockReply(rows[0] ?? null, asked, lang) : stockListReply(rows, lang) };
   }
   if (name === 'get_pending_approvals') {
     return { content: await readOnlyToolReply(db, identity, { tool: 'ai_pending_approvals', period: 'today' }, lang) };
@@ -1921,6 +1949,32 @@ Deno.serve(async (req) => {
             await finish('skipped');
             continue;
           }
+        }
+
+        // A physical count. Checked before the record parser because "nina
+        // daftari 90" states what is on the shelf, not what moved — and reading
+        // it as a movement would be the one mistake that silently rewrites a
+        // stock figure the trader is about to rely on.
+        const stockCount = parseStockCount(body);
+        if (stockCount) {
+          const { data: saved, error } = await db.rpc('wa_record_stock_count', {
+            p_phone: phone,
+            p_name: stockCount.product,
+            p_quantity: stockCount.quantity,
+            p_unit: stockCount.unit,
+          });
+          if (error) {
+            await replyQuietly(phone, productCostErrorMessage(error, lang));
+            await audit(db, identity, waMessageId, 'stock_count', stockCount.product, 'failed');
+          } else {
+            const previous = (saved as { previous?: number | null } | null)?.previous;
+            await replyQuietly(phone, stockCountConfirmation(
+              stockCount, previous === null || previous === undefined ? null : Number(previous), lang,
+            ));
+            await audit(db, identity, waMessageId, 'stock_count', stockCount.product, 'applied');
+          }
+          await finish('skipped');
+          continue;
         }
 
         // A whole price list in one message. Checked before the single-price

@@ -106,6 +106,7 @@ export const ASSISTANT_TOOL_NAMES = [
   'get_my_reimbursements',
   'get_my_businesses',
   'get_pending_approvals',
+  'get_stock_on_hand',
   'search_risip_help',
   'propose_product_cost',
   'propose_daily_record',
@@ -174,6 +175,12 @@ export const ASSISTANT_TOOLS: ToolDefinition[] = [
   tool('get_my_petty_cash_balance', 'Read this user’s own petty-cash balance.', {}, []),
   tool('get_my_reimbursements', 'Read the total for this user’s confirmed personal-money receipts that have not been reimbursed.', {}, []),
   tool('get_my_businesses', 'List businesses this person belongs to and their roles.', {}, []),
+  tool(
+    'get_stock_on_hand',
+    'Read how many of a product are left. Risip counts forward from the trader’s own physical count, so a product that was never counted returns no figure at all — say that plainly rather than implying zero or a negative. Use for “ninazo ngapi”, “zimebaki ngapi”, “stock ya X”.',
+    { product_name: { type: ['string', 'null'], description: 'One product, or null for everything that has been counted.' } },
+    ['product_name'],
+  ),
   tool('get_pending_approvals', 'Read the company receipt approval-inbox count. This is finance-only and the server will enforce the role.', {}, []),
   tool(
     'search_risip_help',

@@ -216,3 +216,77 @@ export function mergeCandidates(product: CatalogProduct, all: CatalogProduct[]):
     .sort((a, b) => b.score - a.score || a.other.productName.localeCompare(b.other.productName))
     .map((item) => item.other);
 }
+
+export type StockLevel = {
+  productKey: string;
+  productName: string;
+  unit: string | null;
+  measured: boolean;
+  countedQty: number | null;
+  countedAt: string | null;
+  /**
+   * False means nobody has ever counted this product. `onHand` is then only the
+   * movements Risip happened to see, and must never be shown as a stock figure.
+   */
+  hasCount: boolean;
+  boughtSince: number;
+  soldSince: number;
+  onHand: number;
+  incompletePurchases: boolean;
+};
+
+/** How a stock figure should be written, or null when there is no figure to write. */
+export function formatOnHand(level: StockLevel, lang: 'sw' | 'en'): string | null {
+  if (!level.hasCount) return null;
+  const amount = level.onHand.toLocaleString('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: level.measured ? 2 : 0,
+  });
+  if (level.unit) return `${amount} ${level.unit}`;
+  return level.measured ? amount : (lang === 'sw' ? `${amount} vipande` : `${amount} pcs`);
+}
+
+/** Sold more than the count says exists — the books and the shelf disagree. */
+export function stockLooksWrong(level: StockLevel): boolean {
+  return level.hasCount && level.onHand < 0;
+}
+
+export function useStockLevels() {
+  const [levels, setLevels] = useState<StockLevel[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase.rpc('company_stock_on_hand');
+    if (error) {
+      setLevels([]);
+    } else {
+      setLevels(((data ?? []) as unknown as Record<string, unknown>[]).map((row) => ({
+        productKey: String(row.product_key ?? ''),
+        productName: String(row.product_name ?? ''),
+        unit: row.unit ? String(row.unit) : null,
+        measured: Boolean(row.measured),
+        countedQty: row.counted_qty === null || row.counted_qty === undefined ? null : Number(row.counted_qty),
+        countedAt: row.counted_at ? String(row.counted_at) : null,
+        hasCount: Boolean(row.has_count),
+        boughtSince: Number(row.bought_since ?? 0),
+        soldSince: Number(row.sold_since ?? 0),
+        onHand: Number(row.on_hand ?? 0),
+        incompletePurchases: Boolean(row.incomplete_purchases),
+      })));
+    }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+  return { levels, loading, reload: load };
+}
+
+/** Records a physical count. A count states what is there; it is never an adjustment. */
+export async function recordStockCount(name: string, quantity: number, unit: string | null, note: string | null) {
+  const { data, error } = await supabase.rpc('record_stock_count', {
+    p_name: name, p_quantity: quantity, p_unit: unit, p_note: note,
+  });
+  if (error) throw error;
+  return data as unknown as { id: string; product: string; quantity: number };
+}

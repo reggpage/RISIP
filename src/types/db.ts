@@ -763,6 +763,20 @@ export type Database = {
           archived: boolean;
         }>;
       };
+      /** How many are left, counted forward from the trader's own physical count. */
+      company_stock_on_hand: {
+        Args: Record<string, never>;
+        Returns: Array<{
+          product_key: string; product_name: string; unit: string | null; measured: boolean;
+          counted_qty: string | null; counted_at: string | null; has_count: boolean;
+          bought_since: string; sold_since: string; on_hand: string; incomplete_purchases: boolean;
+        }>;
+      };
+      /** Finance-only: record a physical count. Supersedes the previous one. */
+      record_stock_count: {
+        Args: { p_name: string; p_quantity: number; p_unit: string | null; p_note: string | null };
+        Returns: { id: string; product: string; quantity: number };
+      };
       /** Finance-only: fold one product name into another. Moves no money. */
       merge_products: {
         Args: { p_from_key: string; p_into_key: string; p_reason: string | null };

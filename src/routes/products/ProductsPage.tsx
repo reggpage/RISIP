@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Archive, ArchiveRestore, Merge, Package, Plus, RefreshCw, Search, TrendingDown } from 'lucide-react';
+import { AlertTriangle, Archive, ArchiveRestore, ClipboardCheck, Merge, Package, Plus, RefreshCw, Search, TrendingDown } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -17,6 +17,10 @@ import {
   needsCost,
   soldBelowCost,
   archiveProduct,
+  formatOnHand,
+  stockLooksWrong,
+  useStockLevels,
+  type StockLevel,
   unarchiveProduct,
   useProductCatalog,
   type CatalogProduct,
@@ -25,6 +29,7 @@ import {
 import ProductCostDialog from '@/components/products/ProductCostDialog';
 import ProductMergeDialog from '@/components/products/ProductMergeDialog';
 import AddProductDialog from '@/components/products/AddProductDialog';
+import StockCountDialog from '@/components/products/StockCountDialog';
 
 const lang = getLang();
 const ui = lang === 'sw' ? {
@@ -52,6 +57,8 @@ const ui = lang === 'sw' ? {
   showArchived: 'Onyesha zilizofichwa', archivedBadge: 'Imefichwa',
   archived: 'Bidhaa imefichwa. Mauzo yake ya zamani bado yanahesabiwa.',
   restored: 'Bidhaa imerudishwa kwenye orodha.',
+  onHand: 'Zilizopo', notCounted: 'Hazijahesabiwa', count: 'Hesabu', recount: 'Hesabu tena',
+  stockWrong: 'Zimeuzwa zaidi ya zilizopo',
   noDelete: 'Hakuna kufuta. Bidhaa yenye mauzo halisi ikifutwa, mapato ya miezi iliyopita yangebadilika kimya.',
 } : {
   title: 'Products',
@@ -78,6 +85,8 @@ const ui = lang === 'sw' ? {
   showArchived: 'Show hidden', archivedBadge: 'Hidden',
   archived: 'Product hidden. Its past sales still count.',
   restored: 'Product is back on the list.',
+  onHand: 'On hand', notCounted: 'Not counted', count: 'Count', recount: 'Recount',
+  stockWrong: 'Sold more than counted',
   noDelete: 'There is no delete. Removing a product with real sales would silently change months already reported.',
 };
 
@@ -121,17 +130,21 @@ function SummaryTile({ label, value, hint, tone }: {
   );
 }
 
-function ProductRow({ product, canPrice, onPrice, onMerge, onArchive, onRestore }: {
+function ProductRow({ product, level, canPrice, onPrice, onMerge, onArchive, onRestore, onCount }: {
   product: CatalogProduct;
+  level: StockLevel | null;
   canPrice: boolean;
   onPrice: (product: CatalogProduct) => void;
   onMerge: (product: CatalogProduct) => void;
   onArchive: (product: CatalogProduct) => void;
   onRestore: (product: CatalogProduct) => void;
+  onCount: (product: CatalogProduct) => void;
 }) {
   const missing = needsCost(product);
   const below = soldBelowCost(product);
   const percent = marginPercent(product);
+  const onHand = level ? formatOnHand(level, lang) : null;
+  const stockOff = level ? stockLooksWrong(level) : false;
 
   return (
     <div className={`flex flex-col gap-3 border-b border-surface-border px-4 py-3 last:border-b-0 sm:flex-row sm:items-center ${product.archived ? 'opacity-60' : ''}`}>
@@ -163,7 +176,13 @@ function ProductRow({ product, canPrice, onPrice, onMerge, onArchive, onRestore 
       </div>
 
       {/* The numbers, each in its own labelled column so rows stay comparable. */}
-      <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:w-[30rem] sm:grid-cols-4 sm:gap-y-0">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:w-[36rem] sm:grid-cols-5 sm:gap-y-0">
+        <Figure
+          label={ui.onHand}
+          value={onHand ?? ui.notCounted}
+          tone={onHand === null ? 'muted' : stockOff ? 'bad' : 'ink'}
+          hint={stockOff ? ui.stockWrong : undefined}
+        />
         <Figure label={ui.sold} value={formatQuantity(product, lang)} />
         <Figure label={ui.revenue} value={formatMoney(product.revenue)} />
         <Figure
@@ -191,6 +210,10 @@ function ProductRow({ product, canPrice, onPrice, onMerge, onArchive, onRestore 
               <Button variant={missing ? 'primary' : 'secondary'} onClick={() => onPrice(product)}>
                 {missing ? ui.setCost : ui.editCost}
               </Button>
+              <Button variant="secondary" onClick={() => onCount(product)}>
+                <ClipboardCheck className="h-4 w-4" aria-hidden />
+                {level?.hasCount ? ui.recount : ui.count}
+              </Button>
               <Button variant="ghost" aria-label={`${ui.merge} ${product.productName}`} onClick={() => onMerge(product)}>
                 <Merge className="h-4 w-4" aria-hidden />
               </Button>
@@ -214,9 +237,12 @@ export default function ProductsPage() {
   const [pricing, setPricing] = useState<CatalogProduct | null>(null);
   const [merging, setMerging] = useState<CatalogProduct | null>(null);
   const [adding, setAdding] = useState(false);
+  const [counting, setCounting] = useState<CatalogProduct | null>(null);
+  const stock = useStockLevels();
   const [showArchived, setShowArchived] = useState(false);
   const toast = useToast();
   const state = useProductCatalog(range, showArchived);
+  const levelFor = (key: string) => stock.levels.find((level) => level.productKey === key) ?? null;
 
   async function hide(product: CatalogProduct) {
     try {
@@ -326,11 +352,13 @@ export default function ProductsPage() {
             <ProductRow
               key={product.productKey}
               product={product}
+              level={levelFor(product.productKey)}
               canPrice={canPrice}
               onPrice={setPricing}
               onMerge={setMerging}
               onArchive={(item) => void hide(item)}
               onRestore={(item) => void restore(item)}
+              onCount={setCounting}
             />
           ))
         )}
@@ -354,6 +382,15 @@ export default function ProductsPage() {
           all={state.products}
           onClose={() => setMerging(null)}
           onDone={() => { setMerging(null); void state.reload(); }}
+        />
+      ) : null}
+
+      {counting ? (
+        <StockCountDialog
+          product={counting}
+          level={levelFor(counting.productKey)}
+          onClose={() => setCounting(null)}
+          onSaved={() => { setCounting(null); void stock.reload(); }}
         />
       ) : null}
 
