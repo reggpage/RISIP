@@ -1368,9 +1368,30 @@ async function resumePendingReceipt(db: Admin, identity: any, mediaMessageId: st
 }
 
 /** Append-only trail: intent and outcome only, never bodies or secrets. */
+/**
+ * The message currently being handled, so `audit` can record what was asked.
+ *
+ * Every answer-quality defect in this project so far was found because the owner
+ * screenshotted it. That does not scale past one shop and only catches what
+ * somebody happened to be looking at. Keeping the question — with anything
+ * phone-shaped masked, and never a linking token — turns the audit log into the
+ * work queue it should always have been.
+ */
+let auditedText: string | null = null;
+
+const LINK_TOKEN = /^\s*link\b/i;
+
+function rememberForAudit(body: string | null | undefined): void {
+  const text = String(body ?? '').trim();
+  // A LINK message carries a single-use secret. It is never worth learning from
+  // and must never be written down.
+  auditedText = !text || LINK_TOKEN.test(text) ? null : text.slice(0, 2000);
+}
+
 async function audit(
   db: Admin, identity: any, waMessageId: string,
   intent: string, action: string, outcome: string, receiptId?: string,
+  claimedBy?: string,
 ): Promise<void> {
   try {
     await db.from('whatsapp_audit_log').insert({
@@ -1379,8 +1400,15 @@ async function audit(
       wa_message_id: waMessageId,
       intent, action, outcome,
       receipt_id: receiptId ?? null,
+      message_text: auditedText === null ? null : maskDigits(auditedText),
+      claimed_by: claimedBy ?? intent,
     });
   } catch { /* auditing must not break the flow */ }
+}
+
+/** A run of nine or more digits is a phone number far more often than a price. */
+function maskDigits(text: string): string {
+  return text.replace(/\+?\d[\d\s-]{8,}\d/g, '[namba]');
 }
 
 /** Best-effort reply. A send failure must never turn into a non-200 for Meta. */
@@ -1700,6 +1728,10 @@ Deno.serve(async (req) => {
               processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
             })
             .eq('wa_message_id', waMessageId);
+
+        // Everything audited from here on records what was asked, not only what
+        // was done with it. Cleared per message so nothing leaks across.
+        rememberForAudit(body);
 
         // ── One message, two topics ───────────────────────────────────────
         // "nimeuza daftari 5 kwa 7500, faida ya leo ni ngapi?" used to be

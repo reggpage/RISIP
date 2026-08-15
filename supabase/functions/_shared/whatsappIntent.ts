@@ -30,9 +30,26 @@ export function detectLanguage(text: string | null | undefined): Lang | null {
 export function parseLanguageCommand(text: string | null | undefined): Lang | null {
   const t = String(text ?? '').toLowerCase().trim().replace(/\s+/g, ' ');
   if (!t) return null;
-  const wantsSwahili = /(badili|badilisha).*(kiswahili|swahili)|change language to (kiswahili|swahili)|(nijibu|jibu) kwa (kiswahili|swahili)|^(kiswahili|swahili)$/.test(t);
+  // MEASURED FAILURE: "change to english" was refused with a paragraph telling
+  // the owner to go and change it in the web app, because the pattern demanded
+  // the exact words "change language to english". Nobody types the word
+  // "language" when the whole message is about language. The verbs are what
+  // matter; the noun is optional.
+  const wantsSwahili = new RegExp(
+    '(?:badili|badilisha|geuza|weka|tumia|switch|change|set|use)[^a-z]*'
+    + '(?:lugha|language)?[^a-z]*(?:to |kuwa |kwenda |ya |kwa )?(?:kiswahili|swahili)'
+    + '|(?:nijibu|jibu|ongea|sema)[^a-z]*(?:kwa|in)?[^a-z]*(?:kiswahili|swahili)'
+    + '|(?:reply|respond|answer|talk|speak)[^a-z]*(?:to me )?(?:in|kwa)[^a-z]*(?:kiswahili|swahili)'
+    + '|^(?:kiswahili|swahili)$',
+  ).test(t);
   if (wantsSwahili) return 'sw';
-  const wantsEnglish = /(badili|badilisha).*(kiingereza|english)|change language to english|(nijibu|jibu) kwa (kiingereza|english)|(reply|respond) in english|^english$/.test(t);
+  const wantsEnglish = new RegExp(
+    '(?:badili|badilisha|geuza|weka|tumia|switch|change|set|use)[^a-z]*'
+    + '(?:lugha|language)?[^a-z]*(?:to |kuwa |kwenda |ya |kwa )?(?:kiingereza|english)'
+    + '|(?:nijibu|jibu|ongea|sema)[^a-z]*(?:kwa|in)?[^a-z]*(?:kiingereza|english)'
+    + '|(?:reply|respond|answer|talk|speak)[^a-z]*(?:to me )?(?:in|kwa)[^a-z]*(?:kiingereza|english)'
+    + '|^(?:english|kiingereza)$',
+  ).test(t);
   if (wantsEnglish) return 'en';
   return null;
 }

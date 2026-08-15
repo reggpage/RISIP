@@ -209,3 +209,30 @@ describe('buildReceiptReplyV2 wording', () => {
     expect(reply).toContain('https://x.test');
   });
 });
+
+describe('asking for a different language, the way people ask', () => {
+  it('takes the owner’s own words', () => {
+    // "change to english" was refused with a paragraph telling them to go and
+    // change it in the web app. The pattern wanted the word "language".
+    expect(parseLanguageCommand('change to english')).toBe('en');
+    expect(parseLanguageCommand('change to swahili')).toBe('sw');
+  });
+
+  it('takes the shapes around it', () => {
+    for (const said of ['switch to english', 'use english', 'english', 'reply in english',
+      'change language to english', 'badilisha kiingereza', 'nijibu kwa kiingereza']) {
+      expect(parseLanguageCommand(said)).toBe('en');
+    }
+    for (const said of ['change to kiswahili', 'tumia kiswahili', 'swahili', 'ongea kiswahili',
+      'badilisha lugha kuwa kiswahili', 'sema kwa kiswahili']) {
+      expect(parseLanguageCommand(said)).toBe('sw');
+    }
+  });
+
+  it('leaves ordinary messages alone', () => {
+    for (const said of ['nimeuza daftari 5 kwa 7500', 'faida ya mkasi ni ngapi',
+      'ongeza bidhaa sukari', 'habari za asubuhi', '']) {
+      expect(parseLanguageCommand(said)).toBeNull();
+    }
+  });
+});
