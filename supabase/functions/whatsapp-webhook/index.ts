@@ -102,6 +102,12 @@ import { interpretDailyRecordWithAi, MAX_INTERPRETATION_CHARS, validateAiCandida
 import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared/whatsappReadIntentAi.ts';
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import { findNameWarnings, nameWarningText } from '../_shared/whatsappProductNames.ts';
+import {
+  normalizeProductReadResolution,
+  productReadClarification,
+  productReadMatchNotice,
+  type ProductReadResolution,
+} from '../_shared/whatsappProductResolver.ts';
 import { parseTypedVerificationCode, typedCodeRejected } from '../_shared/typedCode.ts';
 import {
   type StockCountBatch,
@@ -221,6 +227,22 @@ type ResolvedWhatsAppIdentity = {
   payouts_enabled: boolean;
   revoked_at: string | null;
 };
+
+async function resolveProductForRead(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  asked: string,
+): Promise<{ resolution: ProductReadResolution; error: boolean }> {
+  const { data, error } = await db.rpc('wa_resolve_company_product_read', {
+    p_profile_id: identity.profile_id,
+    p_company_id: identity.company_id,
+    p_name: asked,
+  });
+  return {
+    resolution: normalizeProductReadResolution(data, asked),
+    error: Boolean(error),
+  };
+}
 
 function admin(): Admin {
   const url = Deno.env.get('SUPABASE_URL');
@@ -641,10 +663,33 @@ async function productAnalyticsToolReply(
       ? 'Taarifa za mauzo ya bidhaa za kampuni nzima zinaonekana kwa owner au accountant tu.'
       : 'Company-wide product sales information is available only to an owner or accountant.';
   }
-  const { replyData, costs } = await productAnalytics(db, identity.company_id, request);
+  const resolvedNames: string[] = [];
+  const notices: string[] = [];
+  for (const asked of request.compareNames) {
+    const resolved = await resolveProductForRead(db, identity, asked);
+    if (resolved.error) {
+      return lang === 'sw' ? 'Sikuweza kutafuta bidhaa hiyo sasa.' : 'I could not look up that product right now.';
+    }
+    if (resolved.resolution.kind === 'ambiguous') {
+      return productReadClarification(resolved.resolution, lang);
+    }
+    if (resolved.resolution.kind === 'not_found') {
+      return lang === 'sw'
+        ? `Sikupata bidhaa “${asked}” kwenye orodha ya biashara hii.`
+        : `I could not find “${asked}” in this business's product catalogue.`;
+    }
+    resolvedNames.push(resolved.resolution.match.productName);
+    const notice = productReadMatchNotice(resolved.resolution, lang).trim();
+    if (notice) notices.push(notice);
+  }
+  const resolvedRequest: ProductAnalyticsRequest = {
+    ...request,
+    compareNames: [...new Set(resolvedNames)],
+  };
+  const { replyData, costs } = await productAnalytics(db, identity.company_id, resolvedRequest);
   const items = aggregateProducts(replyData, costs);
-  await rememberProductAnalytics(db, identity, request, items);
-  return productAnalyticsReply(request, items, lang);
+  await rememberProductAnalytics(db, identity, resolvedRequest, items);
+  return [...notices, productAnalyticsReply(resolvedRequest, items, lang)].filter(Boolean).join('\n');
 }
 
 /**
@@ -831,10 +876,24 @@ async function executeAssistantTool(
       const clarification = lang === 'sw' ? 'Unataka bei ya kununua ya bidhaa gani?' : 'Which product buying cost do you want?';
       return { content: clarification, isError: true, terminalReply: clarification };
     }
+    const resolved = await resolveProductForRead(db, identity, productName);
+    if (resolved.error) {
+      const failed = lang === 'sw' ? 'Sikuweza kutafuta bidhaa hiyo sasa.' : 'I could not look up that product right now.';
+      return { content: failed, isError: true, terminalReply: failed };
+    }
+    if (resolved.resolution.kind === 'ambiguous') {
+      const clarification = productReadClarification(resolved.resolution, lang);
+      return { content: clarification, isError: true, terminalReply: clarification };
+    }
+    if (resolved.resolution.kind === 'not_found') {
+      return { content: productCostReply(productName, null, lang) };
+    }
+    const productKey = resolved.resolution.match.productKey;
+    const canonicalName = resolved.resolution.match.productName;
     const { data, error } = await db.from('product_costs')
       .select('product_name, unit_cost, unit, currency, effective_from')
       .eq('company_id', identity.company_id)
-      .eq('product_key', productName.toLowerCase())
+      .eq('product_key', productKey)
       .order('effective_from', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(1)
@@ -844,7 +903,7 @@ async function executeAssistantTool(
       return { content: failed, isError: true, terminalReply: failed };
     }
     return {
-      content: productCostReply(productName, data ? {
+      content: productReadMatchNotice(resolved.resolution, lang) + productCostReply(canonicalName, data ? {
         productName: String(data.product_name), unitCost: Number(data.unit_cost),
         unit: data.unit ? String(data.unit) : null, currency: String(data.currency), effectiveFrom: String(data.effective_from),
       } : null, lang),
@@ -875,9 +934,20 @@ async function executeAssistantTool(
   }
   if (name === 'get_stock_on_hand') {
     const asked = typeof input.product_name === 'string' ? input.product_name.trim().slice(0, 80) : '';
+    const resolved = asked ? await resolveProductForRead(db, identity, asked) : null;
+    if (resolved?.error) {
+      return { content: lang === 'sw' ? 'Sikuweza kutafuta bidhaa hiyo sasa.' : 'I could not look up that product right now.' };
+    }
+    if (resolved?.resolution.kind === 'ambiguous') {
+      return { content: productReadClarification(resolved.resolution, lang) };
+    }
+    if (resolved?.resolution.kind === 'not_found') {
+      return { content: stockReply(null, asked, lang) };
+    }
+    const matched = resolved?.resolution.kind === 'matched' ? resolved.resolution : null;
     const { data, error } = await db.rpc('wa_stock_on_hand', {
       p_company_id: identity.company_id,
-      p_product: asked || null,
+      p_product: matched?.match.productKey ?? null,
     });
     if (error) {
       return { content: lang === 'sw' ? 'Sikuweza kupata hesabu ya stock sasa.' : 'I could not load stock right now.' };
@@ -893,7 +963,11 @@ async function executeAssistantTool(
       soldSince: Number(row.sold_since ?? 0),
       incompletePurchases: Boolean(row.incomplete_purchases),
     }));
-    return { content: asked ? stockReply(rows[0] ?? null, asked, lang) : stockListReply(rows, lang) };
+    return {
+      content: asked && matched
+        ? productReadMatchNotice(matched, lang) + stockReply(rows[0] ?? null, matched.match.productName, lang)
+        : stockListReply(rows, lang),
+    };
   }
   if (name === 'get_pending_approvals') {
     return { content: await readOnlyToolReply(db, identity, { tool: 'ai_pending_approvals', period: 'today' }, lang) };
