@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   compareWithTra,
+  cookieHeader,
   fetchTraReceipt,
   parseTraReceipt,
 } from '../../../../supabase/functions/_shared/traVerify';
@@ -208,5 +209,61 @@ describe('what the model got wrong', () => {
 
   it('treats a TIN with punctuation as the same TIN', () => {
     expect(compareWithTra({ vendorTin: '138-955-834' }, official)).toEqual([]);
+  });
+});
+
+describe('the session cookie, read the way runtimes offer it', () => {
+  it('reads separate Set-Cookie headers rather than a joined string', () => {
+    // headers.get() joins multiple cookies with a comma, and an Expires date
+    // contains commas too, so splitting that string is guesswork. This was
+    // returning nothing on the edge runtime, and an empty cookie was then
+    // reported as TRA not knowing the code — a completely different claim.
+    const headers = new Headers();
+    headers.append('set-cookie', 'SESSION=abc123; Path=/; Expires=Mon, 01 Sep 2026 10:00:00 GMT; HttpOnly');
+    headers.append('set-cookie', 'XSRF=zzz; Path=/');
+    const cookie = cookieHeader({ headers });
+    expect(cookie).toContain('SESSION=abc123');
+    expect(cookie).toContain('XSRF=zzz');
+    expect(cookie).not.toContain('Expires');
+    expect(cookie).not.toContain('HttpOnly');
+  });
+
+  it('returns nothing when the response set no cookie', () => {
+    expect(cookieHeader({ headers: new Headers() })).toBe('');
+  });
+});
+
+describe('a missing session is not a verdict about the code', () => {
+  it('reports unreachable, not not_found, when no cookie comes back', async () => {
+    // The distinction matters: not_found flags the verification code as a
+    // misreading, and a correctly-read code was being flagged that way because
+    // of a bug in this client.
+    const fake = async () => new Response('<html>form</html>', { status: 200 });
+    expect(await fetchTraReceipt('G2KTYC85636', '15:22:19', fake as unknown as typeof fetch))
+      .toEqual({ ok: false, reason: 'unreachable' });
+  });
+
+  it('still reports not_found when the portal answers with its form', async () => {
+    let first = true;
+    const fake = async () => {
+      const headers = new Headers();
+      if (first) { headers.append('set-cookie', 'S=1; Path=/'); first = false; }
+      return new Response(TRA_FORM, { status: 200, headers });
+    };
+    expect(await fetchTraReceipt('G2KTYC85636', '15:22:19', fake as unknown as typeof fetch))
+      .toEqual({ ok: false, reason: 'not_found' });
+  });
+
+  it('sends a user agent, since the portal is a browser-facing page', async () => {
+    const seen: RequestInit[] = [];
+    const fake = async (_url: string | URL, init?: RequestInit) => {
+      seen.push(init ?? {});
+      const headers = new Headers();
+      if (seen.length === 1) headers.append('set-cookie', 'S=1; Path=/');
+      return new Response(seen.length === 1 ? TRA_FORM : TRA_HTML, { status: 200, headers });
+    };
+    await fetchTraReceipt('18935E214576', '14:52:56', fake as unknown as typeof fetch);
+    expect((seen[0].headers as Record<string, string>)['user-agent']).toMatch(/Mozilla/);
+    expect((seen[1].headers as Record<string, string>).referer).toContain('18935E214576');
   });
 });

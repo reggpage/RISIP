@@ -135,13 +135,23 @@ export function parseTraReceipt(html: string): TraReceipt | null {
   return receipt;
 }
 
-/** Everything a Set-Cookie header offers, reduced to what the next request needs. */
-function cookieHeader(response: Response): string {
-  const raw = response.headers.get('set-cookie') ?? '';
-  return raw
-    .split(/,(?=[^;]+=[^;]+)/)
+/**
+ * The session cookie, read the way the runtime actually offers it.
+ *
+ * `headers.get('set-cookie')` joins multiple cookies with a comma, which is
+ * ambiguous — an Expires date contains commas too — so splitting it is guesswork.
+ * `getSetCookie()` returns them as the separate headers they were. Reading the
+ * joined string was returning nothing here, and an empty cookie was then being
+ * reported as TRA not knowing the code, which is a completely different claim.
+ */
+export function cookieHeader(response: Pick<Response, 'headers'>): string {
+  const headers = response.headers as Headers & { getSetCookie?: () => string[] };
+  const all = typeof headers.getSetCookie === 'function'
+    ? headers.getSetCookie()
+    : (headers.get('set-cookie') ? [headers.get('set-cookie') as string] : []);
+  return all
     .map((cookie) => cookie.split(';')[0].trim())
-    .filter(Boolean)
+    .filter((pair) => pair.includes('='))
     .join('; ');
 }
 
@@ -163,25 +173,42 @@ export async function fetchTraReceipt(
   const [hh, mm, ss] = time.split(':');
   const secret = `${hh.padStart(2, '0')}:${mm}:${ss}`;
 
+  // The portal is a browser-facing page. Requests without a user agent are the
+  // kind that get turned away, and a referer is what its own form would send.
+  const browserish = {
+    accept: 'text/html,application/xhtml+xml',
+    'accept-language': 'en-US,en;q=0.9,sw;q=0.8',
+    'user-agent': 'Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Mobile Safari/537.36',
+  };
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const first = await fetchImpl(`${BASE}/${encodeURIComponent(code)}`, {
       signal: controller.signal,
       redirect: 'follow',
-      headers: { accept: 'text/html' },
+      headers: browserish,
     });
     if (!first.ok) return { ok: false, reason: 'unreachable' };
+
+    // No session cookie is a problem with this client or the portal, NOT a
+    // verdict about the code. Reporting it as "TRA does not know this code" was
+    // wrong, and it flagged a correctly-read code as a misreading.
     const cookie = cookieHeader(first);
-    // No session means the portal did not accept the code as one it knows.
-    if (!cookie) return { ok: false, reason: 'not_found' };
+    if (!cookie) return { ok: false, reason: 'unreachable' };
 
     const second = await fetchImpl(
       `${BASE}/Verify/Verified?Secret=${encodeURIComponent(secret)}`,
-      { signal: controller.signal, redirect: 'follow', headers: { accept: 'text/html', cookie } },
+      {
+        signal: controller.signal,
+        redirect: 'follow',
+        headers: { ...browserish, cookie, referer: `${BASE}/${encodeURIComponent(code)}` },
+      },
     );
     if (!second.ok) return { ok: false, reason: 'unreachable' };
 
+    // Only here is not_found a real answer: the portal replied, and what it
+    // replied with was its entry form rather than a receipt.
     const receipt = parseTraReceipt(await second.text());
     if (!receipt) return { ok: false, reason: 'not_found' };
     // A portal that answered about a different code is not an answer about this one.
