@@ -36,31 +36,43 @@ export function qrCorrectionReply(
   before: { vendorName: string | null; total: number | null },
   official: TraReceipt,
   lang: Lang,
+  reviewUrl?: string | null,
 ): string {
+  // A field that was BLANK and is now filled is a change. Reporting "nothing
+  // changed" after the vendor went from nothing to MAWALENI COMPANY LIMITED is
+  // simply untrue, and it was the first thing the owner noticed.
+  const blank = lang === 'sw' ? '(hakuna)' : '(blank)';
   const lines: string[] = [];
-  if (official.vendorName && before.vendorName
-      && official.vendorName.trim().toLowerCase() !== before.vendorName.trim().toLowerCase()) {
+
+  if (official.vendorName
+      && official.vendorName.trim().toLowerCase() !== (before.vendorName ?? '').trim().toLowerCase()) {
     lines.push(lang === 'sw'
-      ? `• Muuzaji: ${before.vendorName} → ${official.vendorName}`
-      : `• Vendor: ${before.vendorName} → ${official.vendorName}`);
+      ? `• Muuzaji: ${before.vendorName ?? blank} → ${official.vendorName}`
+      : `• Vendor: ${before.vendorName ?? blank} → ${official.vendorName}`);
   }
-  if (official.totalInclTax !== null && before.total !== null
-      && Math.abs(official.totalInclTax - before.total) > 0.01) {
+  if (official.totalInclTax !== null
+      && (before.total === null || Math.abs(official.totalInclTax - before.total) > 0.01)) {
     lines.push(lang === 'sw'
-      ? `• Kiasi: ${money(before.total)} → ${money(official.totalInclTax)}`
-      : `• Amount: ${money(before.total)} → ${money(official.totalInclTax)}`);
+      ? `• Kiasi: ${before.total === null ? blank : money(before.total)} → ${money(official.totalInclTax)}`
+      : `• Amount: ${before.total === null ? blank : money(before.total)} → ${money(official.totalInclTax)}`);
   }
 
   const head = lang === 'sw'
     ? `✅ Imethibitishwa na TRA: ${official.vendorName ?? 'risiti'} — ${money(official.totalInclTax)}.`
     : `✅ Confirmed by TRA: ${official.vendorName ?? 'receipt'} — ${money(official.totalInclTax)}.`;
 
+  // Every other reply carries a way to open the receipt; this one did not, so a
+  // confirmation was a dead end.
+  const link = reviewUrl
+    ? `\n\n${lang === 'sw' ? 'Kagua na kamilisha' : 'Review and complete'}:\n${reviewUrl}`
+    : '';
+
   if (lines.length === 0) {
     return lang === 'sw'
-      ? `${head}\n\nUsomaji wa awali ulikuwa sahihi; hakuna kilichobadilika.`
-      : `${head}\n\nThe original reading was right; nothing changed.`;
+      ? `${head}\n\nUsomaji wa awali ulikuwa sahihi; hakuna kilichobadilika.${link}`
+      : `${head}\n\nThe original reading was right; nothing changed.${link}`;
   }
   return lang === 'sw'
-    ? `${head}\n\nNimerekebisha:\n${lines.join('\n')}`
-    : `${head}\n\nCorrected:\n${lines.join('\n')}`;
+    ? `${head}\n\nNimerekebisha:\n${lines.join('\n')}${link}`
+    : `${head}\n\nCorrected:\n${lines.join('\n')}${link}`;
 }

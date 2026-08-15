@@ -35,6 +35,7 @@ import { downloadMedia, getMediaMeta, sendWhatsAppText, showTyping } from '../_s
 import { readReceiptQr } from '../_shared/receiptQr.ts';
 import { compareWithTra, fetchTraReceipt } from '../_shared/traVerify.ts';
 import { askForQrCloseUp, qrCorrectionReply } from '../_shared/qrFollowUp.ts';
+import { askForTypedCode } from '../_shared/typedCode.ts';
 
 const MAX_RETRIES = 3;
 const STALE_MINUTES = 5;
@@ -273,6 +274,7 @@ async function processJob(db: Admin, job: any): Promise<void> {
           { vendorName: pending.vendor_name, total: pending.total_amount === null ? null : Number(pending.total_amount) },
           official,
           lang,
+          buildReviewUrl(appUrl(), String(pending.id)),
         ));
         // The close-up is not a receipt of its own, so nothing is stored for it.
         await db.from('whatsapp_messages').update({
@@ -422,7 +424,7 @@ async function processJob(db: Admin, job: any): Promise<void> {
     })
     // Only when TRA actually declined to confirm it. A receipt with no code at
     // all is not a failure to verify, it is a receipt without a QR.
-    + (receipt?.tra_status === 'not_found' ? askForQrCloseUp(lang) : ''),
+    + (receipt?.tra_status === 'not_found' ? askForQrCloseUp(lang) + askForTypedCode(lang) : ''),
   );
 
   await audit(db, {

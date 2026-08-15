@@ -102,6 +102,9 @@ import { interpretDailyRecordWithAi, MAX_INTERPRETATION_CHARS, validateAiCandida
 import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared/whatsappReadIntentAi.ts';
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import { findNameWarnings, nameWarningText } from '../_shared/whatsappProductNames.ts';
+import { parseTypedVerificationCode, typedCodeRejected } from '../_shared/typedCode.ts';
+import { compareWithTra, fetchTraReceipt } from '../_shared/traVerify.ts';
+import { qrCorrectionReply } from '../_shared/qrFollowUp.ts';
 import {
   parseStockCount,
   stockCountConfirmation,
@@ -1946,6 +1949,66 @@ Deno.serve(async (req) => {
             await clearConversation(db, identity.id as string);
             await replyQuietly(phone, lang === 'sw' ? 'Sawa, sijaandika.' : 'Fine, nothing saved.');
             await audit(db, identity, waMessageId, 'product_cost', pending.product, 'cancelled');
+            await finish('skipped');
+            continue;
+          }
+        }
+
+        // A verification code, typed out. The last resort when the square will
+        // not read: measured against a real close-up, ninety preprocessing
+        // combinations failed on it — blur plus TRA's watermark over the finder
+        // patterns is past what a decoder can recover. Twelve characters printed
+        // in plain text above that square work every time.
+        //
+        // Still verified, never trusted: the typed code goes to TRA with the
+        // receipt's own printed time, and only TRA's answer changes anything.
+        const typedCode = parseTypedVerificationCode(body);
+        if (typedCode) {
+          const { data: pending } = await db
+            .from('receipts')
+            .select('id, vendor_name, total_amount, receipt_time, verification_code')
+            .eq('company_id', identity.company_id)
+            .eq('uploaded_by', identity.profile_id)
+            .eq('tra_status', 'not_found')
+            .not('receipt_time', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (pending) {
+            const row = pending as Record<string, any>;
+            const lookup = await fetchTraReceipt(typedCode, String(row.receipt_time));
+            if (lookup.ok) {
+              const official = lookup.receipt;
+              const differences = compareWithTra({
+                vendorName: row.vendor_name,
+                totalInclTax: row.total_amount === null ? null : Number(row.total_amount),
+                verificationCode: row.verification_code,
+              }, official);
+              await db.from('receipts').update({
+                vendor_name: official.vendorName ?? row.vendor_name,
+                vendor_tin: official.vendorTin ?? undefined,
+                vendor_vrn: official.vendorVrn ?? undefined,
+                receipt_number: official.receiptNumber ?? undefined,
+                receipt_date: official.receiptDate ?? undefined,
+                total_amount: official.totalInclTax ?? undefined,
+                tax_amount: official.totalTax ?? undefined,
+                verification_code: official.verificationCode ?? typedCode,
+                tra_status: 'verified',
+                tra_verified_at: new Date().toISOString(),
+                tra_differences: differences.length ? differences : null,
+              }).eq('id', row.id);
+              await replyQuietly(phone, qrCorrectionReply(
+                { vendorName: row.vendor_name, total: row.total_amount === null ? null : Number(row.total_amount) },
+                official, lang, `${appUrl()}/receipts?receipt=${row.id}`,
+              ));
+              await audit(db, identity, waMessageId, 'tra_verify', 'typed_code', 'applied');
+            } else {
+              // Naming the look-alike characters is the useful part: these codes
+              // are read off thermal paper, where 0/O and 1/I are a coin toss.
+              await replyQuietly(phone, typedCodeRejected(typedCode, lang));
+              await audit(db, identity, waMessageId, 'tra_verify', 'typed_code', 'not_found');
+            }
             await finish('skipped');
             continue;
           }
