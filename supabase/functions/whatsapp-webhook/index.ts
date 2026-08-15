@@ -103,6 +103,14 @@ import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import { findNameWarnings, nameWarningText } from '../_shared/whatsappProductNames.ts';
 import {
+  parseSellingPriceBatch,
+  sellingPriceBatchCancelled,
+  sellingPriceBatchConfirmation,
+  sellingPriceBatchCostWarnings,
+  sellingPriceBatchSaved,
+  type SellingPriceBatch,
+} from '../_shared/whatsappSellingPriceBatch.ts';
+import {
   addProductNeedsCost,
   parseAddProduct,
   productAlreadyExists,
@@ -1904,8 +1912,12 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<ProductCostBatch> | null)?.kind === 'product_cost_batch'
           ? convo.options as ProductCostBatch
           : null;
+        const sellingBatchPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<SellingPriceBatch> | null)?.kind === 'selling_price_batch'
+          ? convo.options as SellingPriceBatch
+          : null;
         const costConversation = convo?.awaiting === 'product_cost' && convo.options
-          && !costPrompt && !costBatchPending && !stockBatchPending
+          && !costPrompt && !costBatchPending && !stockBatchPending && !sellingBatchPending
           ? { cost: convo.options as unknown as ProductCost }
           : null;
         const productContext = convo?.awaiting === 'product_analytics'
@@ -2256,6 +2268,40 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // NDIYO on a whole selling-price list. All or nothing: a list half
+        // applied leaves the shop believing it set prices it did not set, and
+        // the assistant then quotes the old ones with complete confidence.
+        if (sellingBatchPending) {
+          if (isDailyRecordConfirmation(body)) {
+            const { data: saved, error } = await db.rpc('wa_set_selling_prices', {
+              p_phone: phone,
+              p_items: sellingBatchPending.prices.map((price) => ({
+                product: price.product,
+                retail: price.retail,
+                wholesale: price.wholesale,
+                min_qty: price.minQty,
+              })),
+            });
+            await clearConversation(db, identity.id as string);
+            const result = saved as { saved?: number; company_name?: string } | null;
+            await replyQuietly(phone, error
+              ? productCostErrorMessage(error, lang)
+              : sellingPriceBatchSaved(
+                result?.saved ?? sellingBatchPending.prices.length, result?.company_name ?? '', lang));
+            await audit(db, identity, waMessageId, 'selling_price_batch',
+              String(sellingBatchPending.prices.length), error ? 'failed' : 'applied');
+          } else if (isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, sellingPriceBatchCancelled(lang));
+            await audit(db, identity, waMessageId, 'selling_price_batch', 'cancel', 'applied');
+          } else {
+            await replyQuietly(phone, sellingPriceBatchConfirmation(sellingBatchPending, lang));
+            await audit(db, identity, waMessageId, 'selling_price_batch', 'reask', 'skipped');
+          }
+          await finish('skipped');
+          continue;
+        }
+
         // NDIYO on a whole price list. One transaction, so a half-applied list
         // can never leave the coverage figure reporting a number nobody chose.
         if (costBatchPending) {
@@ -2454,11 +2500,10 @@ Deno.serve(async (req) => {
             continue;
           }
           const { error: addError } = await db.rpc('wa_set_product_cost', {
-            p_phone: identity.wa_phone,
-            p_product: addProduct.product,
+            p_phone: phone,
+            p_name: addProduct.product,
             p_unit_cost: addProduct.unitCost,
             p_unit: addProduct.unit,
-            p_effective_from: null,
           });
           if (addError) {
             await reply(phone, productCostErrorMessage(addError, lang));
@@ -2470,6 +2515,37 @@ Deno.serve(async (req) => {
             { product: addProduct.product, unitCost: addProduct.unitCost, unit: addProduct.unit },
             identity.company_name, lang));
           await audit(db, identity, waMessageId, 'add_product', 'create', 'applied');
+          await finish('skipped');
+          continue;
+        }
+
+        // A pasted selling-price list. Checked against what the shop pays before
+        // it is confirmed, because a retail price under the buying cost reads
+        // and saves perfectly while turning every future sale into a loss.
+        const sellingBatch = parseSellingPriceBatch(writeBody);
+        if (sellingBatch) {
+          const { data: costRows } = await db.rpc('wa_product_pricing', {
+            p_company_id: identity.company_id,
+            p_product_keys: sellingBatch.prices.map((price) => price.product),
+          });
+          const costs = new Map<string, number>();
+          for (const row of (costRows ?? []) as Array<Record<string, unknown>>) {
+            if (row.unit_cost != null) costs.set(String(row.product_key).toLowerCase(), Number(row.unit_cost));
+          }
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: sellingBatch,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          await reply(phone, sellingPriceBatchConfirmation(sellingBatch, lang)
+            + sellingPriceBatchCostWarnings(sellingBatch.prices, costs, lang));
+          await audit(db, identity, waMessageId, 'selling_price_batch',
+            String(sellingBatch.prices.length), 'pending');
           await finish('skipped');
           continue;
         }

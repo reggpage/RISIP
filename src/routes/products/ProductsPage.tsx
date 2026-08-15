@@ -365,7 +365,11 @@ export default function ProductsPage() {
           level={levelFor(editing.product.productKey)}
           initialTab={editing.tab}
           onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); void state.reload(); void stock.reload(); }}
+          // Saving refreshes the list behind the dialog but leaves the dialog
+          // open. One product usually needs two or three of these tabs filled
+          // in, and closing after each one meant finding the row again every
+          // time. Only the X closes it.
+          onSaved={() => { void state.reload(); void stock.reload(); }}
         />
       ) : null}
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import Button from '@/components/ui/Button';
-import Input from '@/components/ui/Input';
+import NumberInput from '@/components/ui/NumberInput';
 import Select from '@/components/ui/Select';
 import UnderlineTabs from '@/components/ui/UnderlineTabs';
 import { useToast } from '@/components/ui/Toast';
@@ -23,52 +23,52 @@ const ui = lang === 'sw' ? {
   tabs: 'Chagua unachotaka kubadilisha',
   countTab: 'Hesabu stock', priceTab: 'Bei ya kununua', sellTab: 'Bei ya kuuza',
   // Count
-  countIntro: 'Andika ulizonazo rafuni sasa hivi. Kuanzia hapo Risip itafuatilia yenyewe.',
-  quantity: 'Ninazo', zeroOk: 'Sifuri ni sawa — inamaanisha rafu ni tupu.',
-  believed: 'Risip ilikuwa inadhani zipo', neverCounted: 'Bidhaa hii haijawahi kuhesabiwa.',
+  countIntro: 'Hesabu zilizopo dukani sasa hivi, kisha andika idadi hapa chini. Baada ya hapo Risip itapunguza kila unapouza na kuongeza kila unaponunua.',
+  quantity: 'Zilizopo sasa', zeroOk: 'Ukiandika 0 inamaanisha zimeisha.',
+  believed: 'Hesabu ya sasa', countedOn: 'Ilihesabiwa',
+  neverCounted: 'Bidhaa hii haijawahi kuhesabiwa. Hesabu ya kwanza ndiyo itakayoanzisha ufuatiliaji.',
   unit: 'Kipimo',
   unitPieces: 'Vipande (kawaida)',
-  unitHint: 'Vitu vinavyohesabiwa acha "Vipande". Chagua kingine tu kama unauza kwa uzito au ujazo.',
-  unitGoverns: 'Hesabu na bei ya kununua zote zitakuwa kwa kipimo hiki.',
-  note: 'Maelezo', noteHint: 'Si lazima. Mfano: kuhesabu mwisho wa mwezi.',
+  unitHint: 'Kama unauza kwa idadi, acha "Vipande". Badilisha tu kama unauza kwa uzito au ujazo.',
+  unitGoverns: 'Hesabu na bei zote zitakuwa kwa kipimo hiki.',
   saveCount: 'Hifadhi hesabu',
   countSaved: 'Hesabu imehifadhiwa.',
-  countInvalid: 'Andika idadi, sifuri au zaidi.',
-  supersedes: 'Hesabu hii inachukua nafasi ya iliyopita. Hesabu za zamani hazifutwi, na rekodi za mauzo hazibadiliki.',
+  countInvalid: 'Andika idadi — 0 au zaidi.',
+  supersedes: 'Hesabu mpya inachukua nafasi ya ya zamani. Hesabu za zamani hazifutwi, wala rekodi za mauzo hazibadiliki.',
   // Price
-  priceIntro: 'Bei unayonunua kwayo kila kimoja. Ndiyo inayowezesha makisio ya faida.',
+  priceIntro: 'Kiasi unacholipa wewe kununua kimoja. Ndicho kinachotumika kupima faida.',
   cost: 'Ninanunua kwa', current: 'Bei ya sasa', since: 'Tangu',
-  selling: 'Unauza kwa wastani', margin: 'Faida kwa kimoja itakuwa',
-  aboveSelling: 'Bei hii ya kununua ni kubwa kuliko unavyouza. Hakikisha ni sahihi.',
+  selling: 'Umekuwa ukiuza kwa wastani wa', margin: 'Faida kwa kimoja itakuwa',
+  aboveSelling: 'Bei hii ya kununua ni kubwa kuliko unavyouza — kila mauzo yatakuwa hasara. Hakiki tena.',
   savePrice: 'Hifadhi bei',
   priceSaved: 'Bei ya kununua imehifadhiwa.',
-  priceInvalid: 'Andika bei kubwa kuliko sifuri.',
-  history: 'Bei ya zamani haitafutwa. Rekodi za nyuma zinabaki na bei zilizokuwa zikitumika siku hizo.',
+  priceInvalid: 'Andika bei zaidi ya 0.',
+  history: 'Bei ya zamani haifutwi. Rekodi za siku zilizopita zinabaki na bei iliyokuwa ikitumika siku hiyo.',
   // Selling
-  sellIntro: 'Bei unayouzia. Ukituma mauzo WhatsApp bila kutaja bei, nitatumia hizi.',
-  retail: 'Rejareja', retailHint: 'Bei ya mteja wa kawaida.',
-  wholesale: 'Jumla', wholesaleHint: 'Si lazima. Bei ya mteja wa mara kwa mara au wa idadi kubwa.',
-  minQty: 'Kuanzia idadi', minQtyHint: 'Acha wazi kama bei ya jumla ni ya mteja, si ya idadi.',
+  sellIntro: 'Kiasi unachomuuzia mteja. Ukituma mauzo WhatsApp bila kutaja bei, Risip itatumia hizi.',
+  retail: 'Bei ya rejareja', retailHint: 'Bei ya mteja wa kawaida.',
+  wholesale: 'Bei ya jumla', wholesaleHint: 'Si lazima. Bei ya mteja wa mara kwa mara au anayenunua nyingi.',
+  minQty: 'Bei ya jumla ianze idadi gani', minQtyHint: 'Acha wazi kama bei ya jumla ni ya mteja maalum, si ya idadi.',
   saveSelling: 'Hifadhi bei ya kuuza',
   sellingSaved: 'Bei ya kuuza imehifadhiwa.',
-  retailInvalid: 'Andika bei ya rejareja kubwa kuliko sifuri.',
-  wholesaleTooHigh: 'Bei ya jumla haiwezi kuzidi ya rejareja.',
-  minQtyNeedsWholesale: 'Idadi ya kuanzia inahitaji bei ya jumla.',
-  noSelling: 'Bado hujaweka bei ya kuuza ya bidhaa hii.',
-  marginAtRetail: 'Faida kwa kimoja (rejareja)',
+  retailInvalid: 'Andika bei ya rejareja zaidi ya 0.',
+  wholesaleTooHigh: 'Bei ya jumla haiwezi kuwa kubwa kuliko ya rejareja.',
+  minQtyNeedsWholesale: 'Ili kuweka idadi ya kuanzia, lazima uweke bei ya jumla.',
+  noSelling: 'Bidhaa hii bado haina bei ya kuuza.',
+  marginAtRetail: 'Ukiuza kwa rejareja, faida kwa kimoja',
   saving: 'Inahifadhi…', close: 'Funga', perUnit: (u: string) => ` — kwa ${u} moja`,
 } : {
   title: 'Edit product',
   tabs: 'Choose what to change',
   countTab: 'Count stock', priceTab: 'Buying price', sellTab: 'Selling price',
   countIntro: 'Enter what is on the shelf right now. Risip keeps count from there.',
-  quantity: 'I have', zeroOk: 'Zero is fine — it means the shelf is empty.',
-  believed: 'Risip believed there were', neverCounted: 'This product has never been counted.',
+  quantity: 'On the shelf now', zeroOk: 'Entering 0 means they have run out.',
+  believed: 'Current count', countedOn: 'Counted',
+  neverCounted: 'This product has never been counted. The first count is what starts the tracking.',
   unit: 'Unit',
   unitPieces: 'Pieces (default)',
   unitHint: 'For things you count, leave it on "Pieces". Choose another only if you sell by weight or volume.',
   unitGoverns: 'The count and the buying price will both be in this unit.',
-  note: 'Note', noteHint: 'Optional. For example: month-end count.',
   saveCount: 'Save count',
   countSaved: 'Count saved.',
   countInvalid: 'Enter a quantity, zero or more.',
@@ -132,12 +132,13 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
   const [tab, setTab] = useState<Tab>(initialTab);
   const [busy, setBusy] = useState(false);
 
-  // Count
-  const [quantity, setQuantity] = useState('');
+  // Count. Pre-filled with the figure Risip currently holds: the common edit is
+  // a correction of one or two, and starting from an empty box makes somebody
+  // re-derive a number the screen already knows.
+  const [quantity, setQuantity] = useState(level?.hasCount ? String(level.onHand) : '');
   const [unit, setUnit] = useState(
     UNIT_OPTIONS.some((option) => option.value === (product.unit ?? '')) ? (product.unit ?? '') : '',
   );
-  const [note, setNote] = useState('');
   const parsedQuantity = Number(quantity.replace(/,/g, ''));
   const countValid = quantity.trim() !== '' && Number.isFinite(parsedQuantity) && parsedQuantity >= 0;
 
@@ -198,7 +199,7 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
     if (!countValid) { toast.error(ui.countInvalid); return; }
     setBusy(true);
     try {
-      await recordStockCount(product.productName, parsedQuantity, unit || null, note.trim() || null);
+      await recordStockCount(product.productName, parsedQuantity, unit || null, null);
       toast.success(ui.countSaved);
       onSaved();
     } catch (error) { toast.error(friendlyError(error)); } finally { setBusy(false); }
@@ -216,8 +217,19 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="w-full max-w-md rounded-xl bg-surface p-5 shadow-lg">
-        <h2 className="text-base font-semibold text-ink">{ui.title}</h2>
+      <div className="relative w-full max-w-md rounded-xl bg-surface p-5 shadow-lg">
+        {/* The only way out. Saving used to close the dialog, which made filling
+            in a count, a buying price and a selling price for one product three
+            separate trips back to the row. */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={ui.close}
+          className="absolute right-3 top-3 rounded-lg p-1.5 text-ink-muted hover:bg-surface-muted hover:text-ink"
+        >
+          <X className="h-4 w-4" aria-hidden />
+        </button>
+        <h2 className="pr-8 text-base font-semibold text-ink">{ui.title}</h2>
         <p className="mt-1 text-sm text-ink-muted">{product.productName}</p>
 
         {/* The unit belongs to the PRODUCT, not to the count or the price, so
@@ -250,26 +262,23 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
           <>
             <p className="mt-3 text-xs text-ink-muted">{ui.countIntro}</p>
             <div className="mt-3 rounded-lg bg-surface-muted px-3 py-2 text-xs text-ink-muted">
-              {level?.hasCount
-                ? <>{ui.believed}: <span className="font-medium tabular-nums text-ink">{level.onHand}</span></>
-                : ui.neverCounted}
+              {level?.hasCount ? (
+                <>
+                  {ui.believed}: <span className="font-medium tabular-nums text-ink">
+                    {level.onHand.toLocaleString('en-US', { maximumFractionDigits: level.measured ? 2 : 0 })}
+                    {unit ? ` ${unit}` : ''}
+                  </span>
+                  {level.countedAt
+                    ? ` · ${ui.countedOn} ${new Date(level.countedAt).toLocaleDateString('en-GB')}`
+                    : ''}
+                </>
+              ) : ui.neverCounted}
             </div>
             <div className="mt-3 space-y-3">
               <label className="block">
                 <span className="text-sm text-ink">{ui.quantity}{unit ? ` (${unit})` : ``}</span>
-                <Input
-                  value={quantity}
-                  onChange={(event) => setQuantity(event.target.value)}
-                  inputMode="decimal"
-                  autoFocus
-                  className="mt-1"
-                />
+                <NumberInput value={quantity} onChange={setQuantity} autoFocus className="mt-1" />
                 <span className="mt-1 block text-[11px] text-ink-muted">{ui.zeroOk}</span>
-              </label>
-              <label className="block">
-                <span className="text-sm text-ink">{ui.note}</span>
-                <Input value={note} onChange={(event) => setNote(event.target.value)} className="mt-1" />
-                <span className="mt-1 block text-[11px] text-ink-muted">{ui.noteHint}</span>
               </label>
             </div>
             <p className="mt-3 text-[11px] leading-snug text-ink-muted">{ui.supersedes}</p>
@@ -301,13 +310,7 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
             <div className="mt-3 space-y-3">
               <label className="block">
                 <span className="text-sm text-ink">{ui.cost}{unit ? ui.perUnit(unit) : ``}</span>
-                <Input
-                  value={cost}
-                  onChange={(event) => setCost(event.target.value)}
-                  inputMode="decimal"
-                  autoFocus
-                  className="mt-1"
-                />
+                <NumberInput value={cost} onChange={setCost} allowDecimal={false} autoFocus className="mt-1" />
               </label>
             </div>
             {margin !== null ? (
@@ -334,32 +337,17 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
             <div className="mt-3 space-y-3">
               <label className="block">
                 <span className="text-sm text-ink">{ui.retail}{unit ? ui.perUnit(unit) : ``}</span>
-                <Input
-                  value={retail}
-                  onChange={(event) => setRetail(event.target.value)}
-                  inputMode="decimal"
-                  className="mt-1"
-                />
+                <NumberInput value={retail} onChange={setRetail} allowDecimal={false} className="mt-1" />
                 <span className="mt-1 block text-[11px] text-ink-muted">{ui.retailHint}</span>
               </label>
               <label className="block">
                 <span className="text-sm text-ink">{ui.wholesale}</span>
-                <Input
-                  value={wholesale}
-                  onChange={(event) => setWholesale(event.target.value)}
-                  inputMode="decimal"
-                  className="mt-1"
-                />
+                <NumberInput value={wholesale} onChange={setWholesale} allowDecimal={false} className="mt-1" />
                 <span className="mt-1 block text-[11px] text-ink-muted">{ui.wholesaleHint}</span>
               </label>
               <label className="block">
                 <span className="text-sm text-ink">{ui.minQty}</span>
-                <Input
-                  value={minQty}
-                  onChange={(event) => setMinQty(event.target.value)}
-                  inputMode="decimal"
-                  className="mt-1"
-                />
+                <NumberInput value={minQty} onChange={setMinQty} className="mt-1" />
                 <span className="mt-1 block text-[11px] text-ink-muted">{ui.minQtyHint}</span>
               </label>
             </div>
