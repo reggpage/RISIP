@@ -127,6 +127,26 @@ export function sellingPriceBatchCostWarnings(
       + 'If that is deliberate, fine. If it is a slip, fix it before confirming.';
 }
 
+/**
+ * Names the shop has never bought or sold under.
+ *
+ * Nearly always a typo in a long paste — "atlas" where the shelf says "atlasi".
+ * A price saved against a name that does not exist is invisible: the product it
+ * was meant for keeps quoting the old price, and nothing anywhere says why.
+ *
+ * Said, not refused. Pricing something before the first sale of it is perfectly
+ * normal, and the shopkeeper can see at a glance which of the two this is.
+ */
+export function sellingPriceBatchUnknownProducts(unknown: string[], lang: Lang): string {
+  if (unknown.length === 0) return '';
+  const rows = unknown.map((name) => `• ${name}`).join('\n');
+  return lang === 'sw'
+    ? `\n\n❓ Hizi bado hazijawahi kununuliwa wala kuuzwa hapa:\n${rows}\n`
+      + 'Kama ni bidhaa mpya, sawa. Kama jina limekosewa, rekebisha — bei ikienda kwa jina lisilo sahihi haitatumika popote.'
+    : `\n\n❓ These have never been bought or sold here:\n${rows}\n`
+      + 'If they are new, fine. If a name is mistyped, fix it — a price under the wrong name is never used.';
+}
+
 export function sellingPriceBatchSaved(saved: number, businessName: string, lang: Lang): string {
   return lang === 'sw'
     ? `✅ Nimehifadhi bei za bidhaa ${saved}${businessName ? ` kwa ${businessName}` : ''}.\n\n`

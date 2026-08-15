@@ -108,6 +108,7 @@ import {
   sellingPriceBatchConfirmation,
   sellingPriceBatchCostWarnings,
   sellingPriceBatchSaved,
+  sellingPriceBatchUnknownProducts,
   type SellingPriceBatch,
 } from '../_shared/whatsappSellingPriceBatch.ts';
 import {
@@ -2529,9 +2530,16 @@ Deno.serve(async (req) => {
             p_product_keys: sellingBatch.prices.map((price) => price.product),
           });
           const costs = new Map<string, number>();
+          const known = new Set<string>();
           for (const row of (costRows ?? []) as Array<Record<string, unknown>>) {
-            if (row.unit_cost != null) costs.set(String(row.product_key).toLowerCase(), Number(row.unit_cost));
+            const key = String(row.product_key).toLowerCase();
+            if (row.unit_cost != null) costs.set(key, Number(row.unit_cost));
+            // Bought or sold at some point: the shop has met this product.
+            if (row.unit_cost != null || Number(row.sold_quantity ?? 0) > 0) known.add(key);
           }
+          const unknown = sellingBatch.prices
+            .filter((price) => !known.has(price.product.toLowerCase()))
+            .map((price) => price.product);
           await db.from('whatsapp_conversations').upsert({
             identity_id: identity.id,
             company_id: identity.company_id,
@@ -2543,7 +2551,8 @@ Deno.serve(async (req) => {
             updated_at: new Date().toISOString(),
           }, { onConflict: 'identity_id' });
           await reply(phone, sellingPriceBatchConfirmation(sellingBatch, lang)
-            + sellingPriceBatchCostWarnings(sellingBatch.prices, costs, lang));
+            + sellingPriceBatchCostWarnings(sellingBatch.prices, costs, lang)
+            + sellingPriceBatchUnknownProducts(unknown, lang));
           await audit(db, identity, waMessageId, 'selling_price_batch',
             String(sellingBatch.prices.length), 'pending');
           await finish('skipped');

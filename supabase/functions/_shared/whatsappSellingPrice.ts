@@ -83,7 +83,10 @@ export function parseSellingPrice(text: string | null | undefined): SellingPrice
     // kalamu za rangi, kitabu cha hesabu — so stripping it everywhere turned
     // "nguvu ya sala" into "nguvu sala", which is a different product.
     .replace(/\b(?:bei|price)\b/gi, ' ')
-    .replace(new RegExp(NUMBER, 'g'), ' ')
+    // Only numbers standing on their own. A digit welded to a letter is part of
+    // the name — "karatasi a4 rimu" came out as "karatasi a rimu", which is a
+    // product this shop does not have and would have been created as a new one.
+    .replace(new RegExp(`(?<![\\p{L}])${NUMBER}`, 'gu'), ' ')
     .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
