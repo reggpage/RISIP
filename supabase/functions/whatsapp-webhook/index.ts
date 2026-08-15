@@ -103,6 +103,11 @@ import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import { findNameWarnings, nameWarningText } from '../_shared/whatsappProductNames.ts';
 import { parseTypedVerificationCode, typedCodeRejected } from '../_shared/typedCode.ts';
+import {
+  parseSellingPrice,
+  priceBandNotice,
+  sellingPriceSaved,
+} from '../_shared/whatsappSellingPrice.ts';
 import { compareWithTra, fetchTraReceipt } from '../_shared/traVerify.ts';
 import { qrCorrectionReply } from '../_shared/qrFollowUp.ts';
 import {
@@ -368,6 +373,37 @@ async function askForBuyingPrice(
     await audit(db, identity, waMessageId, 'product_cost', 'asked', prompt.productKey);
   } catch {
     /* Never let an optional question disturb a saved record. */
+  }
+}
+
+/**
+ * A sale line that went out under every price the shop set for itself.
+ *
+ * Only "below" is worth interrupting a confirmation for. A wholesale sale is the
+ * shop working as intended, and saying so on every trade sale would teach people
+ * to scroll past the line — and then the one that mattered gets scrolled past
+ * too. Best-effort: a price check is never worth failing a confirmation over.
+ */
+async function belowOwnPriceNotice(
+  db: Admin,
+  companyId: string,
+  record: ParsedDailyRecord,
+  lang: Lang,
+): Promise<string> {
+  if (record.kind !== 'sale' || record.lines.length === 0) return '';
+  try {
+    const bands = await Promise.all(record.lines.map(async (line) => {
+      const { data } = await db.rpc('price_band', {
+        p_company: companyId,
+        p_key: line.description,
+        p_unit_price: line.unit_amount,
+        p_quantity: line.quantity,
+      });
+      return { product: line.description, unitPrice: line.unit_amount, band: String(data ?? 'unpriced') };
+    }));
+    return priceBandNotice(bands, lang);
+  } catch {
+    return '';
   }
 }
 
@@ -929,7 +965,8 @@ async function executeAssistantTool(
     // Asked before NDIYO, while the trader can still change the name. Afterwards
     // it would be a second product with sales already in it.
     const nearName = await nearNameNotice(db, identity.company_id, guardedRecord, lang);
-    const confirmation = `${identity.company_name} — ${buildDailyRecordConfirmation(guardedRecord, lang)}${nearName}`;
+    const underPrice = await belowOwnPriceNotice(db, identity.company_id, guardedRecord, lang);
+    const confirmation = `${identity.company_name} — ${buildDailyRecordConfirmation(guardedRecord, lang)}${nearName}${underPrice}`;
     return { content: confirmation, terminalReply: confirmation };
   }
   return {
@@ -2048,6 +2085,30 @@ Deno.serve(async (req) => {
               stockCount, previous === null || previous === undefined ? null : Number(previous), lang,
             ));
             await audit(db, identity, waMessageId, 'stock_count', stockCount.product, 'applied');
+          }
+          await finish('skipped');
+          continue;
+        }
+
+        // What the shop CHARGES, as opposed to what it pays. Checked before the
+        // record parser because a price list names a product and numbers just
+        // like a sale does, and reading it as a sale would invent revenue.
+        const sellingPrice = parseSellingPrice(body);
+        if (sellingPrice) {
+          const { data: saved, error } = await db.rpc('wa_set_selling_price', {
+            p_phone: phone,
+            p_name: sellingPrice.product,
+            p_retail: sellingPrice.retail,
+            p_wholesale: sellingPrice.wholesale,
+            p_min_qty: sellingPrice.minQty,
+          });
+          if (error) {
+            await replyQuietly(phone, productCostErrorMessage(error, lang));
+            await audit(db, identity, waMessageId, 'selling_price', sellingPrice.product, 'failed');
+          } else {
+            void saved;
+            await replyQuietly(phone, sellingPriceSaved(sellingPrice, lang));
+            await audit(db, identity, waMessageId, 'selling_price', sellingPrice.product, 'applied');
           }
           await finish('skipped');
           continue;

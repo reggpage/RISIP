@@ -134,8 +134,16 @@ function binarise(image: Decoded, window = 25): Decoded {
   return { data: out, width, height };
 }
 
-function attempt(image: Decoded): string | null {
-  const found = jsQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
+/**
+ * Measured, because the difference decides the whole budget: on a noisy frame
+ * jsQR takes 1999ms at 1000x1000 with attemptBoth and 962ms without; at 900x675
+ * it is 484ms and 285ms. A printed receipt QR is dark on light, so inversion is
+ * the rare case — it is tried once, on the whole frame, and never per tile.
+ */
+function attempt(image: Decoded, invert = false): string | null {
+  const found = jsQR(image.data, image.width, image.height, {
+    inversionAttempts: invert ? 'attemptBoth' : 'dontInvert',
+  });
   return parseTraQrPayload(found?.data);
 }
 
@@ -158,13 +166,13 @@ function fit(image: Decoded, longest: number): Decoded {
  * handed jsQR the full frame and took fifteen to twenty seconds, which is not
  * time an upload can spend.
  */
-export function scanDecodedImage(image: Decoded, budgetMs = 1200): string | null {
+export function scanDecodedImage(image: Decoded, budgetMs = 1500): string | null {
   const started = Date.now();
   const spent = () => Date.now() - started > budgetMs;
 
-  const whole = fit(image, 1100);
-  for (const candidate of [whole, binarise(whole)]) {
-    const code = attempt(candidate);
+  const whole = fit(image, 900);
+  for (const [candidate, invert] of [[whole, false], [binarise(whole), true]] as const) {
+    const code = attempt(candidate, invert);
     if (code) return code;
     if (spent()) return null;
   }
@@ -173,7 +181,7 @@ export function scanDecodedImage(image: Decoded, budgetMs = 1200): string | null
   // sixty tiles and taking extract-receipt down with it — HTTP 546, receipts
   // stuck in Processing, nothing extracted at all. A scan that cannot find the
   // square is worth giving up on; a receipt that never gets read is not.
-  let budgetTiles = 12;
+  let budgetTiles = 8;
 
   // Thirds, overlapping by half. The tile is fitted to a size it usually
   // already is, so a small square keeps its pixels: shrinking the tile was what
@@ -186,7 +194,11 @@ export function scanDecodedImage(image: Decoded, budgetMs = 1200): string | null
       // Checked before the work, not only after it: binarising a tile is the
       // expensive step and one more of them was overrunning the budget.
       if (spent() || budgetTiles <= 0) return null;
-      const piece = fit(crop(image, left, top, tile, tile), 1000);
+      // 800, not 1000: jsQR with attemptBoth on a megapixel tile was taking
+      // well over a second each, so the budget could only ever be honoured to
+      // within one very expensive tile. A third of an 800px tile is still ten
+      // pixels a module for a version-3 QR — far more than the three it needs.
+      const piece = fit(crop(image, left, top, tile, tile), 700);
       if (piece.width < 40 || piece.height < 40) continue;
       budgetTiles -= 1;
       const code = attempt(piece);
