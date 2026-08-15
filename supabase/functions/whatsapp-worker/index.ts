@@ -350,6 +350,67 @@ async function processJob(db: Admin, job: any): Promise<void> {
 
   mark('extraction_done');
 
+  // 4b. Verify with TRA — AFTER extraction has been saved, never during it.
+  //
+  // This used to run inside extract-receipt, and that was the wrong place: that
+  // function already spends ten to fifteen seconds on the vision call, and image
+  // processing plus two network round trips on top pushed some invocations past
+  // the worker limit. A killed worker writes nothing, so the receipt sat in
+  // Processing for ever and the upload was lost outright.
+  //
+  // Here the extraction is already safe on disk. Every failure below costs only
+  // the verification.
+  try {
+    const { data: extracted } = await db.from('receipts')
+      .select('vendor_name, vendor_tin, receipt_number, receipt_date, receipt_time, total_amount, verification_code, low_confidence_fields')
+      .eq('id', receiptId).maybeSingle();
+    const row = (extracted ?? {}) as Record<string, any>;
+
+    // The QR beats the print: it is checksummed, so it is right or absent.
+    const qrCode = readReceiptQr(bytes, check.mediaType);
+    const code = qrCode ?? (row.verification_code ? String(row.verification_code) : null);
+
+    if (code && row.receipt_time) {
+      const lookup = await fetchTraReceipt(code, String(row.receipt_time));
+      if (lookup.ok) {
+        const official = lookup.receipt;
+        const differences = compareWithTra({
+          vendorName: row.vendor_name,
+          vendorTin: row.vendor_tin,
+          receiptNumber: row.receipt_number,
+          totalInclTax: row.total_amount === null ? null : Number(row.total_amount),
+          verificationCode: row.verification_code,
+          receiptDate: row.receipt_date,
+        }, official);
+        // Verified figures are TRA's own, so the model's doubt about them is spent.
+        const settled = new Set(['total_amount', 'verification_code', 'vendor_name', 'vendor_tin', 'receipt_number']);
+        await db.from('receipts').update({
+          vendor_name: official.vendorName ?? undefined,
+          vendor_tin: official.vendorTin ?? undefined,
+          vendor_vrn: official.vendorVrn ?? undefined,
+          receipt_number: official.receiptNumber ?? undefined,
+          receipt_date: official.receiptDate ?? undefined,
+          total_amount: official.totalInclTax ?? undefined,
+          tax_amount: official.totalTax ?? undefined,
+          verification_code: official.verificationCode ?? code,
+          low_confidence_fields: (row.low_confidence_fields ?? []).filter((f: string) => !settled.has(f)),
+          tra_status: 'verified',
+          tra_verified_at: new Date().toISOString(),
+          tra_differences: differences.length ? differences : null,
+        }).eq('id', receiptId);
+      } else {
+        await db.from('receipts').update({
+          tra_status: lookup.reason === 'unreachable' ? 'unreachable' : 'not_found',
+          verification_code: qrCode ?? row.verification_code,
+        }).eq('id', receiptId);
+      }
+    } else {
+      await db.from('receipts').update({ tra_status: 'not_applicable' }).eq('id', receiptId);
+    }
+  } catch (err) {
+    console.error('tra verify failed', err instanceof Error ? err.message : 'unknown');
+  }
+
   // 5. Read back whatever extraction produced.
   const { data: receipt } = await db
     .from('receipts')
