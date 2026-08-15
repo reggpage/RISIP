@@ -3,6 +3,7 @@ import {
   formatQuantity,
   marginPercent,
   needsCost,
+  mergeCandidates,
   soldBelowCost,
   type CatalogProduct,
 } from '../products';
@@ -20,6 +21,7 @@ const product = (overrides: Partial<CatalogProduct> = {}): CatalogProduct => ({
   costEffectiveFrom: null,
   avgUnitPrice: 3500,
   estimatedMargin: null,
+  archived: false,
   ...overrides,
 });
 
@@ -73,5 +75,44 @@ describe('what the row can and cannot say', () => {
 
   it('does not call a product underpriced when the cost is unknown', () => {
     expect(soldBelowCost(product({ unitCost: null }))).toBe(false);
+  });
+});
+
+describe('choosing what to merge into', () => {
+  const all = [
+    product({ productKey: 'nguvu ya sala', productName: 'nguvu ya sala', revenue: 96000 }),
+    product({ productKey: '- nguvu ya sala', productName: '- nguvu ya sala', revenue: 63000 }),
+    product({ productKey: 'daftari', productName: 'daftari' }),
+    product({ productKey: 'kalamu', productName: 'kalamu' }),
+    product({ productKey: 'ngoma', productName: 'ngoma', archived: true }),
+  ];
+
+  it('puts the near-identical name first', () => {
+    // The real case: one leading dash split a product in two.
+    const stray = all[1];
+    expect(mergeCandidates(stray, all)[0].productKey).toBe('nguvu ya sala');
+  });
+
+  it('never offers the product itself', () => {
+    expect(mergeCandidates(all[0], all).map((c) => c.productKey)).not.toContain('nguvu ya sala');
+  });
+
+  it('does not offer an already hidden product as a destination', () => {
+    expect(mergeCandidates(all[0], all).map((c) => c.productKey)).not.toContain('ngoma');
+  });
+
+  it('still offers unrelated products, just lower down', () => {
+    const ranked = mergeCandidates(all[1], all).map((c) => c.productKey);
+    expect(ranked).toContain('daftari');
+    expect(ranked.indexOf('nguvu ya sala')).toBeLessThan(ranked.indexOf('daftari'));
+  });
+});
+
+describe('hidden products', () => {
+  it('is a flag on the row, not a missing row', () => {
+    // Archiving hides; it never removes. The past sales still exist.
+    const hidden = product({ archived: true, revenue: 84000 });
+    expect(hidden.archived).toBe(true);
+    expect(hidden.revenue).toBe(84000);
   });
 });

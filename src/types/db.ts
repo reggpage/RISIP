@@ -746,7 +746,7 @@ export type Database = {
        * buying prices on record. Numerics arrive as strings over PostgREST.
        */
       company_product_catalog: {
-        Args: { p_from: string | null; p_to: string | null };
+        Args: { p_from: string | null; p_to: string | null; p_include_archived?: boolean };
         Returns: Array<{
           product_key: string;
           product_name: string;
@@ -760,8 +760,17 @@ export type Database = {
           cost_effective_from: string | null;
           avg_unit_price: string | null;
           estimated_margin: string | null;
+          archived: boolean;
         }>;
       };
+      /** Finance-only: fold one product name into another. Moves no money. */
+      merge_products: {
+        Args: { p_from_key: string; p_into_key: string; p_reason: string | null };
+        Returns: { merged_into: string; lines_moved: number; costs_moved: number; revenue: number };
+      };
+      /** Finance-only: hide a product. Its past sales keep counting. */
+      archive_product: { Args: { p_key: string; p_reason: string | null }; Returns: unknown };
+      unarchive_product: { Args: { p_key: string }; Returns: unknown };
       /** Finance-only: append a new buying price. Never overwrites the old one. */
       set_product_cost: {
         Args: { p_name: string; p_unit_cost: number; p_unit: string | null; p_note: string | null };

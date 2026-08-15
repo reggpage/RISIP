@@ -16,6 +16,8 @@ export type CatalogProduct = {
   costEffectiveFrom: string | null;
   avgUnitPrice: number | null;
   estimatedMargin: number | null;
+  /** Hidden from the list, but still counted in every report. */
+  archived: boolean;
 };
 
 export type CatalogRange = 'all' | 'month' | 'week';
@@ -88,12 +90,13 @@ type Row = {
   cost_effective_from: string | null;
   avg_unit_price: string | number | null;
   estimated_margin: string | number | null;
+  archived: boolean;
 };
 
 const num = (value: string | number | null): number | null =>
   value === null || value === undefined ? null : Number(value);
 
-export function useProductCatalog(range: CatalogRange) {
+export function useProductCatalog(range: CatalogRange, includeArchived = false) {
   const [products, setProducts] = useState<CatalogProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -103,7 +106,7 @@ export function useProductCatalog(range: CatalogRange) {
     setError(null);
     const { from, to } = rangeBounds(range);
     const { data, error: rpcError } = await supabase
-      .rpc('company_product_catalog', { p_from: from, p_to: to });
+      .rpc('company_product_catalog', { p_from: from, p_to: to, p_include_archived: includeArchived });
     if (rpcError) {
       setError(rpcError);
       setProducts([]);
@@ -121,21 +124,23 @@ export function useProductCatalog(range: CatalogRange) {
         costEffectiveFrom: row.cost_effective_from,
         avgUnitPrice: num(row.avg_unit_price),
         estimatedMargin: num(row.estimated_margin),
+        archived: Boolean(row.archived),
       })));
     }
     setLoading(false);
-  }, [range]);
+  }, [range, includeArchived]);
 
   useEffect(() => { void load(); }, [load]);
 
   const summary = useMemo(() => {
-    const priced = products.filter((product) => !needsCost(product));
-    const revenue = products.reduce((sum, product) => sum + product.revenue, 0);
+    const live = products.filter((product) => !product.archived);
+    const priced = live.filter((product) => !needsCost(product));
+    const revenue = live.reduce((sum, product) => sum + product.revenue, 0);
     const pricedRevenue = priced.reduce((sum, product) => sum + product.revenue, 0);
     return {
-      total: products.length,
-      missingCost: products.length - priced.length,
-      belowCost: products.filter(soldBelowCost).length,
+      total: live.length,
+      missingCost: live.length - priced.length,
+      belowCost: live.filter(soldBelowCost).length,
       revenue,
       // The share of trade the profit estimate can actually see. Reporting a
       // profit without this number would present a partial figure as a whole one.
@@ -156,4 +161,58 @@ export async function setProductCost(name: string, unitCost: number, unit: strin
   });
   if (error) throw error;
   return data as unknown as { id: string; product: string; unit_cost: number; previous_cost: number | null };
+}
+
+/**
+ * Folds one product name into another.
+ *
+ * The sales are re-labelled and nothing else moves — the server compares total
+ * revenue before and after and refuses the merge if it changed. There is no
+ * delete: a product carrying real sales cannot be removed without silently
+ * changing a month that has already been reported.
+ */
+export async function mergeProducts(fromKey: string, intoKey: string, reason: string | null) {
+  const { data, error } = await supabase.rpc('merge_products', {
+    p_from_key: fromKey,
+    p_into_key: intoKey,
+    p_reason: reason,
+  });
+  if (error) throw error;
+  return data as unknown as {
+    merged_into: string; lines_moved: number; costs_moved: number; revenue: number;
+  };
+}
+
+/** Takes a product out of the list. Its past sales keep counting everywhere. */
+export async function archiveProduct(key: string, reason: string | null) {
+  const { error } = await supabase.rpc('archive_product', { p_key: key, p_reason: reason });
+  if (error) throw error;
+}
+
+export async function unarchiveProduct(key: string) {
+  const { error } = await supabase.rpc('unarchive_product', { p_key: key });
+  if (error) throw error;
+}
+
+/**
+ * Products this one could sensibly be folded into.
+ *
+ * Ranked by how similar the names are, because the reason two rows exist is
+ * almost always a stray character rather than two genuinely different goods.
+ */
+export function mergeCandidates(product: CatalogProduct, all: CatalogProduct[]): CatalogProduct[] {
+  const strip = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const target = strip(product.productKey);
+  return all
+    .filter((other) => other.productKey !== product.productKey && !other.archived)
+    .map((other) => {
+      const key = strip(other.productKey);
+      const score = key === target ? 3
+        : key.includes(target) || target.includes(key) ? 2
+        : key.slice(0, 5) === target.slice(0, 5) && target.length >= 5 ? 1
+        : 0;
+      return { other, score };
+    })
+    .sort((a, b) => b.score - a.score || a.other.productName.localeCompare(b.other.productName))
+    .map((item) => item.other);
 }

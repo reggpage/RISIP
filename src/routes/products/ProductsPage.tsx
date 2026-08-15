@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Package, RefreshCw, Search, TrendingDown } from 'lucide-react';
+import { AlertTriangle, Archive, ArchiveRestore, Merge, Package, Plus, RefreshCw, Search, TrendingDown } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -7,6 +7,8 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import UnderlineTabs from '@/components/ui/UnderlineTabs';
 import EmptyState from '@/components/ui/EmptyState';
 import { useAuth } from '@/lib/auth';
+import { useToast } from '@/components/ui/Toast';
+import { friendlyError } from '@/lib/errors';
 import { formatDate, formatMoney } from '@/lib/format';
 import { getLang } from '@/lib/lang';
 import {
@@ -14,11 +16,15 @@ import {
   marginPercent,
   needsCost,
   soldBelowCost,
+  archiveProduct,
+  unarchiveProduct,
   useProductCatalog,
   type CatalogProduct,
   type CatalogRange,
 } from '@/features/products/products';
 import ProductCostDialog from '@/components/products/ProductCostDialog';
+import ProductMergeDialog from '@/components/products/ProductMergeDialog';
+import AddProductDialog from '@/components/products/AddProductDialog';
 
 const lang = getLang();
 const ui = lang === 'sw' ? {
@@ -42,6 +48,11 @@ const ui = lang === 'sw' ? {
   noMatch: 'Hakuna bidhaa yenye jina hilo.',
   onlyFinance: 'Bei za kununua zinaonekana kwa owner na accountant tu.',
   measured: 'Inapimwa', counted: 'Inahesabiwa', period: 'Kipindi',
+  add: 'Ongeza bidhaa', merge: 'Unganisha', archive: 'Ficha', restore: 'Rudisha',
+  showArchived: 'Onyesha zilizofichwa', archivedBadge: 'Imefichwa',
+  archived: 'Bidhaa imefichwa. Mauzo yake ya zamani bado yanahesabiwa.',
+  restored: 'Bidhaa imerudishwa kwenye orodha.',
+  noDelete: 'Hakuna kufuta. Bidhaa yenye mauzo halisi ikifutwa, mapato ya miezi iliyopita yangebadilika kimya.',
 } : {
   title: 'Products',
   description: 'Everything you sell, built from confirmed sales.',
@@ -63,6 +74,11 @@ const ui = lang === 'sw' ? {
   noMatch: 'No product matches that name.',
   onlyFinance: 'Buying prices are visible to an owner or accountant only.',
   measured: 'Measured', counted: 'Counted', period: 'Period',
+  add: 'Add product', merge: 'Merge', archive: 'Hide', restore: 'Restore',
+  showArchived: 'Show hidden', archivedBadge: 'Hidden',
+  archived: 'Product hidden. Its past sales still count.',
+  restored: 'Product is back on the list.',
+  noDelete: 'There is no delete. Removing a product with real sales would silently change months already reported.',
 };
 
 const ranges: { value: CatalogRange; label: string }[] = [
@@ -105,19 +121,29 @@ function SummaryTile({ label, value, hint, tone }: {
   );
 }
 
-function ProductRow({ product, canPrice, onPrice }: {
-  product: CatalogProduct; canPrice: boolean; onPrice: (product: CatalogProduct) => void;
+function ProductRow({ product, canPrice, onPrice, onMerge, onArchive, onRestore }: {
+  product: CatalogProduct;
+  canPrice: boolean;
+  onPrice: (product: CatalogProduct) => void;
+  onMerge: (product: CatalogProduct) => void;
+  onArchive: (product: CatalogProduct) => void;
+  onRestore: (product: CatalogProduct) => void;
 }) {
   const missing = needsCost(product);
   const below = soldBelowCost(product);
   const percent = marginPercent(product);
 
   return (
-    <div className="flex flex-col gap-3 border-b border-surface-border px-4 py-3 last:border-b-0 sm:flex-row sm:items-center">
+    <div className={`flex flex-col gap-3 border-b border-surface-border px-4 py-3 last:border-b-0 sm:flex-row sm:items-center ${product.archived ? 'opacity-60' : ''}`}>
       {/* Name and what kind of thing it is. */}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate font-medium text-ink">{product.productName}</span>
+          {product.archived ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-surface-muted px-2 py-0.5 text-[11px] font-medium text-ink-muted">
+              <Archive className="h-3 w-3" aria-hidden />{ui.archivedBadge}
+            </span>
+          ) : null}
           {missing ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
               <AlertTriangle className="h-3 w-3" aria-hidden />{ui.needsCostBadge}
@@ -155,10 +181,24 @@ function ProductRow({ product, canPrice, onPrice }: {
       </div>
 
       {canPrice ? (
-        <div className="sm:w-40 sm:text-right">
-          <Button variant={missing ? 'primary' : 'secondary'} onClick={() => onPrice(product)}>
-            {missing ? ui.setCost : ui.editCost}
-          </Button>
+        <div className="flex flex-wrap items-center gap-1.5 sm:w-56 sm:justify-end">
+          {product.archived ? (
+            <Button variant="secondary" onClick={() => onRestore(product)}>
+              <ArchiveRestore className="h-4 w-4" aria-hidden />{ui.restore}
+            </Button>
+          ) : (
+            <>
+              <Button variant={missing ? 'primary' : 'secondary'} onClick={() => onPrice(product)}>
+                {missing ? ui.setCost : ui.editCost}
+              </Button>
+              <Button variant="ghost" aria-label={`${ui.merge} ${product.productName}`} onClick={() => onMerge(product)}>
+                <Merge className="h-4 w-4" aria-hidden />
+              </Button>
+              <Button variant="ghost" aria-label={`${ui.archive} ${product.productName}`} onClick={() => onArchive(product)}>
+                <Archive className="h-4 w-4" aria-hidden />
+              </Button>
+            </>
+          )}
         </div>
       ) : null}
     </div>
@@ -172,7 +212,27 @@ export default function ProductsPage() {
   const [range, setRange] = useState<CatalogRange>('all');
   const [query, setQuery] = useState('');
   const [pricing, setPricing] = useState<CatalogProduct | null>(null);
-  const state = useProductCatalog(range);
+  const [merging, setMerging] = useState<CatalogProduct | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const toast = useToast();
+  const state = useProductCatalog(range, showArchived);
+
+  async function hide(product: CatalogProduct) {
+    try {
+      await archiveProduct(product.productKey, null);
+      toast.success(ui.archived);
+      void state.reload();
+    } catch (error) { toast.error(friendlyError(error)); }
+  }
+
+  async function restore(product: CatalogProduct) {
+    try {
+      await unarchiveProduct(product.productKey);
+      toast.success(ui.restored);
+      void state.reload();
+    } catch (error) { toast.error(friendlyError(error)); }
+  }
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -187,9 +247,16 @@ export default function ProductsPage() {
           <h1 className="text-2xl font-semibold text-ink">{ui.title}</h1>
           <p className="mt-1 text-sm text-ink-muted">{ui.description}</p>
         </div>
-        <Button variant="secondary" onClick={() => void state.reload()}>
-          <RefreshCw className="h-4 w-4" aria-hidden />{ui.refresh}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => void state.reload()}>
+            <RefreshCw className="h-4 w-4" aria-hidden />{ui.refresh}
+          </Button>
+          {canPrice ? (
+            <Button onClick={() => setAdding(true)}>
+              <Plus className="h-4 w-4" aria-hidden />{ui.add}
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -225,7 +292,21 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {!canPrice ? <p className="text-xs text-ink-muted">{ui.onlyFinance}</p> : null}
+      <div className="mt-3 mb-3 flex flex-wrap items-center justify-between gap-2">
+        {canPrice ? (
+          <label className="flex items-center gap-2 text-xs text-ink-muted">
+            <input
+              type="checkbox"
+              checked={showArchived}
+              onChange={(event) => setShowArchived(event.target.checked)}
+              className="h-3.5 w-3.5 accent-role-admin"
+            />
+            {ui.showArchived}
+          </label>
+        ) : (
+          <p className="text-xs text-ink-muted">{ui.onlyFinance}</p>
+        )}
+      </div>
 
       <Card className="p-0">
         {state.loading ? (
@@ -247,16 +328,39 @@ export default function ProductsPage() {
               product={product}
               canPrice={canPrice}
               onPrice={setPricing}
+              onMerge={setMerging}
+              onArchive={(item) => void hide(item)}
+              onRestore={(item) => void restore(item)}
             />
           ))
         )}
       </Card>
+
+      {/* Said once, at the bottom, so nobody hunts for a delete button that is
+          deliberately not there. */}
+      {canPrice ? <p className="mt-3 text-[11px] leading-snug text-ink-muted">{ui.noDelete}</p> : null}
 
       {pricing ? (
         <ProductCostDialog
           product={pricing}
           onClose={() => setPricing(null)}
           onSaved={() => { setPricing(null); void state.reload(); }}
+        />
+      ) : null}
+
+      {merging ? (
+        <ProductMergeDialog
+          product={merging}
+          all={state.products}
+          onClose={() => setMerging(null)}
+          onDone={() => { setMerging(null); void state.reload(); }}
+        />
+      ) : null}
+
+      {adding ? (
+        <AddProductDialog
+          onClose={() => setAdding(false)}
+          onAdded={() => { setAdding(false); void state.reload(); }}
         />
       ) : null}
     </div>
