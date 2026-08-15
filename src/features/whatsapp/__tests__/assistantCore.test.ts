@@ -36,6 +36,7 @@ describe('Risip conversational AI core', () => {
   it('exposes bounded tools and no protected finance action', () => {
     expect(ASSISTANT_TOOL_NAMES).toContain('get_product_performance');
     expect(ASSISTANT_TOOL_NAMES).toContain('get_product_cost');
+    expect(ASSISTANT_TOOL_NAMES).toContain('get_hypothetical_product_profit');
     expect(ASSISTANT_TOOL_NAMES).toContain('propose_daily_record');
     expect(ASSISTANT_TOOL_NAMES).not.toContain('approve_receipt');
     expect(ASSISTANT_TOOL_NAMES).not.toContain('pay_claim');

@@ -108,6 +108,10 @@ import {
   productReadMatchNotice,
   type ProductReadResolution,
 } from '../_shared/whatsappProductResolver.ts';
+import {
+  buildHypotheticalProfitReply,
+  parseHypotheticalProfitRequest,
+} from '../_shared/whatsappHypotheticalProfit.ts';
 import { parseTypedVerificationCode, typedCodeRejected } from '../_shared/typedCode.ts';
 import {
   type StockCountBatch,
@@ -692,6 +696,61 @@ async function productAnalyticsToolReply(
   return [...notices, productAnalyticsReply(resolvedRequest, items, lang)].filter(Boolean).join('\n');
 }
 
+async function hypotheticalProfitToolReply(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  asked: string,
+  lang: Lang,
+): Promise<string> {
+  if (!canUseCompanyFinanceReads(identity.role)) {
+    return lang === 'sw'
+      ? 'Makisio ya faida ya kampuni yanaonekana kwa owner au accountant tu.'
+      : 'Company profit estimates are available only to an owner or accountant.';
+  }
+  const productName = asked.trim().slice(0, 100);
+  if (productName.length < 2 || !/[\p{L}]/u.test(productName)) {
+    return lang === 'sw' ? 'Unataka kukadiria faida ya bidhaa gani?' : 'Which product profit do you want to estimate?';
+  }
+  const resolved = await resolveProductForRead(db, identity, productName);
+  if (resolved.error) {
+    return lang === 'sw' ? 'Sikuweza kutafuta bidhaa hiyo sasa.' : 'I could not look up that product right now.';
+  }
+  if (resolved.resolution.kind === 'ambiguous') return productReadClarification(resolved.resolution, lang);
+  if (resolved.resolution.kind === 'not_found') {
+    return lang === 'sw'
+      ? `Sikupata bidhaa “${productName}” kwenye orodha ya biashara hii.`
+      : `I could not find “${productName}” in this business's product catalogue.`;
+  }
+
+  const match = resolved.resolution.match;
+  const [stockResult, costResult, priceResult] = await Promise.all([
+    db.rpc('wa_stock_on_hand', { p_company_id: identity.company_id, p_product: match.productKey }),
+    db.from('product_costs').select('unit_cost').eq('company_id', identity.company_id)
+      .eq('product_key', match.productKey).order('effective_from', { ascending: false })
+      .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    db.from('product_selling_prices').select('retail_price, wholesale_price').eq('company_id', identity.company_id)
+      .eq('product_key', match.productKey).order('effective_from', { ascending: false })
+      .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  if (stockResult.error || costResult.error || priceResult.error) {
+    return lang === 'sw'
+      ? `Sikuweza kusoma vipande vya makisio ya ${match.productName} sasa.`
+      : `I could not load the inputs for the ${match.productName} estimate right now.`;
+  }
+  const stock = ((stockResult.data ?? []) as Array<Record<string, unknown>>)[0] ?? null;
+  const cost = costResult.data as { unit_cost?: number } | null;
+  const price = priceResult.data as { retail_price?: number; wholesale_price?: number | null } | null;
+  return productReadMatchNotice(resolved.resolution, lang) + buildHypotheticalProfitReply({
+    productName: match.productName,
+    onHand: stock ? Number(stock.on_hand) : null,
+    hasCount: Boolean(stock?.has_count),
+    unit: stock?.unit ? String(stock.unit) : null,
+    unitCost: cost?.unit_cost === undefined ? null : Number(cost.unit_cost),
+    retailPrice: price?.retail_price === undefined ? null : Number(price.retail_price),
+    wholesalePrice: price?.wholesale_price == null ? null : Number(price.wholesale_price),
+  }, lang);
+}
+
 /**
  * The window a question is about.
  *
@@ -908,6 +967,11 @@ async function executeAssistantTool(
         unit: data.unit ? String(data.unit) : null, currency: String(data.currency), effectiveFrom: String(data.effective_from),
       } : null, lang),
     };
+  }
+  if (name === 'get_hypothetical_product_profit') {
+    const productName = typeof input.product_name === 'string' ? input.product_name : '';
+    const content = await hypotheticalProfitToolReply(db, identity, productName, lang);
+    return { content, terminalReply: content };
   }
   if (name === 'get_open_debts') {
     const partyName = typeof input.party_name === 'string' ? input.party_name.trim().slice(0, 100) || null : null;
@@ -1559,6 +1623,12 @@ Deno.serve(async (req) => {
           if (!identity) return;
           // Read-only, so it runs now rather than after the confirmation. The
           // notice above already says the figure excludes what is pending.
+          const hypotheticalProduct = parseHypotheticalProfitRequest(mixed.question);
+          if (hypotheticalProduct) {
+            await replyQuietly(to, await hypotheticalProfitToolReply(db, identity, hypotheticalProduct, lang));
+            await audit(db, identity, waMessageId, 'rider_question', 'hypothetical_product_profit', 'applied');
+            return;
+          }
           const product = parseProductAnalyticsRequest(mixed.question);
           if (product) {
             await answerProductAnalytics(db, identity, to, product, lang);
@@ -2370,6 +2440,14 @@ Deno.serve(async (req) => {
             prev ? Number((prev as { unit_cost: number }).unit_cost) : null,
             lang,
           ));
+          await finish('skipped');
+          continue;
+        }
+
+        const hypotheticalProduct = mixed ? null : parseHypotheticalProfitRequest(body);
+        if (hypotheticalProduct) {
+          await reply(phone, await hypotheticalProfitToolReply(db, identity, hypotheticalProduct, lang));
+          await audit(db, identity, waMessageId, 'read_only_tool', 'hypothetical_product_profit', 'applied');
           await finish('skipped');
           continue;
         }
