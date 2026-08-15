@@ -106,7 +106,9 @@ function binarise(image: Decoded, window = 25): Decoded {
     grey[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
   }
   // Integral image, so each window mean is four lookups regardless of its size.
-  const sums = new Float64Array((width + 1) * (height + 1));
+  // Uint32 is exact here — the largest possible sum is about 950 million — and
+  // half the memory of the Float64 it replaced.
+  const sums = new Uint32Array((width + 1) * (height + 1));
   for (let y = 0; y < height; y++) {
     let row = 0;
     for (let x = 0; x < width; x++) {
@@ -156,16 +158,22 @@ function fit(image: Decoded, longest: number): Decoded {
  * handed jsQR the full frame and took fifteen to twenty seconds, which is not
  * time an upload can spend.
  */
-export function scanDecodedImage(image: Decoded, budgetMs = 6000): string | null {
+export function scanDecodedImage(image: Decoded, budgetMs = 1200): string | null {
   const started = Date.now();
   const spent = () => Date.now() - started > budgetMs;
 
-  const whole = fit(image, 1400);
+  const whole = fit(image, 1100);
   for (const candidate of [whole, binarise(whole)]) {
     const code = attempt(candidate);
     if (code) return code;
     if (spent()) return null;
   }
+  // Hard cap on the work, not only on the clock. An edge function is killed for
+  // CPU as well as for time, and a large photo with no readable QR was running
+  // sixty tiles and taking extract-receipt down with it — HTTP 546, receipts
+  // stuck in Processing, nothing extracted at all. A scan that cannot find the
+  // square is worth giving up on; a receipt that never gets read is not.
+  let budgetTiles = 12;
 
   // Thirds, overlapping by half. The tile is fitted to a size it usually
   // already is, so a small square keeps its pixels: shrinking the tile was what
@@ -177,14 +185,15 @@ export function scanDecodedImage(image: Decoded, budgetMs = 6000): string | null
     for (let left = 0; left + 40 < image.width; left += step) {
       // Checked before the work, not only after it: binarising a tile is the
       // expensive step and one more of them was overrunning the budget.
-      if (spent()) return null;
-      const piece = fit(crop(image, left, top, tile, tile), 1200);
+      if (spent() || budgetTiles <= 0) return null;
+      const piece = fit(crop(image, left, top, tile, tile), 1000);
       if (piece.width < 40 || piece.height < 40) continue;
+      budgetTiles -= 1;
       const code = attempt(piece);
       if (code) return code;
-      if (spent()) return null;
-      const cleaned = attempt(binarise(piece));
-      if (cleaned) return cleaned;
+      // Only the plain pass per tile. Binarising every tile is what pushed the
+      // whole scan past the CPU an edge function is given; the local threshold
+      // still runs once, on the whole frame, where it does the most good.
     }
   }
   return null;
