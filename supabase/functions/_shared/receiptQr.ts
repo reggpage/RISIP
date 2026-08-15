@@ -80,16 +80,114 @@ function downsample(image: Decoded, factor: number): Decoded {
   return { data, width, height };
 }
 
-/** Runs jsQR over an already-decoded image, trying a couple of scales. */
-export function scanDecodedImage(image: Decoded): string | null {
-  // Full resolution first, then halved and quartered. A photographed QR often
-  // decodes better small, where sensor noise stops looking like modules.
-  for (const factor of [1, 2, 4]) {
-    const scaled = downsample(image, factor);
-    if (scaled.width < 40 || scaled.height < 40) break;
-    const found = jsQR(scaled.data, scaled.width, scaled.height, { inversionAttempts: 'attemptBoth' });
-    const code = parseTraQrPayload(found?.data);
+/** A rectangle of the image, copied out so it can be scanned on its own. */
+function crop(image: Decoded, left: number, top: number, width: number, height: number): Decoded {
+  const w = Math.min(width, image.width - left);
+  const h = Math.min(height, image.height - top);
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    const from = ((top + y) * image.width + left) * 4;
+    data.set(image.data.subarray(from, from + w * 4), y * w * 4);
+  }
+  return { data, width: w, height: h };
+}
+
+/**
+ * Greyscale with a local threshold.
+ *
+ * jsQR binarises globally, which a thermal receipt defeats: it is photographed
+ * under a window, so one corner is blown out and another is in shadow, and TRA
+ * prints pale blue watermarks straight over the square. Thresholding against a
+ * neighbourhood mean rather than the whole frame keeps the modules black and the
+ * paper white in both corners at once.
+ */
+function binarise(image: Decoded, window = 25): Decoded {
+  const { width, height, data } = image;
+  const grey = new Float32Array(width * height);
+  for (let i = 0; i < width * height; i++) {
+    grey[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
+  }
+  // Integral image, so each window mean is four lookups regardless of its size.
+  const sums = new Float64Array((width + 1) * (height + 1));
+  for (let y = 0; y < height; y++) {
+    let row = 0;
+    for (let x = 0; x < width; x++) {
+      row += grey[y * width + x];
+      sums[(y + 1) * (width + 1) + (x + 1)] = sums[y * (width + 1) + (x + 1)] + row;
+    }
+  }
+  const half = Math.max(4, Math.floor(window / 2));
+  const out = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    const y0 = Math.max(0, y - half); const y1 = Math.min(height - 1, y + half);
+    for (let x = 0; x < width; x++) {
+      const x0 = Math.max(0, x - half); const x1 = Math.min(width - 1, x + half);
+      const area = (y1 - y0 + 1) * (x1 - x0 + 1);
+      const total = sums[(y1 + 1) * (width + 1) + (x1 + 1)] - sums[y0 * (width + 1) + (x1 + 1)]
+        - sums[(y1 + 1) * (width + 1) + x0] + sums[y0 * (width + 1) + x0];
+      // Slightly below the local mean, so faint watermark blue reads as paper.
+      const value = grey[y * width + x] < (total / area) * 0.92 ? 0 : 255;
+      const at = (y * width + x) * 4;
+      out[at] = value; out[at + 1] = value; out[at + 2] = value; out[at + 3] = 255;
+    }
+  }
+  return { data: out, width, height };
+}
+
+function attempt(image: Decoded): string | null {
+  const found = jsQR(image.data, image.width, image.height, { inversionAttempts: 'attemptBoth' });
+  return parseTraQrPayload(found?.data);
+}
+
+/** Longest side capped, so jsQR is never handed a twelve-megapixel frame. */
+function fit(image: Decoded, longest: number): Decoded {
+  const factor = Math.max(image.width, image.height) / longest;
+  return factor > 1 ? downsample(image, factor) : image;
+}
+
+/**
+ * Finds the code in an already-decoded image.
+ *
+ * The whole frame first, then tiles. A receipt QR is a small square in a big
+ * photo — 3% of the width in a real case — and jsQR looks for finder patterns at
+ * the scale it is given, so a tile where the square fills a third of the frame
+ * succeeds where the full photo does not. Tiles overlap by half so a QR on a
+ * seam is whole in some tile.
+ *
+ * Bounded by a time budget rather than by trying everything: the earlier version
+ * handed jsQR the full frame and took fifteen to twenty seconds, which is not
+ * time an upload can spend.
+ */
+export function scanDecodedImage(image: Decoded, budgetMs = 6000): string | null {
+  const started = Date.now();
+  const spent = () => Date.now() - started > budgetMs;
+
+  const whole = fit(image, 1400);
+  for (const candidate of [whole, binarise(whole)]) {
+    const code = attempt(candidate);
     if (code) return code;
+    if (spent()) return null;
+  }
+
+  // Thirds, overlapping by half. The tile is fitted to a size it usually
+  // already is, so a small square keeps its pixels: shrinking the tile was what
+  // lost a QR three per cent of the photo wide — 3px a module became under 2,
+  // which is below what any decoder can resolve.
+  const tile = Math.floor(Math.min(image.width, image.height) / 3);
+  const step = Math.max(1, Math.floor(tile / 2));
+  for (let top = 0; top + 40 < image.height; top += step) {
+    for (let left = 0; left + 40 < image.width; left += step) {
+      // Checked before the work, not only after it: binarising a tile is the
+      // expensive step and one more of them was overrunning the budget.
+      if (spent()) return null;
+      const piece = fit(crop(image, left, top, tile, tile), 1200);
+      if (piece.width < 40 || piece.height < 40) continue;
+      const code = attempt(piece);
+      if (code) return code;
+      if (spent()) return null;
+      const cleaned = attempt(binarise(piece));
+      if (cleaned) return cleaned;
+    }
   }
   return null;
 }
@@ -117,10 +215,10 @@ export function readReceiptQr(bytes: Uint8Array, mimeType?: string | null): stri
       height: raw.height,
     };
 
-    // A 12-megapixel photo is scanned at about two, which is ample for a QR and
-    // keeps the working set within an edge function's means.
-    const pixels = image.width * image.height;
-    if (pixels > MAX_PIXELS) image = downsample(image, Math.ceil(Math.sqrt(pixels / MAX_PIXELS)));
+    // NOT downsampled here. The earlier version shrank a 12-megapixel photo to
+    // two before scanning, which took a QR that was 3% of the width down to
+    // about 80 pixels — below what jsQR can resolve. scanDecodedImage does its
+    // own fitting per tile, where shrinking helps instead of hurting.
 
     return scanDecodedImage(image);
   } catch {

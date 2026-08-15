@@ -86,3 +86,49 @@ describe('decoding a real QR', () => {
     expect(scanDecodedImage(renderQr('https://example.com/menu'))).toBeNull();
   });
 });
+
+describe('a square that is small in a big photo', () => {
+  /** A QR of `modulePx` per module, dropped into a photo-sized noisy frame. */
+  function photoWithQr(photoW: number, photoH: number, modulePx: number, quiet = 4) {
+    const qr = QRCode.create('https://verify.tra.go.tz/18935E214576', { errorCorrectionLevel: 'M' });
+    const size = qr.modules.size;
+    const data = new Uint8ClampedArray(photoW * photoH * 4);
+    for (let i = 0; i < photoW * photoH; i++) {
+      const v = 120 + ((i * 37) % 90);
+      data[i * 4] = v; data[i * 4 + 1] = v - 20; data[i * 4 + 2] = v - 40; data[i * 4 + 3] = 255;
+    }
+    const qrPx = (size + quiet * 2) * modulePx;
+    const ox = Math.floor(photoW * 0.55); const oy = Math.floor(photoH * 0.70);
+    const paint = (x: number, y: number, value: number) => {
+      const px = (y * photoW + x) * 4;
+      if (px + 3 >= data.length) return;
+      data[px] = value; data[px + 1] = value; data[px + 2] = value;
+    };
+    for (let y = 0; y < qrPx; y++) for (let x = 0; x < qrPx; x++) paint(ox + x, oy + y, 255);
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+      if (!qr.modules.get(x, y)) continue;
+      for (let dy = 0; dy < modulePx; dy++) for (let dx = 0; dx < modulePx; dx++) {
+        paint(ox + (x + quiet) * modulePx + dx, oy + (y + quiet) * modulePx + dy, 0);
+      }
+    }
+    return { data, width: photoW, height: photoH };
+  }
+
+  it('finds a QR that is 7% of a twelve-megapixel photo', () => {
+    // The whole frame at this size resolves the square to about one pixel per
+    // module, so this only works because the tiles are scanned near native size.
+    expect(scanDecodedImage(photoWithQr(3000, 4000, 6))).toBe('18935E214576');
+  });
+
+  it('finds one at 5%', () => {
+    expect(scanDecodedImage(photoWithQr(3000, 4000, 4))).toBe('18935E214576');
+  });
+
+  it('stays inside its time budget instead of trying everything', () => {
+    // The first version handed jsQR the full frame and took fifteen to twenty
+    // seconds, which is not time an upload can spend.
+    const started = Date.now();
+    scanDecodedImage(photoWithQr(4000, 3000, 3), 2000);
+    expect(Date.now() - started).toBeLessThan(4000);
+  });
+});
