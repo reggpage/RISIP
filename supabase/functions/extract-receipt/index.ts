@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { compareWithTra, fetchTraReceipt } from '../_shared/traVerify.ts';
+import { readReceiptQr } from '../_shared/receiptQr.ts';
 import { json, preflight } from '../_shared/cors.ts';
 import { CATEGORIES, normalizeMoney, normalizeTanzaniaReceipt } from '../_shared/tanzaniaReceiptKnowledge.ts';
 import { extractedStatusReason, resolveExtractedStatus } from '../_shared/receiptStatus.ts';
@@ -290,6 +291,24 @@ Deno.serve(async (req) => {
   );
   const finalStatus = resolveExtractedStatus(needsReview, approvalFlow);
 
+  // ── The QR square beats reading the print ───────────────────────────────
+  // A QR is decoded, not read: error-correcting and checksummed, so it is either
+  // right or absent — there is no "nearly". The verification code is the one
+  // field that must be exact, being the global duplicate key and the second
+  // factor for the TRA lookup, and it is the field the model most often fumbles
+  // (1097A5E214A5 for 18935E214576 on a real receipt).
+  const qrDifference: { field: string; extracted: unknown; official: unknown }[] = [];
+  const qrCode = readReceiptQr(bytes, mediaType);
+  if (qrCode) {
+    if (normalized.verification_code && normalized.verification_code.toUpperCase() !== qrCode) {
+      qrDifference.push({ field: 'verificationCode (QR)', extracted: normalized.verification_code, official: qrCode });
+    }
+    normalized.verification_code = qrCode;
+    // Decoded, so the model's doubt about this field no longer applies.
+    const at = lowConfidence.indexOf('verification_code');
+    if (at >= 0) lowConfidence.splice(at, 1);
+  }
+
   // ── Ask TRA what the receipt actually says ──────────────────────────────
   // On a real receipt the model got five of seven fields wrong, including the
   // total (8,000 short on 58,000) and the verification code, which is the global
@@ -330,9 +349,14 @@ Deno.serve(async (req) => {
         const at = lowConfidence.indexOf(field);
         if (at >= 0) lowConfidence.splice(at, 1);
       }
-      tra = { status: 'verified', at: new Date().toISOString(), differences: differences.length ? differences : null };
+      const all = [...qrDifference, ...differences];
+      tra = { status: 'verified', at: new Date().toISOString(), differences: all.length ? all : null };
     } else {
-      tra = { status: lookup.reason === 'unreachable' ? 'unreachable' : 'not_found', at: null, differences: null };
+      tra = {
+        status: lookup.reason === 'unreachable' ? 'unreachable' : 'not_found',
+        at: null,
+        differences: qrDifference.length ? qrDifference : null,
+      };
       // A code TRA does not recognise is almost always a misread one, and it is
       // the field the duplicate guard depends on. Say so instead of assuming.
       if (lookup.reason === 'not_found') lowConfidence.push('verification_code');
