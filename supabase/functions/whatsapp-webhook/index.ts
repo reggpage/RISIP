@@ -101,6 +101,7 @@ import {
 import { interpretDailyRecordWithAi, MAX_INTERPRETATION_CHARS, validateAiCandidate } from '../_shared/whatsappDailyRecordsAi.ts';
 import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared/whatsappReadIntentAi.ts';
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
+import { findNameWarnings, nameWarningText } from '../_shared/whatsappProductNames.ts';
 import {
   type ProductCostBatch,
   costBatchCancelled,
@@ -460,6 +461,33 @@ async function addHistoricalPriceWarnings(db: Admin, companyId: string, record: 
     .select('description, unit_amount').in('daily_record_id', ids).limit(1000);
   const warnings = detectDailyRecordPriceAnomalies(record, (historicalLines ?? []) as { description: string; unit_amount: number }[]);
   return warnings.length > 0 ? { ...record, warnings } : record;
+}
+
+/**
+ * A product name one edit away from something already sold.
+ *
+ * 0091 folds away splits caused by punctuation or spacing on its own. A real
+ * difference in letters — "Bibilia" against "Biblia" — it deliberately leaves
+ * alone, because folding those automatically would eventually merge two products
+ * that are genuinely different. So the confirmation asks, and the trader decides:
+ * they know whether it is the same thing, and nothing here does.
+ */
+async function nearNameNotice(
+  db: Admin,
+  companyId: string,
+  record: ParsedDailyRecord,
+  lang: Lang,
+): Promise<string> {
+  if (record.kind !== 'sale' || record.lines.length === 0) return '';
+  try {
+    const { data } = await db.rpc('company_product_names', { p_company_id: companyId });
+    const existing = Array.isArray(data) ? (data as { product_name: string }[]).map((row) => row.product_name) : [];
+    if (existing.length === 0) return '';
+    return nameWarningText(findNameWarnings(record.lines.map((line) => line.description), existing), lang);
+  } catch {
+    // A suggestion is never worth failing a confirmation over.
+    return '';
+  }
 }
 
 async function consumeAiBudget(db: Admin, identity: ResolvedWhatsAppIdentity, inputChars: number): Promise<AiBudgetDecision> {
@@ -867,7 +895,10 @@ async function executeAssistantTool(
       expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
       updated_at: new Date().toISOString(),
     }, { onConflict: 'identity_id' });
-    const confirmation = `${identity.company_name} — ${buildDailyRecordConfirmation(guardedRecord, lang)}`;
+    // Asked before NDIYO, while the trader can still change the name. Afterwards
+    // it would be a second product with sales already in it.
+    const nearName = await nearNameNotice(db, identity.company_id, guardedRecord, lang);
+    const confirmation = `${identity.company_name} — ${buildDailyRecordConfirmation(guardedRecord, lang)}${nearName}`;
     return { content: confirmation, terminalReply: confirmation };
   }
   return {
