@@ -32,6 +32,9 @@ import {
   type ProjectRef,
 } from '../_shared/whatsappIntent.ts';
 import { downloadMedia, getMediaMeta, sendWhatsAppText, showTyping } from '../_shared/whatsappApi.ts';
+import { readReceiptQr } from '../_shared/receiptQr.ts';
+import { compareWithTra, fetchTraReceipt } from '../_shared/traVerify.ts';
+import { askForQrCloseUp, qrCorrectionReply } from '../_shared/qrFollowUp.ts';
 
 const MAX_RETRIES = 3;
 const STALE_MINUTES = 5;
@@ -220,6 +223,72 @@ async function processJob(db: Admin, job: any): Promise<void> {
     return;
   }
 
+  // 1b. Is this a close-up of a QR we asked for?
+  //
+  // Decided by the image, not by remembered state. If it holds a TRA code, that
+  // code is looked up with the PENDING receipt's own printed time — TRA needs
+  // both to answer, so an answer means both matched and it is genuinely the same
+  // receipt. A photo of a different receipt fails that lookup and falls straight
+  // through to being filed as the new receipt it is.
+  const { data: awaitingQr } = await db
+    .from('receipts')
+    .select('id, vendor_name, total_amount, receipt_time, verification_code')
+    .eq('company_id', identity.company_id)
+    .eq('uploaded_by', profile.id)
+    .eq('tra_status', 'not_found')
+    .not('receipt_time', 'is', null)
+    .gte('created_at', new Date(Date.now() - 60 * 60_000).toISOString())
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (awaitingQr) {
+    const pending = awaitingQr as Record<string, any>;
+    const code = readReceiptQr(bytes, check.mediaType);
+    if (code) {
+      const lookup = await fetchTraReceipt(code, String(pending.receipt_time));
+      if (lookup.ok) {
+        const official = lookup.receipt;
+        const differences = compareWithTra({
+          vendorName: pending.vendor_name,
+          totalInclTax: pending.total_amount === null ? null : Number(pending.total_amount),
+          verificationCode: pending.verification_code,
+        }, official);
+
+        await db.from('receipts').update({
+          vendor_name: official.vendorName ?? pending.vendor_name,
+          vendor_tin: official.vendorTin ?? undefined,
+          vendor_vrn: official.vendorVrn ?? undefined,
+          receipt_number: official.receiptNumber ?? undefined,
+          receipt_date: official.receiptDate ?? undefined,
+          total_amount: official.totalInclTax ?? undefined,
+          tax_amount: official.totalTax ?? undefined,
+          verification_code: official.verificationCode ?? code,
+          tra_status: 'verified',
+          tra_verified_at: new Date().toISOString(),
+          tra_differences: differences.length ? differences : null,
+        }).eq('id', pending.id);
+
+        await replyQuietly(phone, qrCorrectionReply(
+          { vendorName: pending.vendor_name, total: pending.total_amount === null ? null : Number(pending.total_amount) },
+          official,
+          lang,
+        ));
+        // The close-up is not a receipt of its own, so nothing is stored for it.
+        await db.from('whatsapp_messages').update({
+          status: 'done', receipt_id: pending.id,
+          processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+        }).eq('id', job.id);
+        return;
+      }
+    }
+    // Anything else falls straight through. We cannot tell a failed close-up
+    // from a genuinely new receipt, and guessing either way is worse than not
+    // guessing: a wrong message on a real receipt, or a lost receipt because it
+    // was assumed to be a retry. Silence here means the normal path runs and
+    // nothing is lost.
+  }
+
   // 2. Store under the existing receipts convention: <project_id>/<receipt_id>.jpg
   // The caption is untrusted text from the sender. It is only ever matched against
   // projects they are already authorised to use, so it can widen nothing.
@@ -282,7 +351,7 @@ async function processJob(db: Admin, job: any): Promise<void> {
   // 5. Read back whatever extraction produced.
   const { data: receipt } = await db
     .from('receipts')
-    .select('vendor_name, total_amount, status')
+    .select('vendor_name, total_amount, status, tra_status')
     .eq('id', receiptId)
     .maybeSingle();
 
@@ -350,7 +419,10 @@ async function processJob(db: Admin, job: any): Promise<void> {
       needsProject: !projectId,
       projectOptions: projects,
       reviewUrl: buildReviewUrl(appUrl(), receiptId),
-    }),
+    })
+    // Only when TRA actually declined to confirm it. A receipt with no code at
+    // all is not a failure to verify, it is a receipt without a QR.
+    + (receipt?.tra_status === 'not_found' ? askForQrCloseUp(lang) : ''),
   );
 
   await audit(db, {
