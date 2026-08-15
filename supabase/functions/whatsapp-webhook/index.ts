@@ -2012,6 +2012,19 @@ Deno.serve(async (req) => {
             await finish('skipped');
             continue;
           }
+
+          // A code with nothing to attach it to. Falling through sent it to the
+          // assistant, which answered "sijaelewa unachomaanisha" to a perfectly
+          // clear message — the worst possible reply, because the person did
+          // exactly what they were asked to do.
+          await replyQuietly(phone, lang === 'sw'
+            ? `Nimepokea kodi ${typedCode}, lakini hakuna risiti inayosubiri kuthibitishwa kwa sasa.\n\n`
+              + 'Tuma picha ya risiti kwanza, kisha kodi hii ikihitajika.'
+            : `I have the code ${typedCode}, but no receipt is waiting to be verified right now.\n\n`
+              + 'Send the receipt photo first, then this code if it is needed.');
+          await audit(db, identity, waMessageId, 'tra_verify', 'typed_code', 'nothing_pending');
+          await finish('skipped');
+          continue;
         }
 
         // A physical count. Checked before the record parser because "nina
