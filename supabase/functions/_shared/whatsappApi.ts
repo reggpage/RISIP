@@ -17,6 +17,37 @@ function accessToken(): string {
 }
 
 /**
+ * The number people write to, in the form a human can dial.
+ *
+ * The invite the owner forwards has to name it: whoever receives it has never
+ * heard of Risip and needs somewhere to send the code. Only the phone_number_id
+ * is configured, so the display number is asked of Meta once and kept for the
+ * life of the worker — it changes about as often as the business does.
+ */
+let cachedDisplayNumber: string | null = null;
+
+export async function whatsAppDisplayNumber(): Promise<string | null> {
+  const configured = Deno.env.get('WHATSAPP_DISPLAY_NUMBER');
+  if (configured) return configured;
+  if (cachedDisplayNumber) return cachedDisplayNumber;
+  const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
+  if (!phoneNumberId) return null;
+  try {
+    const response = await fetch(
+      `${apiBase()}/${phoneNumberId}?fields=display_phone_number`,
+      { headers: { authorization: `Bearer ${accessToken()}` } },
+    );
+    if (!response.ok) return null;
+    const body = await response.json() as { display_phone_number?: string };
+    cachedDisplayNumber = body.display_phone_number ?? null;
+    return cachedDisplayNumber;
+  } catch {
+    // An invite is still useful without it; the owner can add the number.
+    return null;
+  }
+}
+
+/**
  * Send a plain text message. Only valid inside the 24-hour customer service
  * window — every reply we send is a direct answer to the user's own message, so
  * this MVP never needs a paid template.

@@ -27,7 +27,7 @@ import {
   sha256Hex,
   verifyMetaSignature,
 } from '../_shared/whatsapp.ts';
-import { sendWhatsAppText, showTyping } from '../_shared/whatsappApi.ts';
+import { sendWhatsAppText, showTyping, whatsAppDisplayNumber } from '../_shared/whatsappApi.ts';
 import {
   detectLanguage,
   isHelp,
@@ -2006,6 +2006,10 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<SellingPriceBatch> | null)?.kind === 'selling_price_batch'
           ? convo.options as SellingPriceBatch
           : null;
+        const invitePending = convo?.awaiting === 'product_cost'
+          && (convo.options as { kind?: string } | null)?.kind === 'invite_role'
+          ? true
+          : false;
         const newProductPending = convo?.awaiting === 'product_cost'
           && (convo.options as { kind?: string } | null)?.kind === 'new_product_pricing'
           ? (convo.options as { products: NewProductPricing[] }).products
@@ -2366,6 +2370,47 @@ Deno.serve(async (req) => {
         // NDIYO on a whole selling-price list. All or nothing: a list half
         // applied leaves the shop believing it set prices it did not set, and
         // the assistant then quotes the old ones with complete confidence.
+        // Answering which role the invite is for. The role is what the code
+        // grants, so it is asked and never guessed — a wrong answer here hands
+        // a counter hand the whole company's finances.
+        if (invitePending) {
+          if (isCancel(body) || isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, inviteCancelled(lang));
+            await audit(db, identity, waMessageId, 'invite', 'cancel', 'applied');
+            await finish('skipped');
+            continue;
+          }
+          const role = parseInviteRole(body);
+          if (!role) {
+            await replyQuietly(phone, inviteRoleQuestion(lang));
+            await audit(db, identity, waMessageId, 'invite', 'reask', 'skipped');
+            await finish('skipped');
+            continue;
+          }
+          const { data: made, error } = await db.rpc('wa_create_invite_code', {
+            p_phone: phone, p_role: role, p_days: 7,
+          });
+          await clearConversation(db, identity.id as string);
+          if (error) {
+            const hint = (error as { hint?: string } | null)?.hint;
+            await replyQuietly(phone, hint === 'not_authorized'
+              ? inviteNotAllowed(lang)
+              : productCostErrorMessage(error, lang));
+            await audit(db, identity, waMessageId, 'invite', role, 'failed');
+            await finish('skipped');
+            continue;
+          }
+          const result = made as { code?: string; company_name?: string } | null;
+          await replyQuietly(phone, inviteReady(
+            String(result?.code ?? ''), role, result?.company_name ?? '',
+            await whatsAppDisplayNumber(), lang,
+          ));
+          await audit(db, identity, waMessageId, 'invite', role, 'applied');
+          await finish('skipped');
+          continue;
+        }
+
         // NDIYO on a set of brand-new products. The cost and both selling prices
         // land together, because a product added with only one of them fails the
         // next sale in exactly the way that started this.
@@ -2656,6 +2701,31 @@ Deno.serve(async (req) => {
         // A pasted selling-price list. Checked against what the shop pays before
         // it is confirmed, because a retail price under the buying cost reads
         // and saves perfectly while turning every future sale into a loss.
+        // "nataka kumuinvite mtu". Risip does not send the invite — see
+        // whatsappInvite.ts for why — it writes it out for the owner to forward.
+        if (parseInviteRequest(writeBody)) {
+          if (identity.role !== 'owner') {
+            await reply(phone, inviteNotAllowed(lang));
+            await audit(db, identity, waMessageId, 'invite', 'role', 'blocked');
+            await finish('skipped');
+            continue;
+          }
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: { kind: 'invite_role' },
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          await reply(phone, inviteRoleQuestion(lang));
+          await audit(db, identity, waMessageId, 'invite', 'ask_role', 'pending');
+          await finish('skipped');
+          continue;
+        }
+
         // Answering the offer to add a product: cost and both selling prices on
         // one line. Checked BEFORE the selling-price batch, which would read the
         // same line as a price change for a product that does not exist yet.
