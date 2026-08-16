@@ -66,7 +66,11 @@ export function parseSellingPriceBatch(text: string | null | undefined): Selling
 
 const money = (value: number) => `TSh ${Math.round(value).toLocaleString('en-US')}`;
 
-export function sellingPriceBatchConfirmation(batch: SellingPriceBatch, lang: Lang): string {
+export function sellingPriceBatchConfirmation(
+  batch: SellingPriceBatch,
+  lang: Lang,
+  ...warnings: string[]
+): string {
   const rows = batch.prices.map((price, index) => {
     const trade = price.wholesale === null
       ? ''
@@ -84,11 +88,17 @@ export function sellingPriceBatchConfirmation(batch: SellingPriceBatch, lang: La
     : `\n\n⚠️ ${batch.unreadable.length} line(s) I could not read, and will not save:\n`
       + batch.unreadable.map((line) => `• ${line}`).join('\n'));
 
+  // The warnings go ABOVE the question, never after it. Sent underneath, they
+  // arrive as an afterthought to a decision already asked for — the real message
+  // read "save them all? YES / NO" and only then "by the way, one of these loses
+  // money on every sale". You show somebody the problem, then you ask.
+  const trouble = warnings.filter(Boolean).join('');
+
   return lang === 'sw'
-    ? `Bei za kuuza — bidhaa ${batch.prices.length}:\n${rows}${problem}\n\n`
+    ? `Bei za kuuza — bidhaa ${batch.prices.length}:\n${rows}${problem}${trouble}\n\n`
       + 'Nitazitumia mtu akituma mauzo bila kutaja bei.\n\n'
       + 'Nihifadhi zote? NDIYO / HAPANA'
-    : `Selling prices — ${batch.prices.length} products:\n${rows}${problem}\n\n`
+    : `Selling prices — ${batch.prices.length} products:\n${rows}${problem}${trouble}\n\n`
       + 'I will use these when a sale names no price.\n\n'
       + 'Save them all? YES / NO';
 }
@@ -137,9 +147,24 @@ export function sellingPriceBatchCostWarnings(
  * Said, not refused. Pricing something before the first sale of it is perfectly
  * normal, and the shopkeeper can see at a glance which of the two this is.
  */
-export function sellingPriceBatchUnknownProducts(unknown: string[], lang: Lang): string {
+export function sellingPriceBatchUnknownProducts(
+  unknown: string[],
+  lang: Lang,
+  /** name as typed → the catalogue name it is probably a misspelling of */
+  suggestions: Map<string, string> = new Map(),
+): string {
   if (unknown.length === 0) return '';
-  const rows = unknown.map((name) => `• ${name}`).join('\n');
+  // Naming the near match is the whole difference between "this is wrong" and
+  // "here is the fix". The resolver already knows atlas means atlasi; saying so
+  // costs nothing and still leaves the choice with the shopkeeper, because a
+  // price is a write and a write is never guessed.
+  const rows = unknown.map((name) => {
+    const near = suggestions.get(name.toLowerCase());
+    if (!near) return `• ${name}`;
+    return lang === 'sw'
+      ? `• ${name} — unamaanisha “${near}”?`
+      : `• ${name} — did you mean “${near}”?`;
+  }).join('\n');
   return lang === 'sw'
     ? `\n\n❓ Hizi bado hazijawahi kununuliwa wala kuuzwa hapa:\n${rows}\n`
       + 'Kama ni bidhaa mpya, sawa. Kama jina limekosewa, rekebisha — bei ikienda kwa jina lisilo sahihi haitatumika popote.'

@@ -461,11 +461,30 @@ function customerPaymentRecord(text: string): ParsedDailyRecord | null {
   };
 }
 
+// A verb says something HAPPENED. Past tense in every person, because "niliuza
+// st rita wa kashia 3 kwa 13500" reached no parser at all — only the perfect
+// "nimeuza" was listed — and a plain sale went to the model to improvise.
+const RECORD_VERBS = new RegExp(
+  '\\b(?:'
+  + 'ni(?:me|li)uza|tu(?:me|li)uza|a(?:me|li)uza|uza|sold'
+  + '|ni(?:me|li)lipa|a(?:me|li)lipa|kalipa|ni(?:me|li)tumia|paid|spent|expense'
+  + '|ni(?:me|li)nunua|tu(?:me|li)nunua|bought|purchased'
+  + '|ni(?:me|li)ongeza|ni(?:me|li)ingiza'
+  + '|mkopo|loan|ananidai|customer payment'
+  + ')\\b', 'i');
+
+// A noun only NAMES the subject. On its own it is as likely to open a question
+// as a record — "mauzo ya leo ni ngapi" is not a sale, and routing it into the
+// write chain put a question one step away from becoming a draft.
+const RECORD_NOUNS = /\b(?:mauzo|deni|stock|stoo|bidhaa|mzigo)\b/i;
+
+const ASKING = /\?|\b(?:ngapi|shingapi|kiasi gani|gani|nini|lini|vipi|how much|how many|what|which|when)\b/i;
+
 function looksLikeDailyRecord(text: string): boolean {
-  // The buying verbs are here as well as in the dispatch below, because this gate
-  // runs first: without them "nimenunua stock ya sukari 50000" never reached the
-  // parser at all and was silently dropped.
-  return /\b(nimeuza|uza|sold|mauzo|nimelipa|nimetumia|expense|paid|spent|mkopo|loan|ananidai|deni|amelipa|kalipa|customer payment|nimenunua|nimeongeza|nimeingiza|bought|purchased|stock|stoo|bidhaa|mzigo)\b/i.test(text);
+  if (RECORD_VERBS.test(text)) return true;
+  // A bare noun in a question is a question. With no question in sight it is
+  // still worth a look — "stock ya sukari 50000" is how a restock gets typed.
+  return RECORD_NOUNS.test(text) && !ASKING.test(text);
 }
 
 function hasNegativeOrZeroAmount(text: string): boolean {

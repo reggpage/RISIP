@@ -2582,9 +2582,23 @@ Deno.serve(async (req) => {
             expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
             updated_at: new Date().toISOString(),
           }, { onConflict: 'identity_id' });
-          await reply(phone, sellingPriceBatchConfirmation(sellingBatch, lang)
-            + sellingPriceBatchCostWarnings(sellingBatch.prices, costs, lang)
-            + sellingPriceBatchUnknownProducts(unknown, lang));
+          // For each unrecognised name, ask the read resolver what it is nearest
+          // to. Reads are allowed to be forgiving, so this is safe — it only
+          // suggests, and the write itself still uses the exact name given.
+          const suggestions = new Map<string, string>();
+          for (const name of unknown) {
+            const near = await resolveProductForRead(db, identity, name);
+            if (!near.error && near.resolution.kind === 'matched'
+              && near.resolution.match.matchKind !== 'exact') {
+              suggestions.set(name.toLowerCase(), near.resolution.match.productName);
+            }
+          }
+          await reply(phone, sellingPriceBatchConfirmation(
+            sellingBatch,
+            lang,
+            sellingPriceBatchCostWarnings(sellingBatch.prices, costs, lang),
+            sellingPriceBatchUnknownProducts(unknown, lang, suggestions),
+          ));
           await audit(db, identity, waMessageId, 'selling_price_batch',
             String(sellingBatch.prices.length), 'pending');
           await finish('skipped');

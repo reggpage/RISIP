@@ -5,6 +5,7 @@ import {
   buildDailyRecordConfirmationChunks,
   buildDailyRecordConfirmed,
   detectDailyRecordPriceAnomalies,
+  isDailyRecordCandidate,
   isDailyRecordConfirmation,
   isDailyRecordRejection,
   parseDailyRecord,
@@ -286,5 +287,35 @@ describe('deterministic WhatsApp daily-record parser', () => {
     ]);
     expect(warnings).toHaveLength(1);
     expect(parsed.record.amount).toBe(90000);
+  });
+});
+
+describe('what counts as something that happened', () => {
+  it('takes a sale in the simple past, not only the perfect', () => {
+    // Found by the router probe, not by a person: "niliuza st rita wa kashia 3
+    // kwa 13500" reached no parser at all, because only "nimeuza" was listed.
+    // A plain sale was being handed to the model to improvise.
+    expect(isDailyRecordCandidate('niliuza st rita wa kashia 3 kwa 13500')).toBe(true);
+    expect(isDailyRecordCandidate('tuliuza daftari 10 kwa 15000')).toBe(true);
+    expect(isDailyRecordCandidate('nililipa umeme 45000')).toBe(true);
+    expect(isDailyRecordCandidate('nilinunua stock ya sukari 50000')).toBe(true);
+  });
+
+  it('does not mistake a question about sales for a sale', () => {
+    // "mauzo" is a noun that opens as many questions as it does records, and it
+    // was putting every one of them one step from becoming a draft.
+    expect(isDailyRecordCandidate('mauzo ya leo ni ngapi')).toBe(false);
+    expect(isDailyRecordCandidate('mauzo ya wiki hii yalikuwa kiasi gani')).toBe(false);
+    expect(isDailyRecordCandidate('deni langu ni ngapi?')).toBe(false);
+    expect(isDailyRecordCandidate('bidhaa gani inauza sana')).toBe(false);
+  });
+
+  it('still takes a bare noun when nothing is being asked', () => {
+    // "stock ya sukari 50000" is how a restock actually gets typed.
+    expect(isDailyRecordCandidate('stock ya sukari 50000')).toBe(true);
+  });
+
+  it('keeps a verb even inside a question, because the sale still happened', () => {
+    expect(isDailyRecordCandidate('nimeuza daftari 5 kwa 7500, ni sawa?')).toBe(true);
   });
 });
