@@ -141,7 +141,10 @@ describe('WhatsApp mixed daily-record batches', () => {
     expect(migration).toContain("v_source || '#' || v_item.ordinality::text");
     expect(migration).toContain('jsonb_array_length(p_records) > 10');
     expect(migration).toContain('to service_role');
-    expect(webhook).toContain('const batch = parseDailyRecordBatch(writeBody, lang);');
+    // The batch parser now stands aside for a till roll that names no money at
+    // all, so the call is conditional — but it is still the only thing that
+    // reads a multi-line record message.
+    expect(webhook).toContain(': parseDailyRecordBatch(writeBody, lang);');
     expect(webhook).toContain("if (batch.kind === 'unreadable')");
     expect(webhook).toContain('if (batch.records.length === 1)');
     expect(webhook).toContain('createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang)');

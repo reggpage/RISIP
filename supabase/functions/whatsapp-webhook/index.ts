@@ -64,6 +64,7 @@ import {
   parseDailyRecordBatch,
   resumeDailyRecordBatchClarification,
   type DailyRecordBatchClarification,
+  type DailyRecordBatchParse,
   type DailyRecordBatchConversation,
 } from '../_shared/whatsappDailyRecordBatch.ts';
 import {
@@ -2856,7 +2857,16 @@ Deno.serve(async (req) => {
         }
 
         if (isDailyRecordCandidate(writeBody)) {
-          const batch = parseDailyRecordBatch(writeBody, lang);
+          // MEASURED FAILURE: a thirty-line till roll naming no money at all was
+          // reaching parseDailyRecordBatch first, which asked "is this the total
+          // or the price for each?" — a question with no answer, since the
+          // message contains no price to be either. The quantity path below
+          // already knows what to do with it; the batch parser must stand aside
+          // rather than ask.
+          const namesNoMoney = parseQuantityOnlySale(writeBody) !== null;
+          const batch: DailyRecordBatchParse = namesNoMoney
+            ? { kind: 'none' }
+            : parseDailyRecordBatch(writeBody, lang);
           if (batch.kind === 'clarify') {
             const state: DailyRecordBatchClarification = {
               ...batch.state,

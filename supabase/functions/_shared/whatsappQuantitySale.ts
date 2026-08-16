@@ -16,7 +16,31 @@
 
 import type { Lang } from './whatsappIntent.ts';
 
-export type QuantitySaleItem = { product: string; quantity: number };
+export type QuantitySaleItem = {
+  product: string;
+  quantity: number;
+  /**
+   * Which of the shop's two prices this line was sold at.
+   *
+   * The owner's rule, in their words: "mtu asipoandika rejareja ujue hiyo ni
+   * rejareja, akiandika jumla ujue ni jumla." Retail is the default because it
+   * is what happens unless somebody decides otherwise, and a default that has to
+   * be typed thirty times is not a default.
+   */
+  band: 'retail' | 'wholesale' | null;
+};
+
+/** "jumla" after a quantity names the trade price. "rejareja" names retail. */
+const BAND = /\s+(rejareja|reja\s*reja|retail|jumla|wholesale)\s*$/i;
+
+function readBand(text: string): { rest: string; band: 'retail' | 'wholesale' | null } {
+  const match = BAND.exec(text);
+  if (!match) return { rest: text, band: null };
+  return {
+    rest: text.slice(0, match.index),
+    band: /jumla|wholesale/i.test(match[1]) ? 'wholesale' : 'retail',
+  };
+}
 export type QuantitySale = { kind: 'quantity_sale'; items: QuantitySaleItem[] };
 
 export type PricedLine = {
@@ -74,7 +98,11 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   if (!said || !OPENER.test(said)) return null;
   if (STATES_MONEY.test(said)) return null;
 
-  const payload = said.replace(OPENER, '').replace(/^[\s:,-]+/, '').trim();
+  const withoutOpener = said.replace(OPENER, '').replace(/^[\s:,-]+/, '').trim();
+  // "nimeuza daftari 20 jumla" — the band is stated once, at the end, and
+  // applies to the whole line. Read and removed before the products are, or it
+  // would be swallowed into the last product's name.
+  const { rest: payload, band: statedBand } = readBand(withoutOpener);
   if (!payload) return null;
 
   const items: QuantitySaleItem[] = [];
@@ -90,7 +118,7 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
     const quantity = Number(match[2]);
     if (product.length < 2 || !/[\p{L}]/u.test(product)) return null;
     if (!Number.isFinite(quantity) || quantity <= 0 || quantity > 100_000) return null;
-    items.push({ product, quantity });
+    items.push({ product, quantity, band: statedBand });
   }
   if (items.length === 0) return null;
 
@@ -104,10 +132,19 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   return { kind: 'quantity_sale', items };
 }
 
-/** Retail unless the quantity reaches the shop's own wholesale threshold. */
+/**
+ * Retail unless the line says otherwise, or the quantity reaches the threshold.
+ *
+ * What the line SAYS wins over what the quantity implies. Somebody who typed
+ * "jumla" has told you which price they charged; the threshold is only a guess
+ * at what they meant when they said nothing at all. And "rejareja" on a large
+ * quantity is a real thing — a bulk buyer who is not a regular still pays retail.
+ */
 export function priceLine(item: QuantitySaleItem, pricing: ProductPricing): PricedLine | null {
-  const wholesaleApplies = pricing.wholesale !== null
-    && (pricing.wholesaleMinQty === null || item.quantity >= pricing.wholesaleMinQty);
+  const wholesaleApplies = pricing.wholesale !== null && (
+    item.band === 'wholesale'
+    || (item.band === null
+      && (pricing.wholesaleMinQty === null || item.quantity >= pricing.wholesaleMinQty)));
   const unitPrice = wholesaleApplies ? pricing.wholesale! : pricing.retail;
   if (unitPrice === null || !(unitPrice > 0)) return null;
   return {
