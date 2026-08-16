@@ -41,7 +41,42 @@ function readBand(text: string): { rest: string; band: 'retail' | 'wholesale' | 
     band: /jumla|wholesale/i.test(match[1]) ? 'wholesale' : 'retail',
   };
 }
-export type QuantitySale = { kind: 'quantity_sale'; items: QuantitySaleItem[] };
+export type QuantitySale = {
+  kind: 'quantity_sale';
+  items: QuantitySaleItem[];
+  /**
+   * Money that went OUT, written at the foot of the same paste.
+   *
+   * The owner's real closing message ended:
+   *
+   *   Matumizi 15000
+   *   Chakula 1200
+   *   Nauli 9500
+   *
+   * and the whole forty-eight-line paste was refused because of those three.
+   * Closing a day is one act — what came in and what went out — and splitting it
+   * into two messages is a rule for the software's convenience, not the shop's.
+   */
+  expenses: ExpenseLine[];
+};
+
+export type ExpenseLine = { label: string; amount: number };
+
+// A line with no selling verb that still ends in an amount. The verb is the
+// discriminator, never the size of the number: "daftari 10" is ten notebooks
+// and "Nauli 9500" is bus fare, and nothing about 10 versus 9500 says so.
+const EXPENSE_LINE = /^([\p{L}][\p{L}\s'’.\-\/]{1,60}?)[\s:=-]+((?:tshs?|tzs|sh)?\s*[0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:\/=)?$/iu;
+
+function readExpense(line: string): ExpenseLine | null {
+  const match = EXPENSE_LINE.exec(clean(line));
+  if (!match) return null;
+  const label = clean(match[1]).replace(/[:=-]+$/, '').trim();
+  const amount = Number(match[2].replace(/[^0-9.]/g, ''));
+  if (label.length < 2 || !/[\p{L}]/u.test(label)) return null;
+  // Below this it is far more likely to be a stray quantity than an expense.
+  if (!Number.isFinite(amount) || amount < 100 || amount > 100_000_000) return null;
+  return { label, amount };
+}
 
 export type PricedLine = {
   product: string;
@@ -80,9 +115,16 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   const lines = String(text ?? '').split(/\r?\n/).map(clean).filter(Boolean);
   if (lines.length > 1) {
     const items: QuantitySaleItem[] = [];
+    const expenses: ExpenseLine[] = [];
     for (const line of lines) {
       const one = parseQuantityOnlySale(line);
-      if (!one) return null;
+      if (!one) {
+        // Not a sale line. It may still be the day's spending, written at the
+        // foot of the same paste, which is how a counter actually closes.
+        const spent = readExpense(line);
+        if (spent) { expenses.push(spent); continue; }
+        return null;
+      }
       for (const item of one.items) {
         const at = items.findIndex((seen) => seen.product.toLowerCase() === item.product.toLowerCase());
         // The same product on two lines is two sales at the counter, not a
@@ -91,7 +133,9 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
         else items.push(item);
       }
     }
-    return items.length > 0 ? { kind: 'quantity_sale', items } : null;
+    // Expenses alone are not this parser's business — the expense parser reads
+    // them, and it knows how to ask about a label it does not recognise.
+    return items.length > 0 ? { kind: 'quantity_sale', items, expenses } : null;
   }
 
   const said = clean(text);
@@ -129,7 +173,7 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   const letters = payload.replace(/[^\p{L}0-9]/gu, '').length;
   if (consumed < letters * 0.8) return null;
 
-  return { kind: 'quantity_sale', items };
+  return { kind: 'quantity_sale', items, expenses: [] };
 }
 
 /**
@@ -168,8 +212,21 @@ export function quantitySaleMissingPrices(missing: string[], lang: Lang): string
       + 'Send me one, e.g. "bei ya marker rejareja 2000", then send the sale again.';
 }
 
-export function quantitySaleConfirmation(lines: PricedLine[], lang: Lang): string {
+export function quantitySaleConfirmation(
+  lines: PricedLine[],
+  lang: Lang,
+  expenses: ExpenseLine[] = [],
+): string {
   const total = lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
+  const spent = expenses.reduce((sum, item) => sum + item.amount, 0);
+  // Shown separately and never netted off. A day that took 480,000 and spent
+  // 25,000 is not a day that took 455,000, and somebody handed one number cannot
+  // tell which of the two went wrong.
+  const outgoings = expenses.length === 0 ? '' : (lang === 'sw'
+    ? `\nMatumizi:\n${expenses.map((item) => `  • ${item.label}: ${money(item.amount)}`).join('\n')}`
+      + `\nJumla ya matumizi: *${money(spent)}*\n`
+    : `\nExpenses:\n${expenses.map((item) => `  • ${item.label}: ${money(item.amount)}`).join('\n')}`
+      + `\nTotal spent: *${money(spent)}*\n`);
   const rows = lines.map((line) => {
     const band = line.band === 'wholesale'
       ? (lang === 'sw' ? ' (jumla)' : ' (wholesale)')
@@ -178,10 +235,10 @@ export function quantitySaleConfirmation(lines: PricedLine[], lang: Lang): strin
   }).join('\n');
 
   return lang === 'sw'
-    ? `Nimeelewa:\nAina: Mauzo\nBidhaa:\n${rows}\nJumla: *${money(total)}*\n\n`
+    ? `Nimeelewa:\nAina: Mauzo\nBidhaa:\n${rows}\nJumla ya mauzo: *${money(total)}*\n${outgoings}\n`
       + '_Bei ni zile ulizoziweka mwenyewe._\n\n'
       + 'Jibu *NDIYO* kuthibitisha, au *HAPANA* kughairi.'
-    : `Understood:\nType: Sale\nItems:\n${rows}\nTotal: *${money(total)}*\n\n`
+    : `Understood:\nType: Sale\nItems:\n${rows}\nSales total: *${money(total)}*\n${outgoings}\n`
       + '_Priced from the list you set yourself._\n\n'
       + 'Reply *YES* to confirm, or *NO* to cancel.';
 }

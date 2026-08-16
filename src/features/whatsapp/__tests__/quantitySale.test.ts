@@ -184,3 +184,45 @@ describe('saying which price was charged', () => {
       ]);
   });
 });
+
+describe('closing a day in one paste', () => {
+  it('takes the spending written at the foot of the till roll', () => {
+    // The owner's real message: forty-eight lines, the last three of which were
+    // expenses. The whole paste used to be refused because of those three.
+    const sale = parseQuantityOnlySale(
+      'nimeuza daftari 10\nnimeuza kalamu 20\n\nMatumizi 15000\nChakula 1200\nNauli 9500');
+    expect(sale?.items).toEqual([
+      { product: 'daftari', quantity: 10, band: null },
+      { product: 'kalamu', quantity: 20, band: null },
+    ]);
+    expect(sale?.expenses).toEqual([
+      { label: 'Matumizi', amount: 15000 },
+      { label: 'Chakula', amount: 1200 },
+      { label: 'Nauli', amount: 9500 },
+    ]);
+  });
+
+  it('is not fooled by a quantity into calling it spending', () => {
+    // The selling verb is the discriminator, never the size of the number.
+    expect(parseQuantityOnlySale('nimeuza daftari 10\nnimeuza kalamu 9500')?.expenses).toEqual([]);
+  });
+
+  it('ignores a number too small to be money', () => {
+    expect(parseQuantityOnlySale('nimeuza daftari 10\nChakula 40')).toBeNull();
+  });
+
+  it('still refuses a paste with a line that is neither', () => {
+    expect(parseQuantityOnlySale('nimeuza daftari 10\nfaida ya leo ni ngapi')).toBeNull();
+  });
+
+  it('never nets the spending off the takings', () => {
+    const reply = quantitySaleConfirmation(
+      [{ product: 'daftari', quantity: 10, unitPrice: 1500, band: 'retail' }],
+      'sw',
+      [{ label: 'Nauli', amount: 9500 }]);
+    expect(reply).toContain('Jumla ya mauzo: *TSh 15,000*');
+    expect(reply).toContain('Nauli: TSh 9,500');
+    expect(reply).toContain('Jumla ya matumizi: *TSh 9,500*');
+    expect(reply).not.toContain('5,500');
+  });
+});

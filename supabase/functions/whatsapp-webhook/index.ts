@@ -122,6 +122,7 @@ import {
   parseQuantityOnlySale,
   priceLine,
   quantitySaleConfirmation,
+  type QuantitySaleItem,
   quantitySaleMissingPrices,
   type PricedLine,
   type ProductPricing,
@@ -275,7 +276,7 @@ async function priceQuantitySale(
   | { kind: 'blocked'; message: string }
   | { kind: 'skip' }
 > {
-  const resolvedItems: { key: string; name: string; quantity: number }[] = [];
+  const resolvedItems: { key: string; name: string; quantity: number; band: QuantitySaleItem['band'] }[] = [];
   for (const item of sale.items) {
     const resolved = await resolveProductForRead(db, identity, item.product);
     if (resolved.error) return { kind: 'skip' };
@@ -289,6 +290,9 @@ async function priceQuantitySale(
       key: resolved.resolution.match.productKey,
       name: resolved.resolution.match.productName,
       quantity: item.quantity,
+      // Carried through. Without this the word somebody typed at the end of the
+      // line — "jumla" — is read, understood, and then quietly dropped here.
+      band: item.band,
     });
   }
 
@@ -311,7 +315,7 @@ async function priceQuantitySale(
   const missing: string[] = [];
   for (const item of resolvedItems) {
     const known = pricing.get(item.key) ?? { retail: null, wholesale: null, wholesaleMinQty: null };
-    const line = priceLine({ product: item.name, quantity: item.quantity }, known);
+    const line = priceLine({ product: item.name, quantity: item.quantity, band: item.band }, known);
     if (line) lines.push(line); else missing.push(item.name);
   }
   if (missing.length > 0) {
@@ -2972,6 +2976,48 @@ Deno.serve(async (req) => {
             }
             if (priced.kind === 'priced') {
               const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, priced.record);
+              // Money out, written at the foot of the same paste, is a separate
+              // record — never netted off the takings. Both are drafted in one
+              // transaction so a NDIYO can never confirm the sales and lose the
+              // spending, which is the half nobody would notice was missing.
+              const closingRecords: ParsedDailyRecord[] = [guardedRecord];
+              for (const spent of quantitySale.expenses) {
+                closingRecords.push({
+                  kind: 'expense',
+                  amount: spent.amount,
+                  partyName: null,
+                  description: spent.label,
+                  lines: [],
+                  confidence: 0.95,
+                });
+              }
+              if (closingRecords.length > 1) {
+                const batch = await createDailyRecordBatchDrafts(
+                  db, identity, waMessageId, closingRecords, lang);
+                if (!batch.error && batch.ids.length > 0) {
+                  await db.from('whatsapp_conversations').upsert({
+                    identity_id: identity.id,
+                    company_id: identity.company_id,
+                    profile_id: identity.profile_id,
+                    awaiting: 'payment_source',
+                    receipt_id: null,
+                    options: {
+                      kind: 'daily_record_batch_confirmation',
+                      dailyRecordIds: batch.ids,
+                      sourceMessageId: waMessageId,
+                      records: closingRecords,
+                    },
+                    expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                    updated_at: new Date().toISOString(),
+                  }, { onConflict: 'identity_id' });
+                  await replyQuietly(phone,
+                    quantitySaleConfirmation(priced.lines, lang, quantitySale.expenses));
+                  await audit(db, identity, waMessageId, 'quantity_sale',
+                    `${priced.lines.length}+${quantitySale.expenses.length}`, 'pending');
+                  await finish('skipped');
+                  continue;
+                }
+              }
               const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang);
               if (!created.error && created.id) {
                 const state: DailyRecordConversation = {
@@ -2990,7 +3036,7 @@ Deno.serve(async (req) => {
                   expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
                   updated_at: new Date().toISOString(),
                 }, { onConflict: 'identity_id' });
-                await replyQuietly(phone, quantitySaleConfirmation(priced.lines, lang));
+                await replyQuietly(phone, quantitySaleConfirmation(priced.lines, lang, quantitySale.expenses));
                 await audit(db, identity, waMessageId, 'quantity_sale', 'create', 'pending');
                 await finish('skipped');
                 continue;
