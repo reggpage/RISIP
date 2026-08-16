@@ -2,6 +2,7 @@
 // deserves tests lives in ./whatsapp.ts instead.
 
 import { typingIndicatorPayload } from './whatsappApiPayloads.ts';
+import { toWhatsAppText } from './whatsappMarkdown.ts';
 
 const DEFAULT_API_VERSION = 'v21.0';
 
@@ -68,7 +69,10 @@ export async function sendWhatsAppText(toE164: string, body: string): Promise<vo
       // Cloud API accepts E.164 without the leading '+'.
       to: toE164.replace(/^\+/, ''),
       type: 'text',
-      text: { preview_url: true, body },
+      // Every outbound message goes through this. The model writes Markdown and
+      // WhatsApp is not Markdown, so "**Record transactions**" reached the owner
+      // as a literal star, bold text, and another literal star.
+      text: { preview_url: true, body: toWhatsAppText(body) },
     }),
   });
   if (!res.ok) {

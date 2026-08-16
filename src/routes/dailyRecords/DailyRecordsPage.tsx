@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Check, CheckCircle2, Filter, RefreshCw, X } from 'lucide-react';
+import { Check, CheckCircle2, ChevronDown, Filter, RefreshCw, X } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Select from '@/components/ui/Select';
@@ -19,13 +19,14 @@ import {
   type DailyRecordWithDetails,
 } from '@/features/dailyRecords/dailyRecords';
 import { isSameLocalDay, moveDailyRecordsDate, startOfLocalDay } from '@/features/dailyRecords/uiRules';
+import { groupByDay, type DayGroup } from './groupByDay';
 import type { DailyRecordAudit, DailyRecordKind, DailyRecordStatus } from '@/types/db';
 
 const lang = getLang();
 const ui = lang === 'sw' ? {
-  title: 'Rekodi za Siku', description: 'Rekodi za shughuli kutoka WhatsApp na app. Zinatenganishwa na matumizi ya risiti.', refresh: 'Onyesha upya', filter: 'Chuja', filterRecords: 'Chuja rekodi', kind: 'Aina', status: 'Hali', source: 'Chanzo', allKinds: 'Aina zote', allStatuses: 'Hali zote', allSources: 'Vyanzo vyote', app: 'App / kwa mkono', other: 'Nyingine', empty: 'Bado hakuna rekodi za siku.', emptyHint: 'Tuma mauzo, matumizi, madeni, au malipo kupitia WhatsApp.', loading: 'Inapakia rekodi za siku…', confirmed: 'Imethibitishwa', pending: 'Inasubiri uthibitisho', voided: 'Imeghairiwa', sale: 'Mauzo', expense: 'Matumizi', stockPurchase: 'Ununuzi wa stock', debt: 'Mkopo uliotolewa', payment: 'Malipo ya mteja', daily: 'Rekodi ya siku', occurred: 'Ilitokea', created: 'Iliundwa', confirm: 'Thibitisha', saving: 'Inahifadhi…', void: 'Ghairi', details: 'Maelezo ya rekodi ya siku', total: 'Jumla', descriptionLabel: 'Maelezo', party: 'Mhusika', recordedBy: 'Iliyorekodiwa na', calculation: 'Mgawanyo wa hesabu', audit: 'Historia ya ukaguzi', historyLoading: 'Inapakia historia…', auditError: 'Historia ya ukaguzi haikuweza kupakiwa.', close: 'Funga', voidTitle: 'Ghairi rekodi ya siku', voidExplanation: 'Ghairi inaweka rekodi hii kuwa imefutwa kwa matumizi ya hesabu. Haifutwi. Rekodi ya awali na historia ya ukaguzi vinabaki, lakini haijumuishwi kwenye jumla.', reason: 'Sababu', reasonPlaceholder: 'Eleza kwa nini rekodi hii inaghairiwa', cancel: 'Ghairi', voidRecord: 'Ghairi rekodi', voiding: 'Inaghairi…', confirmSuccess: 'Rekodi ya siku imethibitishwa.', voidSuccess: 'Rekodi ya siku imeghairiwa. Historia yake imehifadhiwa.', reasonError: 'Andika sababu yenye maana kabla ya kughairi rekodi hii.', confirmError: 'Imeshindikana kuthibitisha rekodi hii.', voidError: 'Imeshindikana kughairi rekodi hii.', whatsApp: 'WhatsApp', voidReason: 'Sababu ya kughairi', today: 'Leo', yesterday: 'Jana', previousDay: 'Juzi', back: 'Nyuma', dateNavigation: 'Urambazaji wa tarehe',
+  title: 'Rekodi za Siku', description: 'Rekodi za shughuli kutoka WhatsApp na app. Zinatenganishwa na matumizi ya risiti.', refresh: 'Onyesha upya', filter: 'Chuja', filterRecords: 'Chuja rekodi', kind: 'Aina', status: 'Hali', source: 'Chanzo', allKinds: 'Aina zote', allStatuses: 'Hali zote', allSources: 'Vyanzo vyote', app: 'App / kwa mkono', other: 'Nyingine', empty: 'Bado hakuna rekodi za siku.', emptyHint: 'Tuma mauzo, matumizi, madeni, au malipo kupitia WhatsApp.', loading: 'Inapakia rekodi za siku…', confirmed: 'Imethibitishwa', pending: 'Inasubiri uthibitisho', voided: 'Imeghairiwa', sale: 'Mauzo', expense: 'Matumizi', stockPurchase: 'Ununuzi wa stock', debt: 'Mkopo uliotolewa', payment: 'Malipo ya mteja', daily: 'Rekodi ya siku', occurred: 'Ilitokea', created: 'Iliundwa', confirm: 'Thibitisha', saving: 'Inahifadhi…', void: 'Ghairi', details: 'Maelezo ya rekodi ya siku', total: 'Jumla', descriptionLabel: 'Maelezo', party: 'Mhusika', recordedBy: 'Iliyorekodiwa na', calculation: 'Mgawanyo wa hesabu', audit: 'Historia ya ukaguzi', historyLoading: 'Inapakia historia…', auditError: 'Historia ya ukaguzi haikuweza kupakiwa.', close: 'Funga', voidTitle: 'Ghairi rekodi ya siku', voidExplanation: 'Ghairi inaweka rekodi hii kuwa imefutwa kwa matumizi ya hesabu. Haifutwi. Rekodi ya awali na historia ya ukaguzi vinabaki, lakini haijumuishwi kwenye jumla.', reason: 'Sababu', reasonPlaceholder: 'Eleza kwa nini rekodi hii inaghairiwa', cancel: 'Ghairi', voidRecord: 'Ghairi rekodi', voiding: 'Inaghairi…', confirmSuccess: 'Rekodi ya siku imethibitishwa.', voidSuccess: 'Rekodi ya siku imeghairiwa. Historia yake imehifadhiwa.', reasonError: 'Andika sababu yenye maana kabla ya kughairi rekodi hii.', confirmError: 'Imeshindikana kuthibitisha rekodi hii.', voidError: 'Imeshindikana kughairi rekodi hii.', whatsApp: 'WhatsApp', voidReason: 'Sababu ya kughairi', today: 'Leo', yesterday: 'Jana', previousDay: 'Juzi', back: 'Nyuma', dateNavigation: 'Urambazaji wa tarehe', oneEntry: 'kipengele 1', manyEntries: 'vipengele {n}',
 } : {
-  title: 'Daily Records', description: 'Operational records from WhatsApp and the app. They stay separate from receipt expenses.', refresh: 'Refresh', filter: 'Filter', filterRecords: 'Filter records', kind: 'Kind', status: 'Status', source: 'Source', allKinds: 'All kinds', allStatuses: 'All statuses', allSources: 'All sources', app: 'App / manual', other: 'Other', empty: 'No daily records yet.', emptyHint: 'Send sales, expenses, debts, or payments on WhatsApp.', loading: 'Loading daily records…', confirmed: 'Confirmed', pending: 'Pending confirmation', voided: 'Voided', sale: 'Sale', expense: 'Expense', stockPurchase: 'Stock purchase', debt: 'Debt issued', payment: 'Customer payment', daily: 'Daily record', occurred: 'Occurred', created: 'Created', confirm: 'Confirm', saving: 'Saving…', void: 'Void', details: 'Daily record details', total: 'Total', descriptionLabel: 'Description', party: 'Party', recordedBy: 'Recorded by', calculation: 'Calculation breakdown', audit: 'Audit history', historyLoading: 'Loading history…', auditError: 'Audit history could not be loaded.', close: 'Close', voidTitle: 'Void daily record', voidExplanation: 'Void marks this record as cancelled. It is not deleted. The original record and audit history remain, but it is excluded from totals.', reason: 'Reason', reasonPlaceholder: 'Explain why this record is being voided', cancel: 'Cancel', voidRecord: 'Void record', voiding: 'Voiding…', confirmSuccess: 'Daily record confirmed.', voidSuccess: 'Daily record voided. Its history is preserved.', reasonError: 'Enter a meaningful reason before voiding this record.', confirmError: 'Could not confirm this daily record.', voidError: 'Could not void this daily record.', whatsApp: 'WhatsApp', voidReason: 'Void reason', today: 'Today', yesterday: 'Yesterday', previousDay: 'Previous day', back: 'Back', dateNavigation: 'Date navigation',
+  title: 'Daily Records', description: 'Operational records from WhatsApp and the app. They stay separate from receipt expenses.', refresh: 'Refresh', filter: 'Filter', filterRecords: 'Filter records', kind: 'Kind', status: 'Status', source: 'Source', allKinds: 'All kinds', allStatuses: 'All statuses', allSources: 'All sources', app: 'App / manual', other: 'Other', empty: 'No daily records yet.', emptyHint: 'Send sales, expenses, debts, or payments on WhatsApp.', loading: 'Loading daily records…', confirmed: 'Confirmed', pending: 'Pending confirmation', voided: 'Voided', sale: 'Sale', expense: 'Expense', stockPurchase: 'Stock purchase', debt: 'Debt issued', payment: 'Customer payment', daily: 'Daily record', occurred: 'Occurred', created: 'Created', confirm: 'Confirm', saving: 'Saving…', void: 'Void', details: 'Daily record details', total: 'Total', descriptionLabel: 'Description', party: 'Party', recordedBy: 'Recorded by', calculation: 'Calculation breakdown', audit: 'Audit history', historyLoading: 'Loading history…', auditError: 'Audit history could not be loaded.', close: 'Close', voidTitle: 'Void daily record', voidExplanation: 'Void marks this record as cancelled. It is not deleted. The original record and audit history remain, but it is excluded from totals.', reason: 'Reason', reasonPlaceholder: 'Explain why this record is being voided', cancel: 'Cancel', voidRecord: 'Void record', voiding: 'Voiding…', confirmSuccess: 'Daily record confirmed.', voidSuccess: 'Daily record voided. Its history is preserved.', reasonError: 'Enter a meaningful reason before voiding this record.', confirmError: 'Could not confirm this daily record.', voidError: 'Could not void this daily record.', whatsApp: 'WhatsApp', voidReason: 'Void reason', today: 'Today', yesterday: 'Yesterday', previousDay: 'Previous day', back: 'Back', dateNavigation: 'Date navigation', oneEntry: '1 entry', manyEntries: '{n} entries',
 };
 const kindLabels: Record<DailyRecordKind, string> = { sale: ui.sale, expense: ui.expense, stock_purchase: ui.stockPurchase, debt_issued: ui.debt, customer_payment: ui.payment };
 const statusLabels: Record<DailyRecordStatus, string> = { pending_confirmation: ui.pending, confirmed: ui.confirmed, voided: ui.voided };
@@ -48,6 +49,9 @@ export default function DailyRecordsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => startOfLocalDay());
+  // Which day-cards are open. Closed by default: the total is the answer most
+  // of the time, and the entries behind it are for when it looks wrong.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
 
   function moveToDate(date: Date) {
     const safeDate = startOfLocalDay(date);
@@ -157,15 +161,21 @@ export default function DailyRecordsPage() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {filtered.map((record) => (
-            <RecordRow
-              key={record.id}
-              record={record}
+          {groupByDay(filtered).map((group) => (
+            <DayGroupCard
+              key={group.key}
+              group={group}
+              open={openGroups.has(group.key)}
+              onToggle={() => setOpenGroups((previous) => {
+                const next = new Set(previous);
+                if (next.has(group.key)) next.delete(group.key); else next.add(group.key);
+                return next;
+              })}
               canManage={canManage}
-              busy={busyId === record.id}
-              onOpen={() => setSelected(record)}
-              onConfirm={() => void handleConfirm(record)}
-              onVoid={() => {
+              busyId={busyId}
+              onOpenRecord={setSelected}
+              onConfirmRecord={(record) => void handleConfirm(record)}
+              onVoidRecord={(record) => {
                 setVoiding(record);
                 setVoidReason('');
               }}
@@ -226,6 +236,80 @@ function FilterFields({
     <Select label={ui.status} value={status} onChange={setStatus} options={[{ value: '', label: ui.allStatuses }, ...Object.entries(statusLabels).map(([value, label]) => ({ value, label }))]} />
     <Select label={ui.source} value={source} onChange={setSource} options={[{ value: '', label: ui.allSources }, { value: 'whatsapp', label: ui.whatsApp }, { value: 'app', label: ui.app }, { value: 'other', label: ui.other }]} />
   </div>;
+}
+
+/**
+ * A day's worth of one kind, in one card.
+ *
+ * The owner recorded a day's takings and three expenses and got four cards, none
+ * of which answered "what did today make?". Sales arrive through the day —
+ * morning, after lunch, at closing — and every one of them belongs to the same
+ * day. The card holds the total; opening it shows what went into it.
+ */
+function DayGroupCard({
+  group,
+  open,
+  onToggle,
+  canManage,
+  busyId,
+  onOpenRecord,
+  onConfirmRecord,
+  onVoidRecord,
+}: {
+  group: DayGroup<DailyRecordWithDetails>;
+  open: boolean;
+  onToggle: () => void;
+  canManage: boolean;
+  busyId: string | null;
+  onOpenRecord: (record: DailyRecordWithDetails) => void;
+  onConfirmRecord: (record: DailyRecordWithDetails) => void;
+  onVoidRecord: (record: DailyRecordWithDetails) => void;
+}) {
+  const entries = group.records.length;
+  return (
+    <Card className="overflow-hidden p-0">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full flex-col gap-3 p-5 text-left sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-ink">{kindLabels[group.kind as DailyRecordKind] ?? group.kind}</span>
+            {group.hasUnconfirmed && <StatusBadge status="pending_confirmation" />}
+          </div>
+          <p className="mt-1 text-sm text-ink-muted">
+            {formatLongDate(new Date(`${group.day}T00:00:00`), lang)}
+            {' · '}
+            {entries === 1 ? ui.oneEntry : ui.manyEntries.replace('{n}', String(entries))}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xl font-semibold tabular-nums text-ink">{formatMoney(group.total)}</span>
+          <ChevronDown className={`h-5 w-5 shrink-0 text-ink-muted transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+        </div>
+      </button>
+
+      {open && (
+        <div className="border-t border-surface-border bg-surface-muted/40 p-3 sm:p-4">
+          <div className="space-y-3">
+            {group.records.map((record) => (
+              <RecordRow
+                key={record.id}
+                record={record}
+                canManage={canManage}
+                busy={busyId === record.id}
+                onOpen={() => onOpenRecord(record)}
+                onConfirm={() => onConfirmRecord(record)}
+                onVoid={() => onVoidRecord(record)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
 }
 
 function RecordRow({
