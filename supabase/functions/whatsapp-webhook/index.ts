@@ -402,6 +402,31 @@ function offerNewProducts(notCounted: string[], lang: Lang): string {
   return notCounted.length === 0 ? '' : newProductOffer(notCounted, lang);
 }
 
+/**
+ * Has the person moved on to something else entirely?
+ *
+ * A question Risip asked keeps the conversation until it is answered, which is
+ * right until somebody simply wants to do something different. Then it becomes
+ * a trap: every message is read as a wrong answer and the same question comes
+ * back, which is what "change language to kiswahili" got.
+ *
+ * Only unmistakable topic changes count. A vague reply is still a bad answer to
+ * the question, and re-asking it is the correct thing to do.
+ */
+function startsAnotherTopic(text: string): boolean {
+  return Boolean(
+    parseLanguageCommand(text)
+    || parseInviteRequest(text)
+    || parseQuantityOnlySale(text)
+    || parseSellingPriceBatch(text)
+    || parseStockCountBatch(text)
+    || parseProductCostBatch(text)
+    || parseHypotheticalProfitRequest(text)
+    || parseProductAnalyticsRequest(text)
+    || parseReadRequest(text),
+  );
+}
+
 async function resolveProductForRead(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
@@ -2387,7 +2412,16 @@ Deno.serve(async (req) => {
         // Answering which role the invite is for. The role is what the code
         // grants, so it is asked and never guessed — a wrong answer here hands
         // a counter hand the whole company's finances.
-        if (invitePending) {
+        // A pending question must yield when the person has plainly moved on.
+        // MEASURED FAILURE: "change language to kiswahili" was answered by
+        // asking "what will they be? Reply 1 or 2" a second time, because the
+        // invite branch treated every message that was not a role as a bad
+        // answer to its own question. Nobody escapes a question by answering it
+        // correctly; they escape by talking about something else.
+        if (invitePending && startsAnotherTopic(body)) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'invite', 'abandoned', 'skipped');
+        } else if (invitePending) {
           if (isCancel(body) || isDailyRecordRejection(body)) {
             await clearConversation(db, identity.id as string);
             await replyQuietly(phone, inviteCancelled(lang));
