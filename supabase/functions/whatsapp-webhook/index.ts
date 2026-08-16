@@ -353,6 +353,11 @@ async function priceQuantitySale(
   return {
     kind: 'priced',
     lines,
+    // Left off the returned object once already, which made priced.notCounted
+    // undefined, which defaulted to an empty list, which meant "biblia" vanished
+    // from a forty-eight-line paste without a word. TypeScript did not catch it
+    // because this file is not in the app's tsconfig project.
+    notCounted,
     record: {
       kind: 'sale',
       amount,

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   parseQuantityOnlySale,
@@ -288,5 +290,19 @@ describe('a name it cannot price, in a long paste', () => {
     const reply = quantitySaleConfirmation(
       [{ product: 'daftari', quantity: 10, unitPrice: 1500, band: 'retail' }], 'sw');
     expect(reply).not.toMatch(/sijazihesabu/);
+  });
+});
+
+describe('the warning actually reaching the message', () => {
+  it('is wired from the pricing result to the confirmation', () => {
+    // MEASURED FAILURE: notCounted was computed, typed into the return signature,
+    // and then left off the returned object. priced.notCounted was undefined, the
+    // default [] took over, and "biblia" vanished from a forty-eight-line paste
+    // without a word. Nothing caught it: this file is not in the app's tsconfig
+    // project, so tsc never type-checks it.
+    const webhook = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+    expect(webhook).toMatch(/kind: 'priced',\s*\n\s*lines,[\s\S]{0,400}?\n\s*notCounted,/);
+    expect(webhook).toContain('priced.notCounted');
   });
 });
