@@ -85,3 +85,30 @@ describe('when Meta will not say what the number is', () => {
     expect(reply).not.toMatch(/null|undefined/);
   });
 });
+
+describe('the object hiding inside the Swahili verb', () => {
+  it('takes the phrasing the owner actually sent', () => {
+    // "nataka kumualika mtu nafanyaje" — ku-MU-alika. The pattern knew
+    // "kualika" and "kumuinvite" and missed the one a person typed.
+    expect(parseInviteRequest('nataka kumualika mtu nafanyaje')).toBe(true);
+  });
+
+  it('takes the other infixes people use', () => {
+    for (const said of [
+      'nataka kumualika mtu', 'nataka kuwaalika watu', 'nimualike nani',
+      'nataka kualika mfanyakazi', 'naomba kumuinvite mtu', 'nataka kuongeza mtu',
+      'add a worker', 'invite someone', 'nataka mfanyakazi mpya',
+    ]) {
+      expect(parseInviteRequest(said), said).toBe(true);
+    }
+  });
+
+  it('still leaves ordinary business messages alone', () => {
+    for (const said of [
+      'nimeuza daftari 10', 'faida ya leo ni ngapi', 'mauzo ya wiki hii',
+      'nani ananidai', 'bei ya daftari rejareja 1500', 'habari za asubuhi',
+    ]) {
+      expect(parseInviteRequest(said), said).toBe(false);
+    }
+  });
+});

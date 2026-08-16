@@ -1822,6 +1822,11 @@ Deno.serve(async (req) => {
           riderPending = false;
           await replyQuietly(to, text + riderQuestionNotice(mixed.question, lang));
           if (!identity) return;
+          // The second answer is a fresh wait for the reader. WhatsApp drops the
+          // typing indicator after about twenty-five seconds and it is gone the
+          // moment the first message lands, so it has to be raised again or the
+          // chat looks finished while Risip is still working.
+          await showTyping(waMessageId);
           // Read-only, so it runs now rather than after the confirmation. The
           // notice above already says the figure excludes what is pending.
           const hypotheticalProduct = parseHypotheticalProfitRequest(mixed.question);
@@ -2967,6 +2972,10 @@ Deno.serve(async (req) => {
           const budget = await consumeAiBudget(db, identity, contextChars);
           if (budget.allowed) {
             let assistantFailure = 'unknown_failure';
+            // The model and its tool loop are the slowest thing here, and the
+            // indicator raised at the top of the request has long expired by the
+            // time it answers. Raised again so the wait is visible.
+            await showTyping(waMessageId);
             const assistant = await runConversationalAssistant({
               context: assistantIdentityContext(identity),
               history,

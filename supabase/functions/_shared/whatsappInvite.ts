@@ -24,7 +24,11 @@ export type InviteRole = 'worker' | 'accountant';
 export function parseInviteRequest(text: string | null | undefined): boolean {
   const said = String(text ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
   if (!said) return false;
-  return /\b(?:invite|kumuinvite|kualika|mualike|nialike|kuongeza mtu|add (?:a )?(?:user|worker|staff|member)|mfanyakazi mpya|staff mpya)\b/
+  // MEASURED FAILURE: the owner wrote "nataka kumualika mtu nafanyaje" and this
+  // knew "kualika" and "kumuinvite" but not "kumualika". Swahili puts the object
+  // inside the verb — ku-M-ualika, ku-WA-alika, ni-M-ualike — so the stem is
+  // what to match on, with the infix optional.
+  return /\b(?:ku|ni|tu|a)?(?:m|mu|wa|w)?(?:alika|alike)\b|\b(?:invite|inviting)\b|\bku(?:mu|wa)?invite\b|\bkuongeza mtu\b|\badd (?:a )?(?:user|worker|staff|member)\b|\b(?:mfanyakazi|staff|mtumiaji) mpya\b/
     .test(said);
 }
 
