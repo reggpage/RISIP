@@ -15,12 +15,13 @@ describe('adding a product the shop sells but Risip never heard of', () => {
         retail: 12000,
         wholesale: 11000,
         wholesaleMinQty: 3,
+        unit: null,
       });
   });
 
   it('takes a product with one price', () => {
     expect(parseNewProductLine('kifutio kununua 150 rejareja 250'))
-      .toEqual({ product: 'kifutio', unitCost: 150, retail: 250, wholesale: null, wholesaleMinQty: null });
+      .toEqual({ product: 'kifutio', unitCost: 150, retail: 250, wholesale: null, wholesaleMinQty: null, unit: null });
   });
 
   it('takes a trade price with no threshold, for the regular customer', () => {
@@ -96,7 +97,7 @@ describe('what the shopkeeper is shown', () => {
 
   it('shows the margin per piece before anything is saved', () => {
     const reply = newProductConfirmation([{
-      product: 'biblia', unitCost: 9000, retail: 12000, wholesale: 11000, wholesaleMinQty: 3,
+      product: 'biblia', unitCost: 9000, retail: 12000, wholesale: 11000, wholesaleMinQty: 3, unit: null,
     }], 'sw');
     expect(reply).toContain('kununua TSh 9,000');
     expect(reply).toContain('rejareja TSh 12,000');
@@ -107,7 +108,7 @@ describe('what the shopkeeper is shown', () => {
 
   it('interrupts for a price that loses money on every sale', () => {
     const reply = newProductConfirmation([{
-      product: 'biblia', unitCost: 12000, retail: 12000, wholesale: null, wholesaleMinQty: null,
+      product: 'biblia', unitCost: 12000, retail: 12000, wholesale: null, wholesaleMinQty: null, unit: null,
     }], 'sw');
     expect(reply).toMatch(/hasara/);
     expect(reply.indexOf('hasara')).toBeLessThan(reply.indexOf('NDIYO'));
@@ -115,8 +116,30 @@ describe('what the shopkeeper is shown', () => {
 
   it('judges the loss by the lowest price the shop would actually charge', () => {
     const reply = newProductConfirmation([{
-      product: 'biblia', unitCost: 10000, retail: 12000, wholesale: 9500, wholesaleMinQty: 3,
+      product: 'biblia', unitCost: 10000, retail: 12000, wholesale: 9500, wholesaleMinQty: 3, unit: null,
     }], 'sw');
     expect(reply).toMatch(/hasara/);
+  });
+});
+
+describe('the way the owner asked for it to be written', () => {
+  it('reads "Kamusi @5000 nauza 10,000"', () => {
+    // Their own example. "@" is how a trader writes what they paid and "nauza"
+    // is how they say what they charge — far likelier to be typed than the
+    // laboured "kununua … rejareja …".
+    expect(parseNewProductLine('Kamusi @5000 nauza 10,000'))
+      .toEqual({ product: 'Kamusi', unitCost: 5000, retail: 10000, wholesale: null, wholesaleMinQty: null, unit: null });
+  });
+
+  it('keeps a measure out of the product name', () => {
+    // "sukari kwa kilo" would be a product no sale could ever match.
+    expect(parseNewProductLine('Sukari @2500 nauza 3500 kwa kilo'))
+      .toMatchObject({ product: 'Sukari', unit: 'kilo', unitCost: 2500, retail: 3500 });
+  });
+
+  it('reads a whole opening list in one message', () => {
+    const priced = parseNewProductPricing(
+      'Kamusi @5000 nauza 10000\nDaftari @1200 nauza 1500\nSukari @2500 nauza 3500 kwa kilo');
+    expect(priced.map((product) => product.product)).toEqual(['Kamusi', 'Daftari', 'Sukari']);
   });
 });

@@ -1701,29 +1701,31 @@ async function handleOnboarding(
     // stock answerable — with a real sentence to copy for each.
     return lang === 'sw'
       ? `Sawa ${person}, karibu ${name} 🎉\n\n`
-        + 'Anza hivi — nakili sentensi, badilisha majina na namba:\n\n'
-        + '*1. Weka bei za bidhaa zako*\n'
-        + '_daftari rejareja 1500 jumla 1300 kuanzia 12_\n'
-        + 'Mstari mmoja kwa kila bidhaa, tuma zote kwa pamoja.\n\n'
-        + '*2. Hesabu zilizopo rafuni*\n'
-        + '_Hesabu ya stock_\n_daftari 90_\n_kalamu 240_\n\n'
-        + '*3. Rekodi mauzo, hata kwa idadi tu*\n'
-        + '_nimeuza daftari 10_\n'
-        + 'Nitatumia bei zako mwenyewe.\n\n'
-        + 'Ukitaka kuona kila kitu kwenye skrini kubwa, andika *ingia*.\n'
-        + 'Ukikwama, andika *msaada*.'
+        + 'Anza kwa kurekodi bidhaa zako. Nitumie orodha yako ikiwa na bei ya '
+        + 'kununua na bei ya kuuza, mstari mmoja kwa kila bidhaa:\n\n'
+        + '_Kamusi @5000 nauza 10000_\n'
+        + '_Daftari @1200 nauza 1500_\n'
+        + '_Sukari @2500 nauza 3500 kwa kilo_\n\n'
+        + 'Baada ya hapo, maneno mawili ndiyo yanatosha:\n\n'
+        + '*mauzo* — kisha orodha ya vilivyouzwa\n'
+        + '_mauzo_\n_sukari 2_\n_kamusi 1_\n\n'
+        + '*store* — kisha orodha ya vilivyopo au vilivyoingia\n'
+        + '_store_\n_sukari 40_\n_kamusi 12_\n\n'
+        + 'Bei sitakuuliza tena — nitatumia zako mwenyewe.\n'
+        + 'Ukitaka skrini kubwa andika *ingia*. Ukikwama andika *msaada*.'
       : `Okay ${person}, welcome to ${name} 🎉\n\n`
-        + 'Start here — copy a line and change the names and numbers:\n\n'
-        + '*1. Set your prices*\n'
-        + '_daftari rejareja 1500 jumla 1300 kuanzia 12_\n'
-        + 'One line per product, send them all in one message.\n\n'
-        + '*2. Count what is on the shelf*\n'
-        + '_Hesabu ya stock_\n_daftari 90_\n_kalamu 240_\n\n'
-        + '*3. Record a sale, quantities are enough*\n'
-        + '_nimeuza daftari 10_\n'
-        + 'I will price it from your own list.\n\n'
-        + 'To see everything on a bigger screen, send *login*.\n'
-        + 'If you get stuck, send *help*.';
+        + 'Start by recording your products. Send me your list with the buying '
+        + 'price and the selling price, one line per product:\n\n'
+        + '_Kamusi @5000 nauza 10000_\n'
+        + '_Daftari @1200 nauza 1500_\n'
+        + '_Sukari @2500 nauza 3500 kwa kilo_\n\n'
+        + 'After that, two words are all you need:\n\n'
+        + '*mauzo* — then the list of what sold\n'
+        + '_mauzo_\n_sukari 2_\n_kamusi 1_\n\n'
+        + '*store* — then what is on the shelf, or what came in\n'
+        + '_store_\n_sukari 40_\n_kamusi 12_\n\n'
+        + 'I will not ask for prices again — I use your own.\n'
+        + 'For a bigger screen send *login*. If you get stuck send *help*.';
   }
 
   await db.from('whatsapp_onboarding').update({
@@ -2494,7 +2496,7 @@ Deno.serve(async (req) => {
             const { error: costError } = await db.rpc('wa_set_product_costs', {
               p_phone: phone,
               p_items: newProductPending.map((product) => ({
-                product: product.product, unit_cost: product.unitCost, unit: null,
+                product: product.product, unit_cost: product.unitCost, unit: product.unit,
               })),
             });
             const { error: priceError } = costError ? { error: null } : await db.rpc('wa_set_selling_prices', {

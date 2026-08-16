@@ -112,7 +112,16 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   // closing a day writes one product per line — that is not an edge case, it is
   // the main case. Each line has to be its own sale line, so a stray sentence in
   // the middle still hands the whole message to somebody else.
-  const lines = String(text ?? '').split(/\r?\n/).map(clean).filter(Boolean);
+  let lines = String(text ?? '').split(/\r?\n/).map(clean).filter(Boolean);
+
+  // "mauzo" on a line of its own, then the goods underneath. The owner's idea,
+  // and a good one: one word at the top tells Risip what the whole block is,
+  // instead of every line having to repeat "nimeuza". The header is spent here
+  // by giving it to each line, so nothing below has to change.
+  if (lines.length > 1 && /^(?:mauzo|sales?)\s*:?\s*$/i.test(lines[0])) {
+    lines = lines.slice(1).map((line) => (OPENER.test(line) ? line : `nimeuza ${line}`));
+  }
+
   if (lines.length > 1) {
     const items: QuantitySaleItem[] = [];
     const expenses: ExpenseLine[] = [];

@@ -306,3 +306,22 @@ describe('the warning actually reaching the message', () => {
     expect(webhook).toContain('priced.notCounted');
   });
 });
+
+describe('the word "mauzo" standing at the top of a list', () => {
+  it('applies the header to every line beneath it', () => {
+    // The owner's idea: one word says what the block is, instead of every line
+    // repeating "nimeuza".
+    expect(parseQuantityOnlySale('mauzo\nsukari 2\nkamusi 1')?.items).toEqual([
+      { product: 'sukari', quantity: 2, band: null },
+      { product: 'kamusi', quantity: 1, band: null },
+    ]);
+  });
+
+  it('still takes it on one line, the way it already worked', () => {
+    expect(parseQuantityOnlySale('mauzo sukari 2, kamusi 1')?.items).toHaveLength(2);
+  });
+
+  it('leaves a header with nothing under it alone', () => {
+    expect(parseQuantityOnlySale('mauzo')).toBeNull();
+  });
+});

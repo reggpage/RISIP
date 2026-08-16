@@ -24,6 +24,8 @@ export type NewProductPricing = {
   retail: number;
   wholesale: number | null;
   wholesaleMinQty: number | null;
+  /** "kwa kilo", "kwa lita" — kept off the NAME, where it does not belong. */
+  unit: string | null;
 };
 
 const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, ' ').trim();
@@ -41,8 +43,11 @@ function money(raw: string | undefined): number | null {
     : null;
 }
 
-const BUY = /(?:kununua|ninanunua|gharama|buying|cost)/i;
-const RETAIL = /(?:rejareja|reja\s*reja|retail)/i;
+// "@" is how a trader writes a buying price, and "nauza" is how they say the
+// selling one. The owner's own example: "Kamusi @5000 nauza 10,000". Shorter
+// than the laboured form and far more likely to actually be typed.
+const BUY = /(?:kununua|ninanunua|nanunua|gharama|buying|cost|@)/i;
+const RETAIL = /(?:rejareja|reja\s*reja|retail|nauza|ninauza|selling)/i;
 const WHOLESALE = /(?:jumla|wholesale)/i;
 
 /**
@@ -63,6 +68,11 @@ export function parseNewProductLine(text: string | null | undefined): NewProduct
 
   const minMatch = /(?:kuanzia|from|starting(?:\s+at)?)\s*(?:pcs|vipande)?\s*([0-9]+(?:\.[0-9]+)?)/i.exec(said);
   const minQty = minMatch ? Number(minMatch[1]) : null;
+  // "sukari @2500 nauza 3500 kwa kilo" — the measure belongs to the product,
+  // not inside its name. Left in, the shop ends up with a product called
+  // "sukari kwa kilo" that no sale will ever match.
+  const unitMatch = /\s(?:kwa|per|kila)\s+(kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni)\s*$/i
+    .exec(said);
 
   // The name is what is left once every label and every number is removed. The
   // connecting words are stripped only where they connect: "ya" is part of half
@@ -72,6 +82,7 @@ export function parseNewProductLine(text: string | null | undefined): NewProduct
     .replace(new RegExp(`${RETAIL.source}\\s*(?:ni|is|:)?\\s*${NUMBER}`, 'gi'), ' ')
     .replace(new RegExp(`${WHOLESALE.source}\\s*(?:ni|is|:)?\\s*${NUMBER}`, 'gi'), ' ')
     .replace(/(?:kuanzia|from|starting(?:\s+at)?)\s*(?:pcs|vipande)?\s*[0-9]+(?:\.[0-9]+)?/gi, ' ')
+    .replace(/\s(?:kwa|per|kila)\s+(?:kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni)\s*$/i, ' ')
     .replace(/\b(?:bei|price|ongeza|weka|bidhaa|product|add)\b/gi, ' ')
     // Standalone numbers only. A digit welded to letters is part of the name —
     // "karatasi A4 rimu" is a real product, and stripping every digit turned it
@@ -93,6 +104,7 @@ export function parseNewProductLine(text: string | null | undefined): NewProduct
     retail,
     wholesale,
     wholesaleMinQty: minQty && minQty > 0 ? minQty : null,
+    unit: unitMatch ? unitMatch[1].toLowerCase() : null,
   };
 }
 
