@@ -1694,9 +1694,36 @@ async function handleOnboarding(
 
     const name = (result as { company_name?: string } | null)?.company_name ?? '';
     const person = next.action.fullName;
+    // The old welcome ended at "send login for a link", and a shopkeeper who
+    // has just answered four questions still had no idea what to type next.
+    // These are the first three things worth doing, in the order that makes
+    // each one useful — a price list makes a sale priceable, a count makes
+    // stock answerable — with a real sentence to copy for each.
     return lang === 'sw'
-      ? `Sawa ${person}, karibu ${name} 🎉\nRisip iko tayari kukusaidia kurekodi risiti na biashara yako.\n\nAndika "ingia" kupata link ya kufungua Risip.`
-      : `Okay ${person}, welcome to ${name} 🎉\nRisip is ready to help you record receipts and manage your business.\n\nSend "login" to get a link to open Risip.`;
+      ? `Sawa ${person}, karibu ${name} 🎉\n\n`
+        + 'Anza hivi — nakili sentensi, badilisha majina na namba:\n\n'
+        + '*1. Weka bei za bidhaa zako*\n'
+        + '_daftari rejareja 1500 jumla 1300 kuanzia 12_\n'
+        + 'Mstari mmoja kwa kila bidhaa, tuma zote kwa pamoja.\n\n'
+        + '*2. Hesabu zilizopo rafuni*\n'
+        + '_Hesabu ya stock_\n_daftari 90_\n_kalamu 240_\n\n'
+        + '*3. Rekodi mauzo, hata kwa idadi tu*\n'
+        + '_nimeuza daftari 10_\n'
+        + 'Nitatumia bei zako mwenyewe.\n\n'
+        + 'Ukitaka kuona kila kitu kwenye skrini kubwa, andika *ingia*.\n'
+        + 'Ukikwama, andika *msaada*.'
+      : `Okay ${person}, welcome to ${name} 🎉\n\n`
+        + 'Start here — copy a line and change the names and numbers:\n\n'
+        + '*1. Set your prices*\n'
+        + '_daftari rejareja 1500 jumla 1300 kuanzia 12_\n'
+        + 'One line per product, send them all in one message.\n\n'
+        + '*2. Count what is on the shelf*\n'
+        + '_Hesabu ya stock_\n_daftari 90_\n_kalamu 240_\n\n'
+        + '*3. Record a sale, quantities are enough*\n'
+        + '_nimeuza daftari 10_\n'
+        + 'I will price it from your own list.\n\n'
+        + 'To see everything on a bigger screen, send *login*.\n'
+        + 'If you get stuck, send *help*.';
   }
 
   await db.from('whatsapp_onboarding').update({

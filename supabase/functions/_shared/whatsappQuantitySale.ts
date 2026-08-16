@@ -233,10 +233,17 @@ export function quantitySaleConfirmation(
   // Shown separately and never netted off. A day that took 480,000 and spent
   // 25,000 is not a day that took 455,000, and somebody handed one number cannot
   // tell which of the two went wrong.
+  // A label that only repeats the heading is dropped. The owner wrote
+  // "Matumizi 15000" and read back "Matumizi:" and then "• Matumizi: TSh
+  // 15,000" — the word twice, saying nothing the second time.
+  const generic = /^(?:matumizi|gharama|expenses?|spending|other|nyingine)$/i;
+  const line = (item: ExpenseLine) => (generic.test(item.label)
+    ? `  • ${money(item.amount)}`
+    : `  • ${item.label}: ${money(item.amount)}`);
   const outgoings = expenses.length === 0 ? '' : (lang === 'sw'
-    ? `\nMatumizi:\n${expenses.map((item) => `  • ${item.label}: ${money(item.amount)}`).join('\n')}`
+    ? `\nMatumizi:\n${expenses.map(line).join('\n')}`
       + `\nJumla ya matumizi: *${money(spent)}*\n`
-    : `\nExpenses:\n${expenses.map((item) => `  • ${item.label}: ${money(item.amount)}`).join('\n')}`
+    : `\nExpenses:\n${expenses.map(line).join('\n')}`
       + `\nTotal spent: *${money(spent)}*\n`);
   // Directly above the question, never below it. One unrecognised name out of
   // thirty used to refuse the whole paste and ask for all forty-eight lines
