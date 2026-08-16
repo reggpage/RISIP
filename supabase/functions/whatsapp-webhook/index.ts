@@ -119,6 +119,14 @@ import {
   productLooksLikeExisting,
 } from '../_shared/whatsappAddProduct.ts';
 import {
+  newProductCancelled,
+  newProductConfirmation,
+  newProductOffer,
+  newProductSaved,
+  parseNewProductPricing,
+  type NewProductPricing,
+} from '../_shared/whatsappNewProduct.ts';
+import {
   parseQuantityOnlySale,
   priceLine,
   quantitySaleConfirmation,
@@ -371,6 +379,18 @@ async function priceQuantitySale(
       confidence: 0.99,
     },
   };
+}
+
+/**
+ * The offer to add what could not be priced, appended to a sale confirmation.
+ *
+ * Naming a product Risip cannot price was already better than dropping it, but
+ * it left the shopkeeper to work out on their own that they now had to go and
+ * invent a price somewhere else before that sale could ever be recorded. This
+ * finishes the sentence.
+ */
+function offerNewProducts(notCounted: string[], lang: Lang): string {
+  return notCounted.length === 0 ? '' : newProductOffer(notCounted, lang);
 }
 
 async function resolveProductForRead(
@@ -1986,8 +2006,13 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<SellingPriceBatch> | null)?.kind === 'selling_price_batch'
           ? convo.options as SellingPriceBatch
           : null;
+        const newProductPending = convo?.awaiting === 'product_cost'
+          && (convo.options as { kind?: string } | null)?.kind === 'new_product_pricing'
+          ? (convo.options as { products: NewProductPricing[] }).products
+          : null;
         const costConversation = convo?.awaiting === 'product_cost' && convo.options
           && !costPrompt && !costBatchPending && !stockBatchPending && !sellingBatchPending
+          && !newProductPending
           ? { cost: convo.options as unknown as ProductCost }
           : null;
         const productContext = convo?.awaiting === 'product_analytics'
@@ -2341,6 +2366,45 @@ Deno.serve(async (req) => {
         // NDIYO on a whole selling-price list. All or nothing: a list half
         // applied leaves the shop believing it set prices it did not set, and
         // the assistant then quotes the old ones with complete confidence.
+        // NDIYO on a set of brand-new products. The cost and both selling prices
+        // land together, because a product added with only one of them fails the
+        // next sale in exactly the way that started this.
+        if (newProductPending) {
+          if (isDailyRecordConfirmation(body)) {
+            const { error: costError } = await db.rpc('wa_set_product_costs', {
+              p_phone: phone,
+              p_items: newProductPending.map((product) => ({
+                product: product.product, unit_cost: product.unitCost, unit: null,
+              })),
+            });
+            const { error: priceError } = costError ? { error: null } : await db.rpc('wa_set_selling_prices', {
+              p_phone: phone,
+              p_items: newProductPending.map((product) => ({
+                product: product.product,
+                retail: product.retail,
+                wholesale: product.wholesale,
+                min_qty: product.wholesaleMinQty,
+              })),
+            });
+            await clearConversation(db, identity.id as string);
+            const failed = costError ?? priceError;
+            await replyQuietly(phone, failed
+              ? productCostErrorMessage(failed, lang)
+              : newProductSaved(newProductPending, lang));
+            await audit(db, identity, waMessageId, 'new_product',
+              String(newProductPending.length), failed ? 'failed' : 'applied');
+          } else if (isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, newProductCancelled(lang));
+            await audit(db, identity, waMessageId, 'new_product', 'cancel', 'applied');
+          } else {
+            await replyQuietly(phone, newProductConfirmation(newProductPending, lang));
+            await audit(db, identity, waMessageId, 'new_product', 'reask', 'skipped');
+          }
+          await finish('skipped');
+          continue;
+        }
+
         if (sellingBatchPending) {
           if (isDailyRecordConfirmation(body)) {
             const { data: saved, error } = await db.rpc('wa_set_selling_prices', {
@@ -2592,6 +2656,27 @@ Deno.serve(async (req) => {
         // A pasted selling-price list. Checked against what the shop pays before
         // it is confirmed, because a retail price under the buying cost reads
         // and saves perfectly while turning every future sale into a loss.
+        // Answering the offer to add a product: cost and both selling prices on
+        // one line. Checked BEFORE the selling-price batch, which would read the
+        // same line as a price change for a product that does not exist yet.
+        const newProducts = parseNewProductPricing(writeBody);
+        if (newProducts.length > 0) {
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: { kind: 'new_product_pricing', products: newProducts },
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          await reply(phone, newProductConfirmation(newProducts, lang));
+          await audit(db, identity, waMessageId, 'new_product', String(newProducts.length), 'pending');
+          await finish('skipped');
+          continue;
+        }
+
         const sellingBatch = parseSellingPriceBatch(writeBody);
         if (sellingBatch) {
           const { data: costRows } = await db.rpc('wa_product_pricing', {
@@ -3043,7 +3128,8 @@ Deno.serve(async (req) => {
                     updated_at: new Date().toISOString(),
                   }, { onConflict: 'identity_id' });
                   await replyQuietly(phone,
-                    quantitySaleConfirmation(priced.lines, lang, quantitySale.expenses, priced.notCounted));
+                    quantitySaleConfirmation(priced.lines, lang, quantitySale.expenses, priced.notCounted)
+                  + offerNewProducts(priced.notCounted, lang));
                   await audit(db, identity, waMessageId, 'quantity_sale',
                     `${priced.lines.length}+${quantitySale.expenses.length}`, 'pending');
                   await finish('skipped');
@@ -3068,7 +3154,8 @@ Deno.serve(async (req) => {
                   expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
                   updated_at: new Date().toISOString(),
                 }, { onConflict: 'identity_id' });
-                await replyQuietly(phone, quantitySaleConfirmation(priced.lines, lang, quantitySale.expenses, priced.notCounted));
+                await replyQuietly(phone, quantitySaleConfirmation(priced.lines, lang, quantitySale.expenses, priced.notCounted)
+                  + offerNewProducts(priced.notCounted, lang));
                 await audit(db, identity, waMessageId, 'quantity_sale', 'create', 'pending');
                 await finish('skipped');
                 continue;
