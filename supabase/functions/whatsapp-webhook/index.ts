@@ -272,7 +272,7 @@ async function priceQuantitySale(
   sale: QuantitySale,
   lang: Lang,
 ): Promise<
-  | { kind: 'priced'; record: ParsedDailyRecord; lines: PricedLine[] }
+  | { kind: 'priced'; record: ParsedDailyRecord; lines: PricedLine[]; notCounted: string[] }
   | { kind: 'blocked'; message: string }
   | { kind: 'skip' }
 > {
@@ -329,11 +329,18 @@ async function priceQuantitySale(
     const line = priceLine({ product: item.name, quantity: item.quantity, band: item.band }, known);
     if (line) lines.push(line); else missing.push(item.name);
   }
-  if (missing.length > 0 || unknown.length > 0) {
-    return { kind: 'blocked', message: quantitySaleMissingPrices([...unknown, ...missing], lang) };
+  const notCounted = [...unknown, ...missing];
+  // Nothing at all could be priced: the ordinary path may still help.
+  if (lines.length === 0) {
+    return sale.items.length === 1
+      ? { kind: 'skip' }
+      : { kind: 'blocked', message: quantitySaleMissingPrices(notCounted, lang) };
   }
-  // Everything was unknown and nothing priced: let the ordinary path try.
-  if (lines.length === 0) return { kind: 'skip' };
+  // One unrecognised name out of thirty used to refuse the whole paste and ask
+  // for all forty-eight lines again. Nobody retypes that; they give up. The
+  // twenty-nine Risip can price are worth recording, and the one it cannot is
+  // named directly above the confirm question — where it cannot be missed and
+  // is still the shopkeeper's decision, not a silent omission.
 
   const amount = Math.round(lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0) * 100) / 100;
   return {
@@ -3024,7 +3031,7 @@ Deno.serve(async (req) => {
                     updated_at: new Date().toISOString(),
                   }, { onConflict: 'identity_id' });
                   await replyQuietly(phone,
-                    quantitySaleConfirmation(priced.lines, lang, quantitySale.expenses));
+                    quantitySaleConfirmation(priced.lines, lang, quantitySale.expenses, priced.notCounted));
                   await audit(db, identity, waMessageId, 'quantity_sale',
                     `${priced.lines.length}+${quantitySale.expenses.length}`, 'pending');
                   await finish('skipped');
@@ -3049,7 +3056,7 @@ Deno.serve(async (req) => {
                   expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
                   updated_at: new Date().toISOString(),
                 }, { onConflict: 'identity_id' });
-                await replyQuietly(phone, quantitySaleConfirmation(priced.lines, lang, quantitySale.expenses));
+                await replyQuietly(phone, quantitySaleConfirmation(priced.lines, lang, quantitySale.expenses, priced.notCounted));
                 await audit(db, identity, waMessageId, 'quantity_sale', 'create', 'pending');
                 await finish('skipped');
                 continue;

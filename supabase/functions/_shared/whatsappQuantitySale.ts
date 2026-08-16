@@ -221,6 +221,8 @@ export function quantitySaleConfirmation(
   lines: PricedLine[],
   lang: Lang,
   expenses: ExpenseLine[] = [],
+  /** Named right above the question, because a line that vanishes is money. */
+  notCounted: string[] = [],
 ): string {
   const total = lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
   const spent = expenses.reduce((sum, item) => sum + item.amount, 0);
@@ -232,6 +234,17 @@ export function quantitySaleConfirmation(
       + `\nJumla ya matumizi: *${money(spent)}*\n`
     : `\nExpenses:\n${expenses.map((item) => `  • ${item.label}: ${money(item.amount)}`).join('\n')}`
       + `\nTotal spent: *${money(spent)}*\n`);
+  // Directly above the question, never below it. One unrecognised name out of
+  // thirty used to refuse the whole paste and ask for all forty-eight lines
+  // again — nobody retypes that, they give up. The rest is worth recording, and
+  // this line is what keeps the omission a decision rather than a disappearance.
+  const skipped = notCounted.length === 0 ? '' : (lang === 'sw'
+    ? `\n⚠️ Hizi sijazihesabu, sina bei yake ya kuuza:\n`
+      + notCounted.map((name) => `  • ${name}`).join('\n')
+      + '\nWeka bei yake kisha uziandike peke yake.\n'
+    : `\n⚠️ Not counted, no selling price for these:\n`
+      + notCounted.map((name) => `  • ${name}`).join('\n')
+      + '\nSet a price, then record them on their own.\n');
   const rows = lines.map((line) => {
     const band = line.band === 'wholesale'
       ? (lang === 'sw' ? ' (jumla)' : ' (wholesale)')
@@ -240,10 +253,10 @@ export function quantitySaleConfirmation(
   }).join('\n');
 
   return lang === 'sw'
-    ? `Nimeelewa:\nAina: Mauzo\nBidhaa:\n${rows}\nJumla ya mauzo: *${money(total)}*\n${outgoings}\n`
+    ? `Nimeelewa:\nAina: Mauzo\nBidhaa:\n${rows}\nJumla ya mauzo: *${money(total)}*\n${outgoings}${skipped}\n`
       + '_Bei ni zile ulizoziweka mwenyewe._\n\n'
       + 'Jibu *NDIYO* kuthibitisha, au *HAPANA* kughairi.'
-    : `Understood:\nType: Sale\nItems:\n${rows}\nSales total: *${money(total)}*\n${outgoings}\n`
+    : `Understood:\nType: Sale\nItems:\n${rows}\nSales total: *${money(total)}*\n${outgoings}${skipped}\n`
       + '_Priced from the list you set yourself._\n\n'
       + 'Reply *YES* to confirm, or *NO* to cancel.';
 }

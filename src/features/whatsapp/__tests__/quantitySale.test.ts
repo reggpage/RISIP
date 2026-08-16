@@ -248,3 +248,29 @@ describe('names that contain a digit', () => {
     expect(parseQuantityOnlySale('nimeuza 4 5')).toBeNull();
   });
 });
+
+describe('a name it cannot price, in a long paste', () => {
+  it('names it directly above the question instead of hiding it', () => {
+    const reply = quantitySaleConfirmation(
+      [{ product: 'daftari', quantity: 10, unitPrice: 1500, band: 'retail' }],
+      'sw', [], ['biblia']);
+    expect(reply).toContain('biblia');
+    expect(reply).toMatch(/sijazihesabu/);
+    expect(reply.indexOf('biblia')).toBeLessThan(reply.indexOf('NDIYO'));
+  });
+
+  it('still shows the total for everything it could price', () => {
+    // The alternative — refusing all forty-eight lines over one name — is a
+    // request nobody retypes.
+    const reply = quantitySaleConfirmation(
+      [{ product: 'daftari', quantity: 10, unitPrice: 1500, band: 'retail' }],
+      'sw', [], ['biblia']);
+    expect(reply).toContain('Jumla ya mauzo: *TSh 15,000*');
+  });
+
+  it('says nothing extra when everything was priced', () => {
+    const reply = quantitySaleConfirmation(
+      [{ product: 'daftari', quantity: 10, unitPrice: 1500, band: 'retail' }], 'sw');
+    expect(reply).not.toMatch(/sijazihesabu/);
+  });
+});
