@@ -149,3 +149,17 @@ describe('reading a saved buying cost', () => {
     expect(productCostReply('flour', null, 'en')).toContain('no saved buying cost');
   });
 });
+
+describe('a supplier price reported out loud', () => {
+  it('reads "unga sasa ni 1100 kwa kilo" as the new buying cost', () => {
+    expect(parseProductCost('unga sasa ni 1100 kwa kilo'))
+      .toEqual({ product: 'unga', unitCost: 1100, unit: 'kilo' });
+  });
+
+  it('requires the unit, so an ordinary sentence is never filed as a cost', () => {
+    // Without "kwa <kipimo>" this would file the buying cost of a product
+    // called "faida", and every margin after it would be wrong.
+    expect(parseProductCost('faida sasa ni 5000')).toBeNull();
+    expect(parseProductCost('mauzo sasa ni 200000')).toBeNull();
+  });
+});

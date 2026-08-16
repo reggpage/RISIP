@@ -62,3 +62,38 @@ describe('A1 deterministic read-only WhatsApp tools', () => {
     expect(buildProfitReply(incomplete, 'today', 'sw')).toContain('sukari');
   });
 });
+
+describe('phrasings the eval set caught on its first run', () => {
+  const tool = (said: string) => parseReadRequest(said)?.tool ?? null;
+
+  it('reads a summary asked about any period, not only today', () => {
+    expect(tool('mauzo ya wiki hii')).toBe('ai_business_summary');
+    expect(tool('cash movement ya leo')).toBe('ai_business_summary');
+    expect(tool('show spend trend this year')).toBe('ai_business_summary');
+    expect(tool('leo nimepata kiasi gani?')).toBe('ai_business_summary');
+  });
+
+  it('reads receipts asked for with an adjective in the middle', () => {
+    // "my confirmed receipts" never contained the exact phrase "my receipts".
+    expect(tool('show my confirmed receipts')).toBe('ai_my_receipts');
+  });
+
+  it('reads what Risip owes the person, said in English', () => {
+    expect(tool('what does Risip owe me')).toBe('ai_owed_to_me');
+  });
+
+  it('reads a debt question written with typos', () => {
+    expect(tool('nani ananidwa pesa')).toBe('ai_debtors');
+  });
+
+  it('reads a question about one debtor being late', () => {
+    const request = parseReadRequest('Juma ana siku ngapi hajalipa?');
+    expect(request?.tool).toBe('ai_debtor_detail');
+    expect(request?.partyName).toBe('juma');
+  });
+
+  it('reads a loss question as a profit estimate', () => {
+    expect(tool('nimepoteza pesa mwezi huu?')).toBe('daily_profit_estimate');
+    expect(tool('nimepoteza pesa kwa kununua stock')).toBe('daily_profit_estimate');
+  });
+});

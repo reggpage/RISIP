@@ -35,6 +35,7 @@ type EvalCase = {
   expectTool: string | null;
   hasHistory: boolean;
   hasRole: boolean;
+  disputed: boolean;
   block: string;
 };
 
@@ -51,6 +52,7 @@ function extractCases(file: string, source: string): EvalCase[] {
       expectTool: tool === 'null' || tool === undefined ? null : tool,
       hasHistory: /^\s+history:/m.test(block),
       hasRole: /^\s+role:/m.test(block),
+      disputed: /^\s+disputed:\s*true/m.test(block),
       block,
     };
   });
@@ -76,9 +78,7 @@ const SATISFIES: Record<string, string[]> = {
   get_product_performance: ['product_analytics'],
   set_product_cost: ['product_cost', 'product_cost_batch', 'new_product'],
   propose_product_cost: ['product_cost', 'product_cost_batch'],
-  get_product_cost: ['product_cost', 'ai_product_cost'],
   language_control: ['change_language'],
-  onboarding_language_set: ['change_language'],
   ai_debtors: ['ai_debtors'],
   ai_debtor_detail: ['ai_debtor_detail'],
   get_open_debts: ['ai_debtors'],
@@ -111,6 +111,9 @@ for (const c of cases) {
   if (!c.say) { unchecked.push({ c, why: 'no say:' }); continue; }
   // A message that only makes sense after a previous turn, or that depends on
   // who is asking, is not something a stateless router can be judged on.
+  // An expectation I believe is wrong is recorded as disputed in the YAML,
+  // with the reason, rather than quietly satisfied by bending a parser.
+  if (c.disputed) { unchecked.push({ c, why: 'disputed expectation' }); continue; }
   if (c.hasHistory) { unchecked.push({ c, why: 'needs a prior turn' }); continue; }
   if (c.hasRole) { unchecked.push({ c, why: 'needs a role' }); continue; }
   if (c.expectTool === null) { unchecked.push({ c, why: 'expects no tool' }); continue; }

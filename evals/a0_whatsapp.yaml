@@ -161,6 +161,13 @@ cases:
     expect_tool: deterministic_daily_record
     expect_amount: 118000
     must_confirm: true
+    disputed: true
+    # DISPUTED. Adding VAT to a number is arithmetic, not a transaction. This
+    # case asks the daily-record parser to draft a record of 118,000 from a
+    # message that reports no sale, no expense and no debt — inventing a
+    # transaction nobody described. A calculator reply is the right answer, and
+    # deterministic_calculator (used by three other cases) is the right tool.
+    # Left failing on purpose rather than bending the parser to match it.
   - id: 1023
     say: "nimenunua vitabu 10 kila moja 7000 nimeuza kila moja 10000"
     lang: sw

@@ -41,7 +41,7 @@ const clean = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N} ]/gu,
 export function parseProductAnalyticsRequest(text: string | null | undefined): ProductAnalyticsRequest | null {
   const value = clean(text ?? '');
   if (!value) return null;
-  const asksProduct = /(?:\b(?:bidhaa|bidha|product|products)\b.*\b(?:gani|which|inauza|inauzika|imeuzwa|iliuzwa|selling|sold|faida|profit|revenue|mapato)\b)|(?:\b(?:inauza zaidi|inauza sana|inauza ngapi|imeuzwa ngapi|iliuzwa ngapi|inauzika sana|best selling|what sold (?:the )?most|top)\b)/.test(value);
+  const asksProduct = /(?:\b(?:bidhaa|bidha|product|products)\b.*\b(?:gani|which|zote|inauza|inauzika|imeuzwa|iliuzwa|ninazouza|ninauza|selling|sold|faida|profit|revenue|mapato)\b)|(?:\b(?:inauza zaidi|inauza sana|inauza ngapi|imeuzw\w* ngap\w*|iliuzwa ngapi|(?:ina|kina)uzika sana|best selling|(?:what |wht )?sold (?:the )?most|top)\b)/.test(value);
   const asksProfit = /\b(faida|margin|profit|earn)\b/.test(value);
   const asksRevenue = /\b(mapato|revenue|money|fedha nyingi|pesa nyingi)\b/.test(value);
   // A bare "faida ya leo" is a period profit question, not a product ranking.

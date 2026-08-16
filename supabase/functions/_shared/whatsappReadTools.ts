@@ -125,7 +125,7 @@ export function parseReadRequest(input: string | null | undefined, now = new Dat
   const range = resolveDateRange(String(input ?? ''), now);
   const withRange = (request: Omit<ReadRequest, 'range'>): ReadRequest => ({ ...request, range });
 
-  if (hasAny(text, ['ninaidai risip', 'risip inanidai', 'my reimbursement', 'reimbursements yangu'])) {
+  if (hasAny(text, ['ninaidai risip', 'risip inanidai', 'my reimbursement', 'reimbursements yangu', 'risip owe', 'risip owes', 'owe me', 'nirudishiwe'])) {
     return withRange({ tool: 'ai_owed_to_me', period });
   }
   if (hasAny(text, ['biashara zangu', 'my businesses', 'switch business', 'badili biashara'])) {
@@ -137,25 +137,28 @@ export function parseReadRequest(input: string | null | undefined, now = new Dat
   if (hasAny(text, ['petty cash', 'salio la cash', 'cash balance', 'salio langu la pesa'])) {
     return withRange({ tool: 'ai_petty_cash_balance', period });
   }
-  if (hasAny(text, ['risiti zangu', 'my receipts', 'receipt status', 'status ya risiti'])) {
+  if (hasAny(text, ['risiti zangu', 'my receipts', 'receipt status', 'status ya risiti', 'my confirmed receipts', 'my pending receipts', 'risiti zilizothibitishwa', 'risiti zangu za'])) {
     const status = hasAny(text, ['confirmed', 'imethibitishwa'])
       ? 'confirmed'
       : hasAny(text, ['pending', 'inasubiri', 'submitted']) ? 'submitted' : null;
     return withRange({ tool: 'ai_my_receipts', period, status });
   }
   const detailMatch = text.match(/^deni la ([a-z][a-z ]{1,60}?) (?:ni|lina|imebakia|imebaki)\b/)
-    ?? text.match(/^([a-z][a-z ]{1,60}?) anadaiwa(?: kiasi gani| kiasi| nini)?\b/);
+    ?? text.match(/^([a-z][a-z ]{1,60}?) anadaiwa(?: kiasi gani| kiasi| nini)?\b/)
+    // "Juma ana siku ngapi hajalipa?" is a question about ONE debtor and was
+    // going to the model, because the pattern knew only two phrasings of it.
+    ?? text.match(/^([a-z][a-z ]{1,60}?) (?:ana siku ngapi|hajalipa|amechelewa|anadaiwa tangu)\b/);
   const detailName = detailMatch?.[1].trim();
   if (detailName && !['nani', 'who', 'which'].includes(detailName)) {
     return withRange({ tool: 'ai_debtor_detail', period, partyName: detailName });
   }
-  if (hasAny(text, ['nani anadaiwa', 'nani ananidai', 'wanaonidai', 'onyesha wadeni', 'list ya madeni', 'who owes me', 'hajanilipa', 'nina madeni', 'madeni yangu', 'madeni ya'])) {
+  if (hasAny(text, ['nani anadaiwa', 'nani ananidai', 'nani ananidwa', 'ananidwa pesa', 'wanaonidai', 'onyesha wadeni', 'list ya madeni', 'who owes me', 'hajanilipa', 'nina madeni', 'madeni yangu', 'madeni ya'])) {
     return withRange({ tool: 'ai_debtors', period });
   }
-  if (hasAny(text, ['faida', 'profit', 'margin', 'biashara inalipa', 'gharama zimezidi'])) {
+  if (hasAny(text, ['faida', 'profit', 'margin', 'biashara inalipa', 'gharama zimezidi', 'nimepoteza pesa', 'nimepata hasara', 'hasara', 'lost money', 'losing money'])) {
     return withRange({ tool: 'daily_profit_estimate', period });
   }
-  if (hasAny(text, ['muhtasari', 'summary', 'imekuwaje', 'what happened', 'mauzo ya leo', 'sales today', 'business summary'])) {
+  if (hasAny(text, ['muhtasari', 'summary', 'imekuwaje', 'what happened', 'mauzo ya leo', 'mauzo ya wiki', 'mauzo ya mwezi', 'sales today', 'business summary', 'cash movement', 'mzunguko wa pesa', 'spend trend', 'matumizi ya wiki', 'nimepata kiasi gani', 'nimeingiza kiasi gani'])) {
     return withRange({ tool: 'ai_business_summary', period });
   }
   return null;

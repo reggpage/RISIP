@@ -86,6 +86,12 @@ const PATTERNS: { re: RegExp; product: number; amount: number; unit: number }[] 
   // cost of <product> is <amount> [per <unit>]
   { re: /^cost\s+of\s+(.+?)\s+is\s+([\d.,]+)(?:\s+(?:per|a)\s+([\p{L}]+))?$/iu,
     product: 1, amount: 2, unit: 3 },
+  // <product> sasa ni <amount> kwa <unit> — how a supplier's new price gets
+  // reported out loud. The unit is REQUIRED here and nowhere else: without it
+  // "faida sasa ni 5000" would be filed as the buying cost of a product called
+  // "faida", and every margin after it would be wrong.
+  { re: /^(.+?)\s+(?:sasa|now)\s+(?:ni|is)\s+([\d.,]+)\s+(?:kwa|per|kila)\s+([\p{L}]+)$/iu,
+    product: 1, amount: 2, unit: 3 },
 ];
 
 // Words that mean the message is about selling or spending, not about a cost
