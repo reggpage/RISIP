@@ -122,8 +122,11 @@ import {
   parseInviteRole,
 } from '../_shared/whatsappInvite.ts';
 import {
+  addProductNameQuestion,
   addProductNeedsCost,
+  isAddProductStart,
   parseAddProduct,
+  parseAddProductName,
   productAlreadyExists,
   productLooksLikeExisting,
 } from '../_shared/whatsappAddProduct.ts';
@@ -508,6 +511,8 @@ function startsAnotherTopic(text: string): boolean {
   return Boolean(
     parseLanguageCommand(text)
     || parseInviteRequest(text)
+    || isAddProductStart(text)
+    || parseAddProduct(text)
     || parseQuantityOnlySale(text)
     || parseSellingPriceBatch(text)
     || parsePortionSetupOffer(text)
@@ -516,7 +521,8 @@ function startsAnotherTopic(text: string): boolean {
     || parseProductCostBatch(text)
     || parseHypotheticalProfitRequest(text)
     || parseProductAnalyticsRequest(text)
-    || parseReadRequest(text),
+    || parseReadRequest(text)
+    || isDailyRecordCandidate(text),
   );
 }
 
@@ -2001,7 +2007,7 @@ Deno.serve(async (req) => {
           ?? parseProductCostBatch(said) ?? parseProductCost(said),
         ) || isDailyRecordCandidate(said);
         const mixed = rider && claimsWrite(rider.action) ? rider : null;
-        const writeBody = mixed ? mixed.action : body;
+        let writeBody = mixed ? mixed.action : body;
         let riderPending = mixed !== null;
         let visibleTurnRemembered = false;
         /**
@@ -2160,7 +2166,7 @@ Deno.serve(async (req) => {
 
         // ── Text: deterministic routing, no model involved ────────────────
         const linkToken = parseLinkToken(body);
-        const convo = identity ? await loadConversation(db, identity.id as string) : null;
+        let convo = identity ? await loadConversation(db, identity.id as string) : null;
         const intent = routeIntent({
           messageType: 'text',
           text: body,
@@ -2190,7 +2196,7 @@ Deno.serve(async (req) => {
 
         // Daily-record draft confirmation uses the existing payment_source
         // conversation slot. Receipt/project state stays mutually exclusive.
-        const dailyConversation = convo?.awaiting === 'payment_source'
+        let dailyConversation = convo?.awaiting === 'payment_source'
           && (convo.options as Partial<DailyRecordConversation> | null)?.kind === 'daily_record_confirmation'
           ? convo.options as DailyRecordConversation
           : null;
@@ -2198,7 +2204,7 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<DailyRecordClarification> | null)?.kind === 'daily_record_clarification'
           ? convo.options as DailyRecordClarification
           : null;
-        const dailyBatchConversation = convo?.awaiting === 'payment_source'
+        let dailyBatchConversation = convo?.awaiting === 'payment_source'
           && (convo.options as Partial<DailyRecordBatchConversation> | null)?.kind === 'daily_record_batch_confirmation'
           ? convo.options as DailyRecordBatchConversation
           : null;
@@ -2255,10 +2261,15 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<ProductRenamePreview> | null)?.kind === 'product_rename_confirmation'
           ? convo.options as ProductRenamePreview
           : null;
+        const addProductSetupPending = convo?.awaiting === 'product_cost'
+          && (convo.options as { kind?: string; step?: string; product?: string } | null)?.kind === 'add_product_setup'
+          ? convo.options as { kind: 'add_product_setup'; step: 'name' | 'cost'; product?: string }
+          : null;
         const costConversation = convo?.awaiting === 'product_cost' && convo.options
           && !costPrompt && !costBatchPending && !stockBatchPending && !sellingBatchPending
           && !newProductPending && !portionSizePending && !portionConfirmPending
           && !quantityMeaningPending && !portionQuantityPending && !productRenamePending
+          && !addProductSetupPending
           ? { cost: convo.options as unknown as ProductCost }
           : null;
         const productContext = convo?.awaiting === 'product_analytics'
@@ -2369,6 +2380,61 @@ Deno.serve(async (req) => {
           }
           await finish('skipped');
           continue;
+        }
+
+        // A pending money draft is not allowed to trap the whole chat. If the
+        // person unmistakably starts another task, cancel the old draft through
+        // its RPC first, clear both deterministic and AI short-term state, then
+        // continue routing this same message. A failed cancellation blocks the
+        // switch so two live drafts can never be left behind accidentally.
+        const switchesPendingDailyTopic = Boolean(
+          (dailyBatchConversation || dailyConversation)
+          && !isDailyRecordConfirmation(body)
+          && !isDailyRecordRejection(body)
+          && startsAnotherTopic(body ?? ''),
+        );
+        if (switchesPendingDailyTopic && dailyBatchConversation) {
+          const { error } = await db.rpc('wa_cancel_daily_record_batch', {
+            p_profile_id: identity.profile_id,
+            p_company_id: identity.company_id,
+            p_daily_record_ids: dailyBatchConversation.dailyRecordIds,
+            p_reason: 'WhatsApp user changed topic before confirming daily record batch',
+          });
+          if (error) {
+            await replyDailyRecordBatchConfirmationQuietly(phone, dailyBatchConversation.records, lang);
+            await audit(db, identity, waMessageId, 'daily_record_batch', 'topic_switch_cancel', 'failed');
+            await finish('skipped', 'daily_record_batch_cancel_failed');
+            continue;
+          }
+          await clearConversation(db, identity.id as string);
+          await clearAssistantMemory(db, identity);
+          await replyQuietly(phone, lang === 'sw'
+            ? 'Nimeghairi draft ya awali kwa sababu umeanza mada mpya.'
+            : 'I cancelled the earlier draft because you started a new topic.');
+          await audit(db, identity, waMessageId, 'daily_record_batch', 'topic_switch_cancel', 'applied');
+          dailyBatchConversation = null;
+          convo = null;
+        } else if (switchesPendingDailyTopic && dailyConversation) {
+          const { error } = await db.rpc('wa_cancel_daily_record_draft', {
+            p_profile_id: identity.profile_id,
+            p_company_id: identity.company_id,
+            p_daily_record_id: dailyConversation.dailyRecordId,
+            p_reason: 'WhatsApp user changed topic before confirming daily record draft',
+          });
+          if (error) {
+            await replyDailyRecordConfirmationQuietly(phone, dailyConversation.record, lang);
+            await audit(db, identity, waMessageId, 'daily_record', 'topic_switch_cancel', 'failed');
+            await finish('skipped', 'daily_record_cancel_failed');
+            continue;
+          }
+          await clearConversation(db, identity.id as string);
+          await clearAssistantMemory(db, identity);
+          await replyQuietly(phone, lang === 'sw'
+            ? 'Nimeghairi draft ya awali kwa sababu umeanza mada mpya.'
+            : 'I cancelled the earlier draft because you started a new topic.');
+          await audit(db, identity, waMessageId, 'daily_record', 'topic_switch_cancel', 'applied');
+          dailyConversation = null;
+          convo = null;
         }
 
         // A bare list such as "kitabu 7, biblia 3" is parked because it could
@@ -2585,7 +2651,10 @@ Deno.serve(async (req) => {
               p_company_id: identity.company_id,
               p_daily_record_ids: dailyBatchConversation.dailyRecordIds,
             });
-            await clearConversation(db, identity.id as string);
+            if (!error) {
+              await clearConversation(db, identity.id as string);
+              await clearAssistantMemory(db, identity);
+            }
             await replyQuietly(phone, error
               ? buildDailyRecordBatchPending(dailyBatchConversation.records, lang)
               : buildDailyRecordBatchConfirmed(dailyBatchConversation.records, lang));
@@ -2600,7 +2669,10 @@ Deno.serve(async (req) => {
               p_daily_record_ids: dailyBatchConversation.dailyRecordIds,
               p_reason: 'WhatsApp user declined daily record batch',
             });
-            await clearConversation(db, identity.id as string);
+            if (!error) {
+              await clearConversation(db, identity.id as string);
+              await clearAssistantMemory(db, identity);
+            }
             await replyQuietly(phone, error
               ? buildDailyRecordBatchPending(dailyBatchConversation.records, lang)
               : (lang === 'sw' ? 'Sawa. Rekodi zote za ujumbe huu zimeghairiwa.' : 'Okay. All records from this message were cancelled.'));
@@ -2619,11 +2691,12 @@ Deno.serve(async (req) => {
               p_company_id: identity.company_id,
               p_daily_record_id: dailyConversation.dailyRecordId,
             });
-            await clearConversation(db, identity.id as string);
             if (error) {
               await replyQuietly(phone, buildDailyRecordPending(dailyConversation.record, lang));
               await audit(db, identity, waMessageId, 'daily_record', 'confirm', 'pending');
             } else {
+              await clearConversation(db, identity.id as string);
+              await clearAssistantMemory(db, identity);
               await replyQuietly(phone, buildDailyRecordConfirmed(dailyConversation.record, lang));
               await audit(db, identity, waMessageId, 'daily_record', 'confirm', 'applied');
               // The record is safely saved first. Asking what the product costs
@@ -2641,7 +2714,10 @@ Deno.serve(async (req) => {
               p_daily_record_id: dailyConversation.dailyRecordId,
               p_reason: 'WhatsApp user declined daily record draft',
             });
-            await clearConversation(db, identity.id as string);
+            if (!error) {
+              await clearConversation(db, identity.id as string);
+              await clearAssistantMemory(db, identity);
+            }
             await replyQuietly(phone, error
               ? buildDailyRecordPending(dailyConversation.record, lang)
               : buildDailyRecordCancelled(lang));
@@ -3000,6 +3076,87 @@ Deno.serve(async (req) => {
           }
         }
 
+        // “Naongeza bidhaa” is a real start to a task, not a malformed product
+        // sentence. Keep the two missing fields as explicit state so the user can
+        // answer naturally: first the name, then the buying cost. A clear change
+        // of subject releases the prompt instead of trapping the chat.
+        if (addProductSetupPending) {
+          if (isCancel(body) || isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await clearAssistantMemory(db, identity);
+            await replyQuietly(phone, lang === 'sw' ? 'Sawa, sijaongeza bidhaa.' : 'Okay, I did not add a product.');
+            await audit(db, identity, waMessageId, 'add_product', 'guided_cancel', 'applied');
+            await finish('skipped');
+            continue;
+          }
+
+          if (addProductSetupPending.step === 'name') {
+            if (isAddProductStart(body)) {
+              await replyQuietly(phone, addProductNameQuestion(lang));
+              await audit(db, identity, waMessageId, 'add_product', 'name_reask', 'clarification');
+              await finish('skipped');
+              continue;
+            }
+            if (startsAnotherTopic(body ?? '')) {
+              await clearConversation(db, identity.id as string);
+              await clearAssistantMemory(db, identity);
+              await audit(db, identity, waMessageId, 'add_product', 'guided_abandoned', 'skipped');
+              convo = null;
+            } else {
+              const product = parseAddProductName(body);
+              if (!product) {
+                await replyQuietly(phone, addProductNameQuestion(lang));
+                await audit(db, identity, waMessageId, 'add_product', 'name_reask', 'clarification');
+                await finish('skipped');
+                continue;
+              }
+              await db.from('whatsapp_conversations').upsert({
+                identity_id: identity.id,
+                company_id: identity.company_id,
+                profile_id: identity.profile_id,
+                awaiting: 'product_cost',
+                receipt_id: null,
+                options: { kind: 'add_product_setup', step: 'cost', product },
+                expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'identity_id' });
+              await replyQuietly(phone, lang === 'sw'
+                ? `Unainunua “${product}” kwa bei gani? Jibu kiasi, kwa mfano: *10,000 kwa kilo*.`
+                : `What do you pay for “${product}”? Reply with the amount, for example: *10,000 per kilo*.`);
+              await audit(db, identity, waMessageId, 'add_product', 'cost_asked', 'clarification');
+              await finish('skipped');
+              continue;
+            }
+          } else if (addProductSetupPending.product) {
+            const unitMatch = /\b(?:kwa|per)\s+(kilo|kg|gramu|lita|litre|ml|mita|futi|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni|kipande|pcs)\b/iu.exec(body ?? '');
+            const answerWithoutUnit = unitMatch
+              ? `${(body ?? '').slice(0, unitMatch.index)} ${(body ?? '').slice(unitMatch.index + unitMatch[0].length)}`.trim()
+              : body;
+            const answered = parseCostAnswer(answerWithoutUnit);
+            if (answered === null) {
+              if (startsAnotherTopic(body ?? '')) {
+                await clearConversation(db, identity.id as string);
+                await clearAssistantMemory(db, identity);
+                await audit(db, identity, waMessageId, 'add_product', 'guided_abandoned', 'skipped');
+                convo = null;
+              } else {
+                await replyQuietly(phone, lang === 'sw'
+                  ? `Sijapata bei ya kununua “${addProductSetupPending.product}”. Jibu kiasi, kwa mfano: *10,000 kwa kilo*.`
+                  : `I did not get the buying cost for “${addProductSetupPending.product}”. Reply with an amount, for example: *10,000 per kilo*.`);
+                await audit(db, identity, waMessageId, 'add_product', 'cost_reask', 'clarification');
+                await finish('skipped');
+                continue;
+              }
+            } else {
+              const unit = unitMatch?.[1] ?? null;
+              writeBody = `ongeza bidhaa ${addProductSetupPending.product} bei ya kununua ${answered}${unit ? ` kwa ${unit}` : ''}`;
+              await clearConversation(db, identity.id as string);
+              await clearAssistantMemory(db, identity);
+              convo = null;
+            }
+          }
+        }
+
         // A verification code, typed out. The last resort when the square will
         // not read: measured against a real close-up, ninety preprocessing
         // combinations failed on it — blur plus TRA's watermark over the finder
@@ -3075,6 +3232,23 @@ Deno.serve(async (req) => {
 
         // Adding a product is checked before anything records money, because
         // the whole value of it is refusing to create the near-duplicate.
+        if (isAddProductStart(writeBody)) {
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: { kind: 'add_product_setup', step: 'name' },
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          await clearAssistantMemory(db, identity);
+          await replyQuietly(phone, addProductNameQuestion(lang));
+          await audit(db, identity, waMessageId, 'add_product', 'name_asked', 'clarification');
+          await finish('skipped');
+          continue;
+        }
         const addProduct = parseAddProduct(writeBody);
         if (addProduct) {
           const resolved = await resolveProductForRead(db, identity, addProduct.product);

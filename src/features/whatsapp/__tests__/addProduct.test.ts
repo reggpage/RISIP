@@ -1,11 +1,30 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
+  addProductNameQuestion,
+  isAddProductStart,
   parseAddProduct,
+  parseAddProductName,
   productAlreadyExists,
   productLooksLikeExisting,
 } from '../../../../supabase/functions/_shared/whatsappAddProduct';
 
 describe('adding a product from WhatsApp', () => {
+  it('recognises a request that starts the guided flow before a name is known', () => {
+    expect(isAddProductStart('naongeza bidhaa')).toBe(true);
+    expect(isAddProductStart('nataka kuongeza bidhaa')).toBe(true);
+    expect(isAddProductStart('I want to add a product')).toBe(true);
+    expect(isAddProductStart('ongeza bidhaa sukari')).toBe(false);
+    expect(addProductNameQuestion('sw')).toContain('bidhaa gani');
+  });
+
+  it('accepts a natural product name but not a command or amount', () => {
+    expect(parseAddProductName("Nyama ya ng'ombe")).toBe("Nyama ya ng'ombe");
+    expect(parseAddProductName('12,000')).toBeNull();
+    expect(parseAddProductName('hapana')).toBeNull();
+  });
+
   it('takes a bare name, because the invoice is not always to hand', () => {
     expect(parseAddProduct('ongeza bidhaa sukari'))
       .toEqual({ kind: 'add_product', product: 'sukari', unitCost: null, unit: null });
@@ -37,6 +56,50 @@ describe('adding a product from WhatsApp', () => {
     expect(parseAddProduct('bei ya kununua sukari ni 2500')).toBeNull();
     expect(parseAddProduct('sukari ziko ngapi')).toBeNull();
     expect(parseAddProduct('')).toBeNull();
+  });
+});
+
+describe('product topic switching in the webhook', () => {
+  const webhook = () => readFileSync(
+    resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+
+  it('cancels a pending daily draft through the RPC before routing the new topic', () => {
+    const source = webhook();
+    const start = source.indexOf('const switchesPendingDailyTopic');
+    const end = source.indexOf('// A bare list such as', start);
+    const guard = source.slice(start, end);
+    expect(guard).toContain("db.rpc('wa_cancel_daily_record_draft'");
+    expect(guard).toContain("db.rpc('wa_cancel_daily_record_batch'");
+    expect(guard).toContain('await clearAssistantMemory(db, identity)');
+    expect(guard).toContain('dailyConversation = null');
+    expect(guard).toContain('convo = null');
+    expect(guard.indexOf("db.rpc('wa_cancel_daily_record_draft'")).toBeLessThan(guard.indexOf('dailyConversation = null'));
+  });
+
+  it('treats measured setup, add-product, and a new ledger message as real topic changes', () => {
+    const source = webhook();
+    const start = source.indexOf('function startsAnotherTopic');
+    const end = source.indexOf('async function resolveProductForRead', start);
+    const helper = source.slice(start, end);
+    expect(helper).toContain('parsePortionSetupOffer(text)');
+    expect(helper).toContain('isAddProductStart(text)');
+    expect(helper).toContain('parseAddProduct(text)');
+    expect(helper).toContain('isDailyRecordCandidate(text)');
+  });
+
+  it('parks “naongeza bidhaa” as a name question instead of sending it to stale AI context', () => {
+    const source = webhook();
+    expect(source).toContain("options: { kind: 'add_product_setup', step: 'name' }");
+    expect(source).toContain('await replyQuietly(phone, addProductNameQuestion(lang))');
+    expect(source).toContain('writeBody = `ongeza bidhaa ${addProductSetupPending.product}');
+  });
+
+  it('clears AI memory after a daily draft is confirmed or declined', () => {
+    const source = webhook();
+    const start = source.indexOf('if (dailyBatchConversation)');
+    const end = source.indexOf('// ── A buying price', start);
+    const confirmation = source.slice(start, end);
+    expect(confirmation.match(/clearAssistantMemory\(db, identity\)/g)?.length).toBeGreaterThanOrEqual(4);
   });
 });
 

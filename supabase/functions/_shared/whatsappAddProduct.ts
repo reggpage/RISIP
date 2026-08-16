@@ -32,6 +32,29 @@ function money(raw: string | undefined | null): number | null {
 }
 
 const OPENER = /^(?:tafadhali\s+)?(?:ongeza|weka|sajili|add|register)\s+(?:bidhaa|product|kitu)\s+/iu;
+const START_ONLY = /^(?:tafadhali\s+)?(?:(?:nataka|nahitaji|ningependa|naomba)\s+)?(?:naongeza|ninaongeza|kuongeza|ongeza|kuweka|weka|kusajili|sajili)\s+(?:bidhaa|product|kitu)[?.!\s]*$/iu;
+const ENGLISH_START_ONLY = /^(?:please\s+)?(?:i\s+(?:want|need|would\s+like)\s+to\s+)?(?:add|register)\s+(?:a\s+)?product[?.!\s]*$/iu;
+
+/** A clear request to start adding a product, before the name is known. */
+export function isAddProductStart(text: string | null | undefined): boolean {
+  const said = clean(text);
+  return START_ONLY.test(said) || ENGLISH_START_ONLY.test(said);
+}
+
+/** Keep the first step conversational instead of asking for a magic sentence. */
+export function addProductNameQuestion(lang: Lang): string {
+  return lang === 'sw'
+    ? 'Sawa. Unataka kuongeza bidhaa gani? Andika jina la bidhaa, kwa mfano: *Nyama ya ng\'ombe*.'
+    : 'Okay. Which product would you like to add? Send its name, for example: *Beef*.';
+}
+
+/** A short answer to the name question. Commands and money belong elsewhere. */
+export function parseAddProductName(text: string | null | undefined): string | null {
+  const said = clean(text).replace(/^["“”']+|["“”'?.!]+$/gu, '').trim();
+  if (said.length < 2 || said.length > 80 || !/[\p{L}]/u.test(said)) return null;
+  if (/\d/u.test(said) || /^(?:ndiyo|ndio|yes|hapana|no|cancel|ghairi|toka|help|msaada)$/iu.test(said)) return null;
+  return said;
+}
 
 /**
  * "ongeza bidhaa sukari", "ongeza bidhaa sukari bei ya kununua 2500 kwa kilo"
