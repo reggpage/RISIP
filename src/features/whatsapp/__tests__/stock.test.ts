@@ -34,6 +34,11 @@ describe('recording a count', () => {
     expect(parseStockCount('nimehesabu mafuta 20 lita')).toEqual({ product: 'mafuta', quantity: 20, unit: 'lita' });
   });
 
+  it('reads an explicit store count in a declared purchase unit', () => {
+    expect(parseStockCount('store mafuta ndoo 2'))
+      .toEqual({ product: 'mafuta', quantity: 2, unit: 'ndoo' });
+  });
+
   it('accepts zero, because an empty shelf is a real count', () => {
     expect(parseStockCount('nina daftari 0')).toEqual({ product: 'daftari', quantity: 0, unit: null });
   });

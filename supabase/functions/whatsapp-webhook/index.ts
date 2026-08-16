@@ -136,6 +136,20 @@ import {
   type NewProductPricing,
 } from '../_shared/whatsappNewProduct.ts';
 import {
+  matchDeclaredSaleUnit,
+  parsePortionSetupOffer,
+  portionSetupCancelled,
+  portionSetupConfirmation,
+  portionSetupSaved,
+  portionSizeQuestion,
+  portionUnitRequired,
+  resumePortionSetup,
+  type DeclaredSaleUnit,
+  type PortionSetupDraft,
+  type PortionSetupReady,
+} from '../_shared/whatsappPortions.ts';
+import {
+  parseBareQuantityList,
   parseQuantityOnlySale,
   priceLine,
   quantitySaleConfirmation,
@@ -153,8 +167,25 @@ import {
 } from '../_shared/whatsappProductResolver.ts';
 import {
   buildHypotheticalProfitReply,
+  buildPortionHypotheticalProfitReply,
   parseHypotheticalProfitRequest,
 } from '../_shared/whatsappHypotheticalProfit.ts';
+import {
+  hypotheticalPortionQuestion,
+  matchHypotheticalPortionAnswer,
+  parseQuantityMeaningAnswer,
+  quantityMeaningQuestion,
+  stockPurchaseNeedsPrices,
+  type HypotheticalPortionChoice,
+  type ParkedQuantityMeaning,
+} from '../_shared/whatsappConversationMemory.ts';
+import {
+  parseProductRename,
+  productRenameCancelled,
+  productRenameConfirmation,
+  productRenameSaved,
+  type ProductRenamePreview,
+} from '../_shared/whatsappProductRename.ts';
 import { parseTypedVerificationCode, typedCodeRejected } from '../_shared/typedCode.ts';
 import {
   type StockCountBatch,
@@ -293,11 +324,52 @@ async function priceQuantitySale(
   | { kind: 'blocked'; message: string }
   | { kind: 'skip' }
 > {
-  const resolvedItems: { key: string; name: string; quantity: number; band: QuantitySaleItem['band'] }[] = [];
+  const { data: declaredRows, error: declaredError } = await db.rpc('wa_company_product_sale_units', {
+    p_company_id: identity.company_id,
+  });
+  // Rolling deploy safety: if the DB migration is not visible yet, ordinary
+  // one-unit products keep using the old pricing path. Portion sales simply do
+  // not activate until both halves are present.
+  const declaredUnits: DeclaredSaleUnit[] = (declaredError
+    ? []
+    : (declaredRows ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    productKey: String(row.product_key),
+    productName: String(row.product_name),
+    unitKey: String(row.unit_key),
+    unitName: String(row.unit_name),
+    baseQuantity: Number(row.base_quantity),
+    retail: row.retail_price == null ? null : Number(row.retail_price),
+    wholesale: row.wholesale_price == null ? null : Number(row.wholesale_price),
+    wholesaleMinQty: row.wholesale_min_qty == null ? null : Number(row.wholesale_min_qty),
+  }));
+  const resolvedItems: {
+    key: string;
+    name: string;
+    quantity: number;
+    band: QuantitySaleItem['band'];
+    declared: DeclaredSaleUnit | null;
+  }[] = [];
   // Named back to the shopkeeper, never silently dropped: a line missing from a
   // till roll is money they believe they took and Risip does not.
   const unknown: string[] = [];
   for (const item of sale.items) {
+    const portion = matchDeclaredSaleUnit(item.product, declaredUnits);
+    if (portion.kind === 'unit_required') {
+      return {
+        kind: 'blocked',
+        message: portionUnitRequired(portion.productName, portion.units, lang),
+      };
+    }
+    if (portion.kind === 'matched') {
+      resolvedItems.push({
+        key: portion.unit.productKey,
+        name: portion.unit.productName,
+        quantity: item.quantity,
+        band: item.band,
+        declared: portion.unit,
+      });
+      continue;
+    }
     const resolved = await resolveProductForRead(db, identity, item.product);
     if (resolved.error) return { kind: 'skip' };
     if (resolved.resolution.kind === 'ambiguous') {
@@ -321,12 +393,13 @@ async function priceQuantitySale(
       // Carried through. Without this the word somebody typed at the end of the
       // line — "jumla" — is read, understood, and then quietly dropped here.
       band: item.band,
+      declared: null,
     });
   }
 
   const { data, error } = await db.rpc('wa_product_pricing', {
     p_company_id: identity.company_id,
-    p_product_keys: resolvedItems.map((item) => item.key),
+    p_product_keys: resolvedItems.filter((item) => !item.declared).map((item) => item.key),
   });
   if (error) return { kind: 'skip' };
 
@@ -342,14 +415,27 @@ async function priceQuantitySale(
   const lines: PricedLine[] = [];
   const missing: string[] = [];
   for (const item of resolvedItems) {
-    const known = pricing.get(item.key) ?? { retail: null, wholesale: null, wholesaleMinQty: null };
-    const line = priceLine({ product: item.name, quantity: item.quantity, band: item.band }, known);
+    const known = item.declared
+      ? {
+        retail: item.declared.retail,
+        wholesale: item.declared.wholesale,
+        wholesaleMinQty: item.declared.wholesaleMinQty,
+      }
+      : pricing.get(item.key) ?? { retail: null, wholesale: null, wholesaleMinQty: null };
+    const line = priceLine({
+      product: item.name,
+      quantity: item.quantity,
+      band: item.band,
+      ...(item.declared ? { unit: item.declared.unitName } : {}),
+    }, known);
     if (!line) { if (!missing.includes(item.name)) missing.push(item.name); continue; }
+    if (item.declared) line.baseQuantity = item.declared.baseQuantity;
     // Merged only now, and only across lines that reached the SAME price. Two
     // sales of the same product at two different prices are two facts, and
     // adding them before pricing is what turned four retail sales of daftari
     // into one wholesale sale of forty-eight.
-    const at = lines.findIndex((seen) => seen.product === line.product && seen.unitPrice === line.unitPrice);
+    const at = lines.findIndex((seen) => seen.product === line.product
+      && seen.unitPrice === line.unitPrice && (seen.unit ?? null) === (line.unit ?? null));
     if (at >= 0) lines[at] = { ...lines[at], quantity: lines[at].quantity + line.quantity };
     else lines.push(line);
   }
@@ -384,6 +470,7 @@ async function priceQuantitySale(
         description: line.product,
         quantity: line.quantity,
         unit_amount: line.unitPrice,
+        ...(line.unit ? { unit: line.unit } : {}),
       })),
       confidence: 0.99,
     },
@@ -419,6 +506,8 @@ function startsAnotherTopic(text: string): boolean {
     || parseInviteRequest(text)
     || parseQuantityOnlySale(text)
     || parseSellingPriceBatch(text)
+    || parsePortionSetupOffer(text)
+    || parseProductRename(text)
     || parseStockCountBatch(text)
     || parseProductCostBatch(text)
     || parseHypotheticalProfitRequest(text)
@@ -896,53 +985,96 @@ async function hypotheticalProfitToolReply(
   identity: ResolvedWhatsAppIdentity,
   asked: string,
   lang: Lang,
-): Promise<string> {
+): Promise<{ text: string; pending: HypotheticalPortionChoice | null }> {
   if (!canUseCompanyFinanceReads(identity.role)) {
-    return lang === 'sw'
+    return { text: lang === 'sw'
       ? 'Makisio ya faida ya kampuni yanaonekana kwa owner au accountant tu.'
-      : 'Company profit estimates are available only to an owner or accountant.';
+      : 'Company profit estimates are available only to an owner or accountant.', pending: null };
   }
   const productName = asked.trim().slice(0, 100);
   if (productName.length < 2 || !/[\p{L}]/u.test(productName)) {
-    return lang === 'sw' ? 'Unataka kukadiria faida ya bidhaa gani?' : 'Which product profit do you want to estimate?';
+    return { text: lang === 'sw' ? 'Unataka kukadiria faida ya bidhaa gani?' : 'Which product profit do you want to estimate?', pending: null };
   }
-  const resolved = await resolveProductForRead(db, identity, productName);
+
+  const { data: declaredRows, error: declaredError } = await db.rpc('wa_company_product_sale_units', {
+    p_company_id: identity.company_id,
+  });
+  const declaredUnits: DeclaredSaleUnit[] = (declaredError ? [] : (declaredRows ?? []) as Array<Record<string, unknown>>)
+    .map((row) => ({
+      productKey: String(row.product_key),
+      productName: String(row.product_name),
+      unitKey: String(row.unit_key),
+      unitName: String(row.unit_name),
+      baseQuantity: Number(row.base_quantity),
+      retail: row.retail_price == null ? null : Number(row.retail_price),
+      wholesale: row.wholesale_price == null ? null : Number(row.wholesale_price),
+      wholesaleMinQty: row.wholesale_min_qty == null ? null : Number(row.wholesale_min_qty),
+    }));
+  const portion = matchDeclaredSaleUnit(productName, declaredUnits);
+  if (portion.kind === 'unit_required') {
+    const pending: HypotheticalPortionChoice = {
+      kind: 'hypothetical_portion_choice',
+      productName: portion.productName,
+      units: portion.units,
+    };
+    return { text: hypotheticalPortionQuestion(pending, lang), pending };
+  }
+  const askedProduct = portion.kind === 'matched' ? portion.unit.productName : productName;
+  const resolved = await resolveProductForRead(db, identity, askedProduct);
   if (resolved.error) {
-    return lang === 'sw' ? 'Sikuweza kutafuta bidhaa hiyo sasa.' : 'I could not look up that product right now.';
+    return { text: lang === 'sw' ? 'Sikuweza kutafuta bidhaa hiyo sasa.' : 'I could not look up that product right now.', pending: null };
   }
-  if (resolved.resolution.kind === 'ambiguous') return productReadClarification(resolved.resolution, lang);
+  if (resolved.resolution.kind === 'ambiguous') return { text: productReadClarification(resolved.resolution, lang), pending: null };
   if (resolved.resolution.kind === 'not_found') {
-    return lang === 'sw'
+    return { text: lang === 'sw'
       ? `Sikupata bidhaa “${productName}” kwenye orodha ya biashara hii.`
-      : `I could not find “${productName}” in this business's product catalogue.`;
+      : `I could not find “${productName}” in this business's product catalogue.`, pending: null };
   }
 
   const match = resolved.resolution.match;
   const [stockResult, costResult, priceResult] = await Promise.all([
     db.rpc('wa_stock_on_hand', { p_company_id: identity.company_id, p_product: match.productKey }),
-    db.from('product_costs').select('unit_cost').eq('company_id', identity.company_id)
+    db.from('product_costs').select('unit_cost, base_unit_cost, base_unit').eq('company_id', identity.company_id)
       .eq('product_key', match.productKey).order('effective_from', { ascending: false })
       .order('created_at', { ascending: false }).limit(1).maybeSingle(),
     db.rpc('wa_product_pricing', { p_company_id: identity.company_id, p_product_keys: [match.productKey] }),
   ]);
   if (stockResult.error || costResult.error || priceResult.error) {
-    return lang === 'sw'
+    return { text: lang === 'sw'
       ? `Sikuweza kusoma vipande vya makisio ya ${match.productName} sasa.`
-      : `I could not load the inputs for the ${match.productName} estimate right now.`;
+      : `I could not load the inputs for the ${match.productName} estimate right now.`, pending: null };
   }
   const stock = ((stockResult.data ?? []) as Array<Record<string, unknown>>)[0] ?? null;
-  const cost = costResult.data as { unit_cost?: number } | null;
+  const cost = costResult.data as { unit_cost?: number; base_unit_cost?: number | null; base_unit?: string | null } | null;
   const price = ((priceResult.data ?? []) as Array<Record<string, unknown>>)[0] ?? null;
-  return productReadMatchNotice(resolved.resolution, lang) + buildHypotheticalProfitReply({
+  const notice = productReadMatchNotice(resolved.resolution, lang);
+  if (portion.kind === 'matched') {
+    return { text: notice + buildPortionHypotheticalProfitReply({
+      productName: match.productName,
+      onHandBase: stock ? Number(stock.on_hand) : null,
+      hasCount: Boolean(stock?.has_count),
+      baseUnit: String(stock?.unit ?? cost?.base_unit ?? 'base unit'),
+      baseUnitCost: cost?.base_unit_cost == null
+        ? (cost?.unit_cost === undefined ? null : Number(cost.unit_cost))
+        : Number(cost.base_unit_cost),
+      saleUnit: portion.unit.unitName,
+      unitBaseQuantity: portion.unit.baseQuantity,
+      retailPrice: portion.unit.retail,
+      wholesalePrice: portion.unit.wholesale,
+    }, lang), pending: null };
+  }
+  return { text: notice + buildHypotheticalProfitReply({
     productName: match.productName,
     onHand: stock ? Number(stock.on_hand) : null,
     hasCount: Boolean(stock?.has_count),
     unit: stock?.unit ? String(stock.unit) : null,
-    unitCost: cost?.unit_cost === undefined ? null : Number(cost.unit_cost),
+    unitCost: cost?.base_unit_cost == null
+      ? (cost?.unit_cost === undefined ? null : Number(cost.unit_cost))
+      : Number(cost.base_unit_cost),
     retailPrice: price?.retail_price == null ? null : Number(price.retail_price),
     wholesalePrice: price?.wholesale_price == null ? null : Number(price.wholesale_price),
     avgUnitPrice: price?.avg_unit_price == null ? null : Number(price.avg_unit_price),
-  }, lang);
+  }, lang), pending: null };
 }
 
 /**
@@ -1164,8 +1296,8 @@ async function executeAssistantTool(
   }
   if (name === 'get_hypothetical_product_profit') {
     const productName = typeof input.product_name === 'string' ? input.product_name : '';
-    const content = await hypotheticalProfitToolReply(db, identity, productName, lang);
-    return { content, terminalReply: content };
+    const result = await hypotheticalProfitToolReply(db, identity, productName, lang);
+    return { content: result.text, terminalReply: result.text };
   }
   if (name === 'get_open_debts') {
     const partyName = typeof input.party_name === 'string' ? input.party_name.trim().slice(0, 100) || null : null;
@@ -1867,14 +1999,31 @@ Deno.serve(async (req) => {
         const mixed = rider && claimsWrite(rider.action) ? rider : null;
         const writeBody = mixed ? mixed.action : body;
         let riderPending = mixed !== null;
+        let visibleTurnRemembered = false;
         /**
          * The write branches reply through this, so the rider question is named
          * once — on the first reply the message produces — and then answered.
          */
         const reply = async (to: string, text: string) => {
-          if (!mixed || !riderPending) return replyQuietly(to, text);
+          if (!mixed || !riderPending) {
+            await replyQuietly(to, text);
+            if (identity && body?.trim() && !visibleTurnRemembered) {
+              visibleTurnRemembered = await storeAssistantExchange(
+                db, identity, waMessageId, body, text,
+                { topic: null, entities: {}, lastTool: null },
+              );
+            }
+            return;
+          }
           riderPending = false;
-          await replyQuietly(to, text + riderQuestionNotice(mixed.question, lang));
+          const visible = text + riderQuestionNotice(mixed.question, lang);
+          await replyQuietly(to, visible);
+          if (identity && body?.trim() && !visibleTurnRemembered) {
+            visibleTurnRemembered = await storeAssistantExchange(
+              db, identity, waMessageId, body, visible,
+              { topic: null, entities: {}, lastTool: null },
+            );
+          }
           if (!identity) return;
           // The second answer is a fresh wait for the reader. WhatsApp drops the
           // typing indicator after about twenty-five seconds and it is gone the
@@ -1885,7 +2034,7 @@ Deno.serve(async (req) => {
           // notice above already says the figure excludes what is pending.
           const hypotheticalProduct = parseHypotheticalProfitRequest(mixed.question);
           if (hypotheticalProduct) {
-            await replyQuietly(to, await hypotheticalProfitToolReply(db, identity, hypotheticalProduct, lang));
+            await replyQuietly(to, (await hypotheticalProfitToolReply(db, identity, hypotheticalProduct, lang)).text);
             await audit(db, identity, waMessageId, 'rider_question', 'hypothetical_product_profit', 'applied');
             return;
           }
@@ -2082,15 +2231,37 @@ Deno.serve(async (req) => {
           && (convo.options as { kind?: string } | null)?.kind === 'new_product_pricing'
           ? (convo.options as { products: NewProductPricing[] }).products
           : null;
+        const portionSizePending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<PortionSetupDraft> | null)?.kind === 'portion_setup_sizes'
+          ? convo.options as PortionSetupDraft
+          : null;
+        const portionConfirmPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<PortionSetupReady> | null)?.kind === 'portion_setup_confirmation'
+          ? convo.options as PortionSetupReady
+          : null;
+        const quantityMeaningPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<ParkedQuantityMeaning> | null)?.kind === 'quantity_meaning_clarification'
+          ? convo.options as ParkedQuantityMeaning
+          : null;
+        const productRenamePending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<ProductRenamePreview> | null)?.kind === 'product_rename_confirmation'
+          ? convo.options as ProductRenamePreview
+          : null;
         const costConversation = convo?.awaiting === 'product_cost' && convo.options
           && !costPrompt && !costBatchPending && !stockBatchPending && !sellingBatchPending
-          && !newProductPending
+          && !newProductPending && !portionSizePending && !portionConfirmPending
+          && !quantityMeaningPending && !productRenamePending
           ? { cost: convo.options as unknown as ProductCost }
           : null;
         const productContext = convo?.awaiting === 'product_analytics'
           && (convo.options as Partial<ProductAnalyticsContext> | null)?.kind === 'product_analytics_context'
           ? convo.options as ProductAnalyticsContext
           : null;
+        const hypotheticalPortionPending = convo?.awaiting === 'product_analytics'
+          && (convo.options as Partial<HypotheticalPortionChoice> | null)?.kind === 'hypothetical_portion_choice'
+          ? convo.options as HypotheticalPortionChoice
+          : null;
+        let resumedQuantitySale: QuantitySale | null = null;
         // ── Signing out ──────────────────────────────────────────────────
         // The phone number is the credential, so this unlinks it. It runs
         // before the stop command on purpose: bare "toka" means both "cancel
@@ -2188,6 +2359,53 @@ Deno.serve(async (req) => {
             await replyQuietly(phone, t('cancelled', lang));
             await audit(db, identity, waMessageId, 'cancel_action', 'clear_state', 'applied');
           }
+          await finish('skipped');
+          continue;
+        }
+
+        // A bare list such as "kitabu 7, biblia 3" is parked because it could
+        // mean sales or stock. A short answer resumes the exact list instead of
+        // being parsed as a brand-new one-line message.
+        if (quantityMeaningPending && startsAnotherTopic(body)) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'quantity_meaning', 'abandoned', 'skipped');
+        } else if (quantityMeaningPending) {
+          const meaning = parseQuantityMeaningAnswer(body);
+          if (meaning === 'sale') {
+            resumedQuantitySale = quantityMeaningPending.sale;
+            await clearConversation(db, identity.id as string);
+            await audit(db, identity, waMessageId, 'quantity_meaning', 'sale', 'applied');
+          } else if (meaning === 'stock_purchase') {
+            await clearConversation(db, identity.id as string);
+            await reply(phone, stockPurchaseNeedsPrices(quantityMeaningPending, lang));
+            await audit(db, identity, waMessageId, 'quantity_meaning', 'stock_purchase', 'clarification');
+            await finish('skipped');
+            continue;
+          } else {
+            await reply(phone, quantityMeaningQuestion(lang));
+            await audit(db, identity, waMessageId, 'quantity_meaning', 'reask', 'skipped');
+            await finish('skipped');
+            continue;
+          }
+        }
+
+        if (hypotheticalPortionPending && startsAnotherTopic(body)) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'hypothetical_product_profit', 'unit_abandoned', 'skipped');
+        } else if (hypotheticalPortionPending) {
+          const unit = matchHypotheticalPortionAnswer(body, hypotheticalPortionPending);
+          if (!unit) {
+            await reply(phone, hypotheticalPortionQuestion(hypotheticalPortionPending, lang));
+            await audit(db, identity, waMessageId, 'hypothetical_product_profit', 'unit_reask', 'skipped');
+            await finish('skipped');
+            continue;
+          }
+          const result = await hypotheticalProfitToolReply(
+            db, identity, `${hypotheticalPortionPending.productName} ${unit}`, lang,
+          );
+          await clearConversation(db, identity.id as string);
+          await reply(phone, result.text);
+          await audit(db, identity, waMessageId, 'hypothetical_product_profit', `unit:${unit}`, 'applied');
           await finish('skipped');
           continue;
         }
@@ -2484,6 +2702,110 @@ Deno.serve(async (req) => {
             await whatsAppDisplayNumber(), lang,
           ));
           await audit(db, identity, waMessageId, 'invite', role, 'applied');
+          await finish('skipped');
+          continue;
+        }
+
+        if (productRenamePending && startsAnotherTopic(body)) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'product_rename', 'abandoned', 'skipped');
+        } else if (productRenamePending) {
+          if (isDailyRecordConfirmation(body)) {
+            const { error } = await db.rpc('wa_rename_product', {
+              p_phone: phone,
+              p_from: productRenamePending.from,
+              p_to: productRenamePending.to,
+              p_reason: 'Confirmed through WhatsApp',
+            });
+            await clearConversation(db, identity.id as string);
+            await reply(phone, error ? productCostErrorMessage(error, lang) : productRenameSaved(productRenamePending, lang));
+            await audit(db, identity, waMessageId, 'product_rename', 'confirm', error ? 'failed' : 'applied');
+          } else if (isDailyRecordRejection(body) || isCancel(body)) {
+            await clearConversation(db, identity.id as string);
+            await reply(phone, productRenameCancelled(lang));
+            await audit(db, identity, waMessageId, 'product_rename', 'cancel', 'applied');
+          } else {
+            await reply(phone, productRenameConfirmation(productRenamePending, lang));
+            await audit(db, identity, waMessageId, 'product_rename', 'reask', 'skipped');
+          }
+          await finish('skipped');
+          continue;
+        }
+
+        // A portion setup is two-stage because words such as "robo" do not say
+        // what they are a fraction of. The trader states every conversion, sees
+        // the cost/margin arithmetic, and only NDIYO writes the transaction.
+        if (portionSizePending && startsAnotherTopic(body)) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'portion_setup', 'abandoned', 'skipped');
+        } else if (portionSizePending) {
+          if (isCancel(body) || isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, portionSetupCancelled(lang));
+            await audit(db, identity, waMessageId, 'portion_setup', 'cancel', 'applied');
+            await finish('skipped');
+            continue;
+          }
+          const resumed = resumePortionSetup(portionSizePending, body);
+          if (resumed.kind === 'ready') {
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'product_cost',
+              receipt_id: null,
+              options: resumed.setup,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await replyQuietly(phone, portionSetupConfirmation(resumed.setup, lang));
+            await audit(db, identity, waMessageId, 'portion_setup', 'sizes', 'pending');
+          } else {
+            const missing = resumed.kind === 'missing'
+              ? (lang === 'sw'
+                ? `Bado sijapata ukubwa wa: ${resumed.units.join(', ')}.\n\n`
+                : `I still need the size of: ${resumed.units.join(', ')}.\n\n`)
+              : '';
+            await replyQuietly(phone, missing + portionSizeQuestion(portionSizePending, lang));
+            await audit(db, identity, waMessageId, 'portion_setup', 'sizes', 'clarification');
+          }
+          await finish('skipped');
+          continue;
+        }
+
+        if (portionConfirmPending && startsAnotherTopic(body)) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'portion_setup', 'abandoned', 'skipped');
+        } else if (portionConfirmPending) {
+          if (isDailyRecordConfirmation(body)) {
+            const { error } = await db.rpc('wa_configure_product_units', {
+              p_phone: phone,
+              p_name: portionConfirmPending.product,
+              p_base_unit: portionConfirmPending.baseUnit,
+              p_purchase_unit: portionConfirmPending.purchaseUnit,
+              p_purchase_size: portionConfirmPending.purchaseSize,
+              p_purchase_cost: portionConfirmPending.purchaseCost,
+              p_sale_units: portionConfirmPending.saleUnits.map((item) => ({
+                unit: item.unit,
+                base_quantity: item.baseQuantity,
+                retail: item.retail,
+                wholesale: item.wholesale,
+                min_qty: item.minQty,
+              })),
+            });
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, error
+              ? productCostErrorMessage(error, lang)
+              : portionSetupSaved(portionConfirmPending, lang));
+            await audit(db, identity, waMessageId, 'portion_setup', 'confirm', error ? 'failed' : 'applied');
+          } else if (isCancel(body) || isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, portionSetupCancelled(lang));
+            await audit(db, identity, waMessageId, 'portion_setup', 'cancel', 'applied');
+          } else {
+            await replyQuietly(phone, portionSetupConfirmation(portionConfirmPending, lang));
+            await audit(db, identity, waMessageId, 'portion_setup', 'reask', 'skipped');
+          }
           await finish('skipped');
           continue;
         }
@@ -2803,6 +3125,35 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // Buying in one unit and selling in declared smaller portions. Nothing
+        // is written yet: the compact first message has prices but not the
+        // conversion sizes, and those must never be inferred from words.
+        const portionOffer = parsePortionSetupOffer(writeBody);
+        if (portionOffer) {
+          if (!['owner', 'accountant'].includes(identity.role)) {
+            await reply(phone, lang === 'sw'
+              ? 'Ni owner au accountant pekee anayeweza kuweka vipimo na bei za bidhaa.'
+              : 'Only an owner or accountant can configure product units and prices.');
+            await audit(db, identity, waMessageId, 'portion_setup', 'role', 'blocked');
+            await finish('skipped');
+            continue;
+          }
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: portionOffer,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          await reply(phone, portionSizeQuestion(portionOffer, lang));
+          await audit(db, identity, waMessageId, 'portion_setup', 'start', 'pending');
+          await finish('skipped');
+          continue;
+        }
+
         // Answering the offer to add a product: cost and both selling prices on
         // one line. Checked BEFORE the selling-price batch, which would read the
         // same line as a price change for a product that does not exist yet.
@@ -2999,9 +3350,87 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        const renameRequest = parseProductRename(writeBody);
+        if (renameRequest) {
+          const { data, error } = await db.rpc('wa_preview_product_rename', {
+            p_phone: phone,
+            p_from: renameRequest.from,
+            p_to: renameRequest.to,
+          });
+          if (error || !data) {
+            await reply(phone, productCostErrorMessage(error, lang));
+            await audit(db, identity, waMessageId, 'product_rename', 'preview', 'failed');
+            await finish('skipped');
+            continue;
+          }
+          const row = data as Record<string, unknown>;
+          const state: ProductRenamePreview = {
+            kind: 'product_rename_confirmation',
+            from: renameRequest.from,
+            to: String(row.to_name ?? renameRequest.to),
+            records: Number(row.records ?? 0),
+            saleLines: Number(row.sale_lines ?? 0),
+            costRows: Number(row.cost_rows ?? 0),
+            priceRows: Number(row.price_rows ?? 0),
+            stockCounts: Number(row.stock_counts ?? 0),
+            unitRows: Number(row.unit_rows ?? 0),
+          };
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: state,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          await reply(phone, productRenameConfirmation(state, lang));
+          await audit(db, identity, waMessageId, 'product_rename', 'preview', 'pending');
+          await finish('skipped');
+          continue;
+        }
+
+        const bareQuantityList = resumedQuantitySale ? null : parseBareQuantityList(writeBody);
+        if (bareQuantityList) {
+          const state: ParkedQuantityMeaning = {
+            kind: 'quantity_meaning_clarification',
+            sourceMessageId: waMessageId,
+            originalText: writeBody,
+            sale: bareQuantityList,
+          };
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: state,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          await reply(phone, quantityMeaningQuestion(lang));
+          await audit(db, identity, waMessageId, 'quantity_meaning', 'clarify', 'pending');
+          await finish('skipped');
+          continue;
+        }
+
         const hypotheticalProduct = mixed ? null : parseHypotheticalProfitRequest(body);
         if (hypotheticalProduct) {
-          await reply(phone, await hypotheticalProfitToolReply(db, identity, hypotheticalProduct, lang));
+          const result = await hypotheticalProfitToolReply(db, identity, hypotheticalProduct, lang);
+          if (result.pending) {
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'product_analytics',
+              receipt_id: null,
+              options: result.pending,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+          }
+          await reply(phone, result.text);
           await audit(db, identity, waMessageId, 'read_only_tool', 'hypothetical_product_profit', 'applied');
           await finish('skipped');
           continue;
@@ -3128,7 +3557,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        if (isDailyRecordCandidate(writeBody)) {
+        if (resumedQuantitySale || isDailyRecordCandidate(writeBody)) {
           // MEASURED FAILURE: a thirty-line till roll naming no money at all was
           // reaching parseDailyRecordBatch first, which asked "is this the total
           // or the price for each?" — a question with no answer, since the
@@ -3233,7 +3662,7 @@ Deno.serve(async (req) => {
           // A sale that states quantities and no money is priced from the shop's
           // own list before anything asks the trader to retype a price they
           // already gave. Only reached when no parser above claimed the message.
-          const quantitySale = parseQuantityOnlySale(writeBody);
+          const quantitySale = resumedQuantitySale ?? parseQuantityOnlySale(writeBody);
           if (quantitySale) {
             const priced = await priceQuantitySale(db, identity, quantitySale, lang);
             if (priced.kind === 'blocked') {

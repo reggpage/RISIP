@@ -28,7 +28,7 @@ export type StockCount = { product: string; quantity: number; unit: string | nul
 
 const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
-const UNITS = 'kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni';
+const UNITS = 'kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni|robo|nusu|theluthi|kipande|mche|chupa|mfuko|kifurushi';
 const NUMBER = '[0-9]+(?:\\.[0-9]+)?';
 
 /**
@@ -45,6 +45,9 @@ export function parseStockCount(text: string | null | undefined): StockCount | n
   if (/^(?:nimeuza|niliuza|uza|sold|nimenunua|nimelipa|nimetumia|amechukua|amelipa)\b/i.test(said)) return null;
 
   const patterns = [
+    // An explicit shelf anchor, including the owner's portion example:
+    // "store mafuta ndoo 2". This is a count, not a purchase movement.
+    new RegExp(`^(?:store|stoo)\\s+(.+?)\\s+(?:(${UNITS})\\s+)?(${NUMBER})\\s*(${UNITS})?$`, 'i'),
     // nina daftari 90 [kipimo]
     new RegExp(`^(?:nina|ninazo|ninavyo|nimebakiwa na|nimebakisha)\\s+(.+?)\\s+(?:(${UNITS})\\s+)?(${NUMBER})\\s*(${UNITS})?$`, 'i'),
     // nimehesabu daftari 90

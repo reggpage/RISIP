@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Loader2, X } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import NumberInput from '@/components/ui/NumberInput';
+import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import UnderlineTabs from '@/components/ui/UnderlineTabs';
 import { useToast } from '@/components/ui/Toast';
@@ -9,11 +10,19 @@ import { friendlyError } from '@/lib/errors';
 import { formatMoney } from '@/lib/format';
 import { getLang } from '@/lib/lang';
 import {
-  fetchSellingPrice,
+  fetchCurrentProductCost,
+  fetchCurrentSellingPrices,
+  fetchProductUnits,
+  previewProductRename,
   recordStockCount,
+  renameProduct,
   setProductCost,
   setSellingPrice,
   type CatalogProduct,
+  type ProductUnitRow,
+  type ProductCostSnapshot,
+  type SellingPriceRow,
+  type ProductRenamePreview,
   type StockLevel,
 } from '@/features/products/products';
 
@@ -22,6 +31,10 @@ const ui = lang === 'sw' ? {
   title: 'Hariri bidhaa',
   tabs: 'Chagua unachotaka kubadilisha',
   countTab: 'Hesabu stock', priceTab: 'Bei ya kununua', sellTab: 'Bei ya kuuza',
+  renameTab: 'Badilisha jina', newName: 'Jina jipya', renameReason: 'Sababu (si lazima)',
+  previewRename: 'Kagua mabadiliko', confirmRename: 'Thibitisha jina jipya',
+  renameWarning: 'Hii haitabadilisha pesa, idadi au historia. Itaweka jina jipya kwenye rekodi zilizoonyeshwa na kuacha audit.',
+  renameSaved: 'Jina la bidhaa limebadilishwa.', recordsMove: 'Rekodi zitakazopewa jina jipya',
   // Count
   countIntro: 'Hesabu zilizopo dukani sasa hivi, kisha andika idadi hapa chini. Baada ya hapo Risip itapunguza kila unapouza na kuongeza kila unaponunua.',
   quantity: 'Zilizopo sasa', zeroOk: 'Ukiandika 0 inamaanisha zimeisha.',
@@ -51,6 +64,7 @@ const ui = lang === 'sw' ? {
   minQty: 'Bei ya jumla ianze idadi gani', minQtyHint: 'Acha wazi kama bei ya jumla ni ya mteja maalum, si ya idadi.',
   saveSelling: 'Hifadhi bei ya kuuza',
   sellingSaved: 'Bei ya kuuza imehifadhiwa.',
+  sellingUnit: 'Kipimo cha kuuza', conversion: 'Sawa na', portionPrices: 'Bei kwa kila kipimo',
   retailInvalid: 'Andika bei ya rejareja zaidi ya 0.',
   wholesaleTooHigh: 'Bei ya jumla haiwezi kuwa kubwa kuliko ya rejareja.',
   minQtyNeedsWholesale: 'Ili kuweka idadi ya kuanzia, lazima uweke bei ya jumla.',
@@ -61,6 +75,10 @@ const ui = lang === 'sw' ? {
   title: 'Edit product',
   tabs: 'Choose what to change',
   countTab: 'Count stock', priceTab: 'Buying price', sellTab: 'Selling price',
+  renameTab: 'Rename', newName: 'New name', renameReason: 'Reason (optional)',
+  previewRename: 'Review change', confirmRename: 'Confirm new name',
+  renameWarning: 'This does not change money, quantities or history. It relabels the shown records and leaves an audit event.',
+  renameSaved: 'Product renamed.', recordsMove: 'Records that will receive the new name',
   countIntro: 'Enter what is on the shelf right now. Risip keeps count from there.',
   quantity: 'On the shelf now', zeroOk: 'Entering 0 means they have run out.',
   believed: 'Current count', countedOn: 'Counted',
@@ -87,6 +105,7 @@ const ui = lang === 'sw' ? {
   minQty: 'From quantity', minQtyHint: 'Leave empty if the trade price is by customer, not by quantity.',
   saveSelling: 'Save selling price',
   sellingSaved: 'Selling price saved.',
+  sellingUnit: 'Selling unit', conversion: 'Equals', portionPrices: 'Prices by selling unit',
   retailInvalid: 'Enter a retail price greater than zero.',
   wholesaleTooHigh: 'The wholesale price cannot be above the retail one.',
   minQtyNeedsWholesale: 'A starting quantity needs a wholesale price.',
@@ -119,7 +138,7 @@ const UNIT_OPTIONS = [
   { value: 'dazeni', label: 'dazeni' },
 ];
 
-type Tab = 'count' | 'price' | 'selling';
+type Tab = 'count' | 'price' | 'selling' | 'rename';
 
 export default function ProductEditDialog({ product, level, initialTab = 'count', onClose, onSaved }: {
   product: CatalogProduct;
@@ -136,9 +155,14 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
   // a correction of one or two, and starting from an empty box makes somebody
   // re-derive a number the screen already knows.
   const [quantity, setQuantity] = useState(level?.hasCount ? String(level.onHand) : '');
-  const [unit, setUnit] = useState(
+  const [countUnit, setCountUnit] = useState(
     UNIT_OPTIONS.some((option) => option.value === (product.unit ?? '')) ? (product.unit ?? '') : '',
   );
+  const [costUnit, setCostUnit] = useState(
+    UNIT_OPTIONS.some((option) => option.value === (product.unit ?? '')) ? (product.unit ?? '') : '',
+  );
+  const [declaredUnits, setDeclaredUnits] = useState<ProductUnitRow[]>([]);
+  const [costSnapshot, setCostSnapshot] = useState<ProductCostSnapshot | null>(null);
   const parsedQuantity = Number(quantity.replace(/,/g, ''));
   const countValid = quantity.trim() !== '' && Number.isFinite(parsedQuantity) && parsedQuantity >= 0;
 
@@ -146,7 +170,9 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
   const [cost, setCost] = useState(product.unitCost === null ? '' : String(product.unitCost));
   const parsedCost = Number(cost.replace(/,/g, ''));
   const priceValid = Number.isFinite(parsedCost) && parsedCost > 0;
-  const margin = priceValid && product.avgUnitPrice !== null ? product.avgUnitPrice - parsedCost : null;
+  const margin = declaredUnits.length === 0 && priceValid && product.avgUnitPrice !== null
+    ? product.avgUnitPrice - parsedCost
+    : null;
   const aboveSelling = margin !== null && margin < 0;
 
   // Selling price. Loaded on open rather than carried on the catalogue row: the
@@ -157,16 +183,38 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
   const [minQty, setMinQty] = useState('');
   const [sellingLoaded, setSellingLoaded] = useState(false);
   const [hasSelling, setHasSelling] = useState(false);
+  const [sellingRows, setSellingRows] = useState<SellingPriceRow[]>([]);
+  const [selectedSaleUnit, setSelectedSaleUnit] = useState('');
+  const [newName, setNewName] = useState('');
+  const [renameReason, setRenameReason] = useState('');
+  const [renamePreview, setRenamePreview] = useState<ProductRenamePreview | null>(null);
 
   useEffect(() => {
     let alive = true;
-    fetchSellingPrice(product.productKey)
-      .then((row) => {
+    Promise.all([
+      fetchCurrentSellingPrices(product.productKey),
+      fetchProductUnits(product.productKey),
+      fetchCurrentProductCost(product.productKey),
+    ]).then(([rows, units, costSnapshot]) => {
         if (!alive) return;
-        if (row) {
-          setRetail(String(row.retailPrice));
-          setWholesale(row.wholesalePrice === null ? '' : String(row.wholesalePrice));
-          setMinQty(row.wholesaleMinQty === null ? '' : String(row.wholesaleMinQty));
+        setDeclaredUnits(units);
+        setSellingRows(rows);
+        const countDefault = units.find((item) => item.isBase && item.canCount)
+          ?? units.find((item) => item.canCount);
+        const purchaseDefault = units.find((item) => item.canPurchase);
+        if (countDefault) setCountUnit(countDefault.unitName);
+        if (purchaseDefault) setCostUnit(purchaseDefault.unitName);
+        if (costSnapshot) {
+          setCostSnapshot(costSnapshot);
+          setCost(String(costSnapshot.unitCost));
+          if (costSnapshot.unit) setCostUnit(costSnapshot.unit);
+        }
+        const saleDefault = rows[0] ?? null;
+        if (saleDefault) {
+          setSelectedSaleUnit(saleDefault.saleUnitKey ?? '');
+          setRetail(String(saleDefault.retailPrice));
+          setWholesale(saleDefault.wholesalePrice === null ? '' : String(saleDefault.wholesalePrice));
+          setMinQty(saleDefault.wholesaleMinQty === null ? '' : String(saleDefault.wholesaleMinQty));
           setHasSelling(true);
         }
         setSellingLoaded(true);
@@ -175,11 +223,33 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
     return () => { alive = false; };
   }, [product.productKey]);
 
+  useEffect(() => {
+    if (!sellingLoaded) return;
+    const row = sellingRows.find((item) => (item.saleUnitKey ?? '') === selectedSaleUnit);
+    if (!row) return;
+    setRetail(String(row.retailPrice));
+    setWholesale(row.wholesalePrice === null ? '' : String(row.wholesalePrice));
+    setMinQty(row.wholesaleMinQty === null ? '' : String(row.wholesaleMinQty));
+  }, [selectedSaleUnit, sellingLoaded, sellingRows]);
+
   const parsedRetail = Number(retail.replace(/,/g, ''));
   const parsedWholesale = wholesale.trim() === '' ? null : Number(wholesale.replace(/,/g, ''));
   const parsedMinQty = minQty.trim() === '' ? null : Number(minQty.replace(/,/g, ''));
   const retailValid = Number.isFinite(parsedRetail) && parsedRetail > 0;
-  const retailMargin = retailValid && product.unitCost !== null ? parsedRetail - product.unitCost : null;
+  const selectedSellingRow = sellingRows.find((item) => (item.saleUnitKey ?? '') === selectedSaleUnit) ?? null;
+  const retailMargin = retailValid && product.unitCost !== null
+    ? parsedRetail - product.unitCost * (selectedSellingRow?.unitBaseQuantity ?? 1)
+    : null;
+  const countOptions = declaredUnits.length > 0
+    ? declaredUnits.filter((item) => item.canCount).map((item) => ({ value: item.unitName, label: item.unitName }))
+    : UNIT_OPTIONS;
+  const costOptions = declaredUnits.length > 0
+    ? declaredUnits.filter((item) => item.canPurchase).map((item) => ({ value: item.unitName, label: item.unitName }))
+    : UNIT_OPTIONS;
+  const sellingOptions = sellingRows.map((item) => ({
+    value: item.saleUnitKey ?? '',
+    label: item.saleUnit ?? (product.unit || ui.unitPieces),
+  }));
 
   async function saveSelling() {
     if (!retailValid) { toast.error(ui.retailInvalid); return; }
@@ -189,7 +259,9 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
     if (parsedMinQty !== null && parsedWholesale === null) { toast.error(ui.minQtyNeedsWholesale); return; }
     setBusy(true);
     try {
-      await setSellingPrice(product.productName, parsedRetail, parsedWholesale, parsedMinQty);
+      const selected = sellingRows.find((item) => (item.saleUnitKey ?? '') === selectedSaleUnit);
+      const name = selected?.saleUnit ? `${product.productName} ${selected.saleUnit}` : product.productName;
+      await setSellingPrice(name, parsedRetail, parsedWholesale, parsedMinQty);
       toast.success(ui.sellingSaved);
       onSaved();
     } catch (error) { toast.error(friendlyError(error)); } finally { setBusy(false); }
@@ -199,7 +271,7 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
     if (!countValid) { toast.error(ui.countInvalid); return; }
     setBusy(true);
     try {
-      await recordStockCount(product.productName, parsedQuantity, unit || null, null);
+      await recordStockCount(product.productName, parsedQuantity, countUnit || null, null);
       toast.success(ui.countSaved);
       onSaved();
     } catch (error) { toast.error(friendlyError(error)); } finally { setBusy(false); }
@@ -209,15 +281,33 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
     if (!priceValid) { toast.error(ui.priceInvalid); return; }
     setBusy(true);
     try {
-      await setProductCost(product.productName, parsedCost, unit || null, null);
+      await setProductCost(product.productName, parsedCost, costUnit || null, null);
       toast.success(ui.priceSaved);
       onSaved();
     } catch (error) { toast.error(friendlyError(error)); } finally { setBusy(false); }
   }
 
+  async function reviewRename() {
+    setBusy(true);
+    try { setRenamePreview(await previewProductRename(product.productName, newName)); }
+    catch (error) { setRenamePreview(null); toast.error(friendlyError(error)); }
+    finally { setBusy(false); }
+  }
+
+  async function applyRename() {
+    if (!renamePreview) return;
+    setBusy(true);
+    try {
+      await renameProduct(product.productName, renamePreview.to_name, renameReason.trim() || null);
+      toast.success(ui.renameSaved);
+      onSaved();
+      onClose();
+    } catch (error) { toast.error(friendlyError(error)); } finally { setBusy(false); }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="relative w-full max-w-md rounded-xl bg-surface p-5 shadow-lg">
+      <div className="relative max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-xl bg-surface p-5 shadow-lg">
         {/* The only way out. Saving used to close the dialog, which made filling
             in a count, a buying price and a selling price for one product three
             separate trips back to the row. */}
@@ -232,20 +322,6 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
         <h2 className="pr-8 text-base font-semibold text-ink">{ui.title}</h2>
         <p className="mt-1 text-sm text-ink-muted">{product.productName}</p>
 
-        {/* The unit belongs to the PRODUCT, not to the count or the price, so
-            it sits above the tabs where it governs both. It was one box per tab,
-            which let somebody count Unga in kilo and price it per gunia — the
-            products page then said gunia, the stock page said kilo, and the
-            margin multiplied a sack price by a kilo quantity. The server
-            refuses a mismatch now; this is the half that stops it being asked. */}
-        <div className="mt-3">
-          <span className="text-sm text-ink">{ui.unit}</span>
-          <Select value={unit} onChange={setUnit} options={UNIT_OPTIONS} className="mt-1" />
-          <span className="mt-1 block text-[11px] leading-snug text-ink-muted">
-            {ui.unitHint} {unit ? ui.unitGoverns : ''}
-          </span>
-        </div>
-
         <UnderlineTabs
           className="mt-4"
           label={ui.tabs}
@@ -255,6 +331,7 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
             { value: 'count', label: ui.countTab },
             { value: 'price', label: ui.priceTab },
             { value: 'selling', label: ui.sellTab },
+            { value: 'rename', label: ui.renameTab },
           ]}
         />
 
@@ -266,7 +343,7 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
                 <>
                   {ui.believed}: <span className="font-medium tabular-nums text-ink">
                     {level.onHand.toLocaleString('en-US', { maximumFractionDigits: level.measured ? 2 : 0 })}
-                    {unit ? ` ${unit}` : ''}
+                    {countUnit ? ` ${countUnit}` : ''}
                   </span>
                   {level.countedAt
                     ? ` · ${ui.countedOn} ${new Date(level.countedAt).toLocaleDateString('en-GB')}`
@@ -276,7 +353,12 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
             </div>
             <div className="mt-3 space-y-3">
               <label className="block">
-                <span className="text-sm text-ink">{ui.quantity}{unit ? ` (${unit})` : ``}</span>
+                <span className="text-sm text-ink">{ui.unit}</span>
+                <Select value={countUnit} onChange={setCountUnit} options={countOptions} className="mt-1" />
+                <span className="mt-1 block text-[11px] leading-snug text-ink-muted">{ui.unitHint}</span>
+              </label>
+              <label className="block">
+                <span className="text-sm text-ink">{ui.quantity}{countUnit ? ` (${countUnit})` : ``}</span>
                 <NumberInput value={quantity} onChange={setQuantity} autoFocus className="mt-1" />
                 <span className="mt-1 block text-[11px] text-ink-muted">{ui.zeroOk}</span>
               </label>
@@ -294,9 +376,10 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
         {tab === 'price' ? (
           <>
             <p className="mt-3 text-xs text-ink-muted">{ui.priceIntro}</p>
-            {product.unitCost !== null ? (
+            {costSnapshot || product.unitCost !== null ? (
               <div className="mt-3 rounded-lg bg-surface-muted px-3 py-2 text-xs text-ink-muted">
-                {ui.current}: <span className="font-medium text-ink">{formatMoney(product.unitCost)}</span>
+                {ui.current}: <span className="font-medium text-ink">{formatMoney(costSnapshot?.unitCost ?? product.unitCost ?? 0)}</span>
+                {costSnapshot?.unit ? ` ${ui.perUnit(costSnapshot.unit)}` : ''}
                 {product.costEffectiveFrom
                   ? ` · ${ui.since} ${new Date(product.costEffectiveFrom).toLocaleDateString('en-GB')}`
                   : ''}
@@ -309,7 +392,12 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
             ) : null}
             <div className="mt-3 space-y-3">
               <label className="block">
-                <span className="text-sm text-ink">{ui.cost}{unit ? ui.perUnit(unit) : ``}</span>
+                <span className="text-sm text-ink">{ui.unit}</span>
+                <Select value={costUnit} onChange={setCostUnit} options={costOptions} className="mt-1" />
+                <span className="mt-1 block text-[11px] leading-snug text-ink-muted">{ui.unitGoverns}</span>
+              </label>
+              <label className="block">
+                <span className="text-sm text-ink">{ui.cost}{costUnit ? ui.perUnit(costUnit) : ``}</span>
                 <NumberInput value={cost} onChange={setCost} allowDecimal={false} autoFocus className="mt-1" />
               </label>
             </div>
@@ -335,8 +423,25 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
               <div className="mt-3 rounded-lg bg-surface-muted px-3 py-2 text-xs text-ink-muted">{ui.noSelling}</div>
             ) : null}
             <div className="mt-3 space-y-3">
+              {sellingOptions.length > 1 ? (
+                <label className="block">
+                  <span className="text-sm text-ink">{ui.sellingUnit}</span>
+                  <Select value={selectedSaleUnit} onChange={setSelectedSaleUnit} options={sellingOptions} className="mt-1" />
+                </label>
+              ) : null}
+              {sellingRows.length > 1 ? (
+                <div className="rounded-lg bg-surface-muted px-3 py-2 text-xs text-ink-muted">
+                  <div className="font-medium text-ink">{ui.portionPrices}</div>
+                  {sellingRows.map((row) => (
+                    <div key={row.saleUnitKey ?? 'base'} className="mt-1 flex justify-between gap-3">
+                      <span>{row.saleUnit ?? product.unit ?? ui.unitPieces} · {ui.conversion} {row.unitBaseQuantity.toLocaleString('en-US', { maximumFractionDigits: 6 })} {product.unit ?? ''}</span>
+                      <strong className="text-ink">{formatMoney(row.retailPrice)}</strong>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <label className="block">
-                <span className="text-sm text-ink">{ui.retail}{unit ? ui.perUnit(unit) : ``}</span>
+                <span className="text-sm text-ink">{ui.retail}{selectedSellingRow?.saleUnit ? ui.perUnit(selectedSellingRow.saleUnit) : ``}</span>
                 <NumberInput value={retail} onChange={setRetail} allowDecimal={false} className="mt-1" />
                 <span className="mt-1 block text-[11px] text-ink-muted">{ui.retailHint}</span>
               </label>
@@ -362,6 +467,36 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
               <Button onClick={() => void saveSelling()} disabled={busy || !retailValid}>
                 {busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />{ui.saving}</> : ui.saveSelling}
               </Button>
+            </div>
+          </>
+        ) : null}
+
+        {tab === 'rename' ? (
+          <>
+            <p className="mt-3 text-xs text-ink-muted">{ui.renameWarning}</p>
+            <div className="mt-3 space-y-3">
+              <label className="block">
+                <span className="text-sm text-ink">{ui.newName}</span>
+                <Input value={newName} onChange={(event) => { setNewName(event.target.value); setRenamePreview(null); }} className="mt-1" />
+              </label>
+              <label className="block">
+                <span className="text-sm text-ink">{ui.renameReason}</span>
+                <Input value={renameReason} onChange={(event) => setRenameReason(event.target.value)} className="mt-1" />
+              </label>
+            </div>
+            {renamePreview ? (
+              <div className="mt-3 rounded-lg bg-surface-muted px-3 py-2 text-sm text-ink">
+                <div>{product.productName} → <strong>{renamePreview.to_name}</strong></div>
+                <div className="mt-1 text-xs text-ink-muted">{ui.recordsMove}: {renamePreview.records.toLocaleString('en-US')}</div>
+              </div>
+            ) : null}
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="ghost" onClick={onClose} disabled={busy}>{ui.close}</Button>
+              {renamePreview ? (
+                <Button onClick={() => void applyRename()} disabled={busy}>{ui.confirmRename}</Button>
+              ) : (
+                <Button onClick={() => void reviewRename()} disabled={busy || newName.trim().length < 2}>{ui.previewRename}</Button>
+              )}
             </div>
           </>
         ) : null}

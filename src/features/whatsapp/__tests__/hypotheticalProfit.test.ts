@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   buildHypotheticalProfitReply,
+  buildPortionHypotheticalProfitReply,
   parseHypotheticalProfitRequest,
 } from '../../../../supabase/functions/_shared/whatsappHypotheticalProfit';
 
@@ -51,6 +52,27 @@ describe('deterministic hypothetical product profit', () => {
     expect(deterministic).toBeGreaterThan(-1);
     expect(deterministic).toBeLessThan(assistant);
     expect(webhook).toContain("if (name === 'get_hypothetical_product_profit')");
-    expect(webhook).toContain('return { content, terminalReply: content };');
+    expect(webhook).toContain('return { content: result.text, terminalReply: result.text };');
+  });
+
+  it('uses base-unit cost and only complete portions in a sell-all estimate', () => {
+    const reply = buildPortionHypotheticalProfitReply({
+      productName: 'mafuta', onHandBase: 39.25, hasCount: true, baseUnit: 'lita',
+      baseUnitCost: 1000, saleUnit: 'robo', unitBaseQuantity: 0.25,
+      retailPrice: 700, wholesalePrice: null,
+    }, 'sw');
+    expect(reply).toContain('157 robo');
+    expect(reply).toContain('TSh 70,650');
+    expect(reply).toContain('hayajaandika mauzo mapya');
+  });
+
+  it('names base stock left over when it cannot form another complete portion', () => {
+    const reply = buildPortionHypotheticalProfitReply({
+      productName: 'mafuta', onHandBase: 1.25, hasCount: true, baseUnit: 'lita',
+      baseUnitCost: 1000, saleUnit: 'nusu', unitBaseQuantity: 0.5,
+      retailPrice: 1200, wholesalePrice: null,
+    }, 'sw');
+    expect(reply).toContain('2 nusu');
+    expect(reply).toContain('Inabaki: 0.25 lita');
   });
 });

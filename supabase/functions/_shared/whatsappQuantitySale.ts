@@ -19,6 +19,8 @@ import type { Lang } from './whatsappIntent.ts';
 export type QuantitySaleItem = {
   product: string;
   quantity: number;
+  /** Present only after an exact declared portion has been resolved. */
+  unit?: string | null;
   /**
    * Which of the shop's two prices this line was sold at.
    *
@@ -83,6 +85,9 @@ export type PricedLine = {
   quantity: number;
   unitPrice: number;
   band: 'retail' | 'wholesale';
+  unit?: string | null;
+  /** Immutable stock conversion declared by the trader. */
+  baseQuantity?: number;
 };
 
 export type ProductPricing = {
@@ -195,6 +200,25 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
 }
 
 /**
+ * A list of products and quantities with no verb, for example:
+ *   "kitabu cha hesabu 7, biblia 3, nguvu ya sala 20"
+ *
+ * This is deliberately only a clarification candidate. The same shape could be
+ * a sale or a stock count/purchase, so callers must park it and ask rather than
+ * write anything. Two lines are required to avoid stealing ordinary short chat.
+ */
+export function parseBareQuantityList(text: string | null | undefined): QuantitySale | null {
+  const said = clean(text);
+  if (!said || OPENER.test(said) || STATES_MONEY.test(said)) return null;
+  // Do not ban a word wherever it appears: "kitabu cha hesabu" is a real
+  // product. Only an unmistakable opener makes this a stock/purchase message.
+  if (/^(?:hesabu\s+ya\s+stock|stock\b|store\b|nina\b|nimehesabu\b|nimenunua\b|nilinunua\b|purchase\b|bought\b)/iu.test(said)
+    || /\bzimebaki\b/iu.test(said)) return null;
+  const sale = parseQuantityOnlySale(`mauzo ${said}`);
+  return sale && sale.items.length >= 2 && sale.expenses.length === 0 ? sale : null;
+}
+
+/**
  * Retail unless the line says otherwise, or the quantity reaches the threshold.
  *
  * What the line SAYS wins over what the quantity implies. Somebody who typed
@@ -214,6 +238,7 @@ export function priceLine(item: QuantitySaleItem, pricing: ProductPricing): Pric
     quantity: item.quantity,
     unitPrice,
     band: wholesaleApplies ? 'wholesale' : 'retail',
+    ...(item.unit ? { unit: item.unit } : {}),
   };
 }
 
@@ -269,7 +294,8 @@ export function quantitySaleConfirmation(
     const band = line.band === 'wholesale'
       ? (lang === 'sw' ? ' (jumla)' : ' (wholesale)')
       : '';
-    return `  • ${line.product}: ${qty(line.quantity)} × ${money(line.unitPrice)}${band} = ${money(line.quantity * line.unitPrice)}`;
+    const unit = line.unit ? ` (${line.unit})` : '';
+    return `  • ${line.product}${unit}: ${qty(line.quantity)} × ${money(line.unitPrice)}${band} = ${money(line.quantity * line.unitPrice)}`;
   }).join('\n');
 
   return lang === 'sw'

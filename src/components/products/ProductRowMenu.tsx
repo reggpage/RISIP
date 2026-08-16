@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { Archive, ArchiveRestore, Merge, MoreVertical } from 'lucide-react';
+import { Archive, ArchiveRestore, Merge, MoreVertical, Pencil } from 'lucide-react';
 import { getLang } from '@/lib/lang';
 import type { CatalogProduct } from '@/features/products/products';
 
 const lang = getLang();
 const ui = lang === 'sw'
-  ? { more: 'Vitendo vingine', merge: 'Unganisha', archive: 'Ficha', restore: 'Rudisha',
-      mergeHint: 'Majina mawili, kitu kimoja', archiveHint: 'Siuzi tena', restoreHint: 'Rudisha kwenye orodha' }
-  : { more: 'More actions', merge: 'Merge', archive: 'Hide', restore: 'Restore',
-      mergeHint: 'Two names, one thing', archiveHint: 'No longer sold', restoreHint: 'Put it back on the list' };
+  ? { more: 'Vitendo vingine', edit: 'Hariri', merge: 'Unganisha', archive: 'Ficha', restore: 'Rudisha',
+      editHint: 'Hesabu, gharama na bei', mergeHint: 'Majina mawili, kitu kimoja', archiveHint: 'Siuzi tena', restoreHint: 'Rudisha kwenye orodha' }
+  : { more: 'More actions', edit: 'Edit', merge: 'Merge', archive: 'Hide', restore: 'Restore',
+      editHint: 'Count, cost and prices', mergeHint: 'Two names, one thing', archiveHint: 'No longer sold', restoreHint: 'Put it back on the list' };
 
 /**
  * The actions a trader reaches for rarely, kept out of the row until asked for.
@@ -17,8 +17,9 @@ const ui = lang === 'sw'
  * beside the everyday buttons made a busy row busier and invited a mis-tap on
  * the one action that re-labels real sales.
  */
-export default function ProductRowMenu({ product, onMerge, onArchive, onRestore }: {
+export default function ProductRowMenu({ product, onEdit, onMerge, onArchive, onRestore }: {
   product: CatalogProduct;
+  onEdit: (product: CatalogProduct) => void;
   onMerge: (product: CatalogProduct) => void;
   onArchive: (product: CatalogProduct) => void;
   onRestore: (product: CatalogProduct) => void;
@@ -78,6 +79,14 @@ export default function ProductRowMenu({ product, onMerge, onArchive, onRestore 
             </button>
           ) : (
             <>
+              <button type="button" role="menuitem" className={item}
+                onClick={() => { setOpen(false); onEdit(product); }}>
+                <Pencil className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" aria-hidden />
+                <span>
+                  {ui.edit}
+                  <span className="block text-[11px] text-ink-muted">{ui.editHint}</span>
+                </span>
+              </button>
               <button type="button" role="menuitem" className={item}
                 onClick={() => { setOpen(false); onMerge(product); }}>
                 <Merge className="mt-0.5 h-4 w-4 shrink-0 text-ink-muted" aria-hidden />

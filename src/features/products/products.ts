@@ -183,6 +183,30 @@ export async function mergeProducts(fromKey: string, intoKey: string, reason: st
   };
 }
 
+export type ProductRenamePreview = {
+  from_key: string;
+  to_key: string;
+  to_name: string;
+  sale_lines: number;
+  cost_rows: number;
+  price_rows: number;
+  stock_counts: number;
+  unit_rows: number;
+  records: number;
+};
+
+export async function previewProductRename(from: string, to: string): Promise<ProductRenamePreview> {
+  const { data, error } = await (supabase as any).rpc('preview_product_rename', { p_from: from, p_to: to });
+  if (error) throw error;
+  return data as unknown as ProductRenamePreview;
+}
+
+export async function renameProduct(from: string, to: string, reason: string | null) {
+  const { data, error } = await (supabase as any).rpc('rename_product', { p_from: from, p_to: to, p_reason: reason });
+  if (error) throw error;
+  return data as unknown as ProductRenamePreview & { revenue: number };
+}
+
 /** Takes a product out of the list. Its past sales keep counting everywhere. */
 export async function archiveProduct(key: string, reason: string | null) {
   const { error } = await supabase.rpc('archive_product', { p_key: key, p_reason: reason });
@@ -292,9 +316,31 @@ export async function recordStockCount(name: string, quantity: number, unit: str
 }
 
 export type SellingPriceRow = {
+  productKey?: string;
+  saleUnit: string | null;
+  saleUnitKey: string | null;
+  unitBaseQuantity: number;
   retailPrice: number;
   wholesalePrice: number | null;
   wholesaleMinQty: number | null;
+};
+
+export type ProductUnitRow = {
+  unitKey: string;
+  unitName: string;
+  baseQuantity: number;
+  isBase: boolean;
+  canPurchase: boolean;
+  canSell: boolean;
+  canCount: boolean;
+};
+
+export type ProductCostSnapshot = {
+  unitCost: number;
+  unit: string | null;
+  baseUnitCost: number;
+  baseUnit: string | null;
+  unitBaseQuantity: number;
 };
 
 /**
@@ -322,9 +368,49 @@ export async function setSellingPrice(
 
 /** The price currently in force, or null when the shop never set one. */
 export async function fetchSellingPrice(productKey: string): Promise<SellingPriceRow | null> {
-  const { data, error } = await supabase
-    .from('product_selling_prices')
-    .select('retail_price, wholesale_price, wholesale_min_qty')
+  return (await fetchCurrentSellingPrices(productKey))[0] ?? null;
+}
+
+
+/** Current append-only price snapshot for every product + selling unit. */
+export async function fetchCurrentSellingPrices(productKey?: string): Promise<SellingPriceRow[]> {
+  const { data, error } = await (supabase as any).rpc('company_current_selling_prices', {
+    p_product_key: productKey ?? null,
+  });
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+      productKey: String(row.product_key),
+      saleUnit: row.sale_unit ? String(row.sale_unit) : null,
+      saleUnitKey: row.sale_unit_key ? String(row.sale_unit_key) : null,
+      unitBaseQuantity: Number(row.unit_base_quantity ?? 1),
+      retailPrice: Number(row.retail_price),
+      wholesalePrice: row.wholesale_price === null ? null : Number(row.wholesale_price),
+      wholesaleMinQty: row.wholesale_min_qty === null ? null : Number(row.wholesale_min_qty),
+    }));
+}
+
+export async function fetchProductUnits(productKey: string): Promise<ProductUnitRow[]> {
+  const { data, error } = await (supabase as any)
+    .from('product_units')
+    .select('unit_key, unit_name, base_quantity, is_base, can_purchase, can_sell, can_count')
+    .eq('product_key', productKey)
+    .order('base_quantity', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row: Record<string, unknown>) => ({
+    unitKey: String(row.unit_key),
+    unitName: String(row.unit_name),
+    baseQuantity: Number(row.base_quantity),
+    isBase: Boolean(row.is_base),
+    canPurchase: Boolean(row.can_purchase),
+    canSell: Boolean(row.can_sell),
+    canCount: Boolean(row.can_count),
+  }));
+}
+
+export async function fetchCurrentProductCost(productKey: string): Promise<ProductCostSnapshot | null> {
+  const { data, error } = await (supabase as any)
+    .from('product_costs')
+    .select('unit_cost, unit, base_unit_cost, base_unit, unit_base_quantity')
     .eq('product_key', productKey)
     .order('effective_from', { ascending: false })
     .order('created_at', { ascending: false })
@@ -333,8 +419,22 @@ export async function fetchSellingPrice(productKey: string): Promise<SellingPric
   if (error) throw error;
   if (!data) return null;
   return {
-    retailPrice: Number(data.retail_price),
-    wholesalePrice: data.wholesale_price === null ? null : Number(data.wholesale_price),
-    wholesaleMinQty: data.wholesale_min_qty === null ? null : Number(data.wholesale_min_qty),
+    unitCost: Number(data.unit_cost),
+    unit: data.unit ? String(data.unit) : null,
+    baseUnitCost: Number(data.base_unit_cost ?? data.unit_cost),
+    baseUnit: data.base_unit ? String(data.base_unit) : null,
+    unitBaseQuantity: Number(data.unit_base_quantity ?? 1),
   };
+}
+
+export function useCurrentSellingPrices() {
+  const [prices, setPrices] = useState<SellingPriceRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setPrices(await fetchCurrentSellingPrices()); } catch { setPrices([]); }
+    setLoading(false);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  return { prices, loading, reload: load };
 }

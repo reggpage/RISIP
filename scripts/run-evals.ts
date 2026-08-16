@@ -135,7 +135,24 @@ for (const c of cases) {
   // with the reason, rather than quietly satisfied by bending a parser.
   if (c.disputed) { unchecked.push({ c, why: 'disputed expectation' }); continue; }
   if (c.hasRole) { unchecked.push({ c, why: 'needs a role' }); continue; }
-  if (c.expectTool === null) { unchecked.push({ c, why: 'expects no tool' }); continue; }
+  if (c.expectTool === null) {
+    const got = route(c.say);
+    // `expect_tool: null` means no immediate mutation is allowed. Read-only
+    // tools and daily-record proposal/clarification routes are acceptable: the
+    // latter still cannot write a confirmed record without NDIYO/YES. Direct
+    // pricing, cost, stock and control routes stay outside this allow-list.
+    const nonMutatingOrConfirmationGated = new Set([
+      'conversational_ai', 'help', 'cancel_action',
+      'daily_record', 'daily_record_parsed', 'daily_record_clarify',
+      'daily_record_unreadable', 'quantity_sale', 'hypothetical_profit',
+      'product_analytics', 'daily_profit_estimate', 'ai_my_receipts',
+      'ai_debtors', 'ai_debtor_detail', 'ai_business_summary', 'ai_owed_to_me',
+      'ai_my_businesses', 'ai_pending_approvals', 'ai_petty_cash_balance',
+    ]);
+    if (nonMutatingOrConfirmationGated.has(got)) passed += 1;
+    else failures.push({ c, got });
+    continue;
+  }
   const allowed = SATISFIES[c.expectTool];
   if (!allowed) { unchecked.push({ c, why: `${c.expectTool} not routable here` }); continue; }
 

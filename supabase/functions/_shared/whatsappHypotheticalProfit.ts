@@ -18,6 +18,18 @@ export type HypotheticalProfitInput = {
   avgUnitPrice?: number | null;
 };
 
+export type PortionHypotheticalProfitInput = {
+  productName: string;
+  onHandBase: number | null;
+  hasCount: boolean;
+  baseUnit: string;
+  baseUnitCost: number | null;
+  saleUnit: string;
+  unitBaseQuantity: number;
+  retailPrice: number | null;
+  wholesalePrice: number | null;
+};
+
 const money = (value: number) => `TSh ${Math.round(value).toLocaleString('en-US')}`;
 
 export function parseHypotheticalProfitRequest(text: string | null | undefined): string | null {
@@ -88,3 +100,77 @@ export function buildHypotheticalProfitReply(input: HypotheticalProfitInput, lan
   return lines.join('\n');
 }
 
+/**
+ * Sell-all estimate for one explicitly chosen portion.
+ *
+ * Stock is held in the base unit. Only complete selling portions are counted;
+ * any remainder stays on the shelf and is named in the answer. This prevents a
+ * quarter-litre price being multiplied by litres (or by purchase buckets).
+ */
+export function buildPortionHypotheticalProfitReply(
+  input: PortionHypotheticalProfitInput,
+  lang: Lang,
+): string {
+  const missing: string[] = [];
+  if (!input.hasCount || input.onHandBase === null) {
+    missing.push(lang === 'sw' ? 'stock count ya kuanzia' : 'a starting stock count');
+  }
+  if (input.baseUnitCost === null) missing.push(lang === 'sw' ? 'bei ya kununua' : 'the buying cost');
+  if (input.retailPrice === null) missing.push(lang === 'sw' ? `bei ya kuuza kwa ${input.saleUnit}` : `the ${input.saleUnit} selling price`);
+  if (missing.length > 0) {
+    const list = missing.map((item) => `- ${item}`).join('\n');
+    return lang === 'sw'
+      ? `Siwezi kukadiria faida ya ${input.productName} kwa ${input.saleUnit} bado. Kinachokosekana:\n${list}`
+      : `I cannot estimate the profit for ${input.productName} sold by ${input.saleUnit} yet. Missing:\n${list}`;
+  }
+  if (!Number.isFinite(input.unitBaseQuantity) || input.unitBaseQuantity <= 0) {
+    return lang === 'sw'
+      ? `Kipimo cha ${input.saleUnit} hakina conversion halali kwenda ${input.baseUnit}.`
+      : `${input.saleUnit} has no valid conversion to ${input.baseUnit}.`;
+  }
+
+  const stock = input.onHandBase!;
+  if (stock <= 0) {
+    return lang === 'sw'
+      ? `${input.productName} haina stock inayoweza kuuzwa kwa sasa (${stock.toLocaleString('en-US')} ${input.baseUnit}).`
+      : `${input.productName} has no sellable stock right now (${stock.toLocaleString('en-US')} ${input.baseUnit}).`;
+  }
+  const portions = Math.floor((stock + 1e-9) / input.unitBaseQuantity);
+  const usedBase = portions * input.unitBaseQuantity;
+  const remainder = Math.max(0, stock - usedBase);
+  if (portions <= 0) {
+    return lang === 'sw'
+      ? `Stock ya ${input.productName} (${stock.toLocaleString('en-US')} ${input.baseUnit}) haitoshi hata ${input.saleUnit} moja.`
+      : `${input.productName} stock (${stock.toLocaleString('en-US')} ${input.baseUnit}) is not enough for one ${input.saleUnit}.`;
+  }
+
+  const portionCost = input.baseUnitCost! * input.unitBaseQuantity;
+  const retailProfit = portions * (input.retailPrice! - portionCost);
+  const formula = `${portions.toLocaleString('en-US')} ${input.saleUnit} × (${money(input.retailPrice!)} − ${money(portionCost)}) = *${money(retailProfit)}*`;
+  const lines = lang === 'sw'
+    ? [
+      `Makisio ya ${input.productName} ukiuza stock yote kwa ${input.saleUnit}:`,
+      `- Stock: ${stock.toLocaleString('en-US')} ${input.baseUnit}`,
+      `- Inayouzwa: ${portions.toLocaleString('en-US')} ${input.saleUnit}`,
+      `- Retail: ${formula}`,
+    ]
+    : [
+      `Estimate for selling all ${input.productName} stock by ${input.saleUnit}:`,
+      `- Stock: ${stock.toLocaleString('en-US')} ${input.baseUnit}`,
+      `- Sellable: ${portions.toLocaleString('en-US')} ${input.saleUnit}`,
+      `- Retail: ${formula}`,
+    ];
+  if (input.wholesalePrice !== null && input.wholesalePrice !== input.retailPrice) {
+    const wholesaleProfit = portions * (input.wholesalePrice - portionCost);
+    lines.push(`- Wholesale: ${portions.toLocaleString('en-US')} ${input.saleUnit} × (${money(input.wholesalePrice)} − ${money(portionCost)}) = *${money(wholesaleProfit)}*`);
+  }
+  if (remainder > 1e-9) {
+    lines.push(lang === 'sw'
+      ? `- Inabaki: ${remainder.toLocaleString('en-US', { maximumFractionDigits: 6 })} ${input.baseUnit} (haitoshi ${input.saleUnit} kamili)`
+      : `- Remaining: ${remainder.toLocaleString('en-US', { maximumFractionDigits: 6 })} ${input.baseUnit} (not enough for a complete ${input.saleUnit})`);
+  }
+  lines.push(lang === 'sw'
+    ? 'Haya ni makisio; hayajaandika mauzo mapya.'
+    : 'This is an estimate; it has not recorded a new sale.');
+  return lines.join('\n');
+}

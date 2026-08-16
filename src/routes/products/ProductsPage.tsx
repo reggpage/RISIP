@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Archive, Package, Pencil, Plus, RefreshCw, Search, TrendingDown } from 'lucide-react';
+import { AlertTriangle, Archive, Package, Plus, RefreshCw, Search, TrendingDown } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -20,6 +20,8 @@ import {
   formatOnHand,
   stockLooksWrong,
   useStockLevels,
+  useCurrentSellingPrices,
+  type SellingPriceRow,
   type StockLevel,
   unarchiveProduct,
   useProductCatalog,
@@ -41,7 +43,7 @@ const ui = lang === 'sw' ? {
   products: 'Bidhaa', missingCost: 'Hazina bei ya kununua', belowCost: 'Zinauzwa chini ya gharama',
   coverage: 'Faida inayoonekana',
   coverageHint: 'Sehemu ya mauzo ambayo makisio ya faida yanaweza kuiona.',
-  sold: 'Imeuzwa', revenue: 'Mapato', buying: 'Kununua', selling: 'Wastani wa mauzo', margin: 'Faida',
+  sold: 'Imeuzwa', revenue: 'Mapato', buying: 'Kununua', selling: 'Bei ya kuuza', avgSelling: 'Wastani uliopatikana', margin: 'Faida',
   lastSold: 'Mauzo ya mwisho', never: 'Bado haijauzwa',
   setCost: 'Weka bei ya kununua', editCost: 'Badilisha bei', edit: 'Hariri',
   unknown: 'Haijulikani',
@@ -69,7 +71,7 @@ const ui = lang === 'sw' ? {
   products: 'Products', missingCost: 'Missing a buying price', belowCost: 'Sold below cost',
   coverage: 'Profit visible',
   coverageHint: 'The share of sales the profit estimate can actually see.',
-  sold: 'Sold', revenue: 'Revenue', buying: 'Buying', selling: 'Avg sale', margin: 'Margin',
+  sold: 'Sold', revenue: 'Revenue', buying: 'Buying', selling: 'Selling price', avgSelling: 'Average achieved', margin: 'Margin',
   lastSold: 'Last sold', never: 'Not sold yet',
   setCost: 'Set buying price', editCost: 'Change price', edit: 'Edit',
   unknown: 'Unknown',
@@ -130,9 +132,15 @@ function SummaryTile({ label, value, hint, tone }: {
   );
 }
 
-function ProductRow({ product, level, canPrice, onEdit, onMerge, onArchive, onRestore }: {
+function sellingPriceText(prices: SellingPriceRow[]): string {
+  if (prices.length === 0) return '—';
+  return prices.map((price) => `${price.saleUnit ? `${price.saleUnit} ` : ''}${formatMoney(price.retailPrice)}`).join(' · ');
+}
+
+function ProductRow({ product, level, prices, canPrice, onEdit, onMerge, onArchive, onRestore }: {
   product: CatalogProduct;
   level: StockLevel | null;
+  prices: SellingPriceRow[];
   canPrice: boolean;
   onEdit: (product: CatalogProduct, tab: 'count' | 'price') => void;
   onMerge: (product: CatalogProduct) => void;
@@ -175,7 +183,7 @@ function ProductRow({ product, level, canPrice, onEdit, onMerge, onArchive, onRe
       </div>
 
       {/* The numbers, each in its own labelled column so rows stay comparable. */}
-      <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:w-[36rem] sm:grid-cols-5 sm:gap-y-0">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:w-[45rem] sm:grid-cols-6 sm:gap-y-0">
         <Figure
           label={ui.onHand}
           value={onHand ?? ui.notCounted}
@@ -188,8 +196,9 @@ function ProductRow({ product, level, canPrice, onEdit, onMerge, onArchive, onRe
           label={ui.buying}
           value={product.unitCost === null ? '—' : formatMoney(product.unitCost)}
           tone={product.unitCost === null ? 'muted' : 'ink'}
-          hint={product.avgUnitPrice === null ? undefined : `${ui.selling} ${formatMoney(product.avgUnitPrice)}`}
+          hint={product.avgUnitPrice === null ? undefined : `${ui.avgSelling} ${formatMoney(product.avgUnitPrice)}`}
         />
+        <Figure label={ui.selling} value={sellingPriceText(prices)} tone={prices.length === 0 ? 'muted' : 'ink'} />
         <Figure
           label={ui.margin}
           value={product.estimatedMargin === null ? '—' : formatMoney(product.estimatedMargin)}
@@ -199,18 +208,10 @@ function ProductRow({ product, level, canPrice, onEdit, onMerge, onArchive, onRe
       </div>
 
       {canPrice ? (
-        <div className="flex items-center gap-1.5 sm:w-40 sm:justify-end">
-          {/* One everyday button. Counting and pricing are the two things done
-              often, and they are two tabs of one card rather than two buttons
-              competing for the same corner of a busy row. */}
-          <Button
-            variant={missing ? 'primary' : 'secondary'}
-            onClick={() => onEdit(product, missing ? 'price' : 'count')}
-          >
-            <Pencil className="h-4 w-4" aria-hidden />{ui.edit}
-          </Button>
+        <div className="flex items-center gap-1.5 sm:w-10 sm:justify-end">
           <ProductRowMenu
             product={product}
+            onEdit={(item) => onEdit(item, missing ? 'price' : 'count')}
             onMerge={onMerge}
             onArchive={onArchive}
             onRestore={onRestore}
@@ -231,10 +232,12 @@ export default function ProductsPage() {
   const [merging, setMerging] = useState<CatalogProduct | null>(null);
   const [adding, setAdding] = useState(false);
   const stock = useStockLevels();
+  const selling = useCurrentSellingPrices();
   const [showArchived, setShowArchived] = useState(false);
   const toast = useToast();
   const state = useProductCatalog(range, showArchived);
   const levelFor = (key: string) => stock.levels.find((level) => level.productKey === key) ?? null;
+  const pricesFor = (key: string) => selling.prices.filter((price) => price.productKey === key);
 
   async function hide(product: CatalogProduct) {
     try {
@@ -345,6 +348,7 @@ export default function ProductsPage() {
               key={product.productKey}
               product={product}
               level={levelFor(product.productKey)}
+              prices={pricesFor(product.productKey)}
               canPrice={canPrice}
               onEdit={(item, tab) => setEditing({ product: item, tab })}
               onMerge={setMerging}
@@ -369,7 +373,7 @@ export default function ProductsPage() {
           // open. One product usually needs two or three of these tabs filled
           // in, and closing after each one meant finding the row again every
           // time. Only the X closes it.
-          onSaved={() => { void state.reload(); void stock.reload(); }}
+          onSaved={() => { void state.reload(); void stock.reload(); void selling.reload(); }}
         />
       ) : null}
 
