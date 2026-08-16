@@ -18,7 +18,9 @@ const tintBg: Record<RoleTint, string> = {
   worker: 'bg-role-worker hover:bg-role-worker/90 focus-visible:ring-role-worker text-white',
   accountant: 'bg-role-accountant hover:bg-role-accountant/90 focus-visible:ring-role-accountant text-white',
   admin: 'bg-role-admin hover:bg-role-admin/90 focus-visible:ring-role-admin text-white',
-  neutral: 'bg-ink hover:bg-ink/90 focus-visible:ring-ink text-white',
+  // The default was ink-black, which read as a system button rather than a
+  // Risip one. Every dark button in the app came from here.
+  neutral: 'bg-role-admin hover:bg-role-admin/90 focus-visible:ring-role-admin text-white',
 };
 
 const tintOutline: Record<RoleTint, string> = {

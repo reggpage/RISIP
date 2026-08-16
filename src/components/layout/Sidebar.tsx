@@ -55,7 +55,7 @@ export default function Sidebar({
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden w-64 shrink-0 flex-col bg-sidebar px-4 py-6 text-white md:flex">
+      <aside className="hidden w-64 shrink-0 flex-col overflow-y-auto bg-sidebar px-4 py-6 text-white md:flex">
         {/* Brand mark — logo only, sized like the wordmarks in Vercel/Linear/Stripe: big
             enough to anchor the sidebar, generous headroom above the nav. */}
         <div className="mb-10 flex justify-center">
@@ -100,7 +100,7 @@ export default function Sidebar({
       )}
       <aside
         className={
-          'fixed inset-y-0 right-0 z-50 flex w-64 flex-col bg-sidebar px-4 py-6 text-white shadow-xl transition-transform duration-300 md:hidden ' +
+          'fixed inset-y-0 right-0 z-50 flex w-64 flex-col overflow-y-auto overscroll-contain bg-sidebar px-4 py-6 text-white shadow-xl transition-transform duration-300 md:hidden ' +
           (mobileOpen ? 'translate-x-0' : 'translate-x-full')
         }
       >

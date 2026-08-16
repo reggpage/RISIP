@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Check, CheckCircle2, ChevronDown, Filter, RefreshCw, X } from 'lucide-react';
+import { Check, CheckCircle2, ChevronLeft, Filter, RefreshCw, X } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Select from '@/components/ui/Select';
@@ -49,9 +49,9 @@ export default function DailyRecordsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => startOfLocalDay());
-  // Which day-cards are open. Closed by default: the total is the answer most
-  // of the time, and the entries behind it are for when it looks wrong.
-  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
+  // The day-card that is open, if any. A card is a summary; tapping it opens
+  // the thing it summarises rather than growing and pushing the day off screen.
+  const [openGroup, setOpenGroup] = useState<DayGroup<DailyRecordWithDetails> | null>(null);
 
   function moveToDate(date: Date) {
     const safeDate = startOfLocalDay(date);
@@ -137,11 +137,14 @@ export default function DailyRecordsPage() {
         <div className="mt-5 flex justify-end"><Button tint="admin" onClick={() => setFiltersOpen(false)}>{ui.filter}</Button></div>
       </Modal>}
       <div className="mb-6 flex flex-wrap items-center gap-2" aria-label={ui.dateNavigation}>
+        {/* "Previous day" and "Back" both stepped one day into the past and read
+            as two different things. The arrow is the one that keeps going. */}
+        <Button variant="ghost" onClick={goBackOneDay} aria-label={ui.back} title={ui.back}>
+          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+        </Button>
         <Button variant="ghost" onClick={() => setRelativeDay(0)}>{ui.today}</Button>
         <Button variant="ghost" onClick={() => setRelativeDay(-1)}>{ui.yesterday}</Button>
-        <Button variant="ghost" onClick={() => setRelativeDay(-2)}>{ui.previousDay}</Button>
-        <Button variant="ghost" onClick={goBackOneDay}>{ui.back}</Button>
-        <span className="ml-auto text-xs font-medium text-ink">{formatLongDate(selectedDate, lang)}</span>
+        <span className="ml-auto text-xs font-semibold text-role-admin">{formatLongDate(selectedDate, lang)}</span>
       </div>
 
       {state.status === 'error' && (
@@ -162,26 +165,21 @@ export default function DailyRecordsPage() {
       ) : (
         <div className="space-y-3">
           {groupByDay(filtered).map((group) => (
-            <DayGroupCard
-              key={group.key}
-              group={group}
-              open={openGroups.has(group.key)}
-              onToggle={() => setOpenGroups((previous) => {
-                const next = new Set(previous);
-                if (next.has(group.key)) next.delete(group.key); else next.add(group.key);
-                return next;
-              })}
-              canManage={canManage}
-              busyId={busyId}
-              onOpenRecord={setSelected}
-              onConfirmRecord={(record) => void handleConfirm(record)}
-              onVoidRecord={(record) => {
-                setVoiding(record);
-                setVoidReason('');
-              }}
-            />
+            <DayGroupCard key={group.key} group={group} onOpen={() => setOpenGroup(group)} />
           ))}
         </div>
+      )}
+
+      {openGroup && !selected && (
+        <DayGroupModal
+          group={openGroup}
+          canManage={canManage}
+          busyId={busyId}
+          onClose={() => setOpenGroup(null)}
+          onOpenRecord={setSelected}
+          onConfirmRecord={(record) => void handleConfirm(record)}
+          onVoidRecord={(record) => { setVoiding(record); setVoidReason(''); }}
+        />
       )}
 
       {selected && (
@@ -248,30 +246,17 @@ function FilterFields({
  */
 function DayGroupCard({
   group,
-  open,
-  onToggle,
-  canManage,
-  busyId,
-  onOpenRecord,
-  onConfirmRecord,
-  onVoidRecord,
+  onOpen,
 }: {
   group: DayGroup<DailyRecordWithDetails>;
-  open: boolean;
-  onToggle: () => void;
-  canManage: boolean;
-  busyId: string | null;
-  onOpenRecord: (record: DailyRecordWithDetails) => void;
-  onConfirmRecord: (record: DailyRecordWithDetails) => void;
-  onVoidRecord: (record: DailyRecordWithDetails) => void;
+  onOpen: () => void;
 }) {
   const entries = group.records.length;
   return (
-    <Card className="overflow-hidden p-0">
+    <Card className="p-0">
       <button
         type="button"
-        onClick={onToggle}
-        aria-expanded={open}
+        onClick={onOpen}
         className="flex w-full flex-col gap-3 p-5 text-left sm:flex-row sm:items-center sm:justify-between"
       >
         <div className="min-w-0">
@@ -285,30 +270,60 @@ function DayGroupCard({
             {entries === 1 ? ui.oneEntry : ui.manyEntries.replace('{n}', String(entries))}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xl font-semibold tabular-nums text-ink">{formatMoney(group.total)}</span>
-          <ChevronDown className={`h-5 w-5 shrink-0 text-ink-muted transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
-        </div>
+        <span className="text-xl font-semibold tabular-nums text-ink">{formatMoney(group.total)}</span>
       </button>
-
-      {open && (
-        <div className="border-t border-surface-border bg-surface-muted/40 p-3 sm:p-4">
-          <div className="space-y-3">
-            {group.records.map((record) => (
-              <RecordRow
-                key={record.id}
-                record={record}
-                canManage={canManage}
-                busy={busyId === record.id}
-                onOpen={() => onOpenRecord(record)}
-                onConfirm={() => onConfirmRecord(record)}
-                onVoid={() => onVoidRecord(record)}
-              />
-            ))}
-          </div>
-        </div>
-      )}
     </Card>
+  );
+}
+
+/**
+ * The whole day, in one window.
+ *
+ * It opened as a drop-down at first, and that was not what was asked for: the
+ * card grew downwards and pushed the rest of the day off the screen. A card is
+ * a summary; tapping it should open the thing it summarises.
+ */
+function DayGroupModal({
+  group,
+  canManage,
+  busyId,
+  onClose,
+  onOpenRecord,
+  onConfirmRecord,
+  onVoidRecord,
+}: {
+  group: DayGroup<DailyRecordWithDetails>;
+  canManage: boolean;
+  busyId: string | null;
+  onClose: () => void;
+  onOpenRecord: (record: DailyRecordWithDetails) => void;
+  onConfirmRecord: (record: DailyRecordWithDetails) => void;
+  onVoidRecord: (record: DailyRecordWithDetails) => void;
+}) {
+  const kindLabel = kindLabels[group.kind as DailyRecordKind] ?? group.kind;
+  return (
+    <Modal title={`${kindLabel} · ${formatLongDate(new Date(`${group.day}T00:00:00`), lang)}`} onClose={onClose}>
+      <div className="mb-4 rounded-xl bg-surface-muted px-4 py-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">{ui.total}</p>
+        <p className="font-display text-2xl text-ink">{formatMoney(group.total)}</p>
+        <p className="mt-1 text-xs text-ink-muted">
+          {group.records.length === 1 ? ui.oneEntry : ui.manyEntries.replace('{n}', String(group.records.length))}
+        </p>
+      </div>
+      <div className="space-y-3">
+        {group.records.map((record) => (
+          <RecordRow
+            key={record.id}
+            record={record}
+            canManage={canManage}
+            busy={busyId === record.id}
+            onOpen={() => onOpenRecord(record)}
+            onConfirm={() => onConfirmRecord(record)}
+            onVoid={() => onVoidRecord(record)}
+          />
+        ))}
+      </div>
+    </Modal>
   );
 }
 

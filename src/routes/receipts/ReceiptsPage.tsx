@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import VerifyWithTraButton from '@/components/receipts/VerifyWithTraButton';
 import { useSearchParams } from 'react-router-dom';
 import { Plus, ScanLine, Search } from 'lucide-react';
 import Button from '@/components/ui/Button';
@@ -231,7 +230,6 @@ export default function ReceiptsPage() {
         <h1 className="text-2xl font-semibold text-ink">{sw.nav.receipts}</h1>
         <div className="flex flex-wrap gap-2">
           {/* Finance only: it rewrites stored figures with TRA's own. */}
-          {isFinance && <VerifyWithTraButton />}
           {receiptsState.status === 'ready' && (
             <ReceiptPrintButton
               receipts={receiptsState.receipts}

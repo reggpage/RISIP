@@ -57,14 +57,15 @@ export default function ProductRowMenu({ product, onMerge, onArchive, onRestore 
         <MoreVertical className="h-4 w-4" aria-hidden />
       </button>
 
-      {/* Anchored right and clamped to the viewport. The action column already
-          sits at the right edge of the row, so a fixed-width popover hanging off
-          it ran straight off a phone screen — the first two words of every item
-          were cut away. */}
+      {/* Anchored to whichever side the button is actually on. The row is a
+          COLUMN on a phone, so the action button sits at the LEFT edge there —
+          and right-0 hung the menu off the left of the screen, cutting the first
+          few letters off every item. Right-anchored only from sm upwards, where
+          the row becomes horizontal and the button moves to the right. */}
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 z-30 mt-1 w-[min(14rem,calc(100vw-2.5rem))] overflow-hidden rounded-xl border border-surface-border bg-surface py-1 shadow-lg"
+          className="absolute left-0 z-30 mt-1 w-[min(14rem,calc(100vw-2.5rem))] overflow-hidden rounded-xl border border-surface-border bg-surface py-1 shadow-lg sm:left-auto sm:right-0"
         >
           {product.archived ? (
             <button type="button" role="menuitem" className={item}
