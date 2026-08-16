@@ -90,3 +90,51 @@ describe('what the trader is shown', () => {
     expect(reply).toMatch(/ulizoziweka mwenyewe/);
   });
 });
+
+describe('a till roll written one product per line', () => {
+  it('reads the owner’s real thirty-line paste', () => {
+    // The message that failed: quantities only, one per line, after the price
+    // list was already set. It was refused outright because it had newlines.
+    const sale = parseQuantityOnlySale(
+      'nimeuza daftari 10\nnimeuza kalamu 20\nnimeuza penseli 25\nnimeuza rula 8');
+    expect(sale?.items).toEqual([
+      { product: 'daftari', quantity: 10 },
+      { product: 'kalamu', quantity: 20 },
+      { product: 'penseli', quantity: 25 },
+      { product: 'rula', quantity: 8 },
+    ]);
+  });
+
+  it('keeps phrase names across lines', () => {
+    expect(parseQuantityOnlySale('nimeuza nguvu ya sala 5\nnimeuza kitabu cha hesabu 6')?.items)
+      .toEqual([
+        { product: 'nguvu ya sala', quantity: 5 },
+        { product: 'kitabu cha hesabu', quantity: 6 },
+      ]);
+  });
+
+  it('adds a product that appears on two lines', () => {
+    expect(parseQuantityOnlySale('nimeuza daftari 10\nnimeuza daftari 5')?.items)
+      .toEqual([{ product: 'daftari', quantity: 15 }]);
+  });
+
+  it('still reads several products joined on one of the lines', () => {
+    expect(parseQuantityOnlySale('nimeuza kalamu 12 na daftari 8\nnimeuza chaki 6 na duster 4')?.items)
+      .toEqual([
+        { product: 'kalamu', quantity: 12 },
+        { product: 'daftari', quantity: 8 },
+        { product: 'chaki', quantity: 6 },
+        { product: 'duster', quantity: 4 },
+      ]);
+  });
+
+  it('refuses the whole paste when one line states a price', () => {
+    // Half a till roll priced from the list and half from the message would be
+    // two different kinds of number added together.
+    expect(parseQuantityOnlySale('nimeuza daftari 10\nnimeuza kalamu 3 kwa 1500')).toBeNull();
+  });
+
+  it('refuses the whole paste when one line is not a sale', () => {
+    expect(parseQuantityOnlySale('nimeuza daftari 10\nfaida ya leo ni ngapi')).toBeNull();
+  });
+});

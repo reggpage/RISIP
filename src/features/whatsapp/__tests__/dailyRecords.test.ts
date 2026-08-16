@@ -315,7 +315,23 @@ describe('what counts as something that happened', () => {
     expect(isDailyRecordCandidate('stock ya sukari 50000')).toBe(true);
   });
 
-  it('keeps a verb even inside a question, because the sale still happened', () => {
+  it('keeps a tag question, because the sale still carries its amount', () => {
     expect(isDailyRecordCandidate('nimeuza daftari 5 kwa 7500, ni sawa?')).toBe(true);
+  });
+
+  it('does not mistake a question about past takings for a sale', () => {
+    // My own regression: adding the simple past so "niliuza st rita 3 kwa
+    // 13500" would record also swallowed "Jana niliuza shingapi?" and answered
+    // it with "write a positive amount". The verb is identical; one carries a
+    // figure, the other asks for one.
+    expect(isDailyRecordCandidate('Jana niliuza shingapi?')).toBe(false);
+    expect(isDailyRecordCandidate('niliuza ngapi wiki iliyopita')).toBe(false);
+    expect(isDailyRecordCandidate('nimeuza kiasi gani leo')).toBe(false);
+    expect(isDailyRecordCandidate('nimelipa kiasi gani mwezi huu')).toBe(false);
+  });
+
+  it('still records a sale that states no price, because it asks for none', () => {
+    expect(isDailyRecordCandidate('nimeuza daftari 10')).toBe(true);
+    expect(isDailyRecordCandidate('nimeuza kalamu 12 na daftari 8')).toBe(true);
   });
 });

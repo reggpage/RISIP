@@ -480,8 +480,23 @@ const RECORD_NOUNS = /\b(?:mauzo|deni|stock|stoo|bidhaa|mzigo)\b/i;
 
 const ASKING = /\?|\b(?:ngapi|shingapi|kiasi gani|gani|nini|lini|vipi|how much|how many|what|which|when)\b/i;
 
+// Asking FOR the figure, as opposed to merely ending in a question mark.
+const ASKING_FOR_THE_FIGURE = /\b(?:ngapi|shingapi|kiasi gani|how much|how many)\b/i;
+
+// Any amount of money at all. "kwa 7500", "TSh 15,000", "15000/=".
+const HAS_MONEY = /(?:tshs?|tzs|sh)\s*[0-9]|[0-9][0-9,]{2,}|\b(?:kwa|for|kila moja|each)\s+[0-9]/i;
+
 function looksLikeDailyRecord(text: string): boolean {
-  if (RECORD_VERBS.test(text)) return true;
+  if (RECORD_VERBS.test(text)) {
+    // REGRESSION, mine, from yesterday: adding the simple past so "niliuza st
+    // rita 3 kwa 13500" would be recorded also caught "Jana niliuza shingapi?"
+    // — a question about yesterday's takings — and pushed it into the write
+    // chain, which answered "write a positive amount". The verb is the same in
+    // both; what differs is that one CARRIES a figure and the other ASKS for
+    // one. A tag question ("…ni sawa?") still carries its amount and stays.
+    if (ASKING_FOR_THE_FIGURE.test(text) && !HAS_MONEY.test(text)) return false;
+    return true;
+  }
   // A bare noun in a question is a question. With no question in sight it is
   // still worth a look — "stock ya sukari 50000" is how a restock gets typed.
   return RECORD_NOUNS.test(text) && !ASKING.test(text);

@@ -48,9 +48,30 @@ const STATES_MONEY = /\b(?:kwa|for|kila\s+moja|each|@|jumla|total|bei)\b\s*[0-9]
  * message away from a parser that knows what the sale was actually worth.
  */
 export function parseQuantityOnlySale(text: string | null | undefined): QuantitySale | null {
+  // MEASURED FAILURE, again: this refused every multi-line message, and the
+  // owner's real till roll was THIRTY lines of "nimeuza daftari 10". A counter
+  // closing a day writes one product per line — that is not an edge case, it is
+  // the main case. Each line has to be its own sale line, so a stray sentence in
+  // the middle still hands the whole message to somebody else.
+  const lines = String(text ?? '').split(/\r?\n/).map(clean).filter(Boolean);
+  if (lines.length > 1) {
+    const items: QuantitySaleItem[] = [];
+    for (const line of lines) {
+      const one = parseQuantityOnlySale(line);
+      if (!one) return null;
+      for (const item of one.items) {
+        const at = items.findIndex((seen) => seen.product.toLowerCase() === item.product.toLowerCase());
+        // The same product on two lines is two sales at the counter, not a
+        // correction of the first. They add up.
+        if (at >= 0) items[at] = { ...items[at], quantity: items[at].quantity + item.quantity };
+        else items.push(item);
+      }
+    }
+    return items.length > 0 ? { kind: 'quantity_sale', items } : null;
+  }
+
   const said = clean(text);
   if (!said || !OPENER.test(said)) return null;
-  if (/\r?\n/.test(String(text ?? ''))) return null;
   if (STATES_MONEY.test(said)) return null;
 
   const payload = said.replace(OPENER, '').replace(/^[\s:,-]+/, '').trim();
