@@ -277,15 +277,26 @@ async function priceQuantitySale(
   | { kind: 'skip' }
 > {
   const resolvedItems: { key: string; name: string; quantity: number; band: QuantitySaleItem['band'] }[] = [];
+  // Named back to the shopkeeper, never silently dropped: a line missing from a
+  // till roll is money they believe they took and Risip does not.
+  const unknown: string[] = [];
   for (const item of sale.items) {
     const resolved = await resolveProductForRead(db, identity, item.product);
     if (resolved.error) return { kind: 'skip' };
     if (resolved.resolution.kind === 'ambiguous') {
       return { kind: 'blocked', message: productReadClarification(resolved.resolution, lang) };
     }
-    // An unknown product is not this parser's business — the ordinary path can
-    // still ask for a price and record it under the name as typed.
-    if (resolved.resolution.kind === 'not_found') return { kind: 'skip' };
+    // An unknown product on a ONE-LINE sale is not this parser's business: the
+    // ordinary path can still ask for a price and record it under the name as
+    // typed. On a till roll it is, because there is no ordinary path that can
+    // read forty-five lines — handing the paste back meant "is this the total or
+    // the price for each?", again, over one name the shop spells differently
+    // ("biblia" for "Bibilia ndogo"). Name it and price the rest.
+    if (resolved.resolution.kind === 'not_found') {
+      if (sale.items.length === 1) return { kind: 'skip' };
+      unknown.push(item.product);
+      continue;
+    }
     resolvedItems.push({
       key: resolved.resolution.match.productKey,
       name: resolved.resolution.match.productName,
@@ -318,9 +329,11 @@ async function priceQuantitySale(
     const line = priceLine({ product: item.name, quantity: item.quantity, band: item.band }, known);
     if (line) lines.push(line); else missing.push(item.name);
   }
-  if (missing.length > 0) {
-    return { kind: 'blocked', message: quantitySaleMissingPrices(missing, lang) };
+  if (missing.length > 0 || unknown.length > 0) {
+    return { kind: 'blocked', message: quantitySaleMissingPrices([...unknown, ...missing], lang) };
   }
+  // Everything was unknown and nothing priced: let the ordinary path try.
+  if (lines.length === 0) return { kind: 'skip' };
 
   const amount = Math.round(lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0) * 100) / 100;
   return {

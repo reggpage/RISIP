@@ -153,7 +153,12 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   // A name runs until the number that follows it. Names here are routinely three
   // words long — "nguvu ya sala", "st rita wa kashia" — so the separator cannot
   // be a space; it has to be the digits.
-  const pattern = /([\p{L}][\p{L}\s'’.-]*?)\s+([0-9]+(?:\.[0-9]+)?)(?=\s*(?:,|;|\bna\b|\band\b|$))/giu;
+  // Digits are allowed INSIDE a name, just never at the start of one. "karatasi
+  // A4 rimu" is a real product on this shelf, and excluding digits made that one
+  // line unreadable — which, in an all-or-nothing paste, silently refused the
+  // other forty-four. The quantity is still unambiguous because it has to be the
+  // last number before a separator or the end of the line.
+  const pattern = /([\p{L}][\p{L}0-9\s'’.-]*?)\s+([0-9]+(?:\.[0-9]+)?)(?=\s*(?:,|;|\bna\b|\band\b|$))/giu;
   for (const match of payload.matchAll(pattern)) {
     const product = clean(match[1])
       .replace(/^(?:na|and|,|;)\s+/i, '')

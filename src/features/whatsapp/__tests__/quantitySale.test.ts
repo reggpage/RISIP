@@ -226,3 +226,25 @@ describe('closing a day in one paste', () => {
     expect(reply).not.toContain('5,500');
   });
 });
+
+describe('names that contain a digit', () => {
+  it('reads a product whose name has a number in it', () => {
+    // "karatasi A4 rimu" is a real product on this shelf. Excluding digits from
+    // names made that ONE line unreadable, and in an all-or-nothing paste that
+    // silently refused the other forty-four.
+    expect(parseQuantityOnlySale('nimeuza karatasi A4 rimu 2')?.items)
+      .toEqual([{ product: 'karatasi A4 rimu', quantity: 2, band: null }]);
+  });
+
+  it('still takes the last number as the quantity', () => {
+    expect(parseQuantityOnlySale('nimeuza karatasi A4 rimu 1 na bahasha 20')?.items)
+      .toEqual([
+        { product: 'karatasi A4 rimu', quantity: 1, band: null },
+        { product: 'bahasha', quantity: 20, band: null },
+      ]);
+  });
+
+  it('will not start a name with a digit', () => {
+    expect(parseQuantityOnlySale('nimeuza 4 5')).toBeNull();
+  });
+});
