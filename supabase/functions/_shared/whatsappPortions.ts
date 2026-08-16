@@ -42,6 +42,12 @@ export type DeclaredSaleUnitMatch =
   | { kind: 'unit_required'; productName: string; units: string[] }
   | { kind: 'matched'; unit: DeclaredSaleUnit };
 
+export type PortionQuantityPrompt = {
+  kind: 'portion_quantity_prompt';
+  productName: string;
+  unitName: string;
+};
+
 const clean = (value: string | null | undefined) => String(value ?? '').replace(/\s+/g, ' ').trim();
 const key = (value: string) => clean(value).toLocaleLowerCase('sw-TZ').replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
 
@@ -61,41 +67,89 @@ function money(raw: string | undefined): number | null {
 export function parsePortionSetupOffer(text: string | null | undefined): PortionSetupDraft | null {
   const said = clean(text);
   const head = /^(.+?)\s+([\p{L}][\p{L}'’-]{0,39})\s+@\s*([0-9][0-9,.]*)\s+(?:nauza|ninauza|sell(?:ing)?|sold\s+at)\s+(.+)$/iu.exec(said);
-  if (!head) return null;
-  const purchaseCost = money(head[3]);
-  if (purchaseCost === null) return null;
+  if (head) {
+    const purchaseCost = money(head[3]);
+    if (purchaseCost === null) return null;
 
-  const tail = head[4];
-  const matches = [...tail.matchAll(/([\p{L}][\p{L}'’\s-]*?)\s+([0-9][0-9,.]*)(?=\s+[\p{L}]|$)/giu)];
-  if (matches.length === 0) return null;
+    const tail = head[4];
+    const matches = [...tail.matchAll(/([\p{L}][\p{L}'’\s-]*?)\s+([0-9][0-9,.]*)(?=\s+[\p{L}]|$)/giu)];
+    if (matches.length === 0) return null;
+    const saleUnits: PortionPriceDraft[] = [];
+    for (const match of matches) {
+      const unit = clean(match[1]);
+      const retail = money(match[2]);
+      if (!unit || retail === null) return null;
+      if (saleUnits.some((seen) => key(seen.unit) === key(unit))) return null;
+      saleUnits.push({ unit, retail, wholesale: null, minQty: null });
+    }
+    const consumed = matches.map((match) => clean(match[0])).join(' ');
+    if (key(consumed).replace(/\s/g, '') !== key(tail).replace(/\s/g, '')) return null;
+
+    const product = clean(head[1]);
+    const purchaseUnit = clean(head[2]);
+    if (product.length < 2 || !/[\p{L}]/u.test(product)) return null;
+    return { kind: 'portion_setup_sizes', product, purchaseUnit, purchaseCost, saleUnits };
+  }
+
+  // A more natural stock-entry form:
+  //   store nyama ya ngombe kilo 10 nimenunua kwa 100,000,
+  //   robo nauza 6,000, nusu nauza 12,000, kilo nauza 22,000
+  // The stated batch cost is divided by its stated quantity. This is arithmetic,
+  // not a guessed conversion: 10 kilo for 100,000 means cost per kilo is 10,000.
+  const narrated = /^(?:(?:store|stock|hifadhi|weka)\s+)?(.+?)\s+(kilo|kg|lita|litre|liter)\s+([0-9]+(?:\.[0-9]+)?)\s+(?:nimenunua|nilinunua|nimechukua|bought)\s+(?:kwa|for|at)\s*(?:tshs?|tzs)?\s*([0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?)\s*[,;]?\s*(.+)$/iu.exec(said);
+  if (!narrated) return null;
+  const purchaseQuantity = Number(narrated[3]);
+  const purchaseTotal = money(narrated[4]);
+  if (!Number.isFinite(purchaseQuantity) || purchaseQuantity <= 0 || purchaseQuantity > 1_000_000
+    || purchaseTotal === null) return null;
+
   const saleUnits: PortionPriceDraft[] = [];
-  for (const match of matches) {
-    const unit = clean(match[1]);
-    const retail = money(match[2]);
-    if (!unit || retail === null) return null;
-    if (saleUnits.some((seen) => key(seen.unit) === key(unit))) return null;
+  // A comma inside 12,000 is money; a comma followed by whitespace and the
+  // next word separates two portion statements.
+  const parts = narrated[5].split(
+    /(?:[,;]\s*(?=[\p{L}])|\n+|\s+(?=[\p{L}][\p{L}'’-]*\s+(?:nauza|ninauza|sell(?:ing)?(?:\s+at)?)\b))/iu,
+  ).map(clean).filter(Boolean);
+  for (const part of parts) {
+    const sale = /^([\p{L}][\p{L}'’\s-]{0,39}?)\s+(?:nauza|ninauza|sell(?:ing)?(?:\s+at)?)\s*(?:tshs?|tzs)?\s*([0-9][0-9,.]*)$/iu.exec(part);
+    const retail = money(sale?.[2]);
+    const unit = clean(sale?.[1]);
+    if (!unit || retail === null || saleUnits.some((seen) => key(seen.unit) === key(unit))) return null;
     saleUnits.push({ unit, retail, wholesale: null, minQty: null });
   }
-  const consumed = matches.map((match) => clean(match[0])).join(' ');
-  if (key(consumed).replace(/\s/g, '') !== key(tail).replace(/\s/g, '')) return null;
+  if (saleUnits.length === 0) return null;
 
-  const product = clean(head[1]);
-  const purchaseUnit = clean(head[2]);
-  if (product.length < 2 || !/[\p{L}]/u.test(product)) return null;
+  const product = clean(narrated[1]);
+  const rawUnit = key(narrated[2]);
+  const purchaseUnit = rawUnit === 'kg' ? 'kilo'
+    : rawUnit === 'litre' || rawUnit === 'liter' ? 'lita' : clean(narrated[2]);
+  const purchaseCost = purchaseTotal / purchaseQuantity;
+  if (product.length < 2 || !/[\p{L}]/u.test(product) || purchaseCost <= 0) return null;
   return { kind: 'portion_setup_sizes', product, purchaseUnit, purchaseCost, saleUnits };
 }
 
 export function portionSizeQuestion(draft: PortionSetupDraft, lang: Lang): string {
-  const examples = draft.saleUnits.map((item) => `${item.unit} = 0.25 lita`).join('; ');
+  const namedBase = draft.saleUnits.find((item) => ['kilo', 'kg', 'lita', 'litre', 'liter'].includes(key(item.unit)))?.unit;
+  const base = namedBase
+    ? (['litre', 'liter'].includes(key(namedBase)) ? 'lita' : key(namedBase) === 'kg' ? 'kilo' : namedBase)
+    : 'lita';
+  const exampleSize = (unit: string) => key(unit) === 'robo' ? 0.25
+    : key(unit) === 'nusu' || key(unit) === 'half' ? 0.5
+    : key(unit) === key(base) ? 1 : 0.25;
+  const examples = draft.saleUnits
+    .filter((item) => key(item.unit) !== key(draft.purchaseUnit))
+    .map((item) => `${item.unit} = ${exampleSize(item.unit)} ${base}`)
+    .join('; ');
+  const purchaseExample = key(draft.purchaseUnit) === key(base) ? 1 : 20;
+  const exampleTail = examples ? `; ${examples}` : '';
   return lang === 'sw'
     ? `Nimeona bei za vipimo vya ${draft.product}, lakini sitakisia ukubwa wake.\n`
       + `${draft.purchaseUnit} moja ina unit ya msingi ngapi? Na kila kipimo ni kiasi gani cha unit hiyo?\n\n`
-      + `Jibu kwa muundo huu:\n${draft.purchaseUnit} = 20 lita; ${examples}\n\n`
-      + 'Badilisha "lita" na namba hizo ziwe vipimo halisi vya bidhaa yako.'
+      + `Jibu kwa muundo huu:\n${draft.purchaseUnit} = ${purchaseExample} ${base}${exampleTail}\n\n`
+      + `Huu ni mfano tu. Badilisha "${base}" na namba hizo ziwe vipimo halisi vya bidhaa yako.`
     : `I found the portion prices for ${draft.product}, but I will not guess their sizes.\n`
       + `How many base units are in one ${draft.purchaseUnit}, and how much of that base unit is each selling portion?\n\n`
-      + `Reply like this:\n${draft.purchaseUnit} = 20 litre; ${examples}\n\n`
-      + 'Replace "litre" and the numbers with the real measurements for your product.';
+      + `Reply like this:\n${draft.purchaseUnit} = ${purchaseExample} ${base}${exampleTail}\n\n`
+      + `This is only an example. Replace "${base}" and the numbers with the real measurements for your product.`;
 }
 
 type SizeStatement = { unit: string; quantity: number; baseUnit: string };
@@ -203,6 +257,43 @@ export function matchDeclaredSaleUnit(asked: string, units: DeclaredSaleUnit[]):
     };
   }
   return { kind: 'none' };
+}
+
+/**
+ * Finds a complete product + declared portion whose only missing fact is the
+ * quantity. Exact matching is intentional: this state will become a money
+ * record after confirmation, so a typo must not choose a different product.
+ */
+export function matchPortionMissingQuantity(
+  text: string | null | undefined,
+  units: DeclaredSaleUnit[],
+): PortionQuantityPrompt | null {
+  const said = clean(text);
+  if (!said || /\d/.test(said)) return null;
+  const asked = said
+    .replace(/^(?:nimeuza|nauza|ninauza|sold|i\s+sold|sell)\s+/iu, '')
+    .replace(/[?.!,]+$/g, '')
+    .trim();
+  const matched = matchDeclaredSaleUnit(asked, units);
+  if (matched.kind !== 'matched') return null;
+  return {
+    kind: 'portion_quantity_prompt',
+    productName: matched.unit.productName,
+    unitName: matched.unit.unitName,
+  };
+}
+
+export function parsePortionQuantityAnswer(text: string | null | undefined): number | null {
+  const said = clean(text).toLocaleLowerCase('sw-TZ');
+  const match = /^(?:nimeuza\s+)?(?:robo|nusu|lita|kilo|quarter|half|litre|liter|kilogram|kg)?\s*([0-9]+(?:\.[0-9]+)?)\s*(?:robo|nusu|lita|kilo|quarter|half|litre|liter|kilogram|kg)?$/iu.exec(said);
+  const value = Number(match?.[1]);
+  return Number.isFinite(value) && value > 0 && value <= 100_000 ? value : null;
+}
+
+export function portionQuantityQuestion(prompt: PortionQuantityPrompt, lang: Lang): string {
+  return lang === 'sw'
+    ? `Umeuza ${prompt.unitName} ngapi za ${prompt.productName}?\nMfano: "nimeuza ${prompt.productName} ${prompt.unitName} 3".`
+    : `How many ${prompt.unitName} portions of ${prompt.productName} did you sell?\nExample: "sold ${prompt.productName} ${prompt.unitName} 3".`;
 }
 
 export function portionUnitRequired(product: string, units: string[], lang: Lang): string {

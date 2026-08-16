@@ -29,4 +29,17 @@ describe('Products portion and rename UI', () => {
     expect(page).toContain("state.status === 'loading'");
     expect(page.match(/<Skeleton/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
   });
+
+  it('asks how a new product is measured and saves explicit checked portions transactionally', () => {
+    const dialog = read('src/components/products/AddProductDialog.tsx');
+    const feature = read('src/features/products/products.ts');
+    expect(dialog).toContain("type ProductMode = 'standard' | 'weight' | 'liquid'");
+    expect(dialog).toContain("{ key: 'robo'");
+    expect(dialog).toContain("{ key: 'nusu'");
+    expect(dialog).toContain('type="checkbox"');
+    expect(dialog).toContain('purchaseSizeHint');
+    expect(dialog).toContain('configureProductUnits({');
+    expect(feature).toContain("rpc('configure_product_units'");
+    expect(feature).toContain('base_quantity: unit.baseQuantity');
+  });
 });

@@ -163,6 +163,54 @@ export async function setProductCost(name: string, unitCost: number, unit: strin
   return data as unknown as { id: string; product: string; unit_cost: number; previous_cost: number | null };
 }
 
+export type ProductSaleUnitSetup = {
+  unit: string;
+  baseQuantity: number;
+  retail: number;
+  wholesale?: number | null;
+  minQty?: number | null;
+};
+
+/**
+ * Configures a measured product in one server transaction.
+ *
+ * The caller supplies explicit conversions; neither this client nor the RPC
+ * infers what "robo", "nusu", a bucket, or a sack means. The server validates
+ * the company/role, conversions and prices before writing any unit, cost or
+ * selling-price snapshot.
+ */
+export async function configureProductUnits(input: {
+  name: string;
+  baseUnit: string;
+  purchaseUnit: string;
+  purchaseSize: number;
+  purchaseCost: number;
+  saleUnits: ProductSaleUnitSetup[];
+}) {
+  const { data, error } = await (supabase as any).rpc('configure_product_units', {
+    p_name: input.name,
+    p_base_unit: input.baseUnit,
+    p_purchase_unit: input.purchaseUnit,
+    p_purchase_size: input.purchaseSize,
+    p_purchase_cost: input.purchaseCost,
+    p_sale_units: input.saleUnits.map((unit) => ({
+      unit: unit.unit,
+      base_quantity: unit.baseQuantity,
+      retail: unit.retail,
+      wholesale: unit.wholesale ?? null,
+      min_qty: unit.minQty ?? null,
+    })),
+  });
+  if (error) throw error;
+  return data as unknown as {
+    product: string;
+    base_unit: string;
+    purchase_unit: string;
+    purchase_size: number;
+    selling_units: number;
+  };
+}
+
 /**
  * Folds one product name into another.
  *

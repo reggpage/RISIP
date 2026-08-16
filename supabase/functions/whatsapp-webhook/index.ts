@@ -137,16 +137,20 @@ import {
 } from '../_shared/whatsappNewProduct.ts';
 import {
   matchDeclaredSaleUnit,
+  matchPortionMissingQuantity,
   parsePortionSetupOffer,
+  parsePortionQuantityAnswer,
   portionSetupCancelled,
   portionSetupConfirmation,
   portionSetupSaved,
   portionSizeQuestion,
+  portionQuantityQuestion,
   portionUnitRequired,
   resumePortionSetup,
   type DeclaredSaleUnit,
   type PortionSetupDraft,
   type PortionSetupReady,
+  type PortionQuantityPrompt,
 } from '../_shared/whatsappPortions.ts';
 import {
   parseBareQuantityList,
@@ -2243,6 +2247,10 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<ParkedQuantityMeaning> | null)?.kind === 'quantity_meaning_clarification'
           ? convo.options as ParkedQuantityMeaning
           : null;
+        const portionQuantityPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<PortionQuantityPrompt> | null)?.kind === 'portion_quantity_prompt'
+          ? convo.options as PortionQuantityPrompt
+          : null;
         const productRenamePending = convo?.awaiting === 'product_cost'
           && (convo.options as Partial<ProductRenamePreview> | null)?.kind === 'product_rename_confirmation'
           ? convo.options as ProductRenamePreview
@@ -2250,7 +2258,7 @@ Deno.serve(async (req) => {
         const costConversation = convo?.awaiting === 'product_cost' && convo.options
           && !costPrompt && !costBatchPending && !stockBatchPending && !sellingBatchPending
           && !newProductPending && !portionSizePending && !portionConfirmPending
-          && !quantityMeaningPending && !productRenamePending
+          && !quantityMeaningPending && !portionQuantityPending && !productRenamePending
           ? { cost: convo.options as unknown as ProductCost }
           : null;
         const productContext = convo?.awaiting === 'product_analytics'
@@ -2384,6 +2392,34 @@ Deno.serve(async (req) => {
           } else {
             await reply(phone, quantityMeaningQuestion(lang));
             await audit(db, identity, waMessageId, 'quantity_meaning', 'reask', 'skipped');
+            await finish('skipped');
+            continue;
+          }
+        }
+
+        // "mafuta robo" already names an exact, company-declared portion. Keep
+        // that context and ask only for the missing quantity; the short answer
+        // "3" resumes the same product instead of falling into generic AI chat.
+        if (portionQuantityPending) {
+          const quantity = parsePortionQuantityAnswer(body);
+          if (quantity !== null) {
+            resumedQuantitySale = {
+              kind: 'quantity_sale',
+              items: [{
+                product: `${portionQuantityPending.productName} ${portionQuantityPending.unitName}`,
+                quantity,
+                band: null,
+              }],
+              expenses: [],
+            };
+            await clearConversation(db, identity.id as string);
+            await audit(db, identity, waMessageId, 'portion_quantity', 'resumed', 'applied');
+          } else if (startsAnotherTopic(body) || isDailyRecordCandidate(body)) {
+            await clearConversation(db, identity.id as string);
+            await audit(db, identity, waMessageId, 'portion_quantity', 'abandoned', 'skipped');
+          } else {
+            await reply(phone, portionQuantityQuestion(portionQuantityPending, lang));
+            await audit(db, identity, waMessageId, 'portion_quantity', 'reask', 'clarification');
             await finish('skipped');
             continue;
           }
@@ -3413,6 +3449,44 @@ Deno.serve(async (req) => {
           await audit(db, identity, waMessageId, 'quantity_meaning', 'clarify', 'pending');
           await finish('skipped');
           continue;
+        }
+
+
+        // A known measured product and portion with no quantity should not go to
+        // the broad assistant. Load only this company's declared sale units and
+        // park the exact match so the next short number can finish the sentence.
+        if (!resumedQuantitySale && !/\d/.test(writeBody) && writeBody.length <= 100 && !writeBody.includes('?')) {
+          const { data: declaredRows, error: declaredError } = await db.rpc('wa_company_product_sale_units', {
+            p_company_id: identity.company_id,
+          });
+          const declaredUnits: DeclaredSaleUnit[] = declaredError ? []
+            : ((declaredRows ?? []) as Array<Record<string, unknown>>).map((row) => ({
+              productKey: String(row.product_key),
+              productName: String(row.product_name),
+              unitKey: String(row.unit_key),
+              unitName: String(row.unit_name),
+              baseQuantity: Number(row.base_quantity),
+              retail: row.retail_price == null ? null : Number(row.retail_price),
+              wholesale: row.wholesale_price == null ? null : Number(row.wholesale_price),
+              wholesaleMinQty: row.wholesale_min_qty == null ? null : Number(row.wholesale_min_qty),
+            }));
+          const prompt = matchPortionMissingQuantity(writeBody, declaredUnits);
+          if (prompt) {
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'product_cost',
+              receipt_id: null,
+              options: prompt,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await reply(phone, portionQuantityQuestion(prompt, lang));
+            await audit(db, identity, waMessageId, 'portion_quantity', 'ask', 'pending');
+            await finish('skipped');
+            continue;
+          }
         }
 
         const hypotheticalProduct = mixed ? null : parseHypotheticalProfitRequest(body);

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   matchDeclaredSaleUnit,
+  matchPortionMissingQuantity,
+  parsePortionQuantityAnswer,
   parsePortionSetupOffer,
+  portionSizeQuestion,
   portionSetupConfirmation,
   resumePortionSetup,
   type DeclaredSaleUnit,
@@ -30,6 +33,50 @@ describe('setting up a product sold in portions', () => {
         purchaseUnit: 'mche',
         saleUnits: [{ unit: 'kipande', retail: 500 }, { unit: 'mche mzima', retail: 3000 }],
       });
+  });
+
+  it('reads a natural measured-stock setup and derives only the stated per-kilo cost', () => {
+    expect(parsePortionSetupOffer(
+      'store Nyama ya ngombe kilo 10 nimenunua kwa 100,000, robo nauza 6000, nusu nauza 12,000, kilo nauza 22,000',
+    )).toEqual({
+      kind: 'portion_setup_sizes',
+      product: 'Nyama ya ngombe',
+      purchaseUnit: 'kilo',
+      purchaseCost: 10000,
+      saleUnits: [
+        { unit: 'robo', retail: 6000, wholesale: null, minQty: null },
+        { unit: 'nusu', retail: 12000, wholesale: null, minQty: null },
+        { unit: 'kilo', retail: 22000, wholesale: null, minQty: null },
+      ],
+    });
+  });
+
+  it('accepts the exact WhatsApp punctuation variants without dropping portion prices', () => {
+    const noDelimiter = parsePortionSetupOffer(
+      'store Nyama ya ngombe kilo 10 nimenunua kwa 100,000 robo nauza 6000, nusu nauza 12,000 kilo nauza 22,000',
+    );
+    const tightComma = parsePortionSetupOffer(
+      'store Nyama ya ngombe kilo 10 nimenunua kwa 100000,robo nauza 6000, nusu nauza 12,000, kilo nauza 22,000',
+    );
+    for (const parsed of [noDelimiter, tightComma]) {
+      expect(parsed).toMatchObject({
+        kind: 'portion_setup_sizes', product: 'Nyama ya ngombe', purchaseCost: 10000,
+      });
+      expect(parsed?.saleUnits.map((unit) => [unit.unit, unit.retail])).toEqual([
+        ['robo', 6000], ['nusu', 12000], ['kilo', 22000],
+      ]);
+    }
+  });
+
+  it('shows sensible kilo examples but still asks the owner to confirm every conversion', () => {
+    const draft = parsePortionSetupOffer(
+      'nyama ya ngombe kilo 10 nimenunua kwa 100000, robo nauza 6000, nusu nauza 12000, kilo nauza 22000',
+    )!;
+    const question = portionSizeQuestion(draft, 'sw');
+    expect(question).toContain('kilo = 1 kilo');
+    expect(question).toContain('robo = 0.25 kilo');
+    expect(question).toContain('nusu = 0.5 kilo');
+    expect(question).toContain('Huu ni mfano tu');
   });
 
   it('requires every conversion to use the same stated base unit', () => {
@@ -85,5 +132,26 @@ describe('matching a sale to a declared portion', () => {
     )!;
     expect(quantitySaleConfirmation([line], 'sw'))
       .toContain('mafuta (robo): 3 × TSh 700 = TSh 2,100');
+  });
+
+  it('parks an exact known product and portion when only quantity is missing', () => {
+    expect(matchPortionMissingQuantity('mafuta robo', units)).toEqual({
+      kind: 'portion_quantity_prompt', productName: 'mafuta', unitName: 'robo',
+    });
+    expect(matchPortionMissingQuantity('nimeuza mafuta nusu', units)).toEqual({
+      kind: 'portion_quantity_prompt', productName: 'mafuta', unitName: 'nusu',
+    });
+  });
+
+  it('does not guess a typo or intercept a sale that already has a quantity', () => {
+    expect(matchPortionMissingQuantity('maffuta robo', units)).toBeNull();
+    expect(matchPortionMissingQuantity('mafuta robo 3', units)).toBeNull();
+  });
+
+  it('accepts a short positive quantity to resume the exact parked portion', () => {
+    expect(parsePortionQuantityAnswer('3')).toBe(3);
+    expect(parsePortionQuantityAnswer('robo 3')).toBe(3);
+    expect(parsePortionQuantityAnswer('0')).toBeNull();
+    expect(parsePortionQuantityAnswer('mafuta mengine')).toBeNull();
   });
 });
