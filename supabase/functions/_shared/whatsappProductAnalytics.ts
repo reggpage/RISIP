@@ -182,8 +182,22 @@ export function productAnalyticsReply(
       : 'I do not have itemised product sales for this period yet. Include product names and quantities so Risip can rank what sells most.';
   }
   const ranked = rankProducts(items, request.rankBy, request.compareNames);
+  // Products with no buying cost cannot be ranked by margin. They used to be
+  // dropped out of the ranking without a word, and when EVERY product lacked one
+  // the whole question was refused — "bidhaa gani inafaida kubwa?" answered with
+  // a list of five things to go and do. Both are the same mistake: all or
+  // nothing, where some is the honest answer.
+  const uncosted = request.rankBy === 'margin'
+    ? items.filter((item) => !item.costed).map((item) => item.product)
+    : [];
+  const uncostedNote = uncosted.length === 0 ? '' : (lang === 'sw'
+    ? `\n\n_Hazipo kwenye hesabu hii (hazina bei ya kununua): ${uncosted.slice(0, 6).join(', ')}`
+      + `${uncosted.length > 6 ? ` na nyingine ${uncosted.length - 6}` : ''}._`
+    : `\n\n_Left out of this ranking, no buying cost: ${uncosted.slice(0, 6).join(', ')}`
+      + `${uncosted.length > 6 ? ` and ${uncosted.length - 6} more` : ''}._`);
+
   if (ranked.length === 0 && request.rankBy === 'margin') {
-    const missing = items.filter((item) => !item.costed).map((item) => item.product).slice(0, 5).join(', ');
+    const missing = uncosted.slice(0, 5).join(', ');
     return lang === 'sw'
       ? `Siwezi kukadiria faida bado kwa sababu hakuna bei ya kununua iliyowekwa kwa ${missing || 'bidhaa hizi'}. Tuma mfano: “unga unanigharimu 900 kwa kilo”.`
       : `I cannot estimate margin yet because no buying cost is recorded for ${missing || 'these products'}. Send for example: “cost of flour is 900 per kilo”.`;
@@ -205,6 +219,6 @@ export function productAnalyticsReply(
     return `${index + 1}. ${item.product} — ${value}`;
   });
   return lang === 'sw'
-    ? `Kwa ${periodLabel}, nimepanga bidhaa kwa ${basis}:\n${rows.join('\n')}\n\nHii ni ${basis}, si kipimo kingine.`
-    : `For ${periodLabel}, I ranked products by ${basis}:\n${rows.join('\n')}\n\nThis is ranked by ${basis}, not another measure.`;
+    ? `Kwa ${periodLabel}, nimepanga bidhaa kwa ${basis}:\n${rows.join('\n')}\n\nHii ni ${basis}, si kipimo kingine.${uncostedNote}`
+    : `For ${periodLabel}, I ranked products by ${basis}:\n${rows.join('\n')}\n\nThis is ranked by ${basis}, not another measure.${uncostedNote}`;
 }

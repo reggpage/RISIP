@@ -91,3 +91,55 @@ describe('WhatsApp product analytics', () => {
     expect(productAnalyticsReply(request, items, 'en')).not.toContain('Mauzo');
   });
 });
+
+describe('ranking by margin when some products have no buying cost', () => {
+  const costed = (product: string, margin: number) => ({
+    product, quantity: 10, revenue: margin * 2, margin, costed: true,
+  });
+  const uncosted = (product: string) => ({
+    product, quantity: 10, revenue: 5000, margin: null, costed: false,
+  });
+
+  it('answers with what it can, and names what it left out', () => {
+    // MEASURED FAILURE: "bidhaa gani inafaida kubwa?" was answered with a list
+    // of five things to go and do, because SOME products had no buying cost.
+    // Products without one were also dropped from the ranking without a word.
+    const reply = productAnalyticsReply(
+      { rankBy: 'margin', period: 'month', compareNames: [] } as never,
+      [costed('daftari', 9600), uncosted('rosali ya maria'), uncosted('padre pio')],
+      'sw',
+    );
+    expect(reply).toContain('daftari');
+    expect(reply).toMatch(/rosali ya maria/);
+    expect(reply).toMatch(/hazina bei ya kununua/);
+  });
+
+  it('says how many more it left out rather than listing forty', () => {
+    const many = Array.from({ length: 12 }, (_, index) => uncosted(`bidhaa ${index}`));
+    const reply = productAnalyticsReply(
+      { rankBy: 'margin', period: 'month', compareNames: [] } as never,
+      [costed('daftari', 9600), ...many],
+      'sw',
+    );
+    expect(reply).toMatch(/na nyingine 6/);
+  });
+
+  it('says nothing about buying costs when ranking by quantity', () => {
+    const reply = productAnalyticsReply(
+      { rankBy: 'quantity', period: 'month', compareNames: [] } as never,
+      [costed('daftari', 9600), uncosted('padre pio')],
+      'sw',
+    );
+    expect(reply).not.toMatch(/bei ya kununua/);
+  });
+
+  it('still refuses plainly when nothing at all is costed', () => {
+    const reply = productAnalyticsReply(
+      { rankBy: 'margin', period: 'month', compareNames: [] } as never,
+      [uncosted('padre pio'), uncosted('bilia kubwa')],
+      'sw',
+    );
+    expect(reply).toMatch(/Siwezi kukadiria faida/);
+    expect(reply).toContain('padre pio');
+  });
+});
