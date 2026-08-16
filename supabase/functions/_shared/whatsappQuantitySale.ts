@@ -125,13 +125,17 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
         if (spent) { expenses.push(spent); continue; }
         return null;
       }
-      for (const item of one.items) {
-        const at = items.findIndex((seen) => seen.product.toLowerCase() === item.product.toLowerCase());
-        // The same product on two lines is two sales at the counter, not a
-        // correction of the first. They add up.
-        if (at >= 0) items[at] = { ...items[at], quantity: items[at].quantity + item.quantity };
-        else items.push(item);
-      }
+      // MEASURED FAILURE: these used to be added together right here, and the
+      // COMBINED quantity was then compared against the wholesale threshold.
+      // Four separate retail sales of daftari — 10, 20, 10 and 8 — became one
+      // sale of 48, sailed past the 12-piece threshold, and all forty-eight were
+      // priced as a trade sale. Nobody asked for that and nobody would notice
+      // it: the confirmation just says "(jumla)" as though it knew something.
+      //
+      // Each line is its own transaction at the counter and must be banded on
+      // its OWN quantity. Merging happens after pricing, and only across lines
+      // that ended up at the same price.
+      items.push(...one.items);
     }
     // Expenses alone are not this parser's business — the expense parser reads
     // them, and it knows how to ask about a label it does not recognise.

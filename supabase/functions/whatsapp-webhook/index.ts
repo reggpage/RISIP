@@ -327,7 +327,14 @@ async function priceQuantitySale(
   for (const item of resolvedItems) {
     const known = pricing.get(item.key) ?? { retail: null, wholesale: null, wholesaleMinQty: null };
     const line = priceLine({ product: item.name, quantity: item.quantity, band: item.band }, known);
-    if (line) lines.push(line); else missing.push(item.name);
+    if (!line) { if (!missing.includes(item.name)) missing.push(item.name); continue; }
+    // Merged only now, and only across lines that reached the SAME price. Two
+    // sales of the same product at two different prices are two facts, and
+    // adding them before pricing is what turned four retail sales of daftari
+    // into one wholesale sale of forty-eight.
+    const at = lines.findIndex((seen) => seen.product === line.product && seen.unitPrice === line.unitPrice);
+    if (at >= 0) lines[at] = { ...lines[at], quantity: lines[at].quantity + line.quantity };
+    else lines.push(line);
   }
   const notCounted = [...unknown, ...missing];
   // Nothing at all could be priced: the ordinary path may still help.

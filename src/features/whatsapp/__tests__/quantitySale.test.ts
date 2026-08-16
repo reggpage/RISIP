@@ -113,9 +113,25 @@ describe('a till roll written one product per line', () => {
       ]);
   });
 
-  it('adds a product that appears on two lines', () => {
+  it('keeps a product sold twice as two lines, so each is banded on its own', () => {
+    // MEASURED FAILURE: adding these together first meant the COMBINED quantity
+    // was compared against the wholesale threshold. Four retail sales of daftari
+    // — 10, 20, 10, 8 — became one sale of 48, crossed the 12-piece threshold,
+    // and all forty-eight were priced as a trade sale nobody asked for.
     expect(parseQuantityOnlySale('nimeuza daftari 10\nnimeuza daftari 5')?.items)
-      .toEqual([{ product: 'daftari', quantity: 15, band: null }]);
+      .toEqual([
+        { product: 'daftari', quantity: 10, band: null },
+        { product: 'daftari', quantity: 5, band: null },
+      ]);
+  });
+
+  it('bands each of them on its own quantity', () => {
+    const sale = parseQuantityOnlySale('nimeuza daftari 20\nnimeuza daftari 8')!;
+    const pricing = { retail: 1500, wholesale: 1300, wholesaleMinQty: 12 };
+    expect(sale.items.map((item) => priceLine(item, pricing))).toEqual([
+      { product: 'daftari', quantity: 20, unitPrice: 1300, band: 'wholesale' },
+      { product: 'daftari', quantity: 8, unitPrice: 1500, band: 'retail' },
+    ]);
   });
 
   it('still reads several products joined on one of the lines', () => {
