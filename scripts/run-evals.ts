@@ -18,7 +18,7 @@
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { route } from './lib/route.ts';
+import { computedAmount, route } from './lib/route.ts';
 
 const FILES = [
   'a0_whatsapp.yaml',
@@ -36,8 +36,17 @@ type EvalCase = {
   hasHistory: boolean;
   hasRole: boolean;
   disputed: boolean;
+  expectAmount: number | null;
   block: string;
 };
+
+/** Only the escapes these files actually use, and only inside "double quotes". */
+function unescape(match: RegExpMatchArray | null | undefined): string | undefined {
+  if (!match) return undefined;
+  const [, quote, value] = match;
+  if (quote !== '"') return value;
+  return value.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+}
 
 function extractCases(file: string, source: string): EvalCase[] {
   const starts = [...source.matchAll(/^\s+- id:\s*([^\s#]+).*$/gm)];
@@ -48,11 +57,19 @@ function extractCases(file: string, source: string): EvalCase[] {
     return {
       file,
       id: match[1],
-      say: block.match(/^\s+say:\s*["']([\s\S]*?)["']\s*$/m)?.[1],
+      // A double-quoted YAML scalar carries escapes, and several cases are
+      // multi-line messages written as "line one\nline two". Read raw, the
+      // parser sees a backslash and an n in the middle of a sentence — which
+      // would have had me chasing a wrong total that was my own extractor's.
+      say: unescape(block.match(/^\s+say:\s*(["'])([\s\S]*?)\1\s*$/m)),
       expectTool: tool === 'null' || tool === undefined ? null : tool,
       hasHistory: /^\s+history:/m.test(block),
       hasRole: /^\s+role:/m.test(block),
       disputed: /^\s+disputed:\s*true/m.test(block),
+      expectAmount: (() => {
+        const raw = block.match(/^\s+expect_amount:\s*([0-9][0-9_.]*)\s*(?:#.*)?$/m)?.[1];
+        return raw === undefined ? null : Number(raw.replace(/_/g, ''));
+      })(),
       block,
     };
   });
@@ -106,6 +123,9 @@ const cases = FILES.flatMap((file) =>
 let passed = 0;
 const failures: { c: EvalCase; got: string }[] = [];
 const unchecked: { c: EvalCase; why: string }[] = [];
+let amountsRight = 0;
+const amountsWrong: { c: EvalCase; amount: number }[] = [];
+const amountsUnchecked: EvalCase[] = [];
 
 for (const c of cases) {
   if (!c.say) { unchecked.push({ c, why: 'no say:' }); continue; }
@@ -114,7 +134,6 @@ for (const c of cases) {
   // An expectation I believe is wrong is recorded as disputed in the YAML,
   // with the reason, rather than quietly satisfied by bending a parser.
   if (c.disputed) { unchecked.push({ c, why: 'disputed expectation' }); continue; }
-  if (c.hasHistory) { unchecked.push({ c, why: 'needs a prior turn' }); continue; }
   if (c.hasRole) { unchecked.push({ c, why: 'needs a role' }); continue; }
   if (c.expectTool === null) { unchecked.push({ c, why: 'expects no tool' }); continue; }
   const allowed = SATISFIES[c.expectTool];
@@ -125,8 +144,27 @@ for (const c of cases) {
   // "expected daily_profit_estimate, got daily_profit_estimate" as a failure,
   // because the map only listed the internal name and the route happens to
   // return the eval's own name for read tools.
-  if (got === c.expectTool || allowed.includes(got)) passed += 1;
-  else failures.push({ c, got });
+  if (got !== c.expectTool && !allowed.includes(got)) {
+    // A case that comes with a prior turn can be CONFIRMED but never refuted
+    // here: this runner holds no conversation state, so a miss may be the
+    // missing context rather than a defect. A hit is still a hit — the message
+    // stood on its own — so those count, and only the misses go unchecked.
+    if (c.hasHistory) { unchecked.push({ c, why: 'needs a prior turn' }); continue; }
+    failures.push({ c, got });
+    continue;
+  }
+  passed += 1;
+
+  // The routing check asks whether the right parser took it. This asks the
+  // question that costs money: whether it got the number right. Both losses
+  // this week — a comma list recorded as 1,500 instead of 9,000, and four
+  // retail sales priced as one wholesale sale of forty-eight — went to the
+  // CORRECT parser and came out with the wrong total.
+  if (c.expectAmount === null) continue;
+  const amount = computedAmount(c.say);
+  if (amount === null) { amountsUnchecked.push(c); continue; }
+  if (Math.abs(amount - c.expectAmount) < 0.005) amountsRight += 1;
+  else amountsWrong.push({ c, amount });
 }
 
 const checked = passed + failures.length;
@@ -143,6 +181,23 @@ for (const item of unchecked) why.set(item.why, (why.get(item.why) ?? 0) + 1);
 console.log('\nUnchecked, by reason:');
 for (const [reason, count] of [...why].sort((a, b) => b[1] - a[1])) {
   console.log(`  ${String(count).padStart(3)}  ${reason}`);
+}
+
+const amountsChecked = amountsRight + amountsWrong.length;
+if (amountsChecked > 0 || amountsUnchecked.length > 0) {
+  console.log('\nAmounts (the figure the shop would have been charged):');
+  console.log(`  checked    ${String(amountsChecked).padStart(3)}`);
+  console.log(`  correct    ${String(amountsRight).padStart(3)}`);
+  console.log(`  WRONG      ${String(amountsWrong.length).padStart(3)}`);
+  console.log(`  unchecked  ${String(amountsUnchecked.length).padStart(3)}  (needs a price list or the model)`);
+}
+
+if (amountsWrong.length > 0) {
+  console.log(`\nWrong amounts (${amountsWrong.length}):`);
+  for (const { c, amount } of amountsWrong) {
+    console.log(`  ${c.file}#${c.id}  expected ${c.expectAmount}, computed ${amount}`);
+    console.log(`      "${c.say}"`);
+  }
 }
 
 if (failures.length > 0) {

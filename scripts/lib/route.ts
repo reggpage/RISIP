@@ -10,7 +10,7 @@
 // that is most of them.
 
 import { parseDailyRecordBatch } from '../../supabase/functions/_shared/whatsappDailyRecordBatch.ts';
-import { isDailyRecordCandidate } from '../../supabase/functions/_shared/whatsappDailyRecords.ts';
+import { isDailyRecordCandidate, parseDailyRecord } from '../../supabase/functions/_shared/whatsappDailyRecords.ts';
 import { parseHypotheticalProfitRequest } from '../../supabase/functions/_shared/whatsappHypotheticalProfit.ts';
 import { parseLanguageCommand } from '../../supabase/functions/_shared/whatsappIntent.ts';
 import { parseNewProductPricing } from '../../supabase/functions/_shared/whatsappNewProduct.ts';
@@ -23,6 +23,28 @@ import { parseSellingPrice } from '../../supabase/functions/_shared/whatsappSell
 import { parseSellingPriceBatch } from '../../supabase/functions/_shared/whatsappSellingPriceBatch.ts';
 import { parseStockCount } from '../../supabase/functions/_shared/whatsappStock.ts';
 import { parseStockCountBatch } from '../../supabase/functions/_shared/whatsappStockBatch.ts';
+
+/**
+ * What the deterministic parsers say this message is worth.
+ *
+ * The routing check answers "did the right parser take it". This answers the
+ * question that actually costs money: "did it get the number right". Both
+ * failures that lost real shillings this week — a comma list recorded as 1,500
+ * instead of 9,000, and four retail sales priced as one wholesale sale of
+ * forty-eight — went to the correct parser and came out with the wrong total.
+ *
+ * Null means no deterministic amount exists: the message needs a price list, a
+ * database, or the model, and this cannot judge it.
+ */
+export function computedAmount(text: string): number | null {
+  const batch = parseDailyRecordBatch(text, 'sw');
+  if (batch.kind === 'parsed') {
+    return Math.round(batch.records.reduce((sum, record) => sum + record.amount, 0) * 100) / 100;
+  }
+  if (batch.kind !== 'none') return null;
+  const single = parseDailyRecord(text, 'sw');
+  return single.kind === 'parsed' ? single.record.amount : null;
+}
 
 /**
  * Which parser claims this message.
