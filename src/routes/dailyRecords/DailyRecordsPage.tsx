@@ -310,79 +310,55 @@ function DayGroupModal({
           {group.records.length === 1 ? ui.oneEntry : ui.manyEntries.replace('{n}', String(group.records.length))}
         </p>
       </div>
-      <div className="space-y-3">
+      {/* A list, not cards inside a card. Every entry of the day sits on one
+          line and a new one simply joins the bottom — the same shape as the
+          calculation breakdown, which is what this is a breakdown of. */}
+      <ul className="divide-y divide-surface-border rounded-xl border border-surface-border">
         {group.records.map((record) => (
-          <RecordRow
-            key={record.id}
-            record={record}
-            canManage={canManage}
-            busy={busyId === record.id}
-            onOpen={() => onOpenRecord(record)}
-            onConfirm={() => onConfirmRecord(record)}
-            onVoid={() => onVoidRecord(record)}
-          />
+          <li key={record.id}>
+            <div className="flex items-center gap-3 px-3 py-2.5">
+              <button
+                type="button"
+                onClick={() => onOpenRecord(record)}
+                className="min-w-0 flex-1 text-left"
+              >
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="truncate text-sm text-ink">
+                    {record.description || kindLabels[record.kind] || ui.daily}
+                  </span>
+                  {record.status !== 'confirmed' && <StatusBadge status={record.status} />}
+                </span>
+                <span className="mt-0.5 block text-xs text-ink-muted">
+                  {formatDateTime(record.occurred_at)}
+                  {record.source === 'whatsapp' ? ` · ${ui.whatsApp}` : ''}
+                </span>
+              </button>
+              <span className="shrink-0 text-sm font-semibold tabular-nums text-ink">
+                {formatMoney(record.amount)}
+              </span>
+              {canManage && record.status !== 'voided' && (
+                <span className="flex shrink-0 gap-1">
+                  {record.status === 'pending_confirmation' && (
+                    <Button variant="ghost" onClick={() => onConfirmRecord(record)} disabled={busy(busyId, record.id)}>
+                      <Check className="h-4 w-4" aria-hidden="true" />
+                      <span className="sr-only">{ui.confirm}</span>
+                    </Button>
+                  )}
+                  <Button variant="ghost" onClick={() => onVoidRecord(record)} disabled={busy(busyId, record.id)}>
+                    <X className="h-4 w-4" aria-hidden="true" />
+                    <span className="sr-only">{ui.void}</span>
+                  </Button>
+                </span>
+              )}
+            </div>
+          </li>
         ))}
-      </div>
+      </ul>
     </Modal>
   );
 }
 
-function RecordRow({
-  record,
-  canManage,
-  busy,
-  onOpen,
-  onConfirm,
-  onVoid,
-}: {
-  record: DailyRecordWithDetails;
-  canManage: boolean;
-  busy: boolean;
-  onOpen: () => void;
-  onConfirm: () => void;
-  onVoid: () => void;
-}) {
-  return (
-    <Card className={`relative ${record.status === 'voided' ? 'opacity-70' : ''}`}>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        {record.status === 'confirmed' && (
-          <span className="absolute right-5 top-5 inline-flex items-center text-emerald-600" aria-label={ui.confirmed} title={ui.confirmed}>
-            <CheckCircle2 className="h-5 w-5" strokeWidth={3} aria-hidden="true" />
-            <span className="sr-only">{ui.confirmed}</span>
-          </span>
-        )}
-        <button type="button" onClick={onOpen} className="min-w-0 flex-1 text-left">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-medium text-ink">{kindLabels[record.kind]}</span>
-            {record.status !== 'confirmed' && <StatusBadge status={record.status} />}
-            {record.source === 'whatsapp' && (
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-ink-muted" aria-label={ui.whatsApp} title={ui.whatsApp}>
-                <WhatsappIcon className="h-4 w-4" /> {ui.whatsApp}
-              </span>
-            )}
-          </div>
-          <p className="mt-2 truncate text-sm text-ink-muted">{record.description || record.party_name || ui.daily}</p>
-          <p className="mt-1 text-xs text-ink-muted">
-            {record.recordedByName || ui.recordedBy} · {ui.occurred} {formatDateTime(record.occurred_at)} · {ui.created} {formatDateTime(record.created_at)}
-          </p>
-        </button>
-        <div className="flex items-center justify-between gap-4 lg:justify-end">
-          <strong className="font-display text-lg font-semibold text-ink">{formatMoney(record.amount, record.currency)}</strong>
-          {canManage && record.status !== 'voided' && (
-            <div className="flex gap-2">
-              {record.status === 'pending_confirmation' && (
-                <Button tint="accountant" onClick={onConfirm} disabled={busy}>
-                  <Check className="h-4 w-4" /> {busy ? ui.saving : ui.confirm}
-                </Button>
-              )}
-              <Button variant="secondary" onClick={onVoid} disabled={busy}>{ui.void}</Button>
-            </div>
-          )}
-        </div>
-      </div>
-    </Card>
-  );
-}
+const busy = (busyId: string | null, id: string) => busyId === id;
 
 function StatusBadge({ status }: { status: DailyRecordStatus }) {
   const style = status === 'voided'
