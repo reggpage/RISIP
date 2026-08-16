@@ -476,7 +476,17 @@ const RECORD_VERBS = new RegExp(
 // A noun only NAMES the subject. On its own it is as likely to open a question
 // as a record — "mauzo ya leo ni ngapi" is not a sale, and routing it into the
 // write chain put a question one step away from becoming a draft.
-const RECORD_NOUNS = /\b(?:mauzo|deni|stock|stoo|bidhaa|mzigo)\b/i;
+// "bidhaa" and "mzigo" are gone: they never carried a record on their own, and
+// they opened "top 5 bidhaa zangu" and "nionyeshe bidhaa zote ninazouza" into
+// the write chain. Every real record that uses them also uses a verb.
+const RECORD_NOUNS = /\b(?:mauzo|deni|stock|stoo)\b/i;
+
+// Words that make a message a question even when it holds no interrogative
+// about an amount: who, which, when, and the superlatives that ask for a
+// ranking. "wht sold most tday" opens with a selling verb and is a question.
+const QUESTIONISH = /\?|\b(?:nani|who|gani|what|which|lini|when|zaidi|sana|most|top|bora|kubwa\s+zaidi)\b/i;
+
+const HAS_DIGITS = /[0-9]/;
 
 const ASKING = /\?|\b(?:ngapi|shingapi|kiasi gani|gani|nini|lini|vipi|how much|how many|what|which|when)\b/i;
 
@@ -495,11 +505,17 @@ function looksLikeDailyRecord(text: string): boolean {
     // both; what differs is that one CARRIES a figure and the other ASKS for
     // one. A tag question ("…ni sawa?") still carries its amount and stays.
     if (ASKING_FOR_THE_FIGURE.test(text) && !HAS_MONEY.test(text)) return false;
+    // A selling verb with no number anywhere, asking who or which or what sold
+    // most, is a question about the past — not a record of it. Found by running
+    // the eval set for the first time: "nani ananidai?" and "wht sold most
+    // tday" were both one step from becoming a draft.
+    if (!HAS_DIGITS.test(text) && QUESTIONISH.test(text)) return false;
     return true;
   }
-  // A bare noun in a question is a question. With no question in sight it is
-  // still worth a look — "stock ya sukari 50000" is how a restock gets typed.
-  return RECORD_NOUNS.test(text) && !ASKING.test(text);
+  // A bare noun needs a number to be a record. Every real one carries an amount
+  // or a quantity, and without that "mauzo ya wiki hii" was answered by asking
+  // the shopkeeper to write a positive amount.
+  return RECORD_NOUNS.test(text) && HAS_DIGITS.test(text) && !ASKING.test(text);
 }
 
 function hasNegativeOrZeroAmount(text: string): boolean {

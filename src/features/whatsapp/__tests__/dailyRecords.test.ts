@@ -335,3 +335,31 @@ describe('what counts as something that happened', () => {
     expect(isDailyRecordCandidate('nimeuza kalamu 12 na daftari 8')).toBe(true);
   });
 });
+
+describe('questions the eval set caught, the first time it was ever run', () => {
+  it('does not mistake "who owes me" for a debt being recorded', () => {
+    // A selling/debt verb with no number anywhere, asking WHO, is a question
+    // about the past — not a record of it. It was one step from a draft.
+    expect(isDailyRecordCandidate('nani ananidai?')).toBe(false);
+    expect(isDailyRecordCandidate('nani ananidwa pesa')).toBe(false);
+  });
+
+  it('does not mistake "what sold most" for a sale', () => {
+    expect(isDailyRecordCandidate('wht sold most tday')).toBe(false);
+    expect(isDailyRecordCandidate('What sold the most today?')).toBe(false);
+    expect(isDailyRecordCandidate('top 5 bidhaa zangu')).toBe(false);
+    expect(isDailyRecordCandidate('nionyeshe bidhaa zote ninazouza')).toBe(false);
+  });
+
+  it('needs a number before a bare noun counts as a record', () => {
+    // "mauzo ya wiki hii" was answered by asking for a positive amount.
+    expect(isDailyRecordCandidate('mauzo ya wiki hii')).toBe(false);
+    expect(isDailyRecordCandidate('stock ya sukari 50000')).toBe(true);
+  });
+
+  it('still records a sale that names goods without asking anything', () => {
+    expect(isDailyRecordCandidate('nimeuza daftari 10')).toBe(true);
+    expect(isDailyRecordCandidate('nimeuza bidhaa')).toBe(true);
+    expect(isDailyRecordCandidate('nimeuza daftari 5 kwa 7500')).toBe(true);
+  });
+});

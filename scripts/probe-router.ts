@@ -18,35 +18,7 @@
  * Anything marked EXPECT that comes back different is a regression.
  */
 
-import { parseDailyRecordBatch } from '../supabase/functions/_shared/whatsappDailyRecordBatch.ts';
-import { isDailyRecordCandidate } from '../supabase/functions/_shared/whatsappDailyRecords.ts';
-import { parseHypotheticalProfitRequest } from '../supabase/functions/_shared/whatsappHypotheticalProfit.ts';
-import { parseLanguageCommand } from '../supabase/functions/_shared/whatsappIntent.ts';
-import { parseProductCost } from '../supabase/functions/_shared/whatsappProductCosts.ts';
-import { parseProductCostBatch } from '../supabase/functions/_shared/whatsappCostBatch.ts';
-import { parseReadRequest } from '../supabase/functions/_shared/whatsappReadTools.ts';
-import { parseSellingPrice } from '../supabase/functions/_shared/whatsappSellingPrice.ts';
-import { parseSellingPriceBatch } from '../supabase/functions/_shared/whatsappSellingPriceBatch.ts';
-import { parseStockCount } from '../supabase/functions/_shared/whatsappStock.ts';
-import { parseStockCountBatch } from '../supabase/functions/_shared/whatsappStockBatch.ts';
-
-/** The webhook's own order of precedence, kept in one place so drift is visible. */
-function route(text: string): string {
-  if (parseLanguageCommand(text)) return 'change_language';
-  if (parseSellingPriceBatch(text)) return 'selling_price_batch';
-  if (parseStockCountBatch(text)) return 'stock_count_batch';
-  if (parseProductCostBatch(text)) return 'product_cost_batch';
-  if (parseSellingPrice(text)) return 'selling_price';
-  if (parseProductCost(text)) return 'product_cost';
-  if (parseStockCount(text)) return 'stock_count';
-  if (parseHypotheticalProfitRequest(text)) return 'hypothetical_profit';
-  if (isDailyRecordCandidate(text)) {
-    const batch = parseDailyRecordBatch(text, 'sw');
-    return batch.kind === 'none' ? 'daily_record' : `daily_record_${batch.kind}`;
-  }
-  if (parseReadRequest(text)) return 'read_tool';
-  return 'conversational_ai';
-}
+import { route } from './lib/route.ts';
 
 type Case = { said: string; expect: string };
 
@@ -74,9 +46,9 @@ const CORPUS: Case[] = [
   // ── Questions that must be computed, never improvised ──────────────────
   { said: 'zikiuza atlasi zote nitakuwa na faida ya shingapi', expect: 'hypothetical_profit' },
   { said: 'nikiuza daftari zote nitapata faida gani', expect: 'hypothetical_profit' },
-  { said: 'mauzo ya leo ni ngapi', expect: 'read_tool' },
-  { said: 'risiti zangu za jana', expect: 'read_tool' },
-  { said: 'nionyeshe risiti zangu za wiki iliyopita', expect: 'read_tool' },
+  { said: 'mauzo ya leo ni ngapi', expect: 'ai_business_summary' },
+  { said: 'risiti zangu za jana', expect: 'ai_my_receipts' },
+  { said: 'nionyeshe risiti zangu za wiki iliyopita', expect: 'ai_my_receipts' },
 
   // ── Language, which was refused for a month ────────────────────────────
   { said: 'change to english', expect: 'change_language' },
@@ -88,8 +60,8 @@ const CORPUS: Case[] = [
   { said: 'naweza kufanya nini hapa', expect: 'conversational_ai' },
 
   // ── Known gaps. Listed so they stop being a surprise ───────────────────
-  { said: 'product gani inauza sana', expect: 'conversational_ai' },
-  { said: 'nimeuza nguvu ya sala 8 marker 7 na anton wa padua 6', expect: 'daily_record' },
+  { said: 'product gani inauza sana', expect: 'product_analytics' },
+  { said: 'nimeuza nguvu ya sala 8 marker 7 na anton wa padua 6', expect: 'quantity_sale' },
   { said: 'atlas ziko ngapi', expect: 'conversational_ai' },
 ];
 
