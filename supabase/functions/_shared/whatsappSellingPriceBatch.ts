@@ -37,6 +37,15 @@ function looksLikeSellingLine(line: string): boolean {
  * product.
  */
 export function parseSellingPriceBatch(text: string | null | undefined): SellingPriceBatch | null {
+  // MEASURED FAILURE: a till roll headed "Mauzo" whose lines ended in "rejareja"
+  // or "jumla" was read as a PRICE LIST — "daftari rejareja — TSh 100" — when
+  // 100 was a hundred notebooks sold. The header says what the block is, and
+  // nothing below it can turn a sale into a price change.
+  const first = String(text ?? '').split(/\r?\n/)[0] ?? '';
+  if (/^\s*(?:mauzo|sales?)\s*(?:rejareja|reja\s*reja|retail|jumla|wholesale)?\s*:?\s*$/i.test(first)) {
+    return null;
+  }
+
   const lines = String(text ?? '')
     .split(/\r?\n/)
     .map((line) => line.replace(/^[-•*\d.)\s]+/, '').trim())

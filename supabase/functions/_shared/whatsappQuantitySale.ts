@@ -99,6 +99,22 @@ export type ProductPricing = {
 
 const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
+/**
+ * The dash a person puts between a product and its number.
+ *
+ * MEASURED FAILURE: "daftari — 100" broke the parser outright, and "daftari -
+ * 100" left the dash stuck to the name, giving a product called "daftari -"
+ * that matches nothing in the catalogue. WhatsApp turns a typed hyphen into an
+ * em dash on its own, so this is not an unusual way to write a list — it is
+ * what a phone produces.
+ *
+ * Only a dash that sits in front of a NUMBER is removed. "T-shirt" and
+ * "chips-mayai" keep theirs, because there the dash is part of the name.
+ */
+function dashToSpace(text: string): string {
+  return String(text ?? '').replace(/\s*[-–—−]\s*(?=[0-9])/gu, ' ');
+}
+
 const OPENER = /^(?:leo\s+|today\s+)?(?:nimeuza|niliuza|nimuza|uza|mauzo|(?:i\s+)?sold)\b/iu;
 
 // Anything that states money makes this somebody else's message: the ordinary
@@ -118,14 +134,21 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   // closing a day writes one product per line — that is not an edge case, it is
   // the main case. Each line has to be its own sale line, so a stray sentence in
   // the middle still hands the whole message to somebody else.
-  let lines = String(text ?? '').split(/\r?\n/).map(clean).filter(Boolean);
+  let lines = String(text ?? '').split(/\r?\n/).map((line) => clean(dashToSpace(line))).filter(Boolean);
 
   // "mauzo" on a line of its own, then the goods underneath. The owner's idea,
   // and a good one: one word at the top tells Risip what the whole block is,
-  // instead of every line having to repeat "nimeuza". The header is spent here
-  // by giving it to each line, so nothing below has to change.
-  if (lines.length > 1 && /^(?:mauzo|sales?)\s*:?\s*$/i.test(lines[0])) {
-    lines = lines.slice(1).map((line) => (OPENER.test(line) ? line : `nimeuza ${line}`));
+  // instead of every line having to repeat "nimeuza".
+  //
+  // MEASURED FAILURE: the header had to be the word ALONE, so "Mauzo rejareja"
+  // — the owner saying which price the whole block went at — was not a header at
+  // all, and the entire list fell through to a parser that asked whether 100 was
+  // a price. The band is read off the header and handed to every line.
+  const header = /^(?:mauzo|sales?)\s*(rejareja|reja\s*reja|retail|jumla|wholesale)?\s*:?\s*$/i
+    .exec(lines[0] ?? '');
+  if (lines.length > 1 && header) {
+    const band = header[1] ? ` ${header[1]}` : '';
+    lines = lines.slice(1).map((line) => (OPENER.test(line) ? line : `nimeuza ${line}${band}`));
   }
 
   if (lines.length > 1) {
@@ -157,7 +180,7 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
     return items.length > 0 ? { kind: 'quantity_sale', items, expenses } : null;
   }
 
-  const said = clean(text);
+  const said = clean(dashToSpace(text));
   if (!said || !OPENER.test(said)) return null;
   if (STATES_MONEY.test(said)) return null;
 
@@ -235,7 +258,7 @@ export function stripTrailingChatter(text: string): string {
 }
 
 export function parseBareQuantityList(text: string | null | undefined): QuantitySale | null {
-  const said = stripTrailingChatter(clean(text));
+  const said = stripTrailingChatter(clean(dashToSpace(text)));
   if (!said || OPENER.test(said) || STATES_MONEY.test(said)) return null;
   // Do not ban a word wherever it appears: "kitabu cha hesabu" is a real
   // product. Only an unmistakable opener makes this a stock/purchase message.
@@ -386,7 +409,7 @@ const SOURCE_TAG =
   /\b(?:kutoka|toka|from)\s+\S+|\b(?:bohari|sokoni|soko kuu|wakala|wholesale|jumla ya mzigo)\b/iu;
 
 export function parseBareExpense(text: string | null | undefined): ExpenseLine[] | null {
-  const said = stripTrailingChatter(clean(text));
+  const said = stripTrailingChatter(clean(dashToSpace(text)));
   if (!said) return null;
   // A verb means one of the ordinary parsers owns this message.
   if (OPENER.test(said) || /^(?:nime|nili|tume|tuli|ame|ali)/iu.test(said)) return null;

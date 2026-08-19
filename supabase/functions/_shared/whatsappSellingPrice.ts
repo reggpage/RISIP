@@ -49,7 +49,13 @@ const WHOLESALE = /(?:jumla|wholesale|bei\s+ya\s+mteja\s+wa\s+mara\s+kwa\s+mara|
 export function parseSellingPrice(text: string | null | undefined): SellingPrice | null {
   const said = clean(text);
   if (!said) return null;
+  // MEASURED FAILURE: clean() folds newlines into spaces, so a four-line till
+  // roll headed "Mauzo" arrived here as one long string full of "rejareja" and
+  // numbers, and a hundred notebooks SOLD were saved as a price of a hundred
+  // shillings. A block belongs to the batch parser; this one reads one line.
+  if (/\r?\n/.test(String(text ?? '').trim())) return null;
   // Anything that reports a movement is not a price list.
+  if (/^\s*(?:mauzo|sales?)\b/i.test(said)) return null;
   if (/^(?:nimeuza|niliuza|uza|sold|nimenunua|nimelipa|nimetumia|amechukua|amelipa|nina|nimehesabu)\b/i.test(said)) {
     return null;
   }

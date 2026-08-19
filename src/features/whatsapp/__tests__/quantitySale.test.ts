@@ -9,6 +9,8 @@ import {
   priceLine,
   quantitySaleConfirmation,
 } from '../../../../supabase/functions/_shared/whatsappQuantitySale';
+import { parseSellingPriceBatch } from '../../../../supabase/functions/_shared/whatsappSellingPriceBatch';
+import { parseSellingPrice } from '../../../../supabase/functions/_shared/whatsappSellingPrice';
 
 describe('a sale that names quantities and no money', () => {
   it('reads the owner’s own message', () => {
@@ -433,5 +435,65 @@ describe('the three rules the owner wrote out', () => {
   it('leaves anything with a verb to the parser that owns it', () => {
     expect(parseBareExpense('nimenunua sukari gunia 1 kwa 145000')).toBeNull();
     expect(parseBareExpense('nimeuza soda kreti 2')).toBeNull();
+  });
+});
+
+describe('the till roll the owner actually pasted', () => {
+  const roll = 'mauzo\ndaftari — 100\n daftari kubwa — 55\n daftari la graph — 23\nduster — 11';
+
+  it('reads a dash between the product and its number', () => {
+    // MEASURED FAILURE: WhatsApp turns a typed hyphen into an em dash by
+    // itself, so this is what a phone produces, not an unusual way to write.
+    // It broke the parser outright, the block fell to the daily-record parser,
+    // and the owner was asked whether 100 was a price.
+    expect(parseQuantityOnlySale(roll)?.items).toEqual([
+      { product: 'daftari', quantity: 100, band: null },
+      { product: 'daftari kubwa', quantity: 55, band: null },
+      { product: 'daftari la graph', quantity: 23, band: null },
+      { product: 'duster', quantity: 11, band: null },
+    ]);
+  });
+
+  it('does not leave a hyphen stuck to the name', () => {
+    // "daftari -" matches nothing in any catalogue.
+    expect(parseQuantityOnlySale('mauzo\ndaftari - 100\nduster - 11')?.items)
+      .toEqual([
+        { product: 'daftari', quantity: 100, band: null },
+        { product: 'duster', quantity: 11, band: null },
+      ]);
+  });
+
+  it('keeps a dash that belongs to the name', () => {
+    expect(parseQuantityOnlySale('nimeuza t-shirt 4')?.items)
+      .toEqual([{ product: 't-shirt', quantity: 4, band: null }]);
+  });
+
+  it('takes the band off the header and gives it to every line', () => {
+    expect(parseQuantityOnlySale('Mauzo rejareja\ndaftari — 100\nduster — 11')?.items)
+      .toEqual([
+        { product: 'daftari', quantity: 100, band: 'retail' },
+        { product: 'duster', quantity: 11, band: 'retail' },
+      ]);
+  });
+
+  it('lets each line override the header', () => {
+    expect(parseQuantityOnlySale('Mauzo\ndaftari — 100 rejareja\nduster — 11 jumla')?.items)
+      .toEqual([
+        { product: 'daftari', quantity: 100, band: 'retail' },
+        { product: 'duster', quantity: 11, band: 'wholesale' },
+      ]);
+  });
+
+  it('is a sale, never a price change', () => {
+    // MEASURED FAILURE: lines ending in "rejareja" made the price-list parser
+    // claim it, and a hundred notebooks SOLD were saved as a price of a hundred
+    // shillings. The header decides what the block is.
+    expect(parseSellingPriceBatch('Mauzo\ndaftari — 100 rejareja\nduster — 11 jumla')).toBeNull();
+    expect(parseSellingPrice('Mauzo\ndaftari — 100 rejareja\nduster — 11 jumla')).toBeNull();
+  });
+
+  it('still lets a real price list through', () => {
+    expect(parseSellingPriceBatch('kamusi rejareja 15000\nmkasi rejareja 3500')).not.toBeNull();
+    expect(parseSellingPrice('bei ya daftari rejareja 1500 jumla 1300 kuanzia 12')).not.toBeNull();
   });
 });
