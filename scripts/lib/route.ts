@@ -18,7 +18,7 @@ import { parseNewProductPricing } from '../../supabase/functions/_shared/whatsap
 import { parseProductAnalyticsRequest } from '../../supabase/functions/_shared/whatsappProductAnalytics.ts';
 import { parseProductCost } from '../../supabase/functions/_shared/whatsappProductCosts.ts';
 import { parseProductCostBatch } from '../../supabase/functions/_shared/whatsappCostBatch.ts';
-import { parseBareQuantityList, parseQuantityOnlySale } from '../../supabase/functions/_shared/whatsappQuantitySale.ts';
+import { parseBareExpense, parseBareQuantityList, parseQuantityOnlySale } from '../../supabase/functions/_shared/whatsappQuantitySale.ts';
 import { parseReadRequest } from '../../supabase/functions/_shared/whatsappReadTools.ts';
 import { parseSellingPrice } from '../../supabase/functions/_shared/whatsappSellingPrice.ts';
 import { parseSellingPriceBatch } from '../../supabase/functions/_shared/whatsappSellingPriceBatch.ts';
@@ -73,6 +73,7 @@ export function route(text: string): string {
   // A sale with no verb. The webhook adds one more condition this table cannot
   // express: it only claims the message when every name is already a product of
   // the company. Read this route as "a candidate sale", not a certainty.
+  if (parseBareExpense(text)) return 'bare_expense';
   if (parseBareQuantityList(text)) return 'bare_quantity_sale';
   if (parseProductAnalyticsRequest(text)) return 'product_analytics';
   const read = parseReadRequest(text);

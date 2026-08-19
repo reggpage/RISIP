@@ -160,6 +160,7 @@ import {
   type PortionQuantityPrompt,
 } from '../_shared/whatsappPortions.ts';
 import {
+  parseBareExpense,
   parseBareQuantityList,
   parseQuantityOnlySale,
   priceLine,
@@ -3994,6 +3995,42 @@ Deno.serve(async (req) => {
         // one of them has a price the shop set itself. Anything else falls
         // through untouched, exactly as before.
         if (!resumedQuantitySale && !isDailyRecordCandidate(writeBody)) {
+          // Buying, with no verb in front of it. Checked first: a restock names
+          // a wholesale unit or a source, and neither ever belongs to a sale.
+          const bareSpending = parseBareExpense(writeBody);
+          if (bareSpending) {
+            const records: ParsedDailyRecord[] = bareSpending.map((spent) => ({
+              kind: 'expense',
+              amount: spent.amount,
+              partyName: null,
+              description: spent.label,
+              lines: [],
+              confidence: 0.9,
+            }));
+            const batch = await createDailyRecordBatchDrafts(db, identity, waMessageId, records, lang);
+            if (!batch.error && batch.ids.length > 0) {
+              await db.from('whatsapp_conversations').upsert({
+                identity_id: identity.id,
+                company_id: identity.company_id,
+                profile_id: identity.profile_id,
+                awaiting: 'payment_source',
+                receipt_id: null,
+                options: {
+                  kind: 'daily_record_batch_confirmation',
+                  dailyRecordIds: batch.ids,
+                  sourceMessageId: waMessageId,
+                  records,
+                },
+                expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'identity_id' });
+              await replyDailyRecordBatchConfirmationQuietly(phone, records, lang);
+              await audit(db, identity, waMessageId, 'bare_expense', String(records.length), 'pending');
+              await finish('skipped');
+              continue;
+            }
+          }
+
           const bare = parseBareQuantityList(writeBody);
           if (bare) {
             const priced = await priceQuantitySale(db, identity, bare, lang);

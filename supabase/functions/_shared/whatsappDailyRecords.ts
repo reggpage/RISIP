@@ -76,7 +76,7 @@ const NUMBER_WORDS: Record<string, string> = {
   kuminanane: '18', kuminatisa: '19', ishirini: '20',
 };
 
-function normalizeNumberWords(text: string): string {
+export function normalizeNumberWords(text: string): string {
   const protectedPhrases: string[] = [];
   let normalized = text.replace(/\bkila\s+moja\b/gi, () => {
     const token = `__KILA_MOJA_${protectedPhrases.length}__`;

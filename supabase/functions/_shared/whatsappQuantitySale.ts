@@ -15,6 +15,7 @@
 // behind someone's back is worse than a sale they had to type out.
 
 import type { Lang } from './whatsappIntent.ts';
+import { normalizeNumberWords } from './whatsappDailyRecords.ts';
 
 export type QuantitySaleItem = {
   product: string;
@@ -207,8 +208,34 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
  * a sale or a stock count/purchase, so callers must park it and ask rather than
  * write anything. Two lines are required to avoid stealing ordinary short chat.
  */
+/**
+ * The chatter a person adds after the figure.
+ *
+ * "mihogo 18 leo", "zege 3 tu, leo mambo hovyo" — the number is the message and
+ * the rest is how somebody talks. The bare-list parser needs the quantity at the
+ * end of the phrase, so three of six misses in the street corpus were nothing
+ * but a trailing word. Only stripped from the END, and only these words: cutting
+ * anywhere else would eat a product name.
+ */
+const TRAILING_CHATTER =
+  /(?:[,\s]+(?:leo|jana|juzi|asubuhi|mchana|jioni|usiku|tu|basi|kabisa|sasa|hivi|hapa|today|now|only))+\s*$/iu;
+
+/** "leo mambo hovyo", "biashara ngumu" — a whole clause of mood, not data. */
+const TRAILING_MOOD =
+  /[,;]\s*(?:leo\s+)?(?:mambo|biashara|soko|mauzo)\s+(?:hovyo|ngumu|mazuri|mabaya|poa|safi)\b.*$/iu;
+
+export function stripTrailingChatter(text: string): string {
+  let said = String(text ?? '').trim();
+  for (let pass = 0; pass < 3; pass += 1) {
+    const before = said;
+    said = said.replace(TRAILING_MOOD, '').replace(TRAILING_CHATTER, '').trim();
+    if (said === before) break;
+  }
+  return said.replace(/[,;]\s*$/, '').trim();
+}
+
 export function parseBareQuantityList(text: string | null | undefined): QuantitySale | null {
-  const said = clean(text);
+  const said = stripTrailingChatter(clean(text));
   if (!said || OPENER.test(said) || STATES_MONEY.test(said)) return null;
   // Do not ban a word wherever it appears: "kitabu cha hesabu" is a real
   // product. Only an unmistakable opener makes this a stock/purchase message.
@@ -234,7 +261,11 @@ export function parseBareQuantityList(text: string | null | undefined): Quantity
     && Number(said.replace(/.*?([0-9][0-9,.]*)\s*$/u, '$1').replace(/[,\s]/g, '')) >= 1000) {
     return null;
   }
-  const sale = parseQuantityOnlySale(`mauzo ${said}`);
+  // "mafuta dumu moja 78000" — the count is a word, not a digit. The daily
+  // record parser has always known these; this one did not, so the number was
+  // invisible and the whole line went to the model.
+  const digits = normalizeNumberWords(said);
+  const sale = parseQuantityOnlySale(`mauzo ${digits}`);
   // One product is enough. "Nguvu ya sala 21" was answered with a request for
   // a price the shop had already set, because a single item did not qualify —
   // and the owner's point stands: a sentence should not need a verb to be read.
@@ -332,3 +363,51 @@ export function quantitySaleConfirmation(
       + 'Reply *YES* to confirm, or *NO* to cancel.';
 }
 
+
+/**
+ * Buying, written the way a restock actually arrives.
+ *
+ * "mafuta dumu moja 78000", "nyanya tenga 1 15000 na vitunguu 8000",
+ * "soda kreti 5 kwa 60000 kutoka bohari" — no verb anywhere, and every one of
+ * them is money leaving the shop. Sales with no verb already worked; spending
+ * with no verb did not exist, so all three went to the model.
+ *
+ * The signal is NOT the size of the number. A big number with no verb could be
+ * anything, and guessing from it is how "Nauli 9500" once became a sale of nine
+ * and a half thousand. The signal is the WHOLESALE UNIT — kreti, gunia, dumu,
+ * tenga, mzigo — or a stated source. Those words appear when goods are bought
+ * in bulk and almost never when they are sold one at a time.
+ */
+const WHOLESALE_UNIT =
+  /\b(?:kreti|crate|gunia|magunia|dumu|madumu|tenga|matenga|mzigo|boksi|box|debe|madebe|ndoo|rimu|ream|treya|tray|pakiti|packet|katoni|carton|bando|mfuko|kartoni)\b/iu;
+
+/** "kutoka bohari", "toka sokoni", "kwa wakala" — where the goods came from. */
+const SOURCE_TAG =
+  /\b(?:kutoka|toka|from)\s+\S+|\b(?:bohari|sokoni|soko kuu|wakala|wholesale|jumla ya mzigo)\b/iu;
+
+export function parseBareExpense(text: string | null | undefined): ExpenseLine[] | null {
+  const said = stripTrailingChatter(clean(text));
+  if (!said) return null;
+  // A verb means one of the ordinary parsers owns this message.
+  if (OPENER.test(said) || /^(?:nime|nili|tume|tuli|ame|ali)/iu.test(said)) return null;
+  if (!WHOLESALE_UNIT.test(said) && !SOURCE_TAG.test(said)) return null;
+
+  // The source clause is context, never part of a label or an amount.
+  const body = normalizeNumberWords(said).replace(SOURCE_TAG, ' ').replace(/\s+/g, ' ').trim();
+
+  const lines: ExpenseLine[] = [];
+  for (const part of body.split(/\s+(?:na|and)\s+|,\s*/i)) {
+    const piece = part.trim();
+    if (!piece) continue;
+    // <label…> [kwa] <amount>, where the amount is the last number in the piece.
+    const match = /^(.+?)[\s:=-]*(?:kwa|for)?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:\/=)?$/iu.exec(piece);
+    if (!match) return null;
+    const label = clean(match[1]).replace(/[:=-]+$/, '').trim();
+    const amount = Number(match[2].replace(/,/g, ''));
+    if (label.length < 2 || !/[\p{L}]/u.test(label)) return null;
+    // Below a thousand it is far likelier to be a count than a restock.
+    if (!Number.isFinite(amount) || amount < 1000 || amount > 100_000_000) return null;
+    lines.push({ label, amount });
+  }
+  return lines.length > 0 ? lines : null;
+}

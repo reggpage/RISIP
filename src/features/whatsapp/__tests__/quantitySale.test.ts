@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  parseBareExpense,
   parseBareQuantityList,
+  stripTrailingChatter,
   parseQuantityOnlySale,
   priceLine,
   quantitySaleConfirmation,
@@ -385,5 +387,51 @@ describe('a sale with no verb in front of it', () => {
       resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
     expect(webhook).toContain('const bare = parseBareQuantityList(writeBody);');
     expect(webhook).toContain("priced.kind === 'priced' && priced.notCounted.length === 0");
+  });
+});
+
+describe('the three rules the owner wrote out', () => {
+  it('ignores the chatter after the figure', () => {
+    // "mihogo 18 leo", "zege 3 tu, leo mambo hovyo" — the number is the message
+    // and the rest is how somebody talks.
+    expect(stripTrailingChatter('mihogo 18 leo')).toBe('mihogo 18');
+    expect(stripTrailingChatter('zege 3 tu, leo mambo hovyo')).toBe('zege 3');
+    expect(stripTrailingChatter('chipsi zege 12 leo')).toBe('chipsi zege 12');
+    expect(parseBareQuantityList('mihogo 18 leo')?.items)
+      .toEqual([{ product: 'mihogo', quantity: 18, band: null }]);
+  });
+
+  it('does not cut a word that is part of the name', () => {
+    // Only the tail, and only from a closed list. "leo" mid-sentence stays.
+    expect(stripTrailingChatter('daftari la leo 5')).toBe('daftari la leo 5');
+    expect(stripTrailingChatter('nguvu ya sala 21')).toBe('nguvu ya sala 21');
+  });
+
+  it('reads a count written as a word', () => {
+    expect(parseBareExpense('mafuta dumu moja 78000'))
+      .toEqual([{ label: 'mafuta dumu 1', amount: 78000 }]);
+  });
+
+  it('reads buying that carries no verb at all', () => {
+    expect(parseBareExpense('nyanya tenga 1 15000 na vitunguu 8000'))
+      .toEqual([
+        { label: 'nyanya tenga 1', amount: 15000 },
+        { label: 'vitunguu', amount: 8000 },
+      ]);
+    expect(parseBareExpense('soda kreti 5 kwa 60000 kutoka bohari'))
+      .toEqual([{ label: 'soda kreti 5', amount: 60000 }]);
+  });
+
+  it('needs a wholesale unit or a source, never just a big number', () => {
+    // The size of a number proves nothing. "Nauli 9500" once became a sale of
+    // nine and a half thousand for exactly this reason.
+    expect(parseBareExpense('Nauli 9500')).toBeNull();
+    expect(parseBareExpense('nguvu ya sala 21000')).toBeNull();
+    expect(parseBareExpense('daftari 10')).toBeNull();
+  });
+
+  it('leaves anything with a verb to the parser that owns it', () => {
+    expect(parseBareExpense('nimenunua sukari gunia 1 kwa 145000')).toBeNull();
+    expect(parseBareExpense('nimeuza soda kreti 2')).toBeNull();
   });
 });

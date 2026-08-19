@@ -33,7 +33,7 @@ const HONOURS: Record<string, string[]> = {
     'daily_record', 'daily_record_parsed', 'daily_record_clarify',
     'quantity_sale', 'bare_quantity_sale',
   ],
-  'Kurekodi Gharama': ['daily_record', 'daily_record_parsed', 'daily_record_clarify'],
+  'Kurekodi Gharama': ['daily_record', 'daily_record_parsed', 'daily_record_clarify', 'bare_expense'],
   'Kuingiza Stoko': ['stock_count_batch', 'stock_count', 'daily_record'],
   'Kuuliza Stoko': ['ai_stock_on_hand', 'conversational_ai', 'product_analytics'],
   'Kuuliza Hesabu': [
