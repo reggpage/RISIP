@@ -138,3 +138,28 @@ describe('a pending question that knows when to let go', () => {
     expect(helper).not.toContain('text.length');
   });
 });
+
+describe('every parked question lets go, not just some of them', () => {
+  const webhook = () => readFileSync(
+    resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+
+  it('guards all four confirmation states with the shared rule', () => {
+    // MEASURED FAILURE four times over, in four different branches. Fixing them
+    // one at a time was the mistake: a pending price list answered "duster ziko
+    // ngapi stoo" with a price list, weeks after the invite had the same bug.
+    const source = webhook();
+    for (const name of [
+      'stockBatchPending', 'newProductPending', 'sellingBatchPending', 'costBatchPending',
+    ]) {
+      expect(source, name).toContain(`if (${name} && releasesParkedQuestion(body)) {`);
+    }
+  });
+
+  it('never lets an answer count as a change of subject', () => {
+    const helper = webhook();
+    const rule = helper.slice(helper.indexOf('function releasesParkedQuestion'));
+    expect(rule).toContain('isDailyRecordConfirmation(text)');
+    expect(rule).toContain('isDailyRecordRejection(text)');
+    expect(rule).toContain('isCancel(text)');
+  });
+});

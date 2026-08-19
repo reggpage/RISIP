@@ -518,6 +518,24 @@ function offerNewProducts(notCounted: string[], lang: Lang): string {
  * Only unmistakable topic changes count. A vague reply is still a bad answer to
  * the question, and re-asking it is the correct thing to do.
  */
+/**
+ * Should a parked NDIYO/HAPANA question let go of this message?
+ *
+ * MEASURED FAILURE, four times in four different branches. Each parked state
+ * treated every message that was not its own answer as a bad answer and re-sent
+ * the same question — the invite did it, the portion setup did it, the new
+ * product did it, and a pending price list answered "duster ziko ngapi stoo"
+ * with a price list. Fixing them one at a time was the mistake; this is the
+ * rule, and every branch uses it.
+ *
+ * A confirmation, a rejection or a cancel is always an answer, whatever else it
+ * may look like. Everything else that plainly starts another subject releases.
+ */
+function releasesParkedQuestion(text: string): boolean {
+  if (isDailyRecordConfirmation(text) || isDailyRecordRejection(text) || isCancel(text)) return false;
+  return startsAnotherTopic(text);
+}
+
 function startsAnotherTopic(text: string): boolean {
   return Boolean(
     parseLanguageCommand(text)
@@ -3024,7 +3042,10 @@ Deno.serve(async (req) => {
         // An answer to a price question Risip itself asked. No NDIYO here: the
         // question was the confirmation, and asking "are you sure?" straight
         // after somebody answered a direct question is the robotic move.
-        if (stockBatchPending) {
+        if (stockBatchPending && releasesParkedQuestion(body)) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'stockBatchPending', 'abandoned', 'skipped');
+        } else if (stockBatchPending) {
           if (isDailyRecordConfirmation(body)) {
             const { data: saved, error } = await db.rpc('wa_record_stock_counts', {
               p_phone: phone,
@@ -3219,7 +3240,10 @@ Deno.serve(async (req) => {
         // NDIYO on a set of brand-new products. The cost and both selling prices
         // land together, because a product added with only one of them fails the
         // next sale in exactly the way that started this.
-        if (newProductPending) {
+        if (newProductPending && releasesParkedQuestion(body)) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'newProductPending', 'abandoned', 'skipped');
+        } else if (newProductPending) {
           const pendingProducts = newProductPending.products;
           const pendingSale = newProductPending.pendingSale;
           const pendingSourceMessageId = newProductPending.sourceMessageId;
@@ -3344,7 +3368,10 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        if (sellingBatchPending) {
+        if (sellingBatchPending && releasesParkedQuestion(body)) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'sellingBatchPending', 'abandoned', 'skipped');
+        } else if (sellingBatchPending) {
           if (isDailyRecordConfirmation(body)) {
             const { data: saved, error } = await db.rpc('wa_set_selling_prices', {
               p_phone: phone,
@@ -3377,7 +3404,10 @@ Deno.serve(async (req) => {
 
         // NDIYO on a whole price list. One transaction, so a half-applied list
         // can never leave the coverage figure reporting a number nobody chose.
-        if (costBatchPending) {
+        if (costBatchPending && releasesParkedQuestion(body)) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'costBatchPending', 'abandoned', 'skipped');
+        } else if (costBatchPending) {
           if (isDailyRecordConfirmation(body)) {
             const { data: saved, error } = await db.rpc('wa_set_product_costs', {
               p_phone: phone,
