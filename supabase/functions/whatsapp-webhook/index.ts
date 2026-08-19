@@ -174,6 +174,15 @@ import {
   type QuantitySale,
 } from '../_shared/whatsappQuantitySale.ts';
 import {
+  applyPriceBands,
+  type Band,
+  needsBandChoice,
+  parsePriceBandAnswer,
+  type PriceBandChoice,
+  priceBandQuestion,
+  priceBandStillOpen,
+} from '../_shared/whatsappPriceBand.ts';
+import {
   normalizeProductReadResolution,
   productReadClarification,
   productReadMatchNotice,
@@ -332,6 +341,22 @@ type NewProductSaleSetup = {
   sourceMessageId: string;
 };
 
+/**
+ * A sale held while one question is answered: which of the two prices.
+ *
+ * The whole sale is parked, not just the open lines, because the answer changes
+ * the total and the total is what gets confirmed. Nothing is written until the
+ * usual NDIYO.
+ */
+type PriceBandPending = {
+  kind: 'price_band_choice';
+  sale: QuantitySale;
+  choices: PriceBandChoice[];
+  /** Bands already settled by an earlier, partial answer. */
+  answered: (Band | null)[];
+  sourceMessageId: string;
+};
+
 type NewProductPricingState = {
   kind: 'new_product_pricing';
   products: NewProductPricing[];
@@ -356,6 +381,9 @@ async function priceQuantitySale(
   | { kind: 'priced'; record: ParsedDailyRecord; lines: PricedLine[]; notCounted: string[] }
   | { kind: 'blocked'; message: string }
   | { kind: 'unknown'; products: string[]; sale: QuantitySale }
+  // Both prices registered, the line named neither, and the quantity does not
+  // settle it. Guessing here is guessing at the takings.
+  | { kind: 'band'; choices: PriceBandChoice[]; sale: QuantitySale }
   | { kind: 'skip' }
 > {
   const { data: declaredRows, error: declaredError } = await db.rpc('wa_company_product_sale_units', {
@@ -382,11 +410,13 @@ async function priceQuantitySale(
     quantity: number;
     band: QuantitySaleItem['band'];
     declared: DeclaredSaleUnit | null;
+    /** Where this came from in the message, so an answer lands on the right line. */
+    at: number;
   }[] = [];
   // Named back to the shopkeeper, never silently dropped: a line missing from a
   // till roll is money they believe they took and Risip does not.
   const unknown: string[] = [];
-  for (const item of sale.items) {
+  for (const [at, item] of sale.items.entries()) {
     const portion = matchDeclaredSaleUnit(item.product, declaredUnits);
     if (portion.kind === 'unit_required') {
       return {
@@ -401,6 +431,7 @@ async function priceQuantitySale(
         quantity: item.quantity,
         band: item.band,
         declared: portion.unit,
+        at,
       });
       continue;
     }
@@ -421,6 +452,7 @@ async function priceQuantitySale(
       // line — "jumla" — is read, understood, and then quietly dropped here.
       band: item.band,
       declared: null,
+      at,
     });
   }
 
@@ -446,6 +478,8 @@ async function priceQuantitySale(
 
   const lines: PricedLine[] = [];
   const missing: string[] = [];
+  // Lines where the shop has two prices and the message picked neither.
+  const open: PriceBandChoice[] = [];
   for (const item of resolvedItems) {
     const known = item.declared
       ? {
@@ -454,6 +488,16 @@ async function priceQuantitySale(
         wholesaleMinQty: item.declared.wholesaleMinQty,
       }
       : pricing.get(item.key) ?? { retail: null, wholesale: null, wholesaleMinQty: null };
+    if (needsBandChoice(item.band, known, item.quantity)) {
+      open.push({
+        index: item.at,
+        product: item.name,
+        quantity: item.quantity,
+        retail: known.retail as number,
+        wholesale: known.wholesale as number,
+        ...(item.declared ? { unit: item.declared.unitName } : {}),
+      });
+    }
     const line = priceLine({
       product: item.name,
       quantity: item.quantity,
@@ -474,6 +518,10 @@ async function priceQuantitySale(
   if (missing.length > 0 || lines.length === 0) {
     return { kind: 'blocked', message: quantitySaleMissingPrices(missing, lang) };
   }
+  // Asked after the missing-price check, because a product with no price at all
+  // is the bigger problem and its message says so. One question, listing only
+  // the open lines — never one question per line.
+  if (open.length > 0) return { kind: 'band', choices: open, sale };
 
   const amount = Math.round(lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0) * 100) / 100;
   return {
@@ -2572,11 +2620,46 @@ Deno.serve(async (req) => {
           && (convo.options as { kind?: string; step?: string; product?: string } | null)?.kind === 'add_product_setup'
           ? convo.options as { kind: 'add_product_setup'; step: 'name' | 'cost'; product?: string }
           : null;
+        const bandPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<PriceBandPending> | null)?.kind === 'price_band_choice'
+          ? convo.options as PriceBandPending
+          : null;
+        /**
+         * Ask which price, and park the sale whole behind the question.
+         *
+         * Every path that prices a sale goes through here, so the question is
+         * worded once and the parked state has one shape. Nothing is written:
+         * the sale is still a message until the usual NDIYO.
+         */
+        const askForPriceBand = async (
+          choices: PriceBandChoice[],
+          sale: QuantitySale,
+          sourceMessageId: string,
+          prefix = '',
+        ) => {
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: {
+              kind: 'price_band_choice',
+              sale,
+              choices,
+              answered: choices.map(() => null),
+              sourceMessageId,
+            } satisfies PriceBandPending,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          await replyQuietly(phone, prefix + priceBandQuestion(choices, lang));
+        };
         const costConversation = convo?.awaiting === 'product_cost' && convo.options
           && !costPrompt && !costBatchPending && !stockBatchPending && !sellingBatchPending
           && !newProductPending && !newProductSaleSetup && !portionSizePending && !portionConfirmPending
           && !quantityMeaningPending && !portionQuantityPending && !productRenamePending
-          && !addProductSetupPending
+          && !addProductSetupPending && !bandPending
           ? { cost: convo.options as unknown as ProductCost }
           : null;
         const productContext = convo?.awaiting === 'product_analytics'
@@ -2742,6 +2825,49 @@ Deno.serve(async (req) => {
           await audit(db, identity, waMessageId, 'daily_record', 'topic_switch_cancel', 'applied');
           dailyConversation = null;
           convo = null;
+        }
+
+        // Which of the two prices was this sold at? The sale waits here, whole,
+        // until the answer comes back, and then goes through pricing again as
+        // though the message had said "jumla" in the first place.
+        if (bandPending && releasesParkedQuestion(body ?? '')) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'price_band', 'abandoned', 'skipped');
+        } else if (bandPending) {
+          const heard = parsePriceBandAnswer(body, bandPending.choices);
+          if (!heard) {
+            await reply(phone, priceBandQuestion(bandPending.choices, lang));
+            await audit(db, identity, waMessageId, 'price_band', 'reask', 'skipped');
+            await finish('skipped');
+            continue;
+          }
+          // What was said now, over what was said before. A shopkeeper who
+          // corrects themselves means the correction.
+          const settled = bandPending.choices.map((_, at) =>
+            heard[at] ?? bandPending.answered[at] ?? null);
+          const stillOpen = bandPending.choices.filter((_, at) => settled[at] === null);
+          if (stillOpen.length > 0) {
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'product_cost',
+              receipt_id: null,
+              options: { ...bandPending, answered: settled } satisfies PriceBandPending,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await reply(phone, priceBandStillOpen(stillOpen, lang));
+            await audit(db, identity, waMessageId, 'price_band', 'partial', 'pending');
+            await finish('skipped');
+            continue;
+          }
+          resumedQuantitySale = {
+            ...bandPending.sale,
+            items: applyPriceBands(bandPending.sale.items, bandPending.choices, settled),
+          };
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'price_band', 'answered', 'applied');
         }
 
         // A bare list such as "kitabu 7, biblia 3" is parked because it could
@@ -3276,7 +3402,13 @@ Deno.serve(async (req) => {
               await replyQuietly(phone, productCostErrorMessage(failed, lang));
             } else if (pendingSale && pendingSourceMessageId) {
               const priced = await priceQuantitySale(db, identity, pendingSale, lang);
-              if (priced.kind === 'priced') {
+              if (priced.kind === 'band') {
+                // Just registered with both prices, and the waiting sale named
+                // neither. Ask before pricing rather than after saving.
+                await askForPriceBand(priced.choices, priced.sale, pendingSourceMessageId,
+                  `${newProductSaved(pendingProducts, lang, true)}\n\n`);
+                await audit(db, identity, pendingSourceMessageId, 'quantity_sale', 'band', 'pending');
+              } else if (priced.kind === 'priced') {
                 const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, priced.record);
                 const records: ParsedDailyRecord[] = [guardedRecord, ...pendingSale.expenses.map((spent) => ({
                   kind: 'expense' as const,
@@ -4119,6 +4251,15 @@ Deno.serve(async (req) => {
           const bare = parseBareQuantityList(writeBody);
           if (bare) {
             const priced = await priceQuantitySale(db, identity, bare, lang);
+            // "viberiti 2" with two prices on the shelf. This is the owner's own
+            // example, and it arrives with no verb at all — which is exactly why
+            // the question has to live here too and not only on the sale path.
+            if (priced.kind === 'band') {
+              await askForPriceBand(priced.choices, priced.sale, waMessageId);
+              await audit(db, identity, waMessageId, 'bare_quantity_sale', 'band', 'pending');
+              await finish('skipped');
+              continue;
+            }
             if (priced.kind === 'priced' && priced.notCounted.length === 0) {
               const guarded = await addHistoricalPriceWarnings(db, identity.company_id, priced.record);
               const created = await createDailyRecordDraft(db, identity, waMessageId, guarded, lang);
@@ -4488,6 +4629,12 @@ Deno.serve(async (req) => {
               }, { onConflict: 'identity_id' });
               await replyQuietly(phone, newProductSaleOffer(priced.products, lang));
               await audit(db, identity, waMessageId, 'quantity_sale', 'unknown_product', 'pending');
+              await finish('skipped');
+              continue;
+            }
+            if (priced.kind === 'band') {
+              await askForPriceBand(priced.choices, priced.sale, waMessageId);
+              await audit(db, identity, waMessageId, 'quantity_sale', 'band', 'pending');
               await finish('skipped');
               continue;
             }
