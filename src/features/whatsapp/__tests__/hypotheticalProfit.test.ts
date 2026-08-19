@@ -5,6 +5,7 @@ import {
   buildHypotheticalProfitReply,
   buildPortionHypotheticalProfitReply,
   parseHypotheticalProfitRequest,
+  parseHypotheticalQuantity,
 } from '../../../../supabase/functions/_shared/whatsappHypotheticalProfit';
 
 describe('deterministic hypothetical product profit', () => {
@@ -74,5 +75,44 @@ describe('deterministic hypothetical product profit', () => {
     }, 'sw');
     expect(reply).toContain('2 nusu');
     expect(reply).toContain('Inabaki: 0.25 lita');
+  });
+});
+
+describe('answering the quantity that was actually asked', () => {
+  const shop = {
+    productName: 'marker', onHand: 79, hasCount: true, unit: null,
+    unitCost: 1300, retailPrice: 2000, wholesalePrice: 1800,
+    avgUnitPrice: null, onHandBase: null,
+  } as never;
+
+  it('reads the number out of the question', () => {
+    // "kwa bei ya reja reja marker nikiuza kumi ntapata shingapi?"
+    expect(parseHypotheticalQuantity('kwa bei ya reja reja marker nikiuza kumi ntapata shingapi?')).toBe(10);
+    expect(parseHypotheticalQuantity('nikiuza 25 nitapata faida gani')).toBe(25);
+    expect(parseHypotheticalQuantity('if i sell 12 what profit')).toBe(12);
+  });
+
+  it('has no number to read when none was named', () => {
+    expect(parseHypotheticalQuantity('zikiuza marker zote nitakuwa na faida ya shingapi')).toBeNull();
+    expect(parseHypotheticalQuantity('faida ya marker ni ngapi')).toBeNull();
+  });
+
+  it('estimates on the quantity asked, not the whole shelf', () => {
+    // MEASURED FAILURE: asked about ten, answered for seventy-nine. The
+    // arithmetic was right and it answered nobody's question.
+    const reply = buildHypotheticalProfitReply({ ...shop, askedQuantity: 10 }, 'sw');
+    expect(reply).toContain('10 × (TSh 2,000 − TSh 1,300) = *TSh 7,000*');
+    expect(reply).not.toContain('79 ×');
+  });
+
+  it('still covers the shelf when no number was named', () => {
+    const reply = buildHypotheticalProfitReply({ ...shop, askedQuantity: null }, 'sw');
+    expect(reply).toContain('79 × (TSh 2,000 − TSh 1,300) = *TSh 55,300*');
+  });
+
+  it('never estimates on more than the shop has, and says so', () => {
+    const reply = buildHypotheticalProfitReply({ ...shop, askedQuantity: 200 }, 'sw');
+    expect(reply).toContain('79 ×');
+    expect(reply).toMatch(/Uliuliza 200/);
   });
 });

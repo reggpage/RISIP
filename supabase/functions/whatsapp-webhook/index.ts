@@ -181,6 +181,7 @@ import {
   buildHypotheticalProfitReply,
   buildPortionHypotheticalProfitReply,
   parseHypotheticalProfitRequest,
+  parseHypotheticalQuantity,
 } from '../_shared/whatsappHypotheticalProfit.ts';
 import {
   hypotheticalPortionQuestion,
@@ -1056,6 +1057,8 @@ async function hypotheticalProfitToolReply(
   identity: ResolvedWhatsAppIdentity,
   asked: string,
   lang: Lang,
+  /** How many the question named, when it named one. Null means the shelf. */
+  askedQuantity: number | null = null,
 ): Promise<{ text: string; pending: HypotheticalPortionChoice | null }> {
   if (!canUseCompanyFinanceReads(identity.role)) {
     return { text: lang === 'sw'
@@ -1135,6 +1138,7 @@ async function hypotheticalProfitToolReply(
     }, lang), pending: null };
   }
   return { text: notice + buildHypotheticalProfitReply({
+    askedQuantity,
     productName: match.productName,
     onHand: stock ? Number(stock.on_hand) : null,
     hasCount: Boolean(stock?.has_count),
@@ -2278,7 +2282,8 @@ Deno.serve(async (req) => {
           // notice above already says the figure excludes what is pending.
           const hypotheticalProduct = parseHypotheticalProfitRequest(mixed.question);
           if (hypotheticalProduct) {
-            await replyQuietly(to, (await hypotheticalProfitToolReply(db, identity, hypotheticalProduct, lang)).text);
+            await replyQuietly(to, (await hypotheticalProfitToolReply(
+              db, identity, hypotheticalProduct, lang, parseHypotheticalQuantity(mixed.question))).text);
             await audit(db, identity, waMessageId, 'rider_question', 'hypothetical_product_profit', 'applied');
             return;
           }
@@ -4129,7 +4134,8 @@ Deno.serve(async (req) => {
 
         const hypotheticalProduct = mixed ? null : parseHypotheticalProfitRequest(body);
         if (hypotheticalProduct) {
-          const result = await hypotheticalProfitToolReply(db, identity, hypotheticalProduct, lang);
+          const result = await hypotheticalProfitToolReply(
+            db, identity, hypotheticalProduct, lang, parseHypotheticalQuantity(body));
           if (result.pending) {
             await db.from('whatsapp_conversations').upsert({
               identity_id: identity.id,

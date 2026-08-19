@@ -1,8 +1,16 @@
 import type { Lang } from './whatsappIntent.ts';
+import { normalizeNumberWords } from './whatsappDailyRecords.ts';
 
 export type HypotheticalProfitInput = {
   productName: string;
   onHand: number | null;
+  /**
+   * How many the question asked about, when it named a number.
+   *
+   * "nikiuza kumi" means ten, not the whole shelf. Null keeps the old
+   * behaviour — the estimate covers everything in stock.
+   */
+  askedQuantity?: number | null;
   hasCount: boolean;
   unit: string | null;
   unitCost: number | null;
@@ -31,6 +39,24 @@ export type PortionHypotheticalProfitInput = {
 };
 
 const money = (value: number) => `TSh ${Math.round(value).toLocaleString('en-US')}`;
+
+/**
+ * How many, when the question names a number.
+ *
+ * MEASURED FAILURE: "kwa bei ya reja reja marker nikiuza kumi ntapata
+ * shingapi?" was answered for all seventy-nine markers in stock. The question
+ * said TEN. The estimate was arithmetically correct and answered a question
+ * nobody asked, which is the worst kind of wrong — it looks right.
+ */
+export function parseHypotheticalQuantity(text: string | null | undefined): number | null {
+  const said = normalizeNumberWords(String(text ?? '').replace(/\s+/g, ' ').trim());
+  // "nikiuza 10", "nikiziuza 10", "sell 10" — the number that follows the verb.
+  const match = /\b(?:nikiuza|nikiziuza|zikiuza|zikiuzwa|nikauza|sell|selling)\s+(?:pcs\s+|vipande\s+)?([0-9]+(?:\.[0-9]+)?)\b/iu
+    .exec(said);
+  if (!match) return null;
+  const quantity = Number(match[1]);
+  return Number.isFinite(quantity) && quantity > 0 && quantity <= 1_000_000 ? quantity : null;
+}
 
 export function parseHypotheticalProfitRequest(text: string | null | undefined): string | null {
   const value = String(text ?? '').replace(/\s+/g, ' ').trim();
@@ -68,7 +94,11 @@ export function buildHypotheticalProfitReply(input: HypotheticalProfitInput, lan
       : `I cannot estimate the profit for ${input.productName} yet. Missing:\n${list}\n\nOnce those are available I will calculate: stock × (selling price − buying cost).`;
   }
 
-  const quantity = input.onHand!;
+  // The question wins over the shelf. Asked for ten and answered for
+  // seventy-nine is arithmetically correct and answers nobody's question.
+  const asked = input.askedQuantity ?? null;
+  const quantity = asked !== null && asked > 0 ? Math.min(asked, input.onHand!) : input.onHand!;
+  const cappedByStock = asked !== null && asked > (input.onHand ?? 0);
   const unitText = input.unit ? ` ${input.unit}` : '';
   if (quantity <= 0) {
     return lang === 'sw'
@@ -81,13 +111,22 @@ export function buildHypotheticalProfitReply(input: HypotheticalProfitInput, lan
   const label = estimated
     ? (lang === 'sw' ? 'Kwa wastani' : 'At your average')
     : (lang === 'sw' ? 'Retail' : 'Retail');
+  const scope = asked === null
+    ? (lang === 'sw' ? 'ukiuza stock yote' : 'selling all stock')
+    : (lang === 'sw' ? `ukiuza ${quantity.toLocaleString('en-US')}${unitText}` : `selling ${quantity.toLocaleString('en-US')}${unitText}`);
+  const capNote = cappedByStock
+    ? (lang === 'sw' ? `
+_Uliuliza ${asked}, lakini stock iliyopo ni ${quantity}._` : `
+_You asked about ${asked}; stock holds ${quantity}._`)
+    : '';
   const lines = lang === 'sw'
-    ? [`Makisio ya ${input.productName} ukiuza stock yote:`, `- ${label}: ${retailLine}`]
-    : [`Estimate for selling all ${input.productName} stock:`, `- ${label}: ${retailLine}`];
+    ? [`Makisio ya ${input.productName} ${scope}:`, `- ${label}: ${retailLine}`]
+    : [`Estimate for ${input.productName}, ${scope}:`, `- ${label}: ${retailLine}`];
   if (input.wholesalePrice !== null && input.wholesalePrice !== input.retailPrice) {
     const wholesaleProfit = quantity * (input.wholesalePrice - input.unitCost!);
     const wholesaleLine = `${quantity.toLocaleString('en-US')}${unitText} × (${money(input.wholesalePrice)} − ${money(input.unitCost!)}) = *${money(wholesaleProfit)}*`;
-    lines.push(lang === 'sw' ? `- Wholesale: ${wholesaleLine}` : `- Wholesale: ${wholesaleLine}`);
+    if (capNote) lines.push(capNote.trim());
+  lines.push(lang === 'sw' ? `- Wholesale: ${wholesaleLine}` : `- Wholesale: ${wholesaleLine}`);
   }
   if (estimated) {
     lines.push(lang === 'sw'
