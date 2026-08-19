@@ -39,16 +39,18 @@ export function parseLanguageCommand(text: string | null | undefined): Lang | nu
     '(?:badili|badilisha|geuza|weka|tumia|switch|change|set|use)[^a-z]*'
     + '(?:lugha|language)?[^a-z]*(?:to |kuwa |kwenda |ya |kwa )?(?:kiswahili|swahili)'
     + '|(?:nijibu|jibu|ongea|sema)[^a-z]*(?:kwa|in)?[^a-z]*(?:kiswahili|swahili)'
-    + '|(?:reply|respond|answer|talk|speak)[^a-z]*(?:to me )?(?:in|kwa)[^a-z]*(?:kiswahili|swahili)'
-    + '|^(?:kiswahili|swahili)$',
+    + '|(?:reply|respond|answer|talk|speak|write)[^a-z]*(?:to me )?(?:in|kwa)?[^a-z]*(?:kiswahili|swahili)'
+    // "Kiswahili tafadhali" is the whole message and the politeness is not an
+    // instruction, so the bare-word rule has to survive it.
+    + '|^(?:naomba |please |tafadhali )?(?:kiswahili|swahili)( please| tafadhali| basi)?$',
   ).test(t);
   if (wantsSwahili) return 'sw';
   const wantsEnglish = new RegExp(
     '(?:badili|badilisha|geuza|weka|tumia|switch|change|set|use)[^a-z]*'
     + '(?:lugha|language)?[^a-z]*(?:to |kuwa |kwenda |ya |kwa )?(?:kiingereza|english)'
     + '|(?:nijibu|jibu|ongea|sema)[^a-z]*(?:kwa|in)?[^a-z]*(?:kiingereza|english)'
-    + '|(?:reply|respond|answer|talk|speak)[^a-z]*(?:to me )?(?:in|kwa)[^a-z]*(?:kiingereza|english)'
-    + '|^(?:english|kiingereza)$',
+    + '|(?:reply|respond|answer|talk|speak|write)[^a-z]*(?:to me )?(?:in|kwa)?[^a-z]*(?:kiingereza|english)'
+    + '|^(?:naomba |please |tafadhali )?(?:english|kiingereza)( please| tafadhali| basi)?$',
   ).test(t);
   if (wantsEnglish) return 'en';
   return null;

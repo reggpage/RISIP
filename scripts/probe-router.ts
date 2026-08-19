@@ -27,7 +27,10 @@ const CORPUS: Case[] = [
   { said: 'nimeuza daftari 5 kwa 7500, kalamu 3 kwa 1500', expect: 'daily_record_parsed' },
   { said: 'nimeuza daftari 5 kwa 7500', expect: 'daily_record' },
   { said: 'nimeuza nguvu ya sala 2 kwa 20000', expect: 'daily_record' },
-  { said: 'niliuza st rita wa kashia 3 kwa 13500', expect: 'daily_record' },
+  // The parser asks: "3 kwa 13500" is either three at 13,500 or three for
+  // 13,500. The WEBHOOK settles it from the shop's own price list and only
+  // keeps the question when neither reading matches what they charge.
+  { said: 'niliuza st rita wa kashia 3 kwa 13500', expect: 'daily_record_clarify' },
   { said: 'leo nimeuza kalamu 10 kila moja 500', expect: 'daily_record' },
   { said: 'nimelipa umeme 45000', expect: 'daily_record' },
   { said: 'nimenunua stock ya daftari 100 kwa 120000', expect: 'daily_record' },

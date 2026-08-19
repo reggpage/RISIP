@@ -236,3 +236,21 @@ describe('asking for a different language, the way people ask', () => {
     }
   });
 });
+
+describe('asking for a language politely', () => {
+  it('takes the word with a please on either side', () => {
+    // "English please" was not a language command, because the bare-word rule
+    // was anchored to the whole message and politeness broke the anchor.
+    expect(parseLanguageCommand('English please')).toBe('en');
+    expect(parseLanguageCommand('speak english')).toBe('en');
+    expect(parseLanguageCommand('naomba kiingereza')).toBe('en');
+    expect(parseLanguageCommand('kiswahili tafadhali')).toBe('sw');
+    expect(parseLanguageCommand('Swahili please')).toBe('sw');
+  });
+
+  it('does not mistake goods for a language command', () => {
+    expect(parseLanguageCommand('nauza vitabu vya english')).toBeNull();
+    expect(parseLanguageCommand('english books 5 kwa 3000')).toBeNull();
+    expect(parseLanguageCommand('nimeuza english 3')).toBeNull();
+  });
+});

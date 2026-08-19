@@ -10,9 +10,16 @@
 // that is most of them.
 
 import { parseDailyRecordBatch } from '../../supabase/functions/_shared/whatsappDailyRecordBatch.ts';
-import { isDailyRecordCandidate, parseDailyRecord } from '../../supabase/functions/_shared/whatsappDailyRecords.ts';
+import {
+  isDailyRecordCandidate,
+  isDailyRecordConfirmation,
+  isDailyRecordRejection,
+  parseDailyRecord,
+  parseDailyRecordPriceChoice,
+} from '../../supabase/functions/_shared/whatsappDailyRecords.ts';
+import { isLoginRequest } from '../../supabase/functions/_shared/whatsappOnboarding.ts';
 import { parseHypotheticalProfitRequest } from '../../supabase/functions/_shared/whatsappHypotheticalProfit.ts';
-import { parseLanguageCommand } from '../../supabase/functions/_shared/whatsappIntent.ts';
+import { isCancel, parseLanguageCommand } from '../../supabase/functions/_shared/whatsappIntent.ts';
 import { parseInviteRequest } from '../../supabase/functions/_shared/whatsappInvite.ts';
 import { parseNewProductPricing } from '../../supabase/functions/_shared/whatsappNewProduct.ts';
 import { parseProductAnalyticsRequest } from '../../supabase/functions/_shared/whatsappProductAnalytics.ts';
@@ -81,7 +88,12 @@ export function route(text: string): string {
   if (isDailyRecordCandidate(text)) {
     if (parseQuantityOnlySale(text)) return 'quantity_sale';
     const batch = parseDailyRecordBatch(text, 'sw');
-    return batch.kind === 'none' ? 'daily_record' : `daily_record_${batch.kind}`;
+    if (batch.kind !== 'none') return `daily_record_${batch.kind}`;
+    // A single record that comes back as a QUESTION is not the same outcome as
+    // one that comes back as a draft, and calling both "daily_record" let a
+    // case expecting arithmetic pass while the shop was being asked something.
+    const single = parseDailyRecord(text, 'sw');
+    return single.kind === 'clarify' ? 'daily_record_clarify' : 'daily_record';
   }
   if (parseInviteRequest(text)) return 'invite';
   // A sale with no verb. The webhook adds one more condition this table cannot
@@ -96,4 +108,38 @@ export function route(text: string): string {
   // answered from the database and never by the model.
   if (parseStockQuestion(text)) return 'stock_question';
   return 'conversational_ai';
+}
+
+/**
+ * What a message means when it is an ANSWER or a COMMAND rather than a topic.
+ *
+ * These are deliberately outside route(): "NDIYO" is not a message the router
+ * claims, it is a reply to a question the webhook is already holding. But they
+ * are still deterministic, and leaving them out of the harness is what left a
+ * quarter of the eval set marked "not routable here" — as though nobody could
+ * ever check whether HAPANA cancels.
+ */
+export function controlIntent(text: string): string | null {
+  if (isLoginRequest(text)) return 'login_control';
+  if (parseDailyRecordPriceChoice(text)) return 'clarification_continue';
+  // Cancel before reject: "toka" is both, and it is the stronger of the two.
+  if (isCancel(text)) return 'cancel_control';
+  if (isDailyRecordRejection(text)) return 'reject_control';
+  if (isDailyRecordConfirmation(text)) return 'confirm_control';
+  if (parseReadRequest(text)?.tool === 'ai_my_businesses') return 'switch_business_control';
+  return null;
+}
+
+/**
+ * Which kind of ledger record a message would create, or null.
+ *
+ * route() collapses every one of these into "daily_record", which is right for
+ * routing and useless for the eval set: recording a DEBT when the shop said
+ * PAYMENT is the same route and the opposite fact.
+ */
+export function recordKind(text: string): string | null {
+  const batch = parseDailyRecordBatch(text, 'sw');
+  if (batch.kind === 'parsed' && batch.records.length > 0) return batch.records[0].kind;
+  const single = parseDailyRecord(text, 'sw');
+  return single.kind === 'parsed' ? single.record.kind : null;
 }

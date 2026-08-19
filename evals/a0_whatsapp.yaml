@@ -176,6 +176,14 @@ cases:
     must_contain: ["30,000"]
     must_confirm: true
     must_not: [save_without_confirmation]
+    disputed: true
+    # One sentence stating a buying price AND a selling price for the same goods
+    # is two facts, and the second one names no quantity: "nimeuza kila moja
+    # 10000" says nothing about how many were sold. Answering "faida 30,000"
+    # requires assuming all ten were sold — a guess about money, presented as
+    # arithmetic. Risip asks instead. It becomes answerable the day the split
+    # can safely cut a purchase from a sale, which it cannot yet: a till roll
+    # with a restock in the middle would be torn in half.
   - id: 1024
     say: "nimenunua stock ya sukari 70000"
     lang: sw

@@ -440,15 +440,42 @@ function stockPurchaseRecord(text: string): ParsedDailyRecord | null {
   return { kind: 'stock_purchase', amount, partyName: null, description, lines: [] };
 }
 
+/**
+ * Everything before the verb, which is more of the name than the first word.
+ *
+ * "Mama Asha amechukua sukari 12000" recorded a debt against "Mama" — and so
+ * did Mama Neema's, and Mama Rehema's. Three customers, one debtor, and no way
+ * to tell whose money it was. Titles are how most customers in a duka are
+ * named, so the whole run of words up to the verb is the name.
+ */
+const PARTY_VERB = /\s+(?:a(?:me|li)(?:chukua|lipa|uza)|wamechukua|kachukua|kalipa|ananidai|anadaiwa|owes|paid|took)\b/iu;
+
 function partyName(text: string): string | null {
+  const upToVerb = text.match(/^((?:[\p{L}][\p{L}'’-]*)(?:\s+[\p{L}][\p{L}'’-]*){0,2})(?=\s)/u)?.[1];
+  const verbAt = text.search(PARTY_VERB);
+  if (upToVerb && verbAt > 0) {
+    const before = text.slice(0, verbAt).trim();
+    // Only when the whole run before the verb is short and word-shaped: a
+    // sentence with numbers or six words in front of the verb is not a name.
+    const words = before.split(/\s+/);
+    if (words.length <= 3 && words.every((word) => /^[\p{L}][\p{L}'’-]*$/u.test(word))) {
+      return titleCase(before);
+    }
+  }
   return titleCase(text.match(/^([\p{L}][\p{L}'-]*)\s+/u)?.[1] ?? null);
 }
 
 function debtRecord(text: string): ParsedDailyRecord | null {
   const party = partyName(text);
   if (!party) return null;
-  const body = text.replace(/^[\p{L}][\p{L}'-]*\s+/u, '');
-  const took = body.match(/^amechukua\s+(.+?)(?:\s+kwa\s+mkopo)?$/i)?.[1] ?? body;
+  // As many words as the name took, not one: "Mama Asha amechukua sukari" left
+  // "asha amechukua sukari" behind as the description of what she took.
+  const body = text.split(/\s+/).slice(party.split(' ').length).join(' ');
+  const took = body
+    .replace(/^(?:a(?:me|li)chukua|wamechukua|kachukua)\s+/i, '')
+    .replace(/\bkwa\s+(?:mkopo|deni)\b/ig, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   const unitLine = parseSwahiliUnitLine(took);
   if (unitLine) {
     const amount = lineTotal(unitLine);
@@ -456,11 +483,14 @@ function debtRecord(text: string): ParsedDailyRecord | null {
       ? { kind: 'debt_issued', amount, partyName: party, description: unitLine.description, lines: [unitLine] }
       : null;
   }
-  const tokens = moneyTokens(body);
+  const tokens = moneyTokens(took);
   if (tokens.length === 0) return null;
   const amount = tokens[tokens.length - 1].value;
   if (!validAmount(amount)) return null;
-  const description = stripMoney(body).replace(/\bkwa\s+mkopo\b.*$/i, '').trim() || null;
+  const description = stripMoney(took)
+    .replace(/\bkwa\s+mkopo\b.*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim() || null;
   return { kind: 'debt_issued', amount, partyName: party, description, lines: [] };
 }
 
@@ -490,6 +520,10 @@ const RECORD_VERBS = new RegExp(
   + '|ni(?:me|li)nunua|tu(?:me|li)nunua|bought|purchased'
   + '|ni(?:me|li)ongeza|ni(?:me|li)ingiza'
   + '|mkopo|loan|ananidai|customer payment'
+  // Third person only. "amechukua" is how credit is described in a duka — a
+  // named person TOOK goods — while "nimechukua" is the shopkeeper moving their
+  // own stock and is nobody's debt.
+  + '|a(?:me|li)chukua|wamechukua|kachukua'
   + ')\\b', 'i');
 
 // A noun only NAMES the subject. On its own it is as likely to open a question
@@ -582,7 +616,14 @@ export function parseDailyRecord(text: string | null | undefined, lang: Lang = '
   let parsed: ParsedDailyRecord | null = null;
   if (/\b(amelipa|kalipa|customer payment|paid me|paid the debt)\b/i.test(value)) {
     parsed = customerPaymentRecord(value);
-  } else if (/\b(mkopo|loan|ananidai|owes me|deni)\b/i.test(value)) {
+  } else if (/\b(mkopo|loan|ananidai|owes me|deni)\b/i.test(value)
+    // "Mama Asha amechukua sukari 12000". A named person TAKING goods is credit
+    // in every duka — a cash sale is written "nimeuza" and needs no name. The
+    // word "mkopo" was required before, so this went to the model, which is not
+    // where a debt should be decided. The payment branch above still wins, so
+    // "Asha amechukua sukari 12000 amelipa" is a payment, not a debt.
+    || /^[\p{L}][\p{L}'’-]*(?:\s+[\p{L}][\p{L}'’-]*){0,2}\s+(?:amechukua|alichukua|kachukua|wamechukua)\b/iu
+      .test(value)) {
     parsed = debtRecord(value);
   } else if (/\b(nimeuza|uza|sold|mauzo)\b/i.test(value)) {
     parsed = saleRecord(value);

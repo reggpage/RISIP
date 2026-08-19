@@ -38,7 +38,10 @@ export type StockCount = {
 
 const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
-const UNITS = 'kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni|robo|nusu|theluthi|kipande|mche|chupa|mfuko|kifurushi';
+// "treya" and "katoni" come from the street corpus: a genge counts eggs by the
+// tray and nothing else, and without the word the tray became part of the
+// product name.
+const UNITS = 'kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni|robo|nusu|theluthi|kipande|mche|chupa|mfuko|kifurushi|treya|trei|tray|katoni|carton|kreti|crate';
 const NUMBER = '[0-9]+(?:\\.[0-9]+)?';
 
 /**
@@ -49,7 +52,9 @@ const NUMBER = '[0-9]+(?:\\.[0-9]+)?';
  * daftari 90" is a sale and would wipe the shelf if misread.
  */
 export function parseStockCount(text: string | null | undefined): StockCount | null {
-  const said = clean(text);
+  // "…5 storini" names the place, not the goods, and left the whole line
+  // unreadable because the pattern ends at the number.
+  const said = clean(text).replace(PLACE, '').trim();
   if (!said) return null;
   // Anything that is plainly a movement is not a count.
   if (/^(?:nimeuza|niliuza|uza|sold|nimenunua|nimelipa|nimetumia|amechukua|amelipa)\b/i.test(said)) return null;
@@ -100,7 +105,7 @@ export function parseStockCount(text: string | null | undefined): StockCount | n
  */
 const STOCK_VERBS = 'ninazo|ninavyo|nina|nazo|zimebaki|imebaki|zilizobaki|zilizopo|zipo|ziko|ipo|iko|kuna|zimesalia';
 /** Words that name the place, not the goods: "…ngapi store". */
-const PLACE = /\s*(?:kwenye\s+|kwa\s+|katika\s+)?(?:store|stoo|stoo\s*ni|ghala|ghalani|duka|dukani|shop|shopu|hapa)\s*$/i;
+const PLACE = /\s*(?:kwenye\s+|kwa\s+|katika\s+)?(?:stor(?:e|ini|eni)|stoo?(?:ni)?|ghala(?:ni)?|duka(?:ni)?|shopu?|hapa)\s*$/i;
 /** The whole shelf, not a product with that name. */
 const EVERYTHING = /^(?:bidhaa|bidha|vitu|vitu\s+vyangu|bidhaa\s+zangu|mzigo|stock|products?|items?|goods)$/i;
 /** Questions that belong to another tool entirely and must not be claimed here. */

@@ -441,3 +441,44 @@ describe('buying goods is half the ledger', () => {
     expect(parsed.kind === 'parsed' && parsed.record.kind).toBe('expense');
   });
 });
+
+describe('a named person taking goods is credit', () => {
+  const debt = (text: string) => {
+    const parsed = parseDailyRecord(text, 'sw');
+    return parsed.kind === 'parsed' ? parsed.record : null;
+  };
+
+  it('records the debt without needing the word mkopo', () => {
+    // This went to the model, which is not where a debt should be decided. A
+    // cash sale is written "nimeuza" and needs no name at all.
+    expect(debt('Mama Asha amechukua sukari 12000')).toMatchObject({
+      kind: 'debt_issued', amount: 12000, partyName: 'Mama Asha', description: 'sukari',
+    });
+    expect(debt('asha amechukua sukari 12000')).toMatchObject({
+      kind: 'debt_issued', amount: 12000, partyName: 'Asha',
+    });
+  });
+
+  it('keeps the whole name, so two customers are two debtors', () => {
+    // "Mama Asha", "Mama Neema" and "Mama Rehema" were all recorded against
+    // "Mama": three customers, one debtor, and no way to tell whose money it is.
+    expect(debt('Mama Neema amechukua kwa deni 25000')?.partyName).toBe('Mama Neema');
+    expect(debt('mzee juma amelipa deni 5000')?.partyName).toBe('Mzee Juma');
+    expect(debt('Juma amechukua daftari 5 kila moja 2000')).toMatchObject({
+      partyName: 'Juma', amount: 10000,
+    });
+  });
+
+  it('is a payment when the sentence says it was paid', () => {
+    expect(debt('Mama Asha amechukua sukari 12000 amelipa')?.kind).toBe('customer_payment');
+  });
+
+  it('is not a record when the shopkeeper moved their own stock', () => {
+    expect(parseDailyRecord('nimechukua sukari 12000', 'sw').kind).toBe('none');
+  });
+
+  it('is not a record when it is a question', () => {
+    expect(parseDailyRecord('nani amechukua zaidi', 'sw').kind).toBe('none');
+    expect(parseDailyRecord('amechukua ngapi', 'sw').kind).toBe('none');
+  });
+});

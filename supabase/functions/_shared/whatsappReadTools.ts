@@ -154,7 +154,10 @@ export function parseReadRequest(input: string | null | undefined, now = new Dat
   if (hasAny(text, ['ninaidai risip', 'risip inanidai', 'my reimbursement', 'reimbursements yangu', 'risip owe', 'risip owes', 'owe me', 'nirudishiwe'])) {
     return withRange({ tool: 'ai_owed_to_me', period });
   }
-  if (hasAny(text, ['biashara zangu', 'my businesses', 'switch business', 'badili biashara'])) {
+  // "badilisha biashara" is the imperative anybody would actually type, and the
+  // list only had the stem "badili" — which is not a substring of it.
+  if (hasAny(text, ['biashara zangu', 'my businesses', 'switch business', 'badili biashara',
+    'badilisha biashara', 'nibadilishie biashara', 'change business', 'hamia biashara'])) {
     return withRange({ tool: 'ai_my_businesses', period });
   }
   if (hasAny(text, ['pending approval', 'awaiting approval', 'risiti za kuapprove', 'risiti zinazosubiri', 'zinazosubiri kuangaliwa'])) {
