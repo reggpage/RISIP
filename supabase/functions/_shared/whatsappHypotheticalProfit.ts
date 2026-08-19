@@ -59,11 +59,27 @@ export function parseHypotheticalQuantity(text: string | null | undefined): numb
 }
 
 export function parseHypotheticalProfitRequest(text: string | null | undefined): string | null {
-  const value = String(text ?? '').replace(/\s+/g, ' ').trim();
-  if (!value || !/\b(?:faida|profit|margin)\b/iu.test(value)) return null;
+  const raw = String(text ?? '').replace(/\s+/g, ' ').trim();
+  // MEASURED FAILURE: "Kwa bei ya reja reja gundi nikiuza sita ntapata
+  // shingapi?" was recognised by nothing. It never says "faida" — it says
+  // "ntapata shingapi", which is the same question — and it names six rather
+  // than "zote". So it fell to the model, which answered on the whole shelf,
+  // AND it did not count as changing the subject, so a parked question about a
+  // different product came back instead.
+  const value = normalizeNumberWords(raw)
+    // "Kwa bei ya rejareja X" — the band is context for the answer, never part
+    // of the product name.
+    .replace(/^(?:kwa\s+)?bei\s+ya\s+(?:reja\s*reja|rejareja|jumla|retail|wholesale)\s+/iu, '');
+  const asksProfit = /\b(?:faida|profit|margin)\b/iu.test(value);
+  const asksTakings = /\b(?:ntapata|nitapata|tutapata|napata|shingapi|how much)\b/iu.test(value);
+  const hypothetical = /\b(?:nikiuza|nikiziuza|nikauza|zikiuza|zikiuzwa|i\s+sell|selling)\b/iu.test(value);
+  if (!value || !(asksProfit || (asksTakings && hypothetical))) return null;
   const patterns = [
     /^(?:je\s+)?(?:nikiuza|nikiziuza|zikiuza|zikiuzwa)\s+(.+?)\s+(?:zote|yote)\b/iu,
     /^(.+?)\s+(?:zikiuzwa|nikiuza)\s+(?:zote|yote)\b/iu,
+    // "<product> nikiuza 6", the shape with a number instead of "zote".
+    /^(.+?)\s+(?:nikiuza|nikiziuza|nikauza|zikiuza)\s+(?:pcs\s+|vipande\s+)?[0-9]/iu,
+    /^(?:je\s+)?(?:nikiuza|nikiziuza|nikauza)\s+(?:pcs\s+|vipande\s+)?[0-9]+(?:\.[0-9]+)?\s+(?:za\s+|ya\s+|of\s+)?(.+?)(?:\s+(?:nitapata|ntapata|tutapata)|[?,]|$)/iu,
     /^(?:if\s+)?i\s+sell\s+all\s+(?:the\s+)?(.+?)(?:\s+what|\s+how|,|\?|$)/iu,
     /^what\s+(?:profit|margin).+?all\s+(?:the\s+)?(.+?)(?:\?|$)/iu,
   ];

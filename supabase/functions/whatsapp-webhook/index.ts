@@ -159,6 +159,7 @@ import {
   type PortionSetupReady,
   type PortionQuantityPrompt,
 } from '../_shared/whatsappPortions.ts';
+import { lowStockNotice, type StockLevel } from '../_shared/whatsappLowStock.ts';
 import {
   parseBareExpense,
   parseBareQuantityList,
@@ -585,6 +586,44 @@ async function settlePriceAmbiguity(
   if (perItemReading === totalReading) return null;
 
   return resumeDailyRecordClarification(draft, perItemReading ? 'unit_price' : 'total');
+}
+
+/**
+ * What the sale just emptied, if anything.
+ *
+ * Only the products that sale touched. A warning listing everything low in the
+ * shop, every time, is a warning nobody reads by the third day. Best effort
+ * throughout: a sale is recorded whether or not this can be worked out.
+ */
+async function lowStockNoticeFor(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  record: ParsedDailyRecord,
+  lang: Lang,
+): Promise<string> {
+  if (record.kind !== 'sale' || record.lines.length === 0) return '';
+  try {
+    const levels: StockLevel[] = [];
+    for (const line of record.lines.slice(0, 12)) {
+      const resolved = await resolveProductForRead(db, identity, line.description);
+      if (resolved.error || resolved.resolution.kind !== 'matched') continue;
+      const { data } = await db.rpc('wa_stock_on_hand', {
+        p_company_id: identity.company_id,
+        p_product: resolved.resolution.match.productKey,
+      });
+      const row = ((data ?? []) as Array<Record<string, unknown>>)[0];
+      if (!row) continue;
+      levels.push({
+        productName: String(row.product_name ?? resolved.resolution.match.productName),
+        onHand: Number(row.on_hand ?? 0),
+        unit: row.unit ? String(row.unit) : null,
+        hasCount: Boolean(row.has_count),
+      });
+    }
+    return lowStockNotice(levels, lang);
+  } catch {
+    return '';
+  }
 }
 
 async function resolveProductForRead(
@@ -2940,7 +2979,11 @@ Deno.serve(async (req) => {
             } else {
               await clearConversation(db, identity.id as string);
               await clearAssistantMemory(db, identity);
-              await replyQuietly(phone, buildDailyRecordConfirmed(dailyConversation.record, lang));
+              // The warning rides on a message that was going out anyway. An
+              // unprompted one costs money and interrupts; this one arrives at
+              // the single moment the shopkeeper is certainly looking.
+              await replyQuietly(phone, buildDailyRecordConfirmed(dailyConversation.record, lang)
+                + await lowStockNoticeFor(db, identity, dailyConversation.record, lang));
               await audit(db, identity, waMessageId, 'daily_record', 'confirm', 'applied');
               // The record is safely saved first. Asking what the product costs
               // is a separate, optional favour — if any of it fails, the sale is
