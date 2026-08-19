@@ -27,7 +27,19 @@ const UNITS = 'kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo
  * products and numbers is indistinguishable from a price list or a sales
  * summary, and guessing wrong would wipe a shelf.
  */
-const HEADER = /^\s*(?:hesabu(?:\s+ya)?\s+stock|stock\s+(?:ya\s+)?leo|nilizonazo|ninazo|zilizopo|store|stock\s*count|counted)\b/i;
+// "store" is jargon, and the owner said so. A shopkeeper adding goods says
+// "naongeza bidhaa" — I am adding products — not "store". The old words stay
+// because they are already in people's chat history and in the onboarding
+// messages sent before today; the new ones are what gets taught from now on.
+const HEADER = new RegExp(
+  '^\\s*(?:'
+  + 'naongeza(?:\\s+(?:bidhaa|stock|store|mzigo))?'
+  + '|nimeongeza(?:\\s+(?:bidhaa|stock|store|mzigo))?'
+  + '|ongeza\\s+(?:bidhaa|stock|store|mzigo)'
+  + '|add\\s+(?:product|products|stock|items?)'
+  + '|hesabu(?:\\s+ya)?\\s+stock|stock\\s+(?:ya\\s+)?leo'
+  + '|nilizonazo|ninazo|zilizopo|store|stock\\s*count|counted'
+  + ')\\b', 'i');
 
 const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, ' ').trim();
 

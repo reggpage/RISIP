@@ -224,3 +224,35 @@ describe('asking for a way in to the web', () => {
     expect(isLoginRequest('dashboard ya mauzo inaonyesha nini?')).toBe(false);
   });
 });
+
+describe('a refused guess is not offered again', () => {
+  it('stops the Bakery loop the owner walked into', () => {
+    // "Allen's cake" + "I sell food" → Bakery → No → Bakery again, because the
+    // business NAME was classified alongside the description every time and
+    // "cake" outweighed everything the person said afterwards.
+    let step = 'create_name';
+    let draft: Record<string, string> = {};
+    const say = (text: string) => {
+      const next = advanceOnboarding(step as never, text, 'en', draft);
+      step = next.step;
+      draft = next.draft ?? draft;
+      return next.reply;
+    };
+    say("Allen's cake");
+    expect(say('I sell food')).toMatch(/Bakery/);
+    const afterNo = say('No');
+    expect(afterNo).not.toMatch(/Bakery/);
+    // And the second question is a different question — repeating the first one
+    // is what made it a loop.
+    expect(afterNo).toMatch(/Name the actual goods/);
+    expect(say('I sell different types of food')).not.toMatch(/Bakery/);
+  });
+
+  it('remembers every refusal, not just the last one', () => {
+    const first = advanceOnboarding('create_category_confirm' as never, 'No', 'en', {
+      businessName: 'X', businessSubCategory: 'Bakery', rejectedCategories: 'Mama Lishe',
+    });
+    expect(first.draft?.rejectedCategories).toContain('Mama Lishe');
+    expect(first.draft?.rejectedCategories).toContain('Bakery');
+  });
+});

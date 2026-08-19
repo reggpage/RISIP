@@ -146,10 +146,23 @@ function confirmation(subCategory: BusinessSubCategory): string {
 }
 
 /** Classify only when the text carries enough evidence; otherwise ask. */
-export function classifyBusinessDescription(input: string): BusinessClassification | null {
+/**
+ * Classify what a business sells.
+ *
+ * `rejected` holds sub-categories the person has already said NO to. Without it
+ * the classifier offered "Bakery" to a shop called "Allen's cake", was told no,
+ * and offered "Bakery" again — because the business NAME was being classified
+ * alongside the description, and "cake" outweighed everything the person then
+ * said. A guess that has been refused is not a guess worth repeating.
+ */
+export function classifyBusinessDescription(
+  input: string,
+  rejected: string[] = [],
+): BusinessClassification | null {
   const text = normalize(input).slice(0, 500);
   if (text.length < 3) return null;
-  const scored = RULES.map((rule) => {
+  const refused = new Set(rejected.map((name) => normalize(name)));
+  const scored = RULES.filter((rule) => !refused.has(normalize(rule.subCategory))).map((rule) => {
     const matched = rule.keywords.filter(({ phrase }) => text.includes(normalize(phrase)));
     return { rule, matched, score: matched.reduce((sum, item) => sum + (item.weight ?? 1), 0) };
   }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score);

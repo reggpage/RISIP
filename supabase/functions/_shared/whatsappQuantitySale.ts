@@ -129,7 +129,7 @@ const OPENER = /^(?:leo\s+|today\s+)?(?:nimeuza|niliuza|nimuza|uza|mauzo|(?:i\s+
  * order to decline. One definition, so the two can never disagree.
  */
 export const SALE_HEADER =
-  /^\s*(?:mauzo|sales?)\b[\s,]*(?:ya\s+|za\s+|of\s+)?(?:leo|jana|juzi|siku(?:\s+hii)?|today|yesterday)?[\s,]*(rejareja|reja\s*reja|retail|jumla|wholesale)?\s*:?\s*$/i;
+  /^\s*(?:mauzo|sales?|nimeuza|niliuza|nimuza|tumeuza|sold)\b[\s,]*(?:ya\s+|za\s+|of\s+)?(?:leo|jana|juzi|siku(?:\s+hii)?|today|yesterday)?[\s,]*(rejareja|reja\s*reja|retail|jumla|wholesale)?\s*:?\s*$/i;
 
 // Anything that states money makes this somebody else's message: the ordinary
 // sale parser and the comma-list parser both handle stated prices, and they

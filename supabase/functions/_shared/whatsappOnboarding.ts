@@ -71,6 +71,17 @@ const T = {
     sw: 'Biashara yako inauza nini au inatoa huduma gani? Mfano: “nauza daftari, kalamu na kutoa photocopy”.',
     en: 'What does your business sell or what service does it provide? For example: “I sell books and stationery and offer photocopying”.',
   },
+  /**
+   * Asked after a NO, and deliberately not the same question again.
+   *
+   * "I sell food" was refused as Bakery, and repeating the identical prompt got
+   * "I sell different types of food" — no more useful, because the question had
+   * not told them what would help. Naming the actual goods is what helps.
+   */
+  askDescriptionAgain: {
+    sw: 'Sawa, sio hiyo. Nitajie bidhaa hasa unazouza, mbili au tatu — mfano “chipsi na soda”, “keki na maandazi”, au “sukari, unga na sabuni”.',
+    en: 'Fine, not that one. Name the actual goods you sell, two or three — for example “chips and soda”, “cakes and buns”, or “sugar, flour and soap”.',
+  },
   unclearDescription: {
     sw: 'Sijaweza kutambua aina ya biashara kwa uhakika. Nitajie bidhaa au huduma kuu mbili au tatu, mfano “chips na kuku”, “nguo na viatu”, au “daftari na photocopy”.',
     en: 'I could not classify the business confidently. Tell me two or three main products or services, for example “chips and chicken”, “clothes and shoes”, or “books and photocopying”.',
@@ -204,7 +215,15 @@ export function advanceOnboarding(
 
     case 'create_description': {
       if (said.length < 3) return stay(T.unclearDescription[lang]);
-      const classified = classifyBusinessDescription(`${draft.businessName ?? ''} ${said}`);
+      // MEASURED FAILURE: "Allen's cake" + "I sell food" was classified as
+      // Bakery, refused, and classified as Bakery again — because the business
+      // NAME was thrown in with the description every time, and "cake"
+      // outweighed everything the person said afterwards. Once they have
+      // described the business in words, those words are the evidence; the name
+      // only helps on the first attempt, when there is nothing else to go on.
+      const refused = (draft.rejectedCategories ?? '').split('|').filter(Boolean);
+      const evidence = refused.length > 0 ? said : `${draft.businessName ?? ''} ${said}`;
+      const classified = classifyBusinessDescription(evidence, refused);
       if (!classified) return stay(T.unclearDescription[lang]);
       const reply = lang === 'sw'
         ? `${classified.swahili_confirmation_message}\n\nJibu NDIYO au HAPANA.`
@@ -229,12 +248,18 @@ export function advanceOnboarding(
         return { step: 'create_person', reply: T.askPerson[lang], action: { kind: 'none' }, draft };
       }
       if (/^(?:hapana|no|wrong|sio|si sahihi)[.! ]*$/i.test(said)) {
+        // The refused guess is remembered so it cannot be offered again, and the
+        // next question says plainly that naming the goods is what helps —
+        // asking the identical question after a NO is what made this a loop.
+        const refused = [...(draft.rejectedCategories ?? '').split('|').filter(Boolean)];
+        if (draft.businessSubCategory) refused.push(draft.businessSubCategory);
         return {
           step: 'create_description',
-          reply: T.askDescription[lang],
+          reply: T.askDescriptionAgain[lang],
           action: { kind: 'none' },
           draft: {
             businessName: draft.businessName ?? '',
+            rejectedCategories: refused.join('|'),
           },
         };
       }
