@@ -55,6 +55,7 @@ import {
   splitWhatsAppText,
   detectDailyRecordPriceAnomalies,
   type DailyRecordClarification,
+  type DailyRecordParse,
   type DailyRecordConversation,
   type ParsedDailyRecord,
 } from '../_shared/whatsappDailyRecords.ts';
@@ -537,6 +538,53 @@ function startsAnotherTopic(text: string): boolean {
   );
 }
 
+/**
+ * Decide "total or each?" from the shop's own price list instead of asking.
+ *
+ * "nimeuza ugali 2 3000" has two readings — 3,000 each, or 3,000 for both. A
+ * shopkeeper who priced ugali last week finds the question absurd, and they are
+ * right: only one of the two readings matches what they charge.
+ *
+ * Null means the question still deserves asking. That is the case when the
+ * product is unknown, when it has no saved price, when BOTH readings match
+ * (a price of exactly half the total is a real coincidence, not a decision to
+ * make on somebody's behalf), and when neither does.
+ */
+async function settlePriceAmbiguity(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  draft: DailyRecordClarification,
+): Promise<DailyRecordParse | null> {
+  const sale = draft.sale;
+  if (!sale || !(sale.quantity > 1) || !(sale.amount > 0)) return null;
+
+  const resolved = await resolveProductForRead(db, identity, sale.description);
+  if (resolved.error || resolved.resolution.kind !== 'matched') return null;
+
+  const { data, error } = await db.rpc('wa_product_pricing', {
+    p_company_id: identity.company_id,
+    p_product_keys: [resolved.resolution.match.productKey],
+  });
+  if (error) return null;
+  const row = ((data ?? []) as Array<Record<string, unknown>>)[0];
+  if (!row) return null;
+
+  const prices = [row.retail_price, row.wholesale_price]
+    .filter((value) => value != null)
+    .map((value) => Number(value))
+    .filter((value) => value > 0);
+  if (prices.length === 0) return null;
+
+  // Two percent, so a rounded price still lands. Anything looser starts
+  // agreeing with numbers the shop never chose.
+  const matches = (value: number) => prices.some((price) => Math.abs(value - price) <= price * 0.02);
+  const perItemReading = matches(sale.amount);
+  const totalReading = matches(sale.amount / sale.quantity);
+  if (perItemReading === totalReading) return null;
+
+  return resumeDailyRecordClarification(draft, perItemReading ? 'unit_price' : 'total');
+}
+
 async function resolveProductForRead(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
@@ -711,7 +759,7 @@ async function askForBuyingPrice(
       updated_at: new Date().toISOString(),
     }, { onConflict: 'identity_id' });
 
-    await replyQuietly(phone, costQuestion(prompt, lang));
+    await sendReplyText(phone, costQuestion(prompt, lang));
     await audit(db, identity, waMessageId, 'product_cost', 'asked', prompt.productKey);
   } catch {
     /* Never let an optional question disturb a saved record. */
@@ -959,7 +1007,7 @@ async function answerProductAnalytics(
   request: ProductAnalyticsRequest,
   lang: Lang,
 ): Promise<void> {
-  await replyQuietly(phone, await productAnalyticsToolReply(db, identity, request, lang));
+  await sendReplyText(phone, await productAnalyticsToolReply(db, identity, request, lang));
 }
 
 async function productAnalyticsToolReply(
@@ -1767,6 +1815,11 @@ let auditedText: string | null = null;
 
 const LINK_TOKEN = /^\s*link\b/i;
 
+/** A LINK message carries a single-use secret and is never written down. */
+function isLinkMessage(text: string | null | undefined): boolean {
+  return LINK_TOKEN.test(String(text ?? ''));
+}
+
 function rememberForAudit(body: string | null | undefined): void {
   const text = String(body ?? '').trim();
   // A LINK message carries a single-use secret. It is never worth learning from
@@ -1798,7 +1851,7 @@ function maskDigits(text: string): string {
 }
 
 /** Best-effort reply. A send failure must never turn into a non-200 for Meta. */
-async function replyQuietly(to: string, body: string): Promise<void> {
+async function sendReplyText(to: string, body: string): Promise<void> {
   try {
     await sendWhatsAppText(to, body);
   } catch (err) {
@@ -1812,7 +1865,7 @@ async function replyDailyRecordConfirmationQuietly(
   lang: Lang,
 ): Promise<void> {
   for (const chunk of buildDailyRecordConfirmationChunks(record, lang)) {
-    await replyQuietly(to, chunk);
+    await sendReplyText(to, chunk);
   }
 }
 
@@ -1822,7 +1875,7 @@ async function replyDailyRecordBatchConfirmationQuietly(
   lang: Lang,
 ): Promise<void> {
   for (const chunk of splitWhatsAppText(buildDailyRecordBatchConfirmation(records, lang))) {
-    await replyQuietly(to, chunk);
+    await sendReplyText(to, chunk);
   }
 }
 
@@ -2171,6 +2224,29 @@ Deno.serve(async (req) => {
          * The write branches reply through this, so the rider question is named
          * once — on the first reply the message produces — and then answered.
          */
+        /**
+         * Send, and remember that it was said.
+         *
+         * MEASURED FAILURE: the owner asked which two products were uncounted,
+         * then "ni zipi hizo?", and Risip had no idea what "hizo" meant. Only
+         * turns the MODEL answered were ever written down — the deterministic
+         * read tools, which answer most questions, left no trace at all. So the
+         * next message arrived with an empty history and a pronoun in it.
+         *
+         * Every reply now goes through here, whichever parser produced it, and
+         * the pair is stored. One store per inbound message: the flag stops a
+         * branch that sends two messages from writing the exchange twice.
+         */
+        const replyQuietly = async (to: string, text: string) => {
+          await sendReplyText(to, text);
+          if (identity && body?.trim() && !visibleTurnRemembered && !isLinkMessage(body)) {
+            visibleTurnRemembered = await storeAssistantExchange(
+              db, identity, waMessageId, body, text,
+              { topic: null, entities: {}, lastTool: null },
+            );
+          }
+        };
+
         const reply = async (to: string, text: string) => {
           if (!mixed || !riderPending) {
             await replyQuietly(to, text);
@@ -4355,7 +4431,17 @@ Deno.serve(async (req) => {
             // Anything else falls through to the parsers below, unchanged.
           }
 
-          const parsed = parseDailyRecord(writeBody, lang);
+          let parsed = parseDailyRecord(writeBody, lang);
+          // "Bei hii ni jumla au bei ya kila moja?" is a fair question about a
+          // product nobody has priced. It is a silly one about a product the
+          // shop priced last week — the owner's words: "its insane to ask if
+          // this is reja reja or jumla for ugali". The price list can tell the
+          // two readings apart, so it does, and the question survives only when
+          // neither reading matches what the shop actually charges.
+          if (parsed.kind === 'clarify' && parsed.reason === 'ambiguity' && parsed.draft) {
+            const settled = await settlePriceAmbiguity(db, identity, parsed.draft);
+            if (settled) parsed = settled;
+          }
           if (parsed.kind === 'clarify') {
             if (parsed.draft) {
               await db.from('whatsapp_conversations').upsert({

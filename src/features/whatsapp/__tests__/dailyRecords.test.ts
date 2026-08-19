@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   MAX_DAILY_RECORD_AMOUNT,
@@ -361,5 +363,37 @@ describe('questions the eval set caught, the first time it was ever run', () => 
     expect(isDailyRecordCandidate('nimeuza daftari 10')).toBe(true);
     expect(isDailyRecordCandidate('nimeuza bidhaa')).toBe(true);
     expect(isDailyRecordCandidate('nimeuza daftari 5 kwa 7500')).toBe(true);
+  });
+});
+
+describe('deciding "total or each" instead of asking', () => {
+  it('still asks when the parser alone cannot tell', () => {
+    // The webhook settles this from the price list; the parser on its own has
+    // no shop behind it and must keep asking.
+    expect(parseDailyRecord('nimeuza ugali 2 3000', 'sw'))
+      .toMatchObject({ kind: 'clarify', reason: 'ambiguity' });
+  });
+
+  it('resumes to the unit-price reading', () => {
+    const parsed = parseDailyRecord('nimeuza ugali 2 3000', 'sw');
+    if (parsed.kind !== 'clarify' || !parsed.draft) throw new Error('expected a draft');
+    expect(resumeDailyRecordClarification(parsed.draft, 'unit_price'))
+      .toMatchObject({ kind: 'parsed', record: { amount: 6000 } });
+  });
+
+  it('resumes to the total reading', () => {
+    const parsed = parseDailyRecord('nimeuza ugali 2 3000', 'sw');
+    if (parsed.kind !== 'clarify' || !parsed.draft) throw new Error('expected a draft');
+    expect(resumeDailyRecordClarification(parsed.draft, 'total'))
+      .toMatchObject({ kind: 'parsed', record: { amount: 3000 } });
+  });
+
+  it('is wired to the price list, and only settles one reading', () => {
+    const webhook = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+    expect(webhook).toContain('const settled = await settlePriceAmbiguity(db, identity, parsed.draft);');
+    // Both readings matching is a coincidence, not a decision to make for
+    // somebody: the question survives.
+    expect(webhook).toContain('if (perItemReading === totalReading) return null;');
   });
 });
