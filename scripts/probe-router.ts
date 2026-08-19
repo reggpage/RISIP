@@ -59,6 +59,17 @@ const CORPUS: Case[] = [
   { said: 'asante sana', expect: 'conversational_ai' },
   { said: 'naweza kufanya nini hapa', expect: 'conversational_ai' },
 
+  // ── Two instructions in one message ────────────────────────────────────
+  // The first is acted on, the second is named back. Before the split these
+  // reached the daily record parser whole and were asked whether 100 was the
+  // price of each notebook.
+  { said: 'nimeuza daftari kubwa 10 rejareja naongeza daftari 100 stoo', expect: 'quantity_sale' },
+  // KNOWN GAP, unchanged by the split: a one-line "naongeza sukari 20" is not
+  // a stock count to any parser, so the acted half lands on the record path.
+  { said: 'naongeza sukari 20 kisha nimeuza mkate 4', expect: 'daily_record' },
+  // One till roll is never torn in half.
+  { said: 'nimeuza daftari 5 kwa 7500 na nimeuza kalamu 3 kwa 1500', expect: 'daily_record_parsed' },
+
   // ── Known gaps. Listed so they stop being a surprise ───────────────────
   { said: 'product gani inauza sana', expect: 'product_analytics' },
   { said: 'nimeuza nguvu ya sala 8 marker 7 na anton wa padua 6', expect: 'quantity_sale' },

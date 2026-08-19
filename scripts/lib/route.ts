@@ -24,6 +24,7 @@ import { parseSellingPrice } from '../../supabase/functions/_shared/whatsappSell
 import { parseSellingPriceBatch } from '../../supabase/functions/_shared/whatsappSellingPriceBatch.ts';
 import { parseStockCount } from '../../supabase/functions/_shared/whatsappStock.ts';
 import { parseStockCountBatch } from '../../supabase/functions/_shared/whatsappStockBatch.ts';
+import { splitSecondInstruction } from '../../supabase/functions/_shared/whatsappMixedTopics.ts';
 
 /**
  * What the deterministic parsers say this message is worth.
@@ -47,6 +48,14 @@ export function computedAmount(text: string): number | null {
   return single.kind === 'parsed' ? single.record.amount : null;
 }
 
+/** The webhook's own test for "does a write parser take this half". */
+function claimsWrite(said: string): boolean {
+  return Boolean(
+    parseStockCountBatch(said) ?? parseStockCount(said) ?? parseSellingPrice(said)
+    ?? parseProductCostBatch(said) ?? parseProductCost(said),
+  ) || isDailyRecordCandidate(said);
+}
+
 /**
  * Which parser claims this message.
  *
@@ -55,6 +64,11 @@ export function computedAmount(text: string): number | null {
  * that collapsed them all would pass cases it never actually checked.
  */
 export function route(text: string): string {
+  // The webhook splits two instructions before any parser sees the message, so
+  // this table has to as well or it stops describing production. The second
+  // half is named back to the sender, never routed.
+  const split = splitSecondInstruction(text);
+  if (split && claimsWrite(split.action)) return route(split.action);
   if (parseLanguageCommand(text)) return 'change_language';
   if (parseSellingPriceBatch(text)) return 'selling_price_batch';
   if (parseStockCountBatch(text)) return 'stock_count_batch';

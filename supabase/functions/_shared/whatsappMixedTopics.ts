@@ -140,3 +140,50 @@ export function secondInstructionNotice(leftover: string, lang: Lang): string {
     ? `\n\n📌 Sijashughulikia: "${shown}". Tuma peke yake ili nikuthibitishie vizuri.`
     : `\n\n📌 Not handled: "${shown}". Send it on its own so I can confirm it properly.`;
 }
+
+/**
+ * Two INSTRUCTIONS in one message, with nothing between them but a space.
+ *
+ * MEASURED FAILURE, the owner's own screenshot: "nimeuza daftari kubwa 10
+ * rejareja naongeza daftari 100 stoo" — a sale and a restock in one breath. No
+ * comma, no question mark, so splitRiderQuestion saw one segment; the daily
+ * record parser then took the whole line and asked whether 100 was the price of
+ * each notebook. Two instructions, one of them misread as part of the other.
+ *
+ * The one-write rule above still holds: the first instruction is carried out,
+ * the second is NAMED back. What changes is that the second is now SEEN.
+ *
+ * The cut is only made between DIFFERENT kinds of instruction — a sale then a
+ * restock, a restock then a sale. Never between two of the same kind, because
+ * "nimeuza daftari 5 kwa 7500 na nimeuza kalamu 3 kwa 1500" is one till roll
+ * with two lines and cutting it would lose the second line's money.
+ */
+export type SplitInstruction = { action: string; leftover: string };
+
+const SALE_OPENER =
+  /\b(?:nimeuza|niliuza|nimuza|tumeuza|sold|nimenunua|nilinunua|nimelipa|nimetumia|mauzo)\b/iu;
+const STOCK_OPENER =
+  /\b(?:naongeza|ninaongeza|nimeongeza|ongeza\s+(?:bidhaa|stock|store|mzigo)|add\s+(?:products?|stock|items?)|nimehesabu)\b/iu;
+
+export function splitSecondInstruction(text: string | null | undefined): SplitInstruction | null {
+  const said = String(text ?? '');
+  if (!said.trim() || said.length > 2000) return null;
+
+  const sale = SALE_OPENER.exec(said);
+  const stock = STOCK_OPENER.exec(said);
+  if (!sale || !stock) return null;
+  // Whichever kind opens the message keeps the front; the other kind, appearing
+  // later, is the second instruction.
+  const cut = Math.max(sale.index, stock.index);
+  if (cut === Math.min(sale.index, stock.index)) return null;
+
+  const action = said.slice(0, cut)
+    // The conjunction the second instruction was hanging off is now dangling.
+    .replace(/(?:[\s,;.]|\bna\b|\bpia\b|\bkisha\b|\bhalafu\b|\band\b|\balso\b)+$/iu, '')
+    .trim();
+  const leftover = said.slice(cut).trim();
+  if (!action || !leftover) return null;
+  // A one-word remainder on either side is a fragment of the other half.
+  if (words(action) < 3 || words(leftover) < 2) return null;
+  return { action, leftover };
+}

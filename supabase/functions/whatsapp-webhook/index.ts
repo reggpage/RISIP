@@ -220,6 +220,8 @@ import {
 } from '../_shared/whatsappStockBatch.ts';
 import {
   riderQuestionNotice,
+  secondInstructionNotice,
+  splitSecondInstruction,
   splitRiderQuestion,
 } from '../_shared/whatsappMixedTopics.ts';
 import {
@@ -2310,13 +2312,24 @@ Deno.serve(async (req) => {
         const body: string | null = message?.text?.body ?? null;
         const identity = await resolveWhatsAppContext(db, rawIdentity as { id: string; revoked_at: string | null } | null);
         const lang: Lang = identity?.lang ?? detectLanguage(body) ?? 'en';
-        const finish = (status: string, error?: string) =>
-          db.from('whatsapp_messages')
+        const finish = async (status: string, error?: string) => {
+          // A second instruction is named on the way out, whichever branch
+          // handled the first one. MEASURED FAILURE: the notice used to hang
+          // off reply(), and the sale and daily-record confirmations do not go
+          // through reply() — they send their own chunks — so on exactly the
+          // messages where somebody had asked for two things, the second was
+          // dropped in silence.
+          if (leftoverPending && leftover && identity) {
+            leftoverPending = false;
+            await sendReplyText(phone, secondInstructionNotice(leftover.leftover, lang).trimStart());
+          }
+          return db.from('whatsapp_messages')
             .update({
               status, ...(error ? { last_error: error } : {}),
               processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
             })
             .eq('wa_message_id', waMessageId);
+        };
 
         // Everything audited from here on records what was asked, not only what
         // was done with it. Cleared per message so nothing leaks across.
@@ -2334,7 +2347,14 @@ Deno.serve(async (req) => {
           ?? parseProductCostBatch(said) ?? parseProductCost(said),
         ) || isDailyRecordCandidate(said);
         const mixed = rider && claimsWrite(rider.action) ? rider : null;
-        let writeBody = mixed ? mixed.action : body;
+        // Two instructions with nothing between them: "…10 rejareja naongeza
+        // daftari 100 stoo". Only trusted when the first half still reaches a
+        // write parser on its own, and only when the rider split found nothing
+        // — a question riding along is answered, and that path already works.
+        const secondAction = mixed ? null : splitSecondInstruction(body);
+        const leftover = secondAction && claimsWrite(secondAction.action) ? secondAction : null;
+        let leftoverPending = leftover !== null;
+        let writeBody = mixed ? mixed.action : (leftover ? leftover.action : body);
         let riderPending = mixed !== null;
         let visibleTurnRemembered = false;
         /**
