@@ -95,6 +95,70 @@ const MONTH_LABEL_EN = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
+const SMALL_COUNTS: Record<string, number> = {
+  moja: 1, mmoja: 1, one: 1,
+  mbili: 2, miwili: 2, two: 2,
+  tatu: 3, mitatu: 3, three: 3,
+  nne: 4, minne: 4, four: 4,
+  tano: 5, mitano: 5, five: 5,
+  sita: 6, six: 6,
+  saba: 7, seven: 7,
+  nane: 8, minane: 8, eight: 8,
+  tisa: 9, nine: 9,
+  kumi: 10, ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+};
+
+const ENGLISH_TENS: Record<string, number> = {
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90,
+};
+
+/** Counts typed as digits or the short number words people normally use in chat. */
+function parseCount(value: string | null | undefined): number | null {
+  const said = normalise(String(value ?? '')).replace(/-/g, ' ');
+  if (/^\d{1,3}$/.test(said)) {
+    const count = Number(said);
+    return count >= 1 ? count : null;
+  }
+  if (SMALL_COUNTS[said]) return SMALL_COUNTS[said];
+
+  const swTeen = said.match(/^kumi(?:\s+na)?\s+(moja|mbili|tatu|nne|tano|sita|saba|nane|tisa)$/);
+  if (swTeen) return 10 + SMALL_COUNTS[swTeen[1]];
+
+  const swTwenty = said.match(/^ishirini(?:\s+na)?(?:\s+(moja|mbili|tatu|nne|tano|sita|saba|nane|tisa))?$/);
+  if (swTwenty) return 20 + (swTwenty[1] ? SMALL_COUNTS[swTwenty[1]] : 0);
+
+  const enCompound = said.match(/^(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:\s+(one|two|three|four|five|six|seven|eight|nine))?$/);
+  if (enCompound) return ENGLISH_TENS[enCompound[1]] + (enCompound[2] ? SMALL_COUNTS[enCompound[2]] : 0);
+  return null;
+}
+
+const COUNT_WORDS = '[a-z0-9]+(?:\\s+(?:na|and)\\s+[a-z0-9]+)?';
+
+function relativeCount(said: string, swUnit: string, enUnit: string, swEndings: string): number | null {
+  const sw = said.match(new RegExp(`\\b(?:${swUnit})\\s+(${COUNT_WORDS})\\s+(?:${swEndings}|nyuma)\\b`));
+  if (sw) return parseCount(sw[1]);
+
+  const en = said.match(new RegExp(`\\b(${COUNT_WORDS})\\s+(?:${enUnit})\\s+(?:ago|back)\\b`));
+  return en ? parseCount(en[1]) : null;
+}
+
 /**
  * Hours of the local day. Deliberately generous at the edges: somebody who says
  * a receipt came in "asubuhi" is not going to quarrel about 11:58.
@@ -196,6 +260,58 @@ function explicitDate(said: string, now: Date): ResolvedRange | null {
   return null;
 }
 
+function explicitDateRange(said: string, now: Date): ResolvedRange | null {
+  const split = said.match(/\b(?:kutoka|from)\s+(.+?)\s+(?:hadi|mpaka|to|through|until)\s+(.+)$/)
+    ?? said.match(/(.+?)\s+(?:hadi|mpaka|through|until)\s+(.+)$/);
+  if (!split) return null;
+
+  const first = explicitDate(split[1], now);
+  const last = explicitDate(split[2], now);
+  if (!first || !last || first.from.getTime() > last.from.getTime()) return null;
+  return {
+    from: first.from,
+    to: last.to,
+    timeOfDay: null,
+    sw: `kutoka ${first.sw} hadi ${last.sw}`,
+    en: `from ${first.en} to ${last.en}`,
+  };
+}
+
+function weekAgo(today: Date, count: number): ResolvedRange | null {
+  if (count < 1 || count > 999) return null;
+  const thisWeek = startOfWeek(today);
+  const from = shiftDays(thisWeek, -7 * count);
+  const to = shiftDays(thisWeek, -7 * (count - 1));
+  return {
+    from, to, timeOfDay: null,
+    sw: count === 1 ? 'wiki iliyopita' : `wiki ${count} zilizopita`,
+    en: count === 1 ? 'last week' : `${count} weeks ago`,
+  };
+}
+
+function monthAgo(now: Date, count: number): ResolvedRange | null {
+  if (count < 1 || count > 999) return null;
+  return {
+    from: startOfMonth(now, count),
+    to: startOfMonth(now, count - 1),
+    timeOfDay: null,
+    sw: count === 1 ? 'mwezi uliopita' : `miezi ${count} nyuma`,
+    en: count === 1 ? 'last month' : `${count} months ago`,
+  };
+}
+
+function yearAgo(now: Date, count: number): ResolvedRange | null {
+  if (count < 1 || count > 999) return null;
+  const { year } = localParts(now);
+  return {
+    from: midnight(year - count, 1, 1),
+    to: midnight(year - count + 1, 1, 1),
+    timeOfDay: null,
+    sw: count === 1 ? 'mwaka jana' : `miaka ${count} nyuma`,
+    en: count === 1 ? 'last year' : `${count} years ago`,
+  };
+}
+
 /**
  * Turns whatever the person wrote into a real window, or null when they named no
  * period at all and the caller should keep its own default.
@@ -219,6 +335,10 @@ export function resolveDateRange(text: string | null | undefined, now = new Date
       en: `${range.en} ${window.en}`,
     };
   };
+
+  // ── An explicit range beats any date word contained inside it ────────────
+  const explicitRange = explicitDateRange(said, now);
+  if (explicitRange) return withTime(explicitRange);
 
   // ── Named days ────────────────────────────────────────────────────────────
   if (/\bjuzi\b|\bmtondo\b|day before yesterday/.test(said)) {
@@ -245,11 +365,12 @@ export function resolveDateRange(text: string | null | undefined, now = new Date
   if (explicit) return withTime(explicit);
 
   // ── Rolling windows ───────────────────────────────────────────────────────
-  const rolling = said.match(/\b(?:siku|days?)\s+(\d{1,3})\s*(?:zilizopita|zilizopita|iliyopita|ago|last)?\b/)
-    ?? said.match(/\b(?:last|past)\s+(\d{1,3})\s+days?\b/);
+  const rolling = said.match(new RegExp(`\\b(?:siku|days?)\\s+(${COUNT_WORDS})\\s*(?:zilizopita|iliyopita|ago|last)?\\b`))
+    ?? said.match(new RegExp(`\\b(?:last|past)\\s+(${COUNT_WORDS})\\s+days?\\b`));
   if (rolling) {
-    const days = Math.min(Number(rolling[1]), 366);
-    if (days >= 1) {
+    const parsedDays = parseCount(rolling[1]);
+    const days = parsedDays === null ? null : Math.min(parsedDays, 366);
+    if (days !== null && days >= 1) {
       const start = shiftDays(today, -(days - 1));
       return withTime({
         from: start, to: shiftDays(today, 1), timeOfDay: null,
@@ -260,18 +381,26 @@ export function resolveDateRange(text: string | null | undefined, now = new Date
 
   // ── Weeks ─────────────────────────────────────────────────────────────────
   const thisWeek = startOfWeek(today);
+  const weeksBack = relativeCount(said, 'wiki', 'weeks?', 'zilizopita|iliyopita');
+  if (weeksBack !== null) {
+    const resolved = weekAgo(today, weeksBack);
+    if (resolved) return withTime(resolved);
+  }
   if (/\bwiki\s+(?:iliyopita|jana|iliyoisha|liyopita)\b|\blast week\b|\bwiki ya jana\b/.test(said)) {
-    const start = shiftDays(thisWeek, -7);
-    return withTime({ from: start, to: thisWeek, timeOfDay: null, sw: 'wiki iliyopita', en: 'last week' });
+    return withTime(weekAgo(today, 1)!);
   }
   if (/\bwiki\b|\bweek\b/.test(said)) {
     return withTime({ from: thisWeek, to: shiftDays(today, 1), timeOfDay: null, sw: 'wiki hii', en: 'this week' });
   }
 
   // ── Months ────────────────────────────────────────────────────────────────
+  const monthsBack = relativeCount(said, 'mwezi|miezi', 'months?', 'uliopita|iliyopita|zilizopita');
+  if (monthsBack !== null) {
+    const resolved = monthAgo(now, monthsBack);
+    if (resolved) return withTime(resolved);
+  }
   if (/\bmwezi\s+(?:uliopita|jana|uliyopita|uliokwisha)\b|\blast month\b/.test(said)) {
-    const start = startOfMonth(now, 1);
-    return withTime({ from: start, to: startOfMonth(now, 0), timeOfDay: null, sw: 'mwezi uliopita', en: 'last month' });
+    return withTime(monthAgo(now, 1)!);
   }
   if (/\bmwezi\b|\bmonth\b/.test(said)) {
     return withTime({ from: startOfMonth(now, 0), to: shiftDays(today, 1), timeOfDay: null, sw: 'mwezi huu', en: 'this month' });
@@ -279,11 +408,13 @@ export function resolveDateRange(text: string | null | undefined, now = new Date
 
   // ── Years ─────────────────────────────────────────────────────────────────
   const { year } = localParts(now);
+  const yearsBack = relativeCount(said, 'mwaka|miaka', 'years?', 'uliopita|iliyopita|zilizopita');
+  if (yearsBack !== null) {
+    const resolved = yearAgo(now, yearsBack);
+    if (resolved) return withTime(resolved);
+  }
   if (/\bmwaka\s+(?:jana|uliopita)\b|\blast year\b/.test(said)) {
-    return withTime({
-      from: midnight(year - 1, 1, 1), to: midnight(year, 1, 1), timeOfDay: null,
-      sw: 'mwaka jana', en: 'last year',
-    });
+    return withTime(yearAgo(now, 1)!);
   }
   if (/\bmwaka\b|\byear\b/.test(said)) {
     return withTime({

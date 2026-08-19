@@ -144,6 +144,34 @@ export function newProductOffer(names: string[], lang: Lang): string {
       + 'Leave out "jumla" for a single price. If a name is mistyped, fix it rather than adding it twice.';
 }
 
+/**
+ * A quantity-only sale cannot be priced safely until every product exists in
+ * the company's catalogue. Keep that distinction explicit: the sale has not
+ * been recorded, and registering the product is the next step.
+ */
+export function newProductSaleOffer(names: string[], lang: Lang): string {
+  const next = lang === 'sw'
+    ? '\n\nNimehifadhi maelezo ya mauzo haya kwa muda. Ukimaliza kusajili bidhaa, nitakuonyesha mauzo hayo tena uyathibitishe kwa NDIYO.'
+    : '\n\nI have kept this sale temporarily. After you register the product, I will show the sale again for a separate YES confirmation.';
+  return newProductOffer(names, lang) + next;
+}
+
+export function newProductSaleWorkerBlocked(names: string[], lang: Lang): string {
+  const rows = names.map((name) => `  • ${name}`).join('\n');
+  return lang === 'sw'
+    ? `Bidhaa hizi hazipo kwenye store ya kampuni:\n${rows}\n\n`
+      + 'Sijaandika mauzo haya. Muombe owner au accountant azisajili kwanza; baada ya hapo utaweza kurekodi mauzo yake.'
+    : `These products are not in the company store:\n${rows}\n\n`
+      + 'I did not record this sale. Ask an owner or accountant to register them first; then you can record their sales.';
+}
+
+export function newProductPricingIncomplete(names: string[], lang: Lang): string {
+  const rows = names.map((name) => `  • ${name}`).join('\n');
+  return lang === 'sw'
+    ? `Bado sijapata bei za bidhaa hizi:\n${rows}\n\nTuma bei ya kununua na ya kuuza kwa kila moja.`
+    : `I still need prices for these products:\n${rows}\n\nSend the buying and selling price for each one.`;
+}
+
 export function newProductConfirmation(products: NewProductPricing[], lang: Lang): string {
   const rows = products.map((product, index) => {
     const trade = product.wholesale === null
@@ -176,8 +204,13 @@ export function newProductConfirmation(products: NewProductPricing[], lang: Lang
     : `New products — ${products.length}:\n${rows}${warning}\n\nAdd them to the store? YES / NO`;
 }
 
-export function newProductSaved(products: NewProductPricing[], lang: Lang): string {
+export function newProductSaved(products: NewProductPricing[], lang: Lang, saleWillResume = false): string {
   const first = products[0]?.product ?? '';
+  if (saleWillResume) {
+    return lang === 'sw'
+      ? `✅ Nimeweka bidhaa ${products.length} kwenye store.\n\nSasa kagua mauzo yaliyokuwa yanasubiri hapa chini.`
+      : `✅ Added ${products.length} product(s) to the store.\n\nNow review the sale that was waiting below.`;
+  }
   return lang === 'sw'
     ? `✅ Nimeweka bidhaa ${products.length} kwenye store.\n\n`
       + `Sasa andika mauzo yake kawaida: "nimeuza ${first} 2".`

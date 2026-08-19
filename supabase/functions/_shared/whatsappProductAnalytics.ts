@@ -1,4 +1,5 @@
 import type { Lang } from './whatsappIntent.ts';
+import { resolveDateRange } from './whatsappDateRange.ts';
 
 export type ProductRankBy = 'quantity' | 'revenue' | 'margin';
 export type ProductPeriod = 'today' | 'week' | 'month' | 'year';
@@ -7,6 +8,8 @@ export type ProductAnalyticsRequest = {
   rankBy: ProductRankBy;
   period: ProductPeriod;
   compareNames: string[];
+  /** Exact server-resolved window for jana/juzi/specific dates. */
+  range?: { from: string; to: string; sw: string; en: string } | null;
 };
 
 export type ProductAnalyticsContext = {
@@ -38,10 +41,10 @@ export type ProductAggregate = {
 
 const clean = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim();
 
-export function parseProductAnalyticsRequest(text: string | null | undefined): ProductAnalyticsRequest | null {
+export function parseProductAnalyticsRequest(text: string | null | undefined, now = new Date()): ProductAnalyticsRequest | null {
   const value = clean(text ?? '');
   if (!value) return null;
-  const asksProduct = /(?:\b(?:bidhaa|bidha|product|products)\b.*\b(?:gani|which|zote|inauza|inauzika|imeuzwa|iliuzwa|ninazouza|ninauza|selling|sold|faida|profit|revenue|mapato)\b)|(?:\b(?:inauza zaidi|inauza sana|inauza ngapi|imeuzw\w* ngap\w*|iliuzwa ngapi|(?:ina|kina)uzika sana|best selling|(?:what |wht )?sold (?:the )?most|top)\b)/.test(value);
+  const asksProduct = /(?:\b(?:bidhaa|bidha|product|products)\b.*\b(?:gani|which|zote|inauza|inauzika|imeuzwa|iliuzwa|ninazouza|ninauza|selling|sold|faida|profit|revenue|mapato)\b)|(?:\b(?:inauza zaidi|inauza sana|inauza ngapi|imeuzw\w* ngap\w*|iliuzwa ngapi|(?:ina|kina)uzika sana|nini (?:kiliuza|iliuza|kiliuzwa|iliyouzwa) (?:zaidi|sana)|best selling|(?:what |wht )?sold (?:the )?most|top)\b)/.test(value);
   const asksProfit = /\b(faida|margin|profit|earn)\b/.test(value);
   const asksRevenue = /\b(mapato|revenue|money|fedha nyingi|pesa nyingi)\b/.test(value);
   // A bare "faida ya leo" is a period profit question, not a product ranking.
@@ -64,12 +67,17 @@ export function parseProductAnalyticsRequest(text: string | null | undefined): P
   const compareNames = compareMatch
     ? [clean(compareMatch[1]), clean(compareMatch[2])].filter(Boolean).slice(0, 2)
     : namedProduct && !isGenericProductPhrase ? [clean(namedProduct)] : [];
-  return { rankBy, period, compareNames };
+  const resolved = resolveDateRange(text ?? '', now);
+  const range = resolved ? {
+    from: resolved.from.toISOString(), to: resolved.to.toISOString(), sw: resolved.sw, en: resolved.en,
+  } : null;
+  return { rankBy, period, compareNames, ...(range ? { range } : {}) };
 }
 
 export function parseProductAnalyticsFollowUp(
   text: string | null | undefined,
   context: ProductAnalyticsContext | null | undefined,
+  now = new Date(),
 ): ProductAnalyticsRequest | null {
   if (!context || context.kind !== 'product_analytics_context' || context.focusNames.length === 0) return null;
   const value = clean(text ?? '');
@@ -86,10 +94,15 @@ export function parseProductAnalyticsFollowUp(
   const asksQuantity = /^(?:na\s+)?(?:ngapi|idadi|idadi yake|imeuzwa ngapi|inauza ngapi|quantity|how many)(?:\s+(?:leo|today|je))?\??$/.test(value);
   const changesPeriodOnly = /^(?:na\s+)?(?:leo|today|wiki hii|this week|mwezi huu|this month|mwaka huu|this year)(?:\s+je)?\??$/.test(value);
   if (!asksRevenue && !asksMargin && !asksQuantity && !changesPeriodOnly) return null;
+  const resolved = resolveDateRange(text ?? '', now);
+  const range = resolved ? {
+    from: resolved.from.toISOString(), to: resolved.to.toISOString(), sw: resolved.sw, en: resolved.en,
+  } : context.request.range ?? null;
   return {
     rankBy: asksRevenue ? 'revenue' : asksMargin ? 'margin' : asksQuantity ? 'quantity' : context.request.rankBy,
     period,
     compareNames: context.focusNames.slice(0, 2),
+    ...(range ? { range } : {}),
   };
 }
 
@@ -173,9 +186,11 @@ export function productAnalyticsReply(
   items: ProductAggregate[],
   lang: Lang,
 ): string {
-  const periodLabel = lang === 'sw'
-    ? { today: 'leo', week: 'wiki hii', month: 'mwezi huu', year: 'mwaka huu' }[request.period]
-    : { today: 'today', week: 'this week', month: 'this month', year: 'this year' }[request.period];
+  const periodLabel = request.range
+    ? (lang === 'sw' ? request.range.sw : request.range.en)
+    : lang === 'sw'
+      ? { today: 'leo', week: 'wiki hii', month: 'mwezi huu', year: 'mwaka huu' }[request.period]
+      : { today: 'today', week: 'this week', month: 'this month', year: 'this year' }[request.period];
   if (items.length === 0) {
     return lang === 'sw'
       ? 'Bado hujaandika mauzo yenye majina ya bidhaa katika kipindi hiki. Taja bidhaa na kiasi ili Risip iweze kuonyesha kinachouza zaidi.'

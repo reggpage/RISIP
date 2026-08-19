@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  parseBareQuantityList,
   parseQuantityOnlySale,
   priceLine,
   quantitySaleConfirmation,
@@ -302,7 +303,12 @@ describe('the warning actually reaching the message', () => {
     // project, so tsc never type-checks it.
     const webhook = readFileSync(
       resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
-    expect(webhook).toMatch(/kind: 'priced',\s*\n\s*lines,[\s\S]{0,400}?\n\s*notCounted,/);
+    // The stronger guarantee, added when the design moved on: a product the
+    // catalogue has never heard of now gets its OWN branch and its own offer.
+    // It is never quietly left out of a sale, and never turned into an
+    // anonymous one under a name nobody recognises.
+    expect(webhook).toContain("return { kind: 'unknown', products: unknown, sale }");
+    expect(webhook).toContain('newProductSaleOffer(');
     expect(webhook).toContain('priced.notCounted');
   });
 });
@@ -323,5 +329,61 @@ describe('the word "mauzo" standing at the top of a list', () => {
 
   it('leaves a header with nothing under it alone', () => {
     expect(parseQuantityOnlySale('mauzo')).toBeNull();
+  });
+});
+
+describe('a sale with no verb in front of it', () => {
+  it('reads what the owner actually typed', () => {
+    // "sentences should not depend on kitenzi" — their words, after
+    // "Nguvu ya sala 21" was answered with a request for a price already saved.
+    expect(parseBareQuantityList('Nguvu ya sala 21')?.items)
+      .toEqual([{ product: 'Nguvu ya sala', quantity: 21, band: null }]);
+    expect(parseBareQuantityList('kitabu cha hesabu 7, biblia 3, nguvu ya sala 20')?.items)
+      .toEqual([
+        { product: 'kitabu cha hesabu', quantity: 7, band: null },
+        { product: 'biblia', quantity: 3, band: null },
+        { product: 'nguvu ya sala', quantity: 20, band: null },
+      ]);
+  });
+
+  it('still lets the band be stated', () => {
+    expect(parseBareQuantityList('daftari 20 jumla')?.items)
+      .toEqual([{ product: 'daftari', quantity: 20, band: 'wholesale' }]);
+  });
+
+  it('leaves a message that already has a verb to the other parser', () => {
+    // Two parsers claiming one message is how a sale gets recorded twice.
+    expect(parseBareQuantityList('nimeuza daftari 10')).toBeNull();
+  });
+
+  it('never claims a question', () => {
+    for (const said of [
+      'daftari ziko ngapi', 'bidhaa gani inauza sana', 'nani ananidai',
+      'mauzo ya leo ni ngapi?',
+    ]) {
+      expect(parseBareQuantityList(said), said).toBeNull();
+    }
+  });
+
+  it('never claims a shelf count or a price list', () => {
+    for (const said of [
+      'nina daftari 90', 'hesabu ya stock', 'store daftari 90',
+      'bei ya daftari rejareja 1500', 'ninazo daftari 90',
+    ]) {
+      expect(parseBareQuantityList(said), said).toBeNull();
+    }
+  });
+
+  it('never claims anything naming money', () => {
+    expect(parseBareQuantityList('daftari 10 kwa 15000')).toBeNull();
+    expect(parseBareQuantityList('Nauli 9500')).toBeNull();
+  });
+
+  it('is wired so it only claims a message the catalogue recognises', () => {
+    // The words alone cannot tell a sale from a shelf count. The catalogue can.
+    const webhook = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+    expect(webhook).toContain('const bare = parseBareQuantityList(writeBody);');
+    expect(webhook).toContain("priced.kind === 'priced' && priced.notCounted.length === 0");
   });
 });

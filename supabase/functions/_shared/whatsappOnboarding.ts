@@ -5,9 +5,15 @@
 // no network, so it can be unit-tested exhaustively — and so that reading it tells
 // you the whole flow.
 //
-// The one rule that matters here: an unknown number never reaches the AI. The
+// The one rule that matters here: an unknown number never reaches a paid AI. The
 // webhook stores the message and hands it to this state machine instead, so a
 // stranger cannot make us spend money on extraction.
+
+import {
+  classifyBusinessDescription,
+  type BusinessCategory,
+  type BusinessSubCategory,
+} from './whatsappBusinessClassifier.ts';
 
 export type Lang = 'en' | 'sw';
 
@@ -15,6 +21,8 @@ export type OnboardingStep =
   | 'lang'          // which language?
   | 'menu'          // new business, join one, or already have an account?
   | 'create_name'   // what is the business called?
+  | 'create_description' // what does the business sell or do?
+  | 'create_category_confirm' // confirm the bounded classification
   | 'create_person' // and what is your name?
   | 'join_code'     // what is the invite code?
   | 'join_person';  // and what is your name?
@@ -22,7 +30,15 @@ export type OnboardingStep =
 export type OnboardingAction =
   | { kind: 'none' }
   | { kind: 'set_language'; lang: Lang }
-  | { kind: 'create_business'; businessName: string; fullName: string }
+  | {
+      kind: 'create_business';
+      businessName: string;
+      fullName: string;
+      category: BusinessCategory;
+      subCategory: BusinessSubCategory;
+      confidence: number;
+      detectedKeywords: string[];
+    }
   | { kind: 'join_business'; code: string; fullName: string }
   | { kind: 'explain_linking' };   // they already have an account: link from the web
 
@@ -50,6 +66,18 @@ const T = {
   askPerson: {
     sw: 'Wewe unaitwa nani?',
     en: 'What is your name?',
+  },
+  askDescription: {
+    sw: 'Biashara yako inauza nini au inatoa huduma gani? Mfano: “nauza daftari, kalamu na kutoa photocopy”.',
+    en: 'What does your business sell or what service does it provide? For example: “I sell books and stationery and offer photocopying”.',
+  },
+  unclearDescription: {
+    sw: 'Sijaweza kutambua aina ya biashara kwa uhakika. Nitajie bidhaa au huduma kuu mbili au tatu, mfano “chips na kuku”, “nguo na viatu”, au “daftari na photocopy”.',
+    en: 'I could not classify the business confidently. Tell me two or three main products or services, for example “chips and chicken”, “clothes and shoes”, or “books and photocopying”.',
+  },
+  confirmCategoryAgain: {
+    sw: 'Jibu NDIYO kama nimepata sawa, au HAPANA unieleze tena biashara yako.',
+    en: 'Reply YES if that is right, or NO to describe your business again.',
   },
   askCode: {
     sw: 'Andika kodi ya mwaliko (herufi 8).',
@@ -167,15 +195,72 @@ export function advanceOnboarding(
     case 'create_name': {
       if (said.length < 2) return stay(T.tooShort[lang]);
       return {
-        step: 'create_person',
-        reply: T.askPerson[lang],
+        step: 'create_description',
+        reply: T.askDescription[lang],
         action: { kind: 'none' },
         draft: { ...draft, businessName: said.slice(0, 80) },
       };
     }
 
+    case 'create_description': {
+      if (said.length < 3) return stay(T.unclearDescription[lang]);
+      const classified = classifyBusinessDescription(`${draft.businessName ?? ''} ${said}`);
+      if (!classified) return stay(T.unclearDescription[lang]);
+      const reply = lang === 'sw'
+        ? `${classified.swahili_confirmation_message}\n\nJibu NDIYO au HAPANA.`
+        : `I understand your business as ${classified.sub_category}. Is that right?\n\nReply YES or NO.`;
+      return {
+        step: 'create_category_confirm',
+        reply,
+        action: { kind: 'none' },
+        draft: {
+          ...draft,
+          businessDescription: said.slice(0, 300),
+          businessCategory: classified.category,
+          businessSubCategory: classified.sub_category,
+          classificationConfidence: String(classified.confidence),
+          classificationKeywords: JSON.stringify(classified.detected_keywords),
+        },
+      };
+    }
+
+    case 'create_category_confirm': {
+      if (/^(?:ndiyo|ndio|yes|correct|sahihi|sawa)[.! ]*$/i.test(said)) {
+        return { step: 'create_person', reply: T.askPerson[lang], action: { kind: 'none' }, draft };
+      }
+      if (/^(?:hapana|no|wrong|sio|si sahihi)[.! ]*$/i.test(said)) {
+        return {
+          step: 'create_description',
+          reply: T.askDescription[lang],
+          action: { kind: 'none' },
+          draft: {
+            businessName: draft.businessName ?? '',
+          },
+        };
+      }
+      return stay(T.confirmCategoryAgain[lang]);
+    }
+
     case 'create_person': {
       if (said.length < 2) return stay(T.tooShortName[lang]);
+      const category = draft.businessCategory as BusinessCategory | undefined;
+      const subCategory = draft.businessSubCategory as BusinessSubCategory | undefined;
+      const confidence = Number(draft.classificationConfidence);
+      if (!category || !subCategory || !Number.isFinite(confidence)) {
+        return {
+          step: 'create_description',
+          reply: T.askDescription[lang],
+          action: { kind: 'none' },
+          draft: { businessName: draft.businessName ?? '' },
+        };
+      }
+      let detectedKeywords: string[] = [];
+      try {
+        const parsed = JSON.parse(draft.classificationKeywords ?? '[]');
+        if (Array.isArray(parsed)) detectedKeywords = parsed.filter((item): item is string => typeof item === 'string').slice(0, 8);
+      } catch {
+        detectedKeywords = [];
+      }
       return {
         step: 'create_person',
         reply: '',
@@ -183,6 +268,10 @@ export function advanceOnboarding(
           kind: 'create_business',
           businessName: draft.businessName ?? '',
           fullName: said.slice(0, 80),
+          category,
+          subCategory,
+          confidence,
+          detectedKeywords,
         },
         draft,
       };

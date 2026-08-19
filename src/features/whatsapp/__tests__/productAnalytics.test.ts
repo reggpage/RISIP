@@ -33,7 +33,10 @@ describe('WhatsApp product analytics', () => {
     };
     expect(parseProductAnalyticsFollowUp('Jumla yake?', context)).toEqual({ rankBy: 'revenue', period: 'today', compareNames: ['nguvu ya sala'] });
     expect(parseProductAnalyticsFollowUp('Faida yake?', context)).toEqual({ rankBy: 'margin', period: 'today', compareNames: ['nguvu ya sala'] });
-    expect(parseProductAnalyticsFollowUp('Wiki hii je?', context)).toEqual({ rankBy: 'quantity', period: 'week', compareNames: ['nguvu ya sala'] });
+    expect(parseProductAnalyticsFollowUp('Wiki hii je?', context)).toMatchObject({
+      rankBy: 'quantity', period: 'week', compareNames: ['nguvu ya sala'],
+      range: { sw: 'wiki hii' },
+    });
   });
 
   it('limits a named-product question to that product', () => {
@@ -82,6 +85,46 @@ describe('WhatsApp product analytics', () => {
   it('uses the Tanzania business day boundary', () => {
     const start = periodStart('today', new Date('2026-08-13T21:30:00.000Z'));
     expect(start.toISOString()).toBe('2026-08-13T21:00:00.000Z');
+  });
+
+  it('carries an exact juzi range into product analytics and labels the answer correctly', () => {
+    const request = parseProductAnalyticsRequest(
+      'Nini kiliuza zaidi juzi?',
+      new Date('2026-08-19T05:39:00.000Z'),
+    );
+    expect(request).toMatchObject({
+      rankBy: 'quantity',
+      range: {
+        from: '2026-08-16T21:00:00.000Z',
+        to: '2026-08-17T21:00:00.000Z',
+        sw: 'juzi',
+      },
+    });
+    const items = aggregateProducts([
+      { description: 'nguvu ya sala', quantity: 22, lineTotal: 209000, occurredAt: '2026-08-17T08:00:00Z' },
+      { description: 'punch', quantity: 7, lineTotal: 77000, occurredAt: '2026-08-17T08:00:00Z' },
+    ], []);
+    const reply = productAnalyticsReply(request!, items, 'sw');
+    expect(reply).toContain('Kwa juzi');
+    expect(reply).toContain('nguvu ya sala — 22');
+  });
+
+  it('carries numbered historical weeks and months into the product query', () => {
+    const now = new Date('2026-08-19T05:39:00.000Z');
+    expect(parseProductAnalyticsRequest('Nini kiliuza zaidi wiki mbili zilizopita?', now)).toMatchObject({
+      range: {
+        from: '2026-08-02T21:00:00.000Z',
+        to: '2026-08-09T21:00:00.000Z',
+        sw: 'wiki 2 zilizopita',
+      },
+    });
+    expect(parseProductAnalyticsRequest('Nini kiliuza zaidi miezi mitatu nyuma?', now)).toMatchObject({
+      range: {
+        from: '2026-04-30T21:00:00.000Z',
+        to: '2026-05-31T21:00:00.000Z',
+        sw: 'miezi 3 nyuma',
+      },
+    });
   });
 
   it('responds in English without mixing labels', () => {

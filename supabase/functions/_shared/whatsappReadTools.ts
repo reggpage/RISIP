@@ -88,6 +88,32 @@ export type ReceiptSummary = {
   createdAt: string;
 };
 
+export type ReceiptDetail = ReceiptSummary & {
+  tin: string | null;
+  vrn: string | null;
+  receiptNumber: string | null;
+  verificationCode: string | null;
+  receiptDate: string | null;
+  receiptTime: string | null;
+  taxAmount: number | null;
+  category: string | null;
+  paymentMethod: string | null;
+  lowConfidenceFields: string[];
+};
+
+export type InvoiceDetail = {
+  id: string;
+  invoiceNumber: string | null;
+  clientName: string | null;
+  status: string;
+  periodStart: string;
+  periodEnd: string;
+  totalAmount: number;
+  taxAmount: number;
+  lineItems: string[];
+  createdAt: string;
+};
+
 export type BusinessMembership = {
   companyId: string;
   companyName: string;
@@ -337,6 +363,78 @@ export function buildReceiptsReply(
     ? (lang === 'sw' ? `\n\nZote: ${base}/receipts` : `\n\nAll of them: ${base}/receipts`)
     : '';
   return `${heading}\n${rows.join('\n')}${all}`;
+}
+
+function shown(value: string | null | undefined, lang: 'sw' | 'en'): string {
+  return value?.trim() || (lang === 'sw' ? 'haipo kwenye rekodi' : 'not available in the record');
+}
+
+/** Exact server evidence for one receipt; absent fields are stated, never guessed. */
+export function buildReceiptDetailReply(
+  receipt: ReceiptDetail | null,
+  lang: 'sw' | 'en',
+  appUrl?: string | null,
+): string {
+  if (!receipt) return lang === 'sw'
+    ? 'Sikuweza kupata risiti hiyo katika rekodi unazoruhusiwa kuona.'
+    : 'I could not find that receipt among the records you are allowed to view.';
+  const base = String(appUrl ?? '').replace(/\/+$/, '');
+  const link = base ? `\n${base}/receipts?receipt=${receipt.id}` : '';
+  const uncertain = receipt.lowConfidenceFields.length > 0
+    ? (lang === 'sw'
+      ? `\nTahadhari: AI haikuwa na uhakika wa ${receipt.lowConfidenceFields.join(', ')}; hakiki picha ya risiti.`
+      : `\nCaution: AI had low confidence in ${receipt.lowConfidenceFields.join(', ')}; verify the receipt image.`)
+    : '';
+  if (lang === 'sw') {
+    return `Maelezo ya risiti:\n`
+      + `Muuzaji: ${shown(receipt.vendor, lang)}\n`
+      + `Namba ya risiti: ${shown(receipt.receiptNumber, lang)}\n`
+      + `TIN: ${shown(receipt.tin, lang)}\n`
+      + `VRN: ${shown(receipt.vrn, lang)}\n`
+      + `Kodi ya uthibitisho: ${shown(receipt.verificationCode, lang)}\n`
+      + `Tarehe: ${shown(receipt.receiptDate, lang)}${receipt.receiptTime ? ` ${receipt.receiptTime}` : ''}\n`
+      + `Jumla: ${receipt.amount === null ? shown(null, lang) : money(receipt.amount, lang)}\n`
+      + `VAT/kodi: ${receipt.taxAmount === null ? shown(null, lang) : money(receipt.taxAmount, lang)}\n`
+      + `Kategoria: ${shown(receipt.category, lang)}\n`
+      + `Njia ya malipo: ${shown(receipt.paymentMethod, lang)}\n`
+      + `Hali: ${receipt.status}${uncertain}${link}`;
+  }
+  return `Receipt details:\n`
+    + `Vendor: ${shown(receipt.vendor, lang)}\n`
+    + `Receipt number: ${shown(receipt.receiptNumber, lang)}\n`
+    + `TIN: ${shown(receipt.tin, lang)}\n`
+    + `VRN: ${shown(receipt.vrn, lang)}\n`
+    + `Verification code: ${shown(receipt.verificationCode, lang)}\n`
+    + `Date: ${shown(receipt.receiptDate, lang)}${receipt.receiptTime ? ` ${receipt.receiptTime}` : ''}\n`
+    + `Total: ${receipt.amount === null ? shown(null, lang) : money(receipt.amount, lang)}\n`
+    + `VAT/tax: ${receipt.taxAmount === null ? shown(null, lang) : money(receipt.taxAmount, lang)}\n`
+    + `Category: ${shown(receipt.category, lang)}\n`
+    + `Payment method: ${shown(receipt.paymentMethod, lang)}\n`
+    + `Status: ${receipt.status}${uncertain}${link}`;
+}
+
+/** Finance-only invoice evidence. Public tokens are deliberately never returned. */
+export function buildInvoiceDetailReply(
+  invoice: InvoiceDetail | null,
+  lang: 'sw' | 'en',
+  appUrl?: string | null,
+): string {
+  if (!invoice) return lang === 'sw'
+    ? 'Sikuweza kupata invoice hiyo katika biashara hii.'
+    : 'I could not find that invoice in this business.';
+  const base = String(appUrl ?? '').replace(/\/+$/, '');
+  const lines = invoice.lineItems.length > 0
+    ? `\n${lang === 'sw' ? 'Vipengele' : 'Line items'}:\n${invoice.lineItems.slice(0, 20).map((line) => `- ${line}`).join('\n')}`
+    : '';
+  const link = base ? `\n${base}/invoices` : '';
+  if (lang === 'sw') {
+    return `Maelezo ya invoice:\nNamba: ${shown(invoice.invoiceNumber, lang)}\nMteja: ${shown(invoice.clientName, lang)}\n`
+      + `Kipindi: ${invoice.periodStart} hadi ${invoice.periodEnd}\nJumla: ${money(invoice.totalAmount, lang)}\n`
+      + `VAT/kodi: ${money(invoice.taxAmount, lang)}\nHali: ${invoice.status}${lines}${link}`;
+  }
+  return `Invoice details:\nNumber: ${shown(invoice.invoiceNumber, lang)}\nClient: ${shown(invoice.clientName, lang)}\n`
+    + `Period: ${invoice.periodStart} to ${invoice.periodEnd}\nTotal: ${money(invoice.totalAmount, lang)}\n`
+    + `VAT/tax: ${money(invoice.taxAmount, lang)}\nStatus: ${invoice.status}${lines}${link}`;
 }
 
 export function buildPettyCashReply(balance: number | null, lang: 'sw' | 'en'): string {

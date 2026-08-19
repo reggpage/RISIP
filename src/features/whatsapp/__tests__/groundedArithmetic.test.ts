@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { buildAssistantSystemPrompt, findUngroundedNumbers } from '../../../../supabase/functions/_shared/whatsappAssistant';
-import { buildReceiptsReply } from '../../../../supabase/functions/_shared/whatsappReadTools';
+import {
+  buildInvoiceDetailReply,
+  buildReceiptDetailReply,
+  buildReceiptsReply,
+} from '../../../../supabase/functions/_shared/whatsappReadTools';
 
 // What the server hands the model for "expenses za risiti wiki hii".
 const RECEIPTS = [
@@ -101,5 +105,34 @@ describe('receipt links', () => {
     expect(prompt).toMatch(/You MAY add up figures/);
     expect(prompt).toMatch(/Do not subtract your way to profit/);
     expect(prompt).toMatch(/Keep confirmed and pending apart/);
+  });
+});
+
+describe('grounded receipt and invoice details', () => {
+  it('shows exact receipt fields and says plainly when evidence is absent', () => {
+    const reply = buildReceiptDetailReply({
+      id: 'aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa',
+      status: 'confirmed', amount: 38000, vendor: 'THE LEMIRAY HOTEL', createdAt: '2026-08-18',
+      tin: '123456789', vrn: null, receiptNumber: 'R-91', verificationCode: 'ABC123',
+      receiptDate: '2026-08-18', receiptTime: '08:31:00', taxAmount: 5796.61,
+      category: 'Accommodation', paymentMethod: 'company_card', lowConfidenceFields: ['vendor_vrn'],
+    }, 'sw', 'https://risip.online');
+    expect(reply).toContain('TIN: 123456789');
+    expect(reply).toContain('VRN: haipo kwenye rekodi');
+    expect(reply).toContain('VAT/kodi: TSh 5,797');
+    expect(reply).toContain('AI haikuwa na uhakika wa vendor_vrn');
+    expect(reply).toContain('receipt=aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa');
+  });
+
+  it('keeps invoice status factual and never exposes a public token', () => {
+    const reply = buildInvoiceDetailReply({
+      id: 'invoice-1', invoiceNumber: 'INV-2026-001', clientName: 'Asha Ltd', status: 'sent',
+      periodStart: '2026-08-01', periodEnd: '2026-08-18', totalAmount: 118000,
+      taxAmount: 18000, lineItems: ['Consulting — TSh 100,000'], createdAt: '2026-08-18',
+    }, 'en', 'https://risip.online');
+    expect(reply).toContain('Status: sent');
+    expect(reply).toContain('VAT/tax: TSh 18,000');
+    expect(reply).toContain('https://risip.online/invoices');
+    expect(reply).not.toContain('public_token');
   });
 });

@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   newProductConfirmation,
   newProductOffer,
+  newProductPricingIncomplete,
+  newProductSaleOffer,
+  newProductSaleWorkerBlocked,
+  newProductSaved,
   parseNewProductLine,
   parseNewProductPricing,
 } from '../../../../supabase/functions/_shared/whatsappNewProduct';
@@ -93,6 +97,35 @@ describe('what the shopkeeper is shown', () => {
 
   it('warns that a mistyped name would become a second product', () => {
     expect(newProductOffer(['biblia'], 'sw')).toMatch(/jina limekosewa/);
+  });
+
+  it('says an unknown sale was not posted and will resume after registration', () => {
+    const reply = newProductSaleOffer(['samaki'], 'sw');
+    expect(reply).toContain('samaki');
+    expect(reply).toMatch(/hazipo kwenye store/);
+    expect(reply).toMatch(/mauzo haya kwa muda/);
+    expect(reply).toMatch(/uyathibitishe kwa NDIYO/);
+  });
+
+  it('blocks a worker clearly instead of leading them into an owner-only write', () => {
+    const reply = newProductSaleWorkerBlocked(['samaki'], 'sw');
+    expect(reply).toContain('samaki');
+    expect(reply).toMatch(/Sijaandika mauzo haya/);
+    expect(reply).toMatch(/owner au accountant/);
+  });
+
+  it('names any product whose registration prices are still missing', () => {
+    expect(newProductPricingIncomplete(['samaki'], 'sw')).toMatch(/samaki/);
+  });
+
+  it('does not tell the owner to resend when the parked sale is being resumed', () => {
+    const product = [{
+      product: 'samaki', unitCost: 5000, retail: 7000,
+      wholesale: null, wholesaleMinQty: null, unit: null,
+    }];
+    const reply = newProductSaved(product, 'sw', true);
+    expect(reply).toMatch(/mauzo yaliyokuwa yanasubiri/);
+    expect(reply).not.toMatch(/andika mauzo yake kawaida/);
   });
 
   it('shows the margin per piece before anything is saved', () => {

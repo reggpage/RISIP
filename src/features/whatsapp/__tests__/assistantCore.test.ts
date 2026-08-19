@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   ASSISTANT_TOOL_NAMES,
   ASSISTANT_TOOLS,
@@ -37,6 +39,8 @@ describe('Risip conversational AI core', () => {
     expect(ASSISTANT_TOOL_NAMES).toContain('get_product_performance');
     expect(ASSISTANT_TOOL_NAMES).toContain('get_product_cost');
     expect(ASSISTANT_TOOL_NAMES).toContain('get_hypothetical_product_profit');
+    expect(ASSISTANT_TOOL_NAMES).toContain('get_receipt_details');
+    expect(ASSISTANT_TOOL_NAMES).toContain('get_invoice_details');
     expect(ASSISTANT_TOOL_NAMES).toContain('propose_daily_record');
     expect(ASSISTANT_TOOL_NAMES).not.toContain('approve_receipt');
     expect(ASSISTANT_TOOL_NAMES).not.toContain('pay_claim');
@@ -64,6 +68,10 @@ describe('Risip conversational AI core', () => {
     expect(prompt).toContain('Treat greetings and ordinary small talk as conversation');
     expect(prompt).toContain('Never require an exact memorized phrase');
     expect(prompt).toContain('Explicit NDIYO/YES is required');
+    expect(prompt).toContain('always call get_receipt_details');
+    expect(prompt).toContain('always call get_invoice_details');
+    expect(prompt).toContain('Never reconstruct or guess it');
+    expect(prompt).toContain('A receipt is evidence of a purchase/payment; an invoice is a request or record for payment');
   });
 
   it('keeps only a bounded, safe first name for assistant personalization', () => {
@@ -93,6 +101,41 @@ describe('Risip conversational AI core', () => {
     expect(canUseCompanyFinanceReads('accountant')).toBe(true);
     expect(canUseCompanyFinanceReads('worker')).toBe(false);
     expect(canUseCompanyFinanceReads('team_leader')).toBe(false);
+  });
+
+  it('keeps detailed receipt/invoice reads server-scoped and read-only', () => {
+    const webhook = readFileSync(resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+    expect(webhook).toContain("if (!canUseCompanyFinanceReads(identity.role)) query = query.eq('uploaded_by', identity.profile_id)");
+    expect(webhook).toContain(".eq('company_id', identity.company_id)");
+    expect(webhook).toContain("if (name === 'get_invoice_details')");
+    expect(webhook).toContain("if (!canUseCompanyFinanceReads(identity.role))");
+    expect(webhook).toContain('const from = request.range?.from ?? periodStart(request.period).toISOString()');
+    expect(webhook).toContain(".lt('occurred_at', to)");
+    expect(webhook).toContain('const resolved = assistantRange(input.when)');
+    const detailsSection = webhook.slice(webhook.indexOf("if (name === 'get_receipt_details')"), webhook.indexOf("if (name === 'get_my_petty_cash_balance')"));
+    expect(detailsSection).not.toMatch(/\.insert\(|\.update\(|\.delete\(/);
+  });
+
+  it('parks an unknown catalogue product before recording its sale', () => {
+    const webhook = readFileSync(resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+    expect(webhook).toContain("kind: 'new_product_sale_setup'");
+    expect(webhook).toContain("if (priced.kind === 'unknown')");
+    expect(webhook).toContain('newProductSaleWorkerBlocked(priced.products, lang)');
+    expect(webhook).toContain('pendingSale: newProductSaleSetup.sale');
+    expect(webhook).toContain('sourceMessageId: newProductSaleSetup.sourceMessageId');
+    expect(webhook).toContain('newProductSaved(pendingProducts, lang, true)');
+    expect(webhook).not.toContain("if (sale.items.length === 1) return { kind: 'skip' }");
+  });
+
+  it('merges registered catalogue names into the stock answer', () => {
+    const webhook = readFileSync(resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+    const stockSection = webhook.slice(
+      webhook.indexOf("if (name === 'get_stock_on_hand')"),
+      webhook.indexOf("if (name === 'get_pending_approvals')"),
+    );
+    expect(stockSection).toContain("db.rpc('company_product_names'");
+    expect(stockSection).toContain('represented.has(key)');
+    expect(stockSection).toContain('hasCount: false');
   });
 
   it('tracks entities by topic for later pronoun and period follow-ups', () => {
@@ -127,6 +170,8 @@ describe('Risip conversational AI core', () => {
     expect(requiresCurrentBusinessDataTool('What sold the most today?')).toBe(true);
     expect(requiresCurrentBusinessDataTool('Nguvu ya sala imeuzwa ngapi leo?')).toBe(true);
     expect(requiresCurrentBusinessDataTool('Jumla yake?')).toBe(true);
+    expect(requiresCurrentBusinessDataTool('TIN ya risiti ya mwisho ni ipi?')).toBe(true);
+    expect(requiresCurrentBusinessDataTool('Invoice ya Asha ina VAT kiasi gani?')).toBe(true);
     expect(requiresCurrentBusinessDataTool('Nisaidie kutumia Risip')).toBe(false);
   });
 

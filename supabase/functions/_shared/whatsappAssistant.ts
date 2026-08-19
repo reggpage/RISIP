@@ -103,6 +103,8 @@ export const ASSISTANT_TOOL_NAMES = [
   'get_hypothetical_product_profit',
   'get_open_debts',
   'get_my_receipts',
+  'get_receipt_details',
+  'get_invoice_details',
   'get_my_petty_cash_balance',
   'get_my_reimbursements',
   'get_my_businesses',
@@ -179,6 +181,24 @@ export const ASSISTANT_TOOLS: ToolDefinition[] = [
     },
     ['period', 'when', 'status'],
   ),
+  tool(
+    'get_receipt_details',
+    'Read exact fields for one receipt: vendor, receipt number, TIN, VRN, verification code, date/time, total, VAT/tax, category, payment method, status and low-confidence warnings. Use whenever the user asks about a specific receipt or any of those fields. Workers are restricted to their own receipts; finance may read the active company. Never answer from chat memory.',
+    {
+      selector: { type: ['string', 'null'], description: 'Vendor name, receipt number, ordinary Risip receipt link/id, or the user’s wording such as “latest receipt”. Null means latest visible receipt.' },
+      period: periodSchema,
+      when: whenSchema,
+    },
+    ['selector', 'period', 'when'],
+  ),
+  tool(
+    'get_invoice_details',
+    'Read exact fields for one internal Risip invoice: invoice number, client, period, total, tax, status and line items. Owner/accountant only. Use for invoice questions and never confuse an invoice with proof that payment was received.',
+    {
+      selector: { type: ['string', 'null'], description: 'Invoice number, client name, ordinary Risip invoice link/id, or null for the latest invoice.' },
+    },
+    ['selector'],
+  ),
   tool('get_my_petty_cash_balance', 'Read this user’s own petty-cash balance.', {}, []),
   tool('get_my_reimbursements', 'Read the total for this user’s confirmed personal-money receipts that have not been reimbursed.', {}, []),
   tool('get_my_businesses', 'List businesses this person belongs to and their roles.', {}, []),
@@ -247,7 +267,7 @@ export function requiresCurrentBusinessDataTool(text: string): boolean {
     .trim();
   if (!normalized) return false;
 
-  return /\b(leo|jana|wiki|mwezi|mwaka|jumla|mauzo|imeuzwa|imeuza|nimeuza|bidhaa|gharama|matumizi|faida|deni|madeni|anadaiwa|ananidai|amelipa|malipo|risiti|salio|petty|reimbursement|today|yesterday|week|month|year|total|sales?|sold|product|expense|spend|profit|margin|debt|owes?|paid|payments?|receipts?|balance|reimbursements?|most|least|top)\b/.test(normalized);
+  return /\b(leo|jana|wiki|mwezi|mwaka|jumla|mauzo|imeuzwa|imeuza|nimeuza|bidhaa|gharama|matumizi|faida|deni|madeni|anadaiwa|ananidai|amelipa|malipo|risiti|ankara|invoice|tin|vrn|vat|kodi|verification|muuzaji|vendor|salio|petty|reimbursement|today|yesterday|week|month|year|total|sales?|sold|product|expense|spend|profit|margin|debt|owes?|paid|payments?|receipts?|balance|reimbursements?|most|least|top)\b/.test(normalized);
 }
 
 export function shouldDeferRecordLikeReply(
@@ -284,6 +304,10 @@ GROUNDING AND TOOLS
 - Do not subtract your way to profit. Historical margin comes from product performance; a sell-all-stock estimate comes from get_hypothetical_product_profit. Both use server data. Sales minus expenses is a different number and must never be presented as profit.
 - Keep confirmed and pending apart when you total anything. Only confirmed records count towards a real total; mention anything still pending separately, with its own figure, so the user can see both.
 - You may call more than one read tool when the question needs it. Do not call a tool unrelated to the question.
+- A receipt is evidence of a purchase/payment; an invoice is a request or record for payment. Never call an invoice paid unless the server status or separate payment evidence says so.
+- For a question about one receipt, TIN, VRN, VAT, receipt number, date, vendor, payment method or verification code, always call get_receipt_details. For an invoice question, always call get_invoice_details.
+- If a requested receipt or invoice field is absent, say it is not available in the record. Never reconstruct or guess it from another field.
+- Do your reasoning privately. Give the user a concise answer and, where useful, a short explanation of the evidence—not hidden chain-of-thought.
 
 WRITES AND HUMAN CONTROL
 - The only ledger-related operation available here is propose_daily_record. It creates a pending draft; it does not confirm or post it. propose_product_cost only prepares a confirmation for a buying-cost setting; it does not save it immediately.
@@ -433,6 +457,7 @@ export function inferAssistantMemory(
         product_names: Array.isArray(latest.input.product_names) ? latest.input.product_names : [],
         metric: latest.input.metric ?? null,
         period: latest.input.period ?? null,
+        ...(latest.input.when ? { when: latest.input.when } : {}),
       },
       lastTool: latest.name,
     };

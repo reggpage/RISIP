@@ -72,6 +72,38 @@ describe('weeks, months and years', () => {
     expect(localDay(seven.from)).toBe('2026-08-08');
     expect(seven.sw).toBe('siku 7 zilizopita');
   });
+
+  it('understands numbered weeks ago without falling back to this week', () => {
+    const two = range('nini kiliuza zaidi wiki mbili zilizopita');
+    expect(localDay(two.from)).toBe('2026-07-27');
+    expect(localDay(new Date(two.to.getTime() - 1))).toBe('2026-08-02');
+    expect(two.sw).toBe('wiki 2 zilizopita');
+
+    const three = range('mauzo ya wiki 3 nyuma');
+    expect(localDay(three.from)).toBe('2026-07-20');
+    expect(localDay(new Date(three.to.getTime() - 1))).toBe('2026-07-26');
+    expect(localDay(range('what sold two weeks ago').from)).toBe('2026-07-27');
+  });
+
+  it('understands arbitrary numbered months ago', () => {
+    const three = range('mauzo ya miezi mitatu nyuma');
+    expect(localDay(three.from)).toBe('2026-05-01');
+    expect(localDay(new Date(three.to.getTime() - 1))).toBe('2026-05-31');
+    expect(three.sw).toBe('miezi 3 nyuma');
+
+    const six = range('matumizi ya miezi 6 nyuma');
+    expect(localDay(six.from)).toBe('2026-02-01');
+    expect(localDay(new Date(six.to.getTime() - 1))).toBe('2026-02-28');
+    expect(localDay(range('sales three months ago').from)).toBe('2026-05-01');
+  });
+
+  it('understands numbered years ago and number words in rolling days', () => {
+    const twoYears = range('mauzo ya miaka miwili nyuma');
+    expect(localDay(twoYears.from)).toBe('2024-01-01');
+    expect(localDay(new Date(twoYears.to.getTime() - 1))).toBe('2024-12-31');
+    expect(localDay(range('siku saba zilizopita').from)).toBe('2026-08-08');
+    expect(localDay(range('last seven days').from)).toBe('2026-08-08');
+  });
 });
 
 describe('a date said outright', () => {
@@ -106,6 +138,17 @@ describe('a date said outright', () => {
   it('covers exactly one day', () => {
     const day = range('tarehe 7 mei 2025');
     expect(day.to.getTime() - day.from.getTime()).toBe(24 * 60 * 60 * 1000);
+  });
+
+  it('understands an inclusive range between two explicit dates', () => {
+    const sw = range('mauzo kutoka tarehe 7 Mei 2025 hadi tarehe 10 Mei 2025');
+    expect(localDay(sw.from)).toBe('2025-05-07');
+    expect(localDay(new Date(sw.to.getTime() - 1))).toBe('2025-05-10');
+    expect(sw.sw).toBe('kutoka tarehe 7 Mei 2025 hadi tarehe 10 Mei 2025');
+
+    const en = range('sales from May 7 2025 to May 10 2025');
+    expect(localDay(en.from)).toBe('2025-05-07');
+    expect(localDay(new Date(en.to.getTime() - 1))).toBe('2025-05-10');
   });
 });
 

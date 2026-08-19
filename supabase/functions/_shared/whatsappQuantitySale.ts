@@ -212,10 +212,28 @@ export function parseBareQuantityList(text: string | null | undefined): Quantity
   if (!said || OPENER.test(said) || STATES_MONEY.test(said)) return null;
   // Do not ban a word wherever it appears: "kitabu cha hesabu" is a real
   // product. Only an unmistakable opener makes this a stock/purchase message.
-  if (/^(?:hesabu\s+ya\s+stock|stock\b|store\b|nina\b|nimehesabu\b|nimenunua\b|nilinunua\b|purchase\b|bought\b)/iu.test(said)
+  if (/^(?:hesabu\s+ya\s+stock|stock\b|store\b|nina\b|ninazo\b|nilizonazo\b|zilizopo\b|nimehesabu\b|nimenunua\b|nilinunua\b|purchase\b|bought\b)/iu.test(said)
     || /\bzimebaki\b/iu.test(said)) return null;
+  // A price list is not a sale. "bei ya daftari rejareja 1500" has no money
+  // keyword directly before a digit, so STATES_MONEY lets it through — and with
+  // no verb to stop it, it was read as selling 1500 of something.
+  if (/^bei/iu.test(said) || /(?:rejareja|rejas*reja|retail|jumla|wholesale)[s:]*[0-9]/iu.test(said)) {
+    return null;
+  }
+  // A bare line carries no verb, so the number has to carry the doubt. "Nauli
+  // 9500" is bus fare; nobody hands 9,500 pieces of anything across a counter.
+  // With a verb in front the ordinary parser handles the big numbers.
+  if (/(?:^|\s)[0-9][0-9,.]*\s*$/u.test(said)
+    && Number(said.replace(/.*?([0-9][0-9,.]*)\s*$/u, '$1').replace(/[,\s]/g, '')) >= 1000) {
+    return null;
+  }
   const sale = parseQuantityOnlySale(`mauzo ${said}`);
-  return sale && sale.items.length >= 2 && sale.expenses.length === 0 ? sale : null;
+  // One product is enough. "Nguvu ya sala 21" was answered with a request for
+  // a price the shop had already set, because a single item did not qualify —
+  // and the owner's point stands: a sentence should not need a verb to be read.
+  // The caller is what keeps this safe: it only acts when every name is already
+  // in the catalogue.
+  return sale && sale.items.length >= 1 && sale.expenses.length === 0 ? sale : null;
 }
 
 /**
@@ -306,3 +324,4 @@ export function quantitySaleConfirmation(
       + '_Priced from the list you set yourself._\n\n'
       + 'Reply *YES* to confirm, or *NO* to cancel.';
 }
+

@@ -103,7 +103,7 @@ import {
 import { interpretDailyRecordWithAi, MAX_INTERPRETATION_CHARS, validateAiCandidate } from '../_shared/whatsappDailyRecordsAi.ts';
 import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared/whatsappReadIntentAi.ts';
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
-import { findNameWarnings, nameWarningText } from '../_shared/whatsappProductNames.ts';
+import { findNameWarnings, nameWarningText, productKey } from '../_shared/whatsappProductNames.ts';
 import {
   parseSellingPriceBatch,
   sellingPriceBatchCancelled,
@@ -134,6 +134,9 @@ import {
   newProductCancelled,
   newProductConfirmation,
   newProductOffer,
+  newProductPricingIncomplete,
+  newProductSaleOffer,
+  newProductSaleWorkerBlocked,
   newProductSaved,
   parseNewProductPricing,
   type NewProductPricing,
@@ -272,7 +275,9 @@ import {
   buildPendingApprovalsReply,
   buildPettyCashReply,
   buildProfitReply,
+  buildReceiptDetailReply,
   buildReceiptsReply,
+  buildInvoiceDetailReply,
   calculateBusinessSummary,
   calculateDebtors,
   calculateProfitEstimate,
@@ -281,6 +286,8 @@ import {
   type ReadDailyRow,
   type ReadProductCost,
   type ReadRequest,
+  type ReceiptDetail,
+  type InvoiceDetail,
 } from '../_shared/whatsappReadTools.ts';
 import {
   isProjectSetupState,
@@ -313,6 +320,20 @@ type ResolvedWhatsAppIdentity = {
   revoked_at: string | null;
 };
 
+type NewProductSaleSetup = {
+  kind: 'new_product_sale_setup';
+  missingProducts: string[];
+  sale: QuantitySale;
+  sourceMessageId: string;
+};
+
+type NewProductPricingState = {
+  kind: 'new_product_pricing';
+  products: NewProductPricing[];
+  pendingSale?: QuantitySale;
+  sourceMessageId?: string;
+};
+
 /**
  * Prices a quantities-only sale from the shop's own price list.
  *
@@ -329,6 +350,7 @@ async function priceQuantitySale(
 ): Promise<
   | { kind: 'priced'; record: ParsedDailyRecord; lines: PricedLine[]; notCounted: string[] }
   | { kind: 'blocked'; message: string }
+  | { kind: 'unknown'; products: string[]; sale: QuantitySale }
   | { kind: 'skip' }
 > {
   const { data: declaredRows, error: declaredError } = await db.rpc('wa_company_product_sale_units', {
@@ -382,14 +404,7 @@ async function priceQuantitySale(
     if (resolved.resolution.kind === 'ambiguous') {
       return { kind: 'blocked', message: productReadClarification(resolved.resolution, lang) };
     }
-    // An unknown product on a ONE-LINE sale is not this parser's business: the
-    // ordinary path can still ask for a price and record it under the name as
-    // typed. On a till roll it is, because there is no ordinary path that can
-    // read forty-five lines — handing the paste back meant "is this the total or
-    // the price for each?", again, over one name the shop spells differently
-    // ("biblia" for "Bibilia ndogo"). Name it and price the rest.
     if (resolved.resolution.kind === 'not_found') {
-      if (sale.items.length === 1) return { kind: 'skip' };
       unknown.push(item.product);
       continue;
     }
@@ -403,6 +418,11 @@ async function priceQuantitySale(
       declared: null,
     });
   }
+
+  // A catalogue miss is never converted into an anonymous sale and never
+  // omitted from a multi-line sale. Registration and its own confirmation come
+  // first; the original sale is resumed afterwards.
+  if (unknown.length > 0) return { kind: 'unknown', products: unknown, sale };
 
   const { data, error } = await db.rpc('wa_product_pricing', {
     p_company_id: identity.company_id,
@@ -446,28 +466,15 @@ async function priceQuantitySale(
     if (at >= 0) lines[at] = { ...lines[at], quantity: lines[at].quantity + line.quantity };
     else lines.push(line);
   }
-  const notCounted = [...unknown, ...missing];
-  // Nothing at all could be priced: the ordinary path may still help.
-  if (lines.length === 0) {
-    return sale.items.length === 1
-      ? { kind: 'skip' }
-      : { kind: 'blocked', message: quantitySaleMissingPrices(notCounted, lang) };
+  if (missing.length > 0 || lines.length === 0) {
+    return { kind: 'blocked', message: quantitySaleMissingPrices(missing, lang) };
   }
-  // One unrecognised name out of thirty used to refuse the whole paste and ask
-  // for all forty-eight lines again. Nobody retypes that; they give up. The
-  // twenty-nine Risip can price are worth recording, and the one it cannot is
-  // named directly above the confirm question — where it cannot be missed and
-  // is still the shopkeeper's decision, not a silent omission.
 
   const amount = Math.round(lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0) * 100) / 100;
   return {
     kind: 'priced',
     lines,
-    // Left off the returned object once already, which made priced.notCounted
-    // undefined, which defaulted to an empty list, which meant "biblia" vanished
-    // from a forty-eight-line paste without a word. TypeScript did not catch it
-    // because this file is not in the app's tsconfig project.
-    notCounted,
+    notCounted: [],
     record: {
       kind: 'sale',
       amount,
@@ -880,14 +887,15 @@ async function productAnalytics(
   companyId: string,
   request: import('../_shared/whatsappProductAnalytics.ts').ProductAnalyticsRequest,
 ): Promise<{ replyData: ProductSaleLine[]; costs: ProductCostPoint[] }> {
-  const from = periodStart(request.period).toISOString();
+  const from = request.range?.from ?? periodStart(request.period).toISOString();
+  const to = request.range?.to ?? new Date().toISOString();
   const { data: records } = await db.from('daily_records')
     .select('id, occurred_at')
     .eq('company_id', companyId)
     .eq('kind', 'sale')
     .eq('status', 'confirmed')
     .gte('occurred_at', from)
-    .lt('occurred_at', new Date().toISOString())
+    .lt('occurred_at', to)
     .order('occurred_at', { ascending: true })
     .limit(2000);
   const rows = (records ?? []) as Array<{ id: string; occurred_at: string }>;
@@ -1238,6 +1246,31 @@ function assistantProductNames(value: unknown): string[] {
     : [];
 }
 
+function assistantSelector(value: unknown): string {
+  return typeof value === 'string' ? value.trim().slice(0, 160) : '';
+}
+
+function normalizeAssistantSelector(value: string): string {
+  return value.toLocaleLowerCase('sw').normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function invoiceLineItemLabels(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 20).map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return '';
+    const row = item as Record<string, unknown>;
+    const label = String(row.description ?? row.name ?? row.item ?? '').trim().slice(0, 100);
+    const quantity = Number(row.quantity ?? row.qty);
+    const amount = Number(row.amount ?? row.total ?? row.line_total);
+    const parts = [label];
+    if (Number.isFinite(quantity) && quantity > 0) parts.push(`x ${quantity}`);
+    if (Number.isFinite(amount) && amount >= 0) parts.push(`TSh ${Math.round(amount).toLocaleString('en-US')}`);
+    return parts.filter(Boolean).join(' — ');
+  }).filter(Boolean);
+}
+
 async function executeAssistantTool(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
@@ -1256,6 +1289,12 @@ async function executeAssistantTool(
         rankBy: metric,
         period: assistantPeriod(input.period),
         compareNames: assistantProductNames(input.product_names),
+        range: (() => {
+          const resolved = assistantRange(input.when);
+          return resolved ? {
+            from: resolved.from.toISOString(), to: resolved.to.toISOString(), sw: resolved.sw, en: resolved.en,
+          } : null;
+        })(),
       }, lang),
     };
   }
@@ -1323,6 +1362,88 @@ async function executeAssistantTool(
     const status = input.status === 'confirmed' || input.status === 'submitted' ? input.status : null;
     return { content: await readOnlyToolReply(db, identity, { tool: 'ai_my_receipts', period: assistantPeriod(input.period), status, range: assistantRange(input.when) }, lang) };
   }
+  if (name === 'get_receipt_details') {
+    const selector = assistantSelector(input.selector);
+    const normalized = normalizeAssistantSelector(selector);
+    const idMatch = selector.match(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i)?.[0] ?? null;
+    const latest = !normalized || /\b(?:latest|last|newest|mwisho|karibuni)\b/.test(normalized);
+    const range = assistantRange(input.when);
+    const bounds = readPeriodBounds({
+      tool: 'ai_my_receipts',
+      period: assistantPeriod(input.period),
+      range,
+    });
+    let query = db.from('receipts').select(
+      'id, status, total_amount, vendor_name, vendor_tin, vendor_vrn, receipt_number, verification_code, receipt_date, receipt_time, tax_amount, category, payment_method, low_confidence_fields, created_at',
+    ).eq('company_id', identity.company_id).order('created_at', { ascending: false }).limit(latest || idMatch ? 50 : 100);
+    if (!canUseCompanyFinanceReads(identity.role)) query = query.eq('uploaded_by', identity.profile_id);
+    if (idMatch) query = query.eq('id', idMatch);
+    else if (!latest) query = query.gte('created_at', bounds.from).lt('created_at', bounds.to);
+    const { data, error } = await query;
+    if (error) {
+      const failed = lang === 'sw' ? 'Sikuweza kupata maelezo ya risiti sasa.' : 'I could not load the receipt details right now.';
+      return { content: failed, isError: true, terminalReply: failed };
+    }
+    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    const matched = idMatch || latest ? rows[0] : rows.find((row) => {
+      const haystack = normalizeAssistantSelector([
+        row.vendor_name, row.receipt_number, row.verification_code,
+      ].filter(Boolean).join(' '));
+      return Boolean(normalized && (haystack.includes(normalized) || normalized.includes(haystack)));
+    }) ?? null;
+    const receipt: ReceiptDetail | null = matched ? {
+      id: String(matched.id), status: String(matched.status),
+      amount: matched.total_amount === null ? null : Number(matched.total_amount),
+      vendor: matched.vendor_name ? String(matched.vendor_name) : null,
+      createdAt: String(matched.created_at),
+      tin: matched.vendor_tin ? String(matched.vendor_tin) : null,
+      vrn: matched.vendor_vrn ? String(matched.vendor_vrn) : null,
+      receiptNumber: matched.receipt_number ? String(matched.receipt_number) : null,
+      verificationCode: matched.verification_code ? String(matched.verification_code) : null,
+      receiptDate: matched.receipt_date ? String(matched.receipt_date) : null,
+      receiptTime: matched.receipt_time ? String(matched.receipt_time) : null,
+      taxAmount: matched.tax_amount === null ? null : Number(matched.tax_amount),
+      category: matched.category ? String(matched.category) : null,
+      paymentMethod: matched.payment_method ? String(matched.payment_method) : null,
+      lowConfidenceFields: Array.isArray(matched.low_confidence_fields)
+        ? matched.low_confidence_fields.filter((item): item is string => typeof item === 'string').slice(0, 20)
+        : [],
+    } : null;
+    return { content: buildReceiptDetailReply(receipt, lang, appUrl()) };
+  }
+  if (name === 'get_invoice_details') {
+    if (!canUseCompanyFinanceReads(identity.role)) {
+      const denied = lang === 'sw'
+        ? 'Invoice za kampuni zinaonekana kwa owner au accountant tu.'
+        : 'Company invoices are available only to an owner or accountant.';
+      return { content: denied, isError: true, terminalReply: denied };
+    }
+    const selector = assistantSelector(input.selector);
+    const normalized = normalizeAssistantSelector(selector);
+    const idMatch = selector.match(/[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/i)?.[0] ?? null;
+    let query = db.from('invoices').select(
+      'id, invoice_number, client_name, status, period_start, period_end, total_amount, tax_amount, line_items, created_at',
+    ).eq('company_id', identity.company_id).order('created_at', { ascending: false }).limit(idMatch ? 1 : 100);
+    if (idMatch) query = query.eq('id', idMatch);
+    const { data, error } = await query;
+    if (error) {
+      const failed = lang === 'sw' ? 'Sikuweza kupata maelezo ya invoice sasa.' : 'I could not load invoice details right now.';
+      return { content: failed, isError: true, terminalReply: failed };
+    }
+    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    const matched = idMatch || !normalized ? rows[0] : rows.find((row) => {
+      const haystack = normalizeAssistantSelector([row.invoice_number, row.client_name].filter(Boolean).join(' '));
+      return Boolean(haystack && (haystack.includes(normalized) || normalized.includes(haystack)));
+    }) ?? null;
+    const invoice: InvoiceDetail | null = matched ? {
+      id: String(matched.id), invoiceNumber: matched.invoice_number ? String(matched.invoice_number) : null,
+      clientName: matched.client_name ? String(matched.client_name) : null, status: String(matched.status),
+      periodStart: String(matched.period_start), periodEnd: String(matched.period_end),
+      totalAmount: Number(matched.total_amount), taxAmount: Number(matched.tax_amount),
+      lineItems: invoiceLineItemLabels(matched.line_items), createdAt: String(matched.created_at),
+    } : null;
+    return { content: buildInvoiceDetailReply(invoice, lang, appUrl()) };
+  }
   if (name === 'get_my_petty_cash_balance') {
     return { content: await readOnlyToolReply(db, identity, { tool: 'ai_petty_cash_balance', period: 'today' }, lang) };
   }
@@ -1345,10 +1466,15 @@ async function executeAssistantTool(
       return { content: stockReply(null, asked, lang) };
     }
     const matched = resolved?.resolution.kind === 'matched' ? resolved.resolution : null;
-    const { data, error } = await db.rpc('wa_stock_on_hand', {
-      p_company_id: identity.company_id,
-      p_product: matched?.match.productKey ?? null,
-    });
+    const [{ data, error }, { data: catalogueRows }] = await Promise.all([
+      db.rpc('wa_stock_on_hand', {
+        p_company_id: identity.company_id,
+        p_product: matched?.match.productKey ?? null,
+      }),
+      asked
+        ? Promise.resolve({ data: null })
+        : db.rpc('company_product_names', { p_company_id: identity.company_id }),
+    ]);
     if (error) {
       return { content: lang === 'sw' ? 'Sikuweza kupata hesabu ya stock sasa.' : 'I could not load stock right now.' };
     }
@@ -1363,6 +1489,29 @@ async function executeAssistantTool(
       soldSince: Number(row.sold_since ?? 0),
       incompletePurchases: Boolean(row.incomplete_purchases),
     }));
+    // wa_stock_on_hand contains movements/counts. The catalogue also contains
+    // products registered with prices but never counted or sold; include their
+    // names explicitly instead of making them disappear from a "what is in my
+    // store?" answer.
+    const represented = new Set(rows.map((row) => productKey(row.productName)));
+    for (const row of (catalogueRows ?? []) as Array<Record<string, unknown>>) {
+      const productName = String(row.product_name ?? '').trim();
+      const key = productKey(productName);
+      if (!key || represented.has(key)) continue;
+      represented.add(key);
+      rows.push({
+        productName,
+        unit: null,
+        measured: false,
+        onHand: 0,
+        hasCount: false,
+        countedAt: null,
+        boughtSince: 0,
+        soldSince: 0,
+        incompletePurchases: false,
+      });
+    }
+    rows.sort((a, b) => a.productName.localeCompare(b.productName, lang === 'sw' ? 'sw' : 'en'));
     return {
       content: asked && matched
         ? productReadMatchNotice(matched, lang) + stockReply(rows[0] ?? null, matched.match.productName, lang)
@@ -1822,6 +1971,10 @@ async function handleOnboarding(
           p_user: created.user.id, p_phone: phone,
           p_full_name: next.action.fullName,
           p_company_name: next.action.businessName, p_location: '',
+          p_category: next.action.category,
+          p_subcategory: next.action.subCategory,
+          p_confidence: next.action.confidence,
+          p_keywords: next.action.detectedKeywords,
         })
       : db.rpc('wa_join_by_code', {
           p_user: created.user.id, p_phone: phone,
@@ -2238,8 +2391,12 @@ Deno.serve(async (req) => {
           ? true
           : false;
         const newProductPending = convo?.awaiting === 'product_cost'
-          && (convo.options as { kind?: string } | null)?.kind === 'new_product_pricing'
-          ? (convo.options as { products: NewProductPricing[] }).products
+          && (convo.options as Partial<NewProductPricingState> | null)?.kind === 'new_product_pricing'
+          ? convo.options as NewProductPricingState
+          : null;
+        const newProductSaleSetup = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<NewProductSaleSetup> | null)?.kind === 'new_product_sale_setup'
+          ? convo.options as NewProductSaleSetup
           : null;
         const portionSizePending = convo?.awaiting === 'product_cost'
           && (convo.options as Partial<PortionSetupDraft> | null)?.kind === 'portion_setup_sizes'
@@ -2267,7 +2424,7 @@ Deno.serve(async (req) => {
           : null;
         const costConversation = convo?.awaiting === 'product_cost' && convo.options
           && !costPrompt && !costBatchPending && !stockBatchPending && !sellingBatchPending
-          && !newProductPending && !portionSizePending && !portionConfirmPending
+          && !newProductPending && !newProductSaleSetup && !portionSizePending && !portionConfirmPending
           && !quantityMeaningPending && !portionQuantityPending && !productRenamePending
           && !addProductSetupPending
           ? { cost: convo.options as unknown as ProductCost }
@@ -2922,39 +3079,136 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        if (newProductSaleSetup && (isDailyRecordRejection(body) || isCancel(body))) {
+          await clearConversation(db, identity.id as string);
+          await replyQuietly(phone, newProductCancelled(lang));
+          await audit(db, identity, waMessageId, 'new_product_sale_setup', 'cancel', 'applied');
+          await finish('skipped');
+          continue;
+        }
+
         // NDIYO on a set of brand-new products. The cost and both selling prices
         // land together, because a product added with only one of them fails the
         // next sale in exactly the way that started this.
         if (newProductPending) {
+          const pendingProducts = newProductPending.products;
+          const pendingSale = newProductPending.pendingSale;
+          const pendingSourceMessageId = newProductPending.sourceMessageId;
           if (isDailyRecordConfirmation(body)) {
             const { error: costError } = await db.rpc('wa_set_product_costs', {
               p_phone: phone,
-              p_items: newProductPending.map((product) => ({
+              p_items: pendingProducts.map((product) => ({
                 product: product.product, unit_cost: product.unitCost, unit: product.unit,
               })),
             });
             const { error: priceError } = costError ? { error: null } : await db.rpc('wa_set_selling_prices', {
               p_phone: phone,
-              p_items: newProductPending.map((product) => ({
+              p_items: pendingProducts.map((product) => ({
                 product: product.product,
                 retail: product.retail,
                 wholesale: product.wholesale,
                 min_qty: product.wholesaleMinQty,
               })),
             });
-            await clearConversation(db, identity.id as string);
             const failed = costError ?? priceError;
-            await replyQuietly(phone, failed
-              ? productCostErrorMessage(failed, lang)
-              : newProductSaved(newProductPending, lang));
+            if (failed) {
+              await clearConversation(db, identity.id as string);
+              await replyQuietly(phone, productCostErrorMessage(failed, lang));
+            } else if (pendingSale && pendingSourceMessageId) {
+              const priced = await priceQuantitySale(db, identity, pendingSale, lang);
+              if (priced.kind === 'priced') {
+                const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, priced.record);
+                const records: ParsedDailyRecord[] = [guardedRecord, ...pendingSale.expenses.map((spent) => ({
+                  kind: 'expense' as const,
+                  amount: spent.amount,
+                  partyName: null,
+                  description: spent.label,
+                  lines: [],
+                  confidence: 0.95,
+                }))];
+                if (records.length > 1) {
+                  const batch = await createDailyRecordBatchDrafts(
+                    db, identity, pendingSourceMessageId, records, lang,
+                  );
+                  if (!batch.error && batch.ids.length > 0) {
+                    await db.from('whatsapp_conversations').upsert({
+                      identity_id: identity.id,
+                      company_id: identity.company_id,
+                      profile_id: identity.profile_id,
+                      awaiting: 'payment_source',
+                      receipt_id: null,
+                      options: {
+                        kind: 'daily_record_batch_confirmation',
+                        dailyRecordIds: batch.ids,
+                        sourceMessageId: pendingSourceMessageId,
+                        records,
+                      },
+                      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                      updated_at: new Date().toISOString(),
+                    }, { onConflict: 'identity_id' });
+                    await replyQuietly(phone, `${newProductSaved(pendingProducts, lang, true)}\n\n${quantitySaleConfirmation(
+                      priced.lines, lang, pendingSale.expenses, [],
+                    )}`);
+                    await audit(db, identity, pendingSourceMessageId, 'quantity_sale', 'resume', 'pending');
+                  } else {
+                    await clearConversation(db, identity.id as string);
+                    await replyQuietly(phone, `${newProductSaved(pendingProducts, lang)}\n\n${lang === 'sw'
+                      ? 'Sikuweza kuandaa mauzo yaliyokuwa yanasubiri. Hayajathibitishwa; yatume tena.'
+                      : 'I could not prepare the waiting sale. It was not confirmed; please send it again.'}`);
+                  }
+                } else {
+                  const created = await createDailyRecordDraft(
+                    db, identity, pendingSourceMessageId, guardedRecord, lang,
+                  );
+                  if (!created.error && created.id) {
+                    const state: DailyRecordConversation = {
+                      kind: 'daily_record_confirmation',
+                      dailyRecordId: created.id,
+                      sourceMessageId: pendingSourceMessageId,
+                      record: guardedRecord,
+                    };
+                    await db.from('whatsapp_conversations').upsert({
+                      identity_id: identity.id,
+                      company_id: identity.company_id,
+                      profile_id: identity.profile_id,
+                      awaiting: 'payment_source',
+                      receipt_id: null,
+                      options: state,
+                      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                      updated_at: new Date().toISOString(),
+                    }, { onConflict: 'identity_id' });
+                    await replyQuietly(phone, `${newProductSaved(pendingProducts, lang, true)}\n\n${quantitySaleConfirmation(
+                      priced.lines, lang, [], [],
+                    )}`);
+                    await audit(db, identity, pendingSourceMessageId, 'quantity_sale', 'resume', 'pending');
+                  } else {
+                    await clearConversation(db, identity.id as string);
+                    await replyQuietly(phone, `${newProductSaved(pendingProducts, lang)}\n\n${lang === 'sw'
+                      ? 'Sikuweza kuandaa mauzo yaliyokuwa yanasubiri. Hayajathibitishwa; yatume tena.'
+                      : 'I could not prepare the waiting sale. It was not confirmed; please send it again.'}`);
+                  }
+                }
+              } else {
+                await clearConversation(db, identity.id as string);
+                const reason = priced.kind === 'blocked'
+                  ? priced.message
+                  : (lang === 'sw'
+                    ? 'Sikuweza kuandaa mauzo yaliyokuwa yanasubiri. Hayajathibitishwa; yatume tena.'
+                    : 'I could not prepare the waiting sale. It was not confirmed; please send it again.');
+                await replyQuietly(phone, `${newProductSaved(pendingProducts, lang)}\n\n${reason}`);
+              }
+            } else {
+              await clearConversation(db, identity.id as string);
+              await replyQuietly(phone, newProductSaved(pendingProducts, lang));
+            }
             await audit(db, identity, waMessageId, 'new_product',
-              String(newProductPending.length), failed ? 'failed' : 'applied');
+              String(pendingProducts.length), failed ? 'failed' : 'applied');
           } else if (isDailyRecordRejection(body)) {
             await clearConversation(db, identity.id as string);
             await replyQuietly(phone, newProductCancelled(lang));
             await audit(db, identity, waMessageId, 'new_product', 'cancel', 'applied');
           } else {
-            await replyQuietly(phone, newProductConfirmation(newProductPending, lang));
+            await replyQuietly(phone, newProductConfirmation(pendingProducts, lang));
             await audit(db, identity, waMessageId, 'new_product', 'reask', 'skipped');
           }
           await finish('skipped');
@@ -3369,18 +3623,41 @@ Deno.serve(async (req) => {
         // same line as a price change for a product that does not exist yet.
         const newProducts = parseNewProductPricing(writeBody);
         if (newProducts.length > 0) {
+          const stillMissing = newProductSaleSetup?.missingProducts.filter((required) =>
+            !newProducts.some((product) => productKey(product.product) === productKey(required))) ?? [];
+          if (stillMissing.length > 0) {
+            await replyQuietly(phone, newProductPricingIncomplete(stillMissing, lang));
+            await audit(db, identity, waMessageId, 'new_product_sale_setup', 'prices_incomplete', 'clarification');
+            await finish('skipped');
+            continue;
+          }
+          const state: NewProductPricingState = {
+            kind: 'new_product_pricing',
+            products: newProducts,
+            ...(newProductSaleSetup ? {
+              pendingSale: newProductSaleSetup.sale,
+              sourceMessageId: newProductSaleSetup.sourceMessageId,
+            } : {}),
+          };
           await db.from('whatsapp_conversations').upsert({
             identity_id: identity.id,
             company_id: identity.company_id,
             profile_id: identity.profile_id,
             awaiting: 'product_cost',
             receipt_id: null,
-            options: { kind: 'new_product_pricing', products: newProducts },
+            options: state,
             expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
             updated_at: new Date().toISOString(),
           }, { onConflict: 'identity_id' });
           await reply(phone, newProductConfirmation(newProducts, lang));
           await audit(db, identity, waMessageId, 'new_product', String(newProducts.length), 'pending');
+          await finish('skipped');
+          continue;
+        }
+
+        if (newProductSaleSetup) {
+          await replyQuietly(phone, newProductSaleOffer(newProductSaleSetup.missingProducts, lang));
+          await audit(db, identity, waMessageId, 'new_product_sale_setup', 'prices_unreadable', 'clarification');
           await finish('skipped');
           continue;
         }
@@ -3599,6 +3876,52 @@ Deno.serve(async (req) => {
           await audit(db, identity, waMessageId, 'product_rename', 'preview', 'pending');
           await finish('skipped');
           continue;
+        }
+
+        // A sale written the way a person writes it, with no verb in front.
+        //
+        // The owner's objection: "sentences should not depend on kitenzi." They
+        // are right — a shopkeeper types "Nguvu ya sala 21" and expects to be
+        // understood, and demanding "nimeuza" first is a bot's rule.
+        //
+        // The safety is not in the words, because a bare name and a number is
+        // genuinely ambiguous. It is in the catalogue: this only claims the
+        // message when EVERY name is already a product of this company and every
+        // one of them has a price the shop set itself. Anything else falls
+        // through untouched, exactly as before.
+        if (!resumedQuantitySale && !isDailyRecordCandidate(writeBody)) {
+          const bare = parseBareQuantityList(writeBody);
+          if (bare) {
+            const priced = await priceQuantitySale(db, identity, bare, lang);
+            if (priced.kind === 'priced' && priced.notCounted.length === 0) {
+              const guarded = await addHistoricalPriceWarnings(db, identity.company_id, priced.record);
+              const created = await createDailyRecordDraft(db, identity, waMessageId, guarded, lang);
+              if (!created.error && created.id) {
+                await db.from('whatsapp_conversations').upsert({
+                  identity_id: identity.id,
+                  company_id: identity.company_id,
+                  profile_id: identity.profile_id,
+                  awaiting: 'payment_source',
+                  receipt_id: null,
+                  options: {
+                    kind: 'daily_record_confirmation',
+                    dailyRecordId: created.id,
+                    sourceMessageId: waMessageId,
+                    record: guarded,
+                  } satisfies DailyRecordConversation,
+                  expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'identity_id' });
+                await replyQuietly(phone, quantitySaleConfirmation(priced.lines, lang, bare.expenses, []));
+                await audit(db, identity, waMessageId, 'bare_quantity_sale',
+                  String(priced.lines.length), 'pending');
+                await finish('skipped');
+                continue;
+              }
+            }
+            // Unknown product, no saved price, or a failed draft: this was
+            // probably never a sale. Leave it for the model to read.
+          }
         }
 
         const bareQuantityList = resumedQuantitySale ? null : parseBareQuantityList(writeBody);
@@ -3913,6 +4236,34 @@ Deno.serve(async (req) => {
           const quantitySale = resumedQuantitySale ?? parseQuantityOnlySale(writeBody);
           if (quantitySale) {
             const priced = await priceQuantitySale(db, identity, quantitySale, lang);
+            if (priced.kind === 'unknown') {
+              if (!canUseCompanyFinanceReads(identity.role)) {
+                await replyQuietly(phone, newProductSaleWorkerBlocked(priced.products, lang));
+                await audit(db, identity, waMessageId, 'quantity_sale', 'unknown_product', 'blocked');
+                await finish('skipped');
+                continue;
+              }
+              const state: NewProductSaleSetup = {
+                kind: 'new_product_sale_setup',
+                missingProducts: priced.products,
+                sale: priced.sale,
+                sourceMessageId: waMessageId,
+              };
+              await db.from('whatsapp_conversations').upsert({
+                identity_id: identity.id,
+                company_id: identity.company_id,
+                profile_id: identity.profile_id,
+                awaiting: 'product_cost',
+                receipt_id: null,
+                options: state,
+                expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'identity_id' });
+              await replyQuietly(phone, newProductSaleOffer(priced.products, lang));
+              await audit(db, identity, waMessageId, 'quantity_sale', 'unknown_product', 'pending');
+              await finish('skipped');
+              continue;
+            }
             if (priced.kind === 'blocked') {
               await reply(phone, priced.message);
               await audit(db, identity, waMessageId, 'quantity_sale', 'priced', 'clarification');

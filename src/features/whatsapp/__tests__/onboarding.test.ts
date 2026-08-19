@@ -52,9 +52,17 @@ describe('the three ways in', () => {
     expect(r.reply).not.toMatch(/password|nywila/i);
   });
 
-  it('uses the polished name question in both languages', () => {
-    expect(advanceOnboarding('create_name', 'Duka la Asha', 'sw').reply).toBe('Wewe unaitwa nani?');
-    expect(advanceOnboarding('create_name', 'Asha Shop', 'en').reply).toBe('What is your name?');
+  it('asks what the business does before asking the polished person-name question', () => {
+    const sw = advanceOnboarding('create_name', 'Duka la Asha', 'sw');
+    expect(sw.step).toBe('create_description');
+    expect(sw.reply).toContain('inauza nini');
+    const classified = advanceOnboarding(sw.step, 'Nauza daftari, kalamu na photocopy', 'sw', sw.draft);
+    expect(classified.step).toBe('create_category_confirm');
+    expect(advanceOnboarding(classified.step, 'ndiyo', 'sw', classified.draft).reply).toBe('Wewe unaitwa nani?');
+
+    const en = advanceOnboarding('create_name', 'Asha Shop', 'en');
+    const enClassified = advanceOnboarding(en.step, 'I sell clothes and shoes', 'en', en.draft);
+    expect(advanceOnboarding(enClassified.step, 'yes', 'en', enClassified.draft).reply).toBe('What is your name?');
   });
 
   it('does not guess at anything else', () => {
@@ -63,18 +71,39 @@ describe('the three ways in', () => {
 });
 
 describe('creating a business', () => {
-  it('asks for the business, then the person, then acts', () => {
+  it('asks for the business, classifies it with confirmation, then asks the person and acts', () => {
     const a = advanceOnboarding('create_name', 'Duka la Asha', 'sw');
-    expect(a.step).toBe('create_person');
+    expect(a.step).toBe('create_description');
     expect(a.draft.businessName).toBe('Duka la Asha');
 
-    const b = advanceOnboarding('create_person', 'Asha Mwinyi', 'sw', a.draft);
-    expect(b.action).toEqual({ kind: 'create_business', businessName: 'Duka la Asha', fullName: 'Asha Mwinyi' });
+    const b = advanceOnboarding(a.step, 'Nauza daftari, kalamu na kutoa photocopy', 'sw', a.draft);
+    expect(b.step).toBe('create_category_confirm');
+    expect(b.draft.businessSubCategory).toBe('Stationery na Fedha');
+    const c = advanceOnboarding(b.step, 'NDIYO', 'sw', b.draft);
+    expect(c.step).toBe('create_person');
+    const d = advanceOnboarding(c.step, 'Asha Mwinyi', 'sw', c.draft);
+    expect(d.action).toMatchObject({
+      kind: 'create_business', businessName: 'Duka la Asha', fullName: 'Asha Mwinyi',
+      category: 'Services & Micro-Manufacturing', subCategory: 'Stationery na Fedha',
+    });
   });
 
   it('refuses a name too short to be one', () => {
     expect(advanceOnboarding('create_name', 'D', 'sw').step).toBe('create_name');
     expect(advanceOnboarding('create_person', '', 'sw').action.kind).toBe('none');
+  });
+
+  it('does not guess a category from a vague description and lets the person correct it', () => {
+    const named = advanceOnboarding('create_name', 'Asha Ventures', 'sw');
+    const vague = advanceOnboarding(named.step, 'nafanya biashara', 'sw', named.draft);
+    expect(vague.step).toBe('create_description');
+    expect(vague.reply).toContain('Sijaweza kutambua');
+
+    const classified = advanceOnboarding(named.step, 'saluni ya nywele', 'sw', named.draft);
+    const corrected = advanceOnboarding(classified.step, 'hapana', 'sw', classified.draft);
+    expect(corrected.step).toBe('create_description');
+    expect(corrected.draft.businessName).toBe('Asha Ventures');
+    expect(corrected.draft.businessCategory).toBeUndefined();
   });
 
   it('trims runaway input rather than storing it whole', () => {
@@ -118,8 +147,17 @@ describe('a whole conversation, start to finish', () => {
     const r3 = advanceOnboarding(step, 'Duka la Asha', 'sw', draft);
     step = r3.step; draft = r3.draft;
 
-    const r4 = advanceOnboarding(step, 'Asha', 'sw', draft);
-    expect(r4.action).toEqual({ kind: 'create_business', businessName: 'Duka la Asha', fullName: 'Asha' });
+    const r4 = advanceOnboarding(step, 'Nauza daftari na kutoa photocopy', 'sw', draft);
+    step = r4.step; draft = r4.draft;
+
+    const r5 = advanceOnboarding(step, 'ndiyo', 'sw', draft);
+    step = r5.step; draft = r5.draft;
+
+    const r6 = advanceOnboarding(step, 'Asha', 'sw', draft);
+    expect(r6.action).toMatchObject({
+      kind: 'create_business', businessName: 'Duka la Asha', fullName: 'Asha',
+      subCategory: 'Stationery na Fedha',
+    });
   });
 });
 

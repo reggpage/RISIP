@@ -146,20 +146,36 @@ export function stockListReply(rows: StockRow[], lang: Lang): string {
   }
   const counted = rows.filter((row) => row.hasCount);
   if (counted.length === 0) {
+    const names = rows.map((row) => row.productName).join(', ');
     return lang === 'sw'
-      ? 'Sijawahi kuhesabu bidhaa yoyote, kwa hiyo siwezi kusema zilizopo.\nAnza na moja: "nina daftari 90".'
-      : 'I have never counted anything, so I cannot say what is on the shelf.\nStart with one: "nina daftari 90".';
+      ? `Sijawahi kuhesabu bidhaa yoyote, kwa hiyo siwezi kusema kiasi kilichopo.\nBidhaa zilizosajiliwa: ${names}.\n\nAnza na moja: "nina daftari 90".`
+      : `I have never counted anything, so I cannot say how much is on the shelf.\nRegistered products: ${names}.\n\nStart with one: "nina daftari 90".`;
   }
-  const lines = counted.slice(0, 15)
-    .map((row, index) => `${index + 1}. ${row.productName} — ${amount(row)}`)
-    .join('\n');
-  const uncounted = rows.length - counted.length;
-  const tail = uncounted > 0
+  // WhatsApp allows 4,096 characters. Build within a conservative budget, but
+  // never silently pretend the first 15 products are the whole catalogue.
+  const budget = 3_200;
+  const shown: string[] = [];
+  for (const row of counted) {
+    const line = `${shown.length + 1}. ${row.productName} — ${amount(row)}`;
+    if (shown.join('\n').length + line.length + 1 > budget) break;
+    shown.push(line);
+  }
+  const omitted = counted.length - shown.length;
+  const omittedText = omitted > 0
     ? (lang === 'sw'
-      ? `\n\nBidhaa ${uncounted} bado hazijahesabiwa.`
-      : `\n\n${uncounted} products have not been counted yet.`)
+      ? `\n\nNimeonyesha ${shown.length} kati ya bidhaa ${counted.length} zilizohesabiwa.`
+      : `\n\nShowing ${shown.length} of ${counted.length} counted products.`)
     : '';
-  return lang === 'sw' ? `Zilizopo:\n${lines}${tail}` : `On hand:\n${lines}${tail}`;
+  const uncountedRows = rows.filter((row) => !row.hasCount);
+  const uncountedText = uncountedRows.length > 0
+    ? (lang === 'sw'
+      ? `\n\nBidhaa ${uncountedRows.length} bado hazijahesabiwa: ${uncountedRows.map((row) => row.productName).join(', ')}.`
+      : `\n\n${uncountedRows.length} products have not been counted yet: ${uncountedRows.map((row) => row.productName).join(', ')}.`)
+    : '';
+  const lines = shown.join('\n');
+  return lang === 'sw'
+    ? `Zilizopo (${counted.length} zilizohesabiwa):\n${lines}${omittedText}${uncountedText}`
+    : `On hand (${counted.length} counted):\n${lines}${omittedText}${uncountedText}`;
 }
 
 export function stockCountConfirmation(count: StockCount, previous: number | null, lang: Lang): string {

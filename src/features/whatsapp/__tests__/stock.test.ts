@@ -117,11 +117,22 @@ describe('the whole list', () => {
     const reply = stockListReply([row(), row({ productName: 'Kalamu', hasCount: false })], 'sw');
     expect(reply).toContain('Daftari — 80');
     expect(reply).not.toContain('Kalamu —');
-    expect(reply).toMatch(/1 bidhaa|Bidhaa 1/);
+    expect(reply).toMatch(/Bidhaa 1/);
+    expect(reply).toContain('Kalamu');
+  });
+
+  it('does not silently stop after fifteen counted products', () => {
+    const rows = Array.from({ length: 40 }, (_, index) => row({ productName: `Bidhaa ${index + 1}` }));
+    const reply = stockListReply(rows, 'sw');
+    expect(reply).toContain('Bidhaa 16 — 80');
+    expect(reply).toContain('Bidhaa 40 — 80');
+    expect(reply).toContain('40 zilizohesabiwa');
   });
 
   it('says nothing has been counted rather than showing zeros', () => {
-    expect(stockListReply([row({ hasCount: false })], 'sw')).toMatch(/Sijawahi kuhesabu/);
+    const reply = stockListReply([row({ productName: 'Daftari', hasCount: false })], 'sw');
+    expect(reply).toMatch(/Sijawahi kuhesabu/);
+    expect(reply).toMatch(/Bidhaa zilizosajiliwa: Daftari/);
     expect(stockListReply([], 'sw')).toMatch(/Sijahesabu/);
   });
 });
