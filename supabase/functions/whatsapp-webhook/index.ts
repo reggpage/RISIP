@@ -3740,7 +3740,23 @@ Deno.serve(async (req) => {
         // how their business was doing, and got the ugali question back three
         // times. A parked question must let go the moment somebody moves on —
         // the same rule the invite already follows.
-        if (newProductSaleSetup && startsAnotherTopic(body)) {
+        // MEASURED FAILURE, twice. The first fix released the question only when
+        // the message started a topic Risip already RECOGNISED, which is a
+        // whitelist — so "bidhaa ziko ngapi store" and even "sihitaji kusajili
+        // bidhaa" were treated as bad answers and got the same question back,
+        // four times running.
+        //
+        // The test is the other way round: this is only an ANSWER if it is
+        // trying to be one. Prices were already tried above and failed, so what
+        // is left qualifies only when it mentions the product or carries a
+        // number — a botched price attempt worth one more go. A question, or a
+        // refusal, or anything else, releases the parked sale.
+        const looksLikeAnAnswer = newProductSaleSetup
+          ? /[0-9]/.test(body)
+            && newProductSaleSetup.missingProducts.some((name) =>
+              body.toLocaleLowerCase('sw-TZ').includes(name.toLocaleLowerCase('sw-TZ')))
+          : false;
+        if (newProductSaleSetup && (startsAnotherTopic(body) || !looksLikeAnAnswer)) {
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'new_product_sale_setup', 'abandoned', 'skipped');
         } else if (newProductSaleSetup) {
