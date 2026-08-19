@@ -452,8 +452,13 @@ cases:
     say: "invite worker Juma"
     lang: en
     fixture: live_sandbox
-    expect_tool: null
-    must_not: [invite_over_whatsapp, create_access]
+    expect_tool: invite
+    must_not: [create_access, send_to_third_party]
+    # Changed deliberately, on the owner's instruction. This used to expect no
+    # tool at all, because inviting was app-only. Risip now mints a single-use,
+    # role-bound code and writes the invite out for the OWNER to forward — it
+    # still never sends anything to the newcomer itself, which is what
+    # must_not still guards. Only an owner can mint one, enforced in the RPC.
   - id: 1067
     say: "badili role ya accountant"
     lang: sw

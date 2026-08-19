@@ -214,6 +214,13 @@ export function parseBareQuantityList(text: string | null | undefined): Quantity
   // product. Only an unmistakable opener makes this a stock/purchase message.
   if (/^(?:hesabu\s+ya\s+stock|stock\b|store\b|nina\b|ninazo\b|nilizonazo\b|zilizopo\b|nimehesabu\b|nimenunua\b|nilinunua\b|purchase\b|bought\b)/iu.test(said)
     || /\bzimebaki\b/iu.test(said)) return null;
+  // A command is not a sale. "approve receipt 123" was read as selling 123 of
+  // something called "approve receipt" — found by the eval set the moment a
+  // single item became enough. An instruction opens with a verb aimed at Risip,
+  // and none of those verbs ever start a sale.
+  if (/^(?:approve|confirm|thibitisha|reject|kataa|delete|futa|void|ghairi|reverse|rudisha|cancel|sitisha|rename|badilisha|show|onyesha|nipe|list|orodha|tuma|send|login|logout|toka|help|msaada|open|fungua)\b/iu.test(said)) {
+    return null;
+  }
   // A price list is not a sale. "bei ya daftari rejareja 1500" has no money
   // keyword directly before a digit, so STATES_MONEY lets it through — and with
   // no verb to stop it, it was read as selling 1500 of something.

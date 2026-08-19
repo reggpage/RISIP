@@ -131,17 +131,36 @@ const shillings = (value: number) => `TSh ${Math.round(value).toLocaleString('en
  * counter should be able to finish this in one message.
  */
 export function newProductOffer(names: string[], lang: Lang): string {
-  const rows = names.map((name) => `  • ${name}`).join('\n');
-  const example = names[0] ?? 'biblia';
+  const one = names.length === 1;
+  const only = names[0] ?? 'biblia';
+  // One product is named in the sentence itself. Listing a single bullet under
+  // "these are not in your store" reads like a form, and the owner said so:
+  // "kama ni bidhaa moja mtu ameulizia, ai ijibu kwa kutaja hiyo bidhaa".
+  const heading = one
+    ? (lang === 'sw'
+      ? `\n❓ *${only}* haipo kwenye store yako.\n`
+      : `\n❓ *${only}* is not in your store yet.\n`)
+    : (lang === 'sw'
+      ? `\n❓ Hizi hazipo kwenye store yako:\n${names.map((name) => `  • ${name}`).join('\n')}\n`
+      : `\n❓ These are not in your store yet:\n${names.map((name) => `  • ${name}`).join('\n')}\n`);
+
+  // Placeholders, not invented figures. The old example priced ugali at 9,000 a
+  // plate because the numbers were hard-coded and the same for everything — a
+  // guess dressed up as advice. The shape is what the person needs; the numbers
+  // are the one thing only they know.
+  const template = lang === 'sw'
+    ? `_${only} kununua <bei ya kununua> rejareja <bei ya kuuza>_`
+    : `_${only} kununua <buying price> rejareja <selling price>_`;
+
   return lang === 'sw'
-    ? `\n❓ Hizi hazipo kwenye store yako:\n${rows}\n`
-      + 'Ulitaka kuziweka? Tuma bei zake, mstari mmoja kwa kila bidhaa:\n'
-      + `_${example} kununua 9000 rejareja 12000 jumla 11000 kuanzia 3_\n`
-      + 'Ukiacha "jumla" nitatumia bei moja tu. Ukiona jina limekosewa, rekebisha badala ya kuliweka upya.'
-    : `\n❓ These are not in your store yet:\n${rows}\n`
-      + 'Add them? Send their prices, one line per product:\n'
-      + `_${example} kununua 9000 rejareja 12000 jumla 11000 kuanzia 3_\n`
-      + 'Leave out "jumla" for a single price. If a name is mistyped, fix it rather than adding it twice.';
+    ? `${heading}${one ? 'Ulitaka kuiweka? Tuma bei zake:\n' : 'Ulitaka kuziweka? Tuma bei zake, mstari mmoja kwa kila bidhaa:\n'}`
+      + `${template}\n`
+      + 'Ukiuza pia kwa jumla, ongeza: _jumla <bei> kuanzia <idadi>_.\n'
+      + 'Ukiona jina limekosewa, rekebisha badala ya kuliweka upya.'
+    : `${heading}${one ? 'Add it? Send its prices:\n' : 'Add them? Send their prices, one line per product:\n'}`
+      + `${template}\n`
+      + 'If you also sell in bulk, add: _jumla <price> kuanzia <quantity>_.\n'
+      + 'If a name is mistyped, fix it rather than adding it twice.';
 }
 
 /**

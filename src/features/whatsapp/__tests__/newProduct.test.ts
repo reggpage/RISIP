@@ -91,7 +91,10 @@ describe('what the shopkeeper is shown', () => {
   it('asks in one message, with an example using their own product', () => {
     const offer = newProductOffer(['biblia'], 'sw');
     expect(offer).toContain('biblia');
-    expect(offer).toMatch(/hazipo kwenye store/);
+    // One product is named in the sentence, not listed as a bullet under a
+    // plural heading: "kama ni bidhaa moja, ai ijibu kwa kutaja hiyo bidhaa".
+    expect(offer).toMatch(/haipo kwenye store/);
+    expect(offer).not.toMatch(/Hizi hazipo/);
     expect(offer).toMatch(/kununua .* rejareja/);
   });
 
@@ -102,7 +105,7 @@ describe('what the shopkeeper is shown', () => {
   it('says an unknown sale was not posted and will resume after registration', () => {
     const reply = newProductSaleOffer(['samaki'], 'sw');
     expect(reply).toContain('samaki');
-    expect(reply).toMatch(/hazipo kwenye store/);
+    expect(reply).toMatch(/haipo kwenye store/);
     expect(reply).toMatch(/mauzo haya kwa muda/);
     expect(reply).toMatch(/uyathibitishe kwa NDIYO/);
   });

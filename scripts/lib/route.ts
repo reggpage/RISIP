@@ -13,11 +13,12 @@ import { parseDailyRecordBatch } from '../../supabase/functions/_shared/whatsapp
 import { isDailyRecordCandidate, parseDailyRecord } from '../../supabase/functions/_shared/whatsappDailyRecords.ts';
 import { parseHypotheticalProfitRequest } from '../../supabase/functions/_shared/whatsappHypotheticalProfit.ts';
 import { parseLanguageCommand } from '../../supabase/functions/_shared/whatsappIntent.ts';
+import { parseInviteRequest } from '../../supabase/functions/_shared/whatsappInvite.ts';
 import { parseNewProductPricing } from '../../supabase/functions/_shared/whatsappNewProduct.ts';
 import { parseProductAnalyticsRequest } from '../../supabase/functions/_shared/whatsappProductAnalytics.ts';
 import { parseProductCost } from '../../supabase/functions/_shared/whatsappProductCosts.ts';
 import { parseProductCostBatch } from '../../supabase/functions/_shared/whatsappCostBatch.ts';
-import { parseQuantityOnlySale } from '../../supabase/functions/_shared/whatsappQuantitySale.ts';
+import { parseBareQuantityList, parseQuantityOnlySale } from '../../supabase/functions/_shared/whatsappQuantitySale.ts';
 import { parseReadRequest } from '../../supabase/functions/_shared/whatsappReadTools.ts';
 import { parseSellingPrice } from '../../supabase/functions/_shared/whatsappSellingPrice.ts';
 import { parseSellingPriceBatch } from '../../supabase/functions/_shared/whatsappSellingPriceBatch.ts';
@@ -68,6 +69,11 @@ export function route(text: string): string {
     const batch = parseDailyRecordBatch(text, 'sw');
     return batch.kind === 'none' ? 'daily_record' : `daily_record_${batch.kind}`;
   }
+  if (parseInviteRequest(text)) return 'invite';
+  // A sale with no verb. The webhook adds one more condition this table cannot
+  // express: it only claims the message when every name is already a product of
+  // the company. Read this route as "a candidate sale", not a certainty.
+  if (parseBareQuantityList(text)) return 'bare_quantity_sale';
   if (parseProductAnalyticsRequest(text)) return 'product_analytics';
   const read = parseReadRequest(text);
   if (read) return read.tool;

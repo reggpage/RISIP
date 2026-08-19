@@ -521,6 +521,10 @@ function startsAnotherTopic(text: string): boolean {
     || isAddProductStart(text)
     || parseAddProduct(text)
     || parseQuantityOnlySale(text)
+    // A sale written with no verb is still a sale, and still a change of
+    // subject. Without this, "antoni wa padua 3" was answered with the ugali
+    // question, three times running.
+    || parseBareQuantityList(text)
     || parseSellingPriceBatch(text)
     || parsePortionSetupOffer(text)
     || parseProductRename(text)
@@ -3655,7 +3659,15 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        if (newProductSaleSetup) {
+        // MEASURED FAILURE: this re-sent the same registration question for any
+        // message at all. The owner asked about a different product, then asked
+        // how their business was doing, and got the ugali question back three
+        // times. A parked question must let go the moment somebody moves on —
+        // the same rule the invite already follows.
+        if (newProductSaleSetup && startsAnotherTopic(body)) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'new_product_sale_setup', 'abandoned', 'skipped');
+        } else if (newProductSaleSetup) {
           await replyQuietly(phone, newProductSaleOffer(newProductSaleSetup.missingProducts, lang));
           await audit(db, identity, waMessageId, 'new_product_sale_setup', 'prices_unreadable', 'clarification');
           await finish('skipped');
