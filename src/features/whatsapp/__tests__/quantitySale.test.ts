@@ -497,3 +497,40 @@ describe('the till roll the owner actually pasted', () => {
     expect(parseSellingPrice('bei ya daftari rejareja 1500 jumla 1300 kuanzia 12')).not.toBeNull();
   });
 });
+
+describe('the way people actually head a day’s takings', () => {
+  it('takes "Mauzo ya leo", which is how anybody writes it', () => {
+    // MEASURED FAILURE: the header had to be "Mauzo" or "Mauzo rejareja" and
+    // nothing else. "Mauzo ya leo" was not a header, the block fell through,
+    // and a hundred notebooks SOLD were read as setting daftari's price to 100.
+    expect(parseQuantityOnlySale('Mauzo ya leo\ndaftari — 100\nduster — 11')?.items)
+      .toEqual([
+        { product: 'daftari', quantity: 100, band: null },
+        { product: 'duster', quantity: 11, band: null },
+      ]);
+  });
+
+  it('takes the other shapes of the same header', () => {
+    for (const head of ['Mauzo', 'mauzo ya leo', 'Mauzo za leo', 'Sales today', 'mauzo:', 'Mauzo ya jana']) {
+      expect(parseQuantityOnlySale(`${head}\ndaftari — 4\nduster — 2`)?.items, head)
+        .toHaveLength(2);
+    }
+  });
+
+  it('still carries a band on the header', () => {
+    expect(parseQuantityOnlySale('mauzo ya leo rejareja\ndaftari — 100\nduster — 11')?.items)
+      .toEqual([
+        { product: 'daftari', quantity: 100, band: 'retail' },
+        { product: 'duster', quantity: 11, band: 'retail' },
+      ]);
+  });
+
+  it('keeps the price parsers away from every one of those headers', () => {
+    // One definition of the header, shared, so the two can never disagree about
+    // whether a block is a sale or a price change.
+    for (const head of ['Mauzo ya leo', 'Mauzo', 'mauzo ya leo rejareja']) {
+      expect(parseSellingPriceBatch(`${head}\ndaftari — 100 rejareja\nduster — 11 jumla`), head)
+        .toBeNull();
+    }
+  });
+});

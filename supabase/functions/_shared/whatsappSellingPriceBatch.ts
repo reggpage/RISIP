@@ -13,6 +13,7 @@
 
 import type { Lang } from './whatsappIntent.ts';
 import { type SellingPrice, parseSellingPrice } from './whatsappSellingPrice.ts';
+import { SALE_HEADER } from './whatsappQuantitySale.ts';
 
 export type SellingPriceBatch = {
   kind: 'selling_price_batch';
@@ -42,9 +43,7 @@ export function parseSellingPriceBatch(text: string | null | undefined): Selling
   // 100 was a hundred notebooks sold. The header says what the block is, and
   // nothing below it can turn a sale into a price change.
   const first = String(text ?? '').split(/\r?\n/)[0] ?? '';
-  if (/^\s*(?:mauzo|sales?)\s*(?:rejareja|reja\s*reja|retail|jumla|wholesale)?\s*:?\s*$/i.test(first)) {
-    return null;
-  }
+  if (SALE_HEADER.test(first)) return null;
 
   const lines = String(text ?? '')
     .split(/\r?\n/)

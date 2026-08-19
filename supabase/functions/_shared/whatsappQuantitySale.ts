@@ -117,6 +117,20 @@ function dashToSpace(text: string): string {
 
 const OPENER = /^(?:leo\s+|today\s+)?(?:nimeuza|niliuza|nimuza|uza|mauzo|(?:i\s+)?sold)\b/iu;
 
+/**
+ * "Mauzo" standing alone at the top of a block, saying what the block is.
+ *
+ * MEASURED FAILURE: this used to accept "Mauzo" or "Mauzo rejareja" and nothing
+ * else, so "Mauzo ya leo" — the most natural way anybody heads a day's takings —
+ * was not a header at all. The block fell through, the price-list parser claimed
+ * it, and a hundred notebooks SOLD were read as setting daftari's price to 100.
+ *
+ * Exported because the price-list parser has to recognise the same header in
+ * order to decline. One definition, so the two can never disagree.
+ */
+export const SALE_HEADER =
+  /^\s*(?:mauzo|sales?)\b[\s,]*(?:ya\s+|za\s+|of\s+)?(?:leo|jana|juzi|siku(?:\s+hii)?|today|yesterday)?[\s,]*(rejareja|reja\s*reja|retail|jumla|wholesale)?\s*:?\s*$/i;
+
 // Anything that states money makes this somebody else's message: the ordinary
 // sale parser and the comma-list parser both handle stated prices, and they
 // must keep handling them.
@@ -144,7 +158,7 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   // — the owner saying which price the whole block went at — was not a header at
   // all, and the entire list fell through to a parser that asked whether 100 was
   // a price. The band is read off the header and handed to every line.
-  const header = /^(?:mauzo|sales?)\s*(rejareja|reja\s*reja|retail|jumla|wholesale)?\s*:?\s*$/i
+  const header = SALE_HEADER
     .exec(lines[0] ?? '');
   if (lines.length > 1 && header) {
     const band = header[1] ? ` ${header[1]}` : '';
