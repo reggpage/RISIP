@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   parseStockCount,
   parseStockQuestion,
+  stockShortfall,
+  type StockRow,
   stockCountConfirmation,
   stockListReply,
   stockReply,
@@ -174,5 +176,102 @@ describe('the unit-mismatch message keeps the useful half', () => {
   it('still handles the codes it already knew', () => {
     expect(productCostErrorMessage({ hint: 'not_authorized' }, 'sw')).toMatch(/owner au accountant/);
     expect(productCostErrorMessage(null, 'sw')).toMatch(/jaribu tena/);
+  });
+});
+
+describe('the words the welcome teaches, on one line', () => {
+  it('reads "naongeza sukari 20" as a count, like the bulk form does', () => {
+    // The welcome now teaches "naongeza bidhaa" for adding goods, and the bulk
+    // form anchors the shelf. One line of the same words used to fall through
+    // to "is this a sale or a purchase?", which nobody had asked.
+    expect(parseStockCount('naongeza sukari 20')).toEqual({
+      product: 'sukari', quantity: 20, unit: null, stated: 'add',
+    });
+    expect(parseStockCount('nimeongeza sukari kilo 20')).toEqual({
+      product: 'sukari', quantity: 20, unit: 'kilo', stated: 'add',
+    });
+    expect(parseStockCount('naongeza bidhaa sukari 20')).toMatchObject({ product: 'sukari', quantity: 20 });
+  });
+
+  it('says plainly that twenty added is not twenty more', () => {
+    const count = parseStockCount('naongeza sukari 20')!;
+    const said = stockCountConfirmation(count, 30, 'sw');
+    expect(said).toContain('sasa nimeweka 20');
+    expect(said).toContain('nina sukari 50');
+  });
+
+  it('keeps the plain wording when the words were unambiguous', () => {
+    const said = stockCountConfirmation(parseStockCount('nina sukari 20')!, 30, 'sw');
+    expect(said).toContain('Hesabu yako ndiyo sahihi');
+    expect(said).not.toContain('nina sukari 50');
+  });
+
+  it('still refuses a sale', () => {
+    expect(parseStockCount('nimeuza sukari 20')).toBeNull();
+  });
+});
+
+describe('the way the question is actually typed', () => {
+  it('reads "ziko/zipo/kuna ngapi", which used to reach the model', () => {
+    expect(parseStockQuestion('atlas ziko ngapi')).toEqual({ product: 'atlas' });
+    expect(parseStockQuestion('daftari zipo ngapi?')).toEqual({ product: 'daftari' });
+    expect(parseStockQuestion('kuna daftari ngapi')).toEqual({ product: 'daftari' });
+  });
+
+  it('ignores the place and keeps the goods', () => {
+    expect(parseStockQuestion('daftari ziko ngapi stoo')).toEqual({ product: 'daftari' });
+    expect(parseStockQuestion('sukari zimebaki ngapi dukani')).toEqual({ product: 'sukari' });
+  });
+
+  it('treats "bidhaa" as the whole shelf, not a product called bidhaa', () => {
+    expect(parseStockQuestion('bidhaa ziko ngapi store')).toEqual({ product: null });
+    expect(parseStockQuestion('nina bidhaa ngapi')).toEqual({ product: null });
+    expect(parseStockQuestion('vitu ziko ngapi')).toEqual({ product: null });
+  });
+
+  it('never claims a question that belongs to another tool', () => {
+    for (const other of [
+      'mauzo ya leo ni ngapi', 'faida yangu ni ngapi', 'madeni ngapi',
+      'wateja wangu ni wangapi', 'risiti ngapi zipo', 'matumizi ni ngapi',
+    ]) {
+      expect(parseStockQuestion(other), other).toBeNull();
+    }
+  });
+});
+
+describe('a shelf cannot hold minus eight', () => {
+  const short = (over: Partial<StockRow> = {}): StockRow => ({
+    productName: 'daftari', unit: null, measured: false, onHand: -8, hasCount: true,
+    countedAt: '2026-08-15T16:23:10Z', boughtSince: 0, soldSince: 248,
+    incompletePurchases: false, ...over,
+  });
+
+  it('shows zero and names the shortfall instead', () => {
+    // PRODUCTION: daftari, counted 240, sold 248, bought 0 → the answer was
+    // "zimebaki -8", which reads as stock and cannot be.
+    const said = stockReply(short(), 'daftari', 'sw');
+    expect(said).toContain('zimebaki 0');
+    expect(said).not.toContain('-8');
+    expect(said).toContain('Mauzo yamezidi kwa 8');
+    expect(said).toContain('nina daftari 20');
+  });
+
+  it('says nothing extra when the count is healthy', () => {
+    const said = stockReply(short({ onHand: 12, soldSince: 228 }), 'daftari', 'sw');
+    expect(said).toContain('zimebaki 12');
+    expect(said).not.toContain('⚠️ Mauzo yamezidi');
+  });
+
+  it('never prints a negative in the whole-shelf list, and names which ones', () => {
+    const list = stockListReply([short(), short({ productName: 'kalamu', onHand: 4 })], 'sw');
+    expect(list).not.toMatch(/-8/);
+    expect(list).toContain('daftari — 0');
+    expect(list).toContain('kalamu — 4');
+    expect(list).toContain('mauzo yamezidi hesabu');
+  });
+
+  it('reports the shortfall as a positive number', () => {
+    expect(stockShortfall(short())).toBe(8);
+    expect(stockShortfall(short({ onHand: 3 }))).toBe(0);
   });
 });

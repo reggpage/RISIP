@@ -116,6 +116,7 @@ const SATISFIES: Record<string, string[]> = {
 
 const args = new Set(process.argv.slice(2));
 const showFailed = args.has('--failed');
+const showUnchecked = args.has('--unchecked');
 
 const cases = FILES.flatMap((file) =>
   extractCases(file, readFileSync(resolve(process.cwd(), 'evals', file), 'utf8')));
@@ -198,6 +199,14 @@ for (const item of unchecked) why.set(item.why, (why.get(item.why) ?? 0) + 1);
 console.log('\nUnchecked, by reason:');
 for (const [reason, count] of [...why].sort((a, b) => b[1] - a[1])) {
   console.log(`  ${String(count).padStart(3)}  ${reason}`);
+}
+
+if (showUnchecked) {
+  console.log('\nUnchecked cases:');
+  for (const item of unchecked) {
+    console.log(`  ${item.c.file}#${item.c.id}  [${item.why}]  expect_tool: ${item.c.expectTool ?? 'null'}`);
+    console.log(`      "${(item.c.say ?? '').replace(/\n/g, ' / ')}"`);
+  }
 }
 
 const amountsChecked = amountsRight + amountsWrong.length;

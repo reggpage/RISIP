@@ -117,9 +117,20 @@ export function buildHypotheticalProfitReply(input: HypotheticalProfitInput, lan
   const cappedByStock = asked !== null && asked > (input.onHand ?? 0);
   const unitText = input.unit ? ` ${input.unit}` : '';
   if (quantity <= 0) {
-    return lang === 'sw'
-      ? `${input.productName} haina stock inayoweza kuuzwa kwa sasa (${quantity.toLocaleString('en-US')}${unitText}).`
-      : `${input.productName} has no sellable stock right now (${quantity.toLocaleString('en-US')}${unitText}).`;
+    // Never "(-8)". A shelf cannot hold minus eight, and a negative shown here
+    // would be read as stock. Below zero means the records are missing
+    // something, and saying which something is the only useful answer.
+    const shown = Math.max(0, quantity).toLocaleString('en-US');
+    const short = quantity < 0
+      ? (lang === 'sw'
+        ? `\n\n⚠️ Mauzo yamezidi hesabu kwa ${(-quantity).toLocaleString('en-US')}.`
+          + ` Hesabu upya: "nina ${input.productName} 20".`
+        : `\n\n⚠️ Sales exceed the count by ${(-quantity).toLocaleString('en-US')}.`
+          + ` Count it again: "nina ${input.productName} 20".`)
+      : '';
+    return (lang === 'sw'
+      ? `${input.productName} haina stock inayoweza kuuzwa kwa sasa (${shown}${unitText}).`
+      : `${input.productName} has no sellable stock right now (${shown}${unitText}).`) + short;
   }
 
   const retailProfit = quantity * (sellingPrice! - input.unitCost!);

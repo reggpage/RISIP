@@ -24,7 +24,17 @@ export type StockRow = {
   incompletePurchases: boolean;
 };
 
-export type StockCount = { product: string; quantity: number; unit: string | null };
+export type StockCount = {
+  product: string;
+  quantity: number;
+  unit: string | null;
+  /**
+   * Which words the shopkeeper used. "nina 20" is unambiguous; "naongeza 20"
+   * could mean "twenty more" and is recorded as a count like everything else —
+   * so the confirmation has to say so in those words, not in general ones.
+   */
+  stated?: 'count' | 'add';
+};
 
 const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
@@ -47,7 +57,14 @@ export function parseStockCount(text: string | null | undefined): StockCount | n
   const patterns = [
     // An explicit shelf anchor, including the owner's portion example:
     // "store mafuta ndoo 2". This is a count, not a purchase movement.
-    new RegExp(`^(?:store|stoo)\\s+(.+?)\\s+(?:(${UNITS})\\s+)?(${NUMBER})\\s*(${UNITS})?$`, 'i'),
+    //
+    // "naongeza sukari 20" is here because that is the phrase the welcome now
+    // teaches for adding goods, and the bulk form "naongeza bidhaa" + a list
+    // already anchors. The same words on one line must not mean something
+    // different from the same words on three.
+    new RegExp(`^(?:store|stoo|naongeza|ninaongeza|nimeongeza|ongeza|nimeweka|add)`
+      + `\\s+(?:(?:bidhaa|bidhaa\\s+mpya|stock|store|mzigo|product|products)\\s+)?`
+      + `(.+?)\\s+(?:(${UNITS})\\s+)?(${NUMBER})\\s*(${UNITS})?$`, 'i'),
     // nina daftari 90 [kipimo]
     new RegExp(`^(?:nina|ninazo|ninavyo|nimebakiwa na|nimebakisha)\\s+(.+?)\\s+(?:(${UNITS})\\s+)?(${NUMBER})\\s*(${UNITS})?$`, 'i'),
     // nimehesabu daftari 90
@@ -65,36 +82,91 @@ export function parseStockCount(text: string | null | undefined): StockCount | n
     if (!product || product.length < 2 || !Number.isFinite(quantity) || quantity < 0) continue;
     // A name made only of digits is a parse gone wrong, not a product.
     if (!/[\p{L}]/u.test(product)) continue;
-    return { product, quantity, unit };
+    const adding = /^(?:naongeza|ninaongeza|nimeongeza|ongeza|add)\b/i.test(said);
+    return { product, quantity, unit, ...(adding ? { stated: 'add' as const } : {}) };
   }
   return null;
 }
 
-/** "Bibilia ndogo ninazo ngapi?", "stock ya daftari", "zimebaki ngapi?" */
-export function parseStockQuestion(text: string | null | undefined): { product: string | null } | null {
-  const said = clean(text);
-  if (!said) return null;
+/**
+ * "Bibilia ndogo ninazo ngapi?", "stock ya daftari", "atlas ziko ngapi stoo".
+ *
+ * A product name followed by "ziko/zipo/zimebaki … ngapi" is the commonest way
+ * the question is actually typed, and none of those words were here — so these
+ * went to the model, which cannot count and had to be told to call a tool.
+ *
+ * `product: null` means the whole shelf: "bidhaa ziko ngapi store" is asking
+ * what is in the shop, not about a product called "bidhaa".
+ */
+const STOCK_VERBS = 'ninazo|ninavyo|nina|nazo|zimebaki|imebaki|zilizobaki|zilizopo|zipo|ziko|ipo|iko|kuna|zimesalia';
+/** Words that name the place, not the goods: "…ngapi store". */
+const PLACE = /\s*(?:kwenye\s+|kwa\s+|katika\s+)?(?:store|stoo|stoo\s*ni|ghala|ghalani|duka|dukani|shop|shopu|hapa)\s*$/i;
+/** The whole shelf, not a product with that name. */
+const EVERYTHING = /^(?:bidhaa|bidha|vitu|vitu\s+vyangu|bidhaa\s+zangu|mzigo|stock|products?|items?|goods)$/i;
+/** Questions that belong to another tool entirely and must not be claimed here. */
+const NOT_STOCK = /\b(?:mauzo|faida|hasara|madeni|deni|wadeni|wateja|risiti|pesa|matumizi|gharama|wafanyakazi|invoice|sales|profit|customers?|expenses?)\b/i;
 
-  const named = said.match(new RegExp(`^(.+?)\\s+(?:ninazo|ninavyo|nina|zimebaki|zilizobaki|zipo)\\s+ngapi\\b`, 'i'))
-    ?? said.match(/^(?:nina|ninazo)\s+(.+?)\s+ngapi\b/i)
-    ?? said.match(/^(?:stock|hisa)\s+(?:ya|za|of)\s+(.+?)\s*\??$/i)
-    ?? said.match(/^how many\s+(.+?)\s+(?:do i have|are left|remain)/i);
+export function parseStockQuestion(text: string | null | undefined): { product: string | null } | null {
+  const said = clean(text).replace(/\?+\s*$/, '').replace(PLACE, '').trim();
+  if (!said || NOT_STOCK.test(said)) return null;
+
+  const named = said.match(new RegExp(`^(.+?)\\s+(?:${STOCK_VERBS})\\s+ngapi\\b`, 'i'))
+    ?? said.match(/^(?:nina|ninazo|kuna|zipo|ziko)\s+(.+?)\s+ngapi\b/i)
+    ?? said.match(/^(?:stock|hisa)\s+(?:ya|za|of)\s+(.+?)\s*$/i)
+    ?? said.match(/^how many\s+(.+?)\s+(?:do i have|are left|remain|in stock)/i);
   if (named) {
     const product = clean(named[1]).replace(/^(?:ya|za|wa|of)\s+/i, '');
+    if (EVERYTHING.test(product)) return { product: null };
     if (product.length >= 2 && /[\p{L}]/u.test(product)) return { product };
   }
 
-  if (/^(?:stock|hisa)\b.*\??$/i.test(said) || /^(?:nionyeshe|onyesha)\s+stock\b/i.test(said)) {
+  if (/^(?:stock|hisa)$/i.test(said) || /^(?:nionyeshe|onyesha)\s+stock\b/i.test(said)) {
+    return { product: null };
+  }
+  // "bidhaa ngapi ziko store", "nina bidhaa ngapi" — the shelf, counted whole.
+  if (new RegExp(`^(?:nina\\s+)?(?:bidhaa|vitu|mzigo|products?|items?)\\s+ngapi(?:\\s+(?:${STOCK_VERBS}))?$`, 'i').test(said)) {
     return { product: null };
   }
   return null;
 }
 
+/**
+ * How far the books have gone below zero, which is not the same as stock.
+ *
+ * MEASURED FAILURE: daftari was reported as "-8". A shelf cannot hold minus
+ * eight of anything, so that number is never an answer to "how many do I have"
+ * — it is a report that something is missing from the records. Counted 240,
+ * sold 248, bought nothing: either a restock was never written down, or a sale
+ * was recorded twice.
+ *
+ * Shown as zero, with the shortfall named separately and a way to fix it. A
+ * negative presented as stock is worse than no number, because it will be read
+ * as stock and it cannot be.
+ */
+export function stockShortfall(row: StockRow): number {
+  return row.onHand < 0 ? -row.onHand : 0;
+}
+
 function amount(row: StockRow): string {
   const decimals = row.measured ? 2 : 0;
-  const value = row.onHand.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: decimals });
+  // Clamped: see stockShortfall. Every caller that prints a quantity prints it
+  // through here, so there is no path left that can show a negative shelf.
+  const value = Math.max(0, row.onHand)
+    .toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: decimals });
   if (row.unit) return `${value} ${row.unit}`;
   return row.measured ? value : value;
+}
+
+/** Said whenever the books have gone below zero for one product. */
+function shortfallNotice(row: StockRow, lang: Lang): string {
+  const short = stockShortfall(row);
+  if (short === 0) return '';
+  const shown = short.toLocaleString('en-US', { maximumFractionDigits: row.measured ? 2 : 0 });
+  return lang === 'sw'
+    ? `\n\n⚠️ Mauzo yamezidi kwa ${shown}. Ama umeingiza stock bila kuirekodi, ama mauzo yamerudiwa mara mbili.`
+      + `\nHesabu upya ili kurekebisha: "nina ${row.productName} 20".`
+    : `\n\n⚠️ Sales exceed the count by ${shown}. Either a restock was never recorded, or a sale was recorded twice.`
+      + `\nCount it again to fix it: "nina ${row.productName} 20".`;
 }
 
 const countedOn = (iso: string | null) =>
@@ -135,7 +207,7 @@ export function stockReply(row: StockRow | null, asked: string, lang: Lang): str
   const head = lang === 'sw'
     ? `${row.productName}: zimebaki ${amount(row)}.`
     : `${row.productName}: ${amount(row)} left.`;
-  return `${head}\n${since}${caveat}`;
+  return `${head}\n${since}${caveat}${shortfallNotice(row, lang)}`;
 }
 
 export function stockListReply(rows: StockRow[], lang: Lang): string {
@@ -172,17 +244,39 @@ export function stockListReply(rows: StockRow[], lang: Lang): string {
       ? `\n\nBidhaa ${uncountedRows.length} bado hazijahesabiwa: ${uncountedRows.map((row) => row.productName).join(', ')}.`
       : `\n\n${uncountedRows.length} products have not been counted yet: ${uncountedRows.map((row) => row.productName).join(', ')}.`)
     : '';
+  // Named, not hidden. A product showing zero because its books went below zero
+  // is a different problem from one that simply sold out, and the shopkeeper is
+  // the only person who can tell which of the two it is.
+  const short = counted.filter((row) => stockShortfall(row) > 0);
+  const shortText = short.length === 0 ? '' : (lang === 'sw'
+    ? `\n\n⚠️ Hizi mauzo yamezidi hesabu, kwa hiyo nimeonyesha 0: ${short.map((row) => row.productName).join(', ')}.`
+      + '\nHesabu upya, mfano: "nina daftari 20".'
+    : `\n\n⚠️ For these, sales exceed the count, so I show 0: ${short.map((row) => row.productName).join(', ')}.`
+      + '\nCount them again, e.g. "nina daftari 20".');
   const lines = shown.join('\n');
   return lang === 'sw'
-    ? `Zilizopo (${counted.length} zilizohesabiwa):\n${lines}${omittedText}${uncountedText}`
-    : `On hand (${counted.length} counted):\n${lines}${omittedText}${uncountedText}`;
+    ? `Zilizopo (${counted.length} zilizohesabiwa):\n${lines}${omittedText}${uncountedText}${shortText}`
+    : `On hand (${counted.length} counted):\n${lines}${omittedText}${uncountedText}${shortText}`;
 }
 
 export function stockCountConfirmation(count: StockCount, previous: number | null, lang: Lang): string {
   const unit = count.unit ? ` ${count.unit}` : '';
-  const drift = previous === null || previous === count.quantity ? '' : (lang === 'sw'
-    ? `\nNilikuwa nadhani zipo ${previous}. Hesabu yako ndiyo sahihi.`
-    : `\nI believed there were ${previous}. Your count is the one that counts.`);
+  // "naongeza sukari 20" is recorded as twenty on the shelf, not twenty more.
+  // Somebody who meant "twenty more" has to be told in the same breath, with
+  // the number they probably meant, or they walk away believing the wrong
+  // total — and stock that is wrong today is wrong for every day after it.
+  const adding = count.stated === 'add' && previous !== null && previous > 0;
+  const drift = previous === null || previous === count.quantity ? '' : (adding
+    ? (lang === 'sw'
+      ? `\nNilikuwa nadhani zipo ${previous}, sasa nimeweka ${count.quantity}.`
+        + `\nKama ulimaanisha kuongeza ${count.quantity} juu ya ${previous},`
+        + ` andika: "nina ${count.product} ${previous + count.quantity}".`
+      : `\nI believed there were ${previous}; I have set it to ${count.quantity}.`
+        + `\nIf you meant ${count.quantity} MORE than ${previous},`
+        + ` send: "nina ${count.product} ${previous + count.quantity}".`)
+    : (lang === 'sw'
+      ? `\nNilikuwa nadhani zipo ${previous}. Hesabu yako ndiyo sahihi.`
+      : `\nI believed there were ${previous}. Your count is the one that counts.`));
   return lang === 'sw'
     ? `✅ Nimehesabu ${count.product}: ${count.quantity}${unit}.${drift}\n\nKuanzia sasa nitafuatilia mwenyewe kadri unavyouza na kuingiza.`
     : `✅ Counted ${count.product}: ${count.quantity}${unit}.${drift}\n\nFrom here I will keep track as you sell and restock.`;

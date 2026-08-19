@@ -22,7 +22,7 @@ import { parseBareExpense, parseBareQuantityList, parseQuantityOnlySale } from '
 import { parseReadRequest } from '../../supabase/functions/_shared/whatsappReadTools.ts';
 import { parseSellingPrice } from '../../supabase/functions/_shared/whatsappSellingPrice.ts';
 import { parseSellingPriceBatch } from '../../supabase/functions/_shared/whatsappSellingPriceBatch.ts';
-import { parseStockCount } from '../../supabase/functions/_shared/whatsappStock.ts';
+import { parseStockCount, parseStockQuestion } from '../../supabase/functions/_shared/whatsappStock.ts';
 import { parseStockCountBatch } from '../../supabase/functions/_shared/whatsappStockBatch.ts';
 import { splitSecondInstruction } from '../../supabase/functions/_shared/whatsappMixedTopics.ts';
 
@@ -92,5 +92,8 @@ export function route(text: string): string {
   if (parseProductAnalyticsRequest(text)) return 'product_analytics';
   const read = parseReadRequest(text);
   if (read) return read.tool;
+  // Counting the shelf is arithmetic over the shop's own counts, so it is
+  // answered from the database and never by the model.
+  if (parseStockQuestion(text)) return 'stock_question';
   return 'conversational_ai';
 }

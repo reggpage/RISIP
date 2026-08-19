@@ -73,7 +73,9 @@ describe('setting up a product sold in portions', () => {
       'nyama ya ngombe kilo 10 nimenunua kwa 100000, robo nauza 6000, nusu nauza 12000, kilo nauza 22000',
     )!;
     const question = portionSizeQuestion(draft, 'sw');
-    expect(question).toContain('kilo = 1 kilo');
+    // "kilo = 1 kilo" used to be in here. It asked the shop to tell Risip that
+    // a kilo is a kilo, which is what made the whole template read as garbled.
+    expect(question).not.toContain('kilo = 1 kilo');
     expect(question).toContain('robo = 0.25 kilo');
     expect(question).toContain('nusu = 0.5 kilo');
     expect(question).toContain('Huu ni mfano tu');
@@ -153,5 +155,51 @@ describe('matching a sale to a declared portion', () => {
     expect(parsePortionQuantityAnswer('robo 3')).toBe(3);
     expect(parsePortionQuantityAnswer('0')).toBeNull();
     expect(parsePortionQuantityAnswer('mafuta mengine')).toBeNull();
+  });
+});
+
+describe('a template a shopkeeper can actually fill in', () => {
+  it('refuses an offer whose unit name is a piece of a sentence', () => {
+    // MEASURED FAILURE: this produced a unit called "ndoo ni lita" and a form
+    // that read "ndoo ni lita = 0.25 lita". Refused outright — a portion setup
+    // built on a misread name would misprice every future sale of it.
+    expect(parsePortionSetupOffer('mafuta ndoo @20000 nauza ndoo ni lita 20 robo 700 nusu 1200')).toBeNull();
+    expect(parsePortionSetupOffer('mafuta ndoo @20000 nauza robo ya lita 700 nusu 1200')).toBeNull();
+  });
+
+  it('still reads the plain form', () => {
+    const draft = parsePortionSetupOffer('mafuta ndoo @20000 nauza robo 700 nusu 1200 lita 2500')!;
+    expect(draft.saleUnits.map((unit) => unit.unit)).toEqual(['robo', 'nusu', 'lita']);
+    expect(portionSizeQuestion(draft, 'sw')).toContain('ndoo = 20 lita');
+  });
+
+  it('never asks how many kilos are in a kilo', () => {
+    const draft = parsePortionSetupOffer(
+      'store nyama ya ngombe kilo 10 nimenunua kwa 100,000, robo nauza 6,000, nusu nauza 12,000, kilo nauza 22,000')!;
+    const asked = portionSizeQuestion(draft, 'sw');
+    expect(asked).not.toContain('kilo = 1 kilo');
+    expect(asked).toContain('robo = 0.25 kilo');
+  });
+
+  it('accepts the answer that leaves out the tautology', () => {
+    const draft = parsePortionSetupOffer(
+      'store nyama ya ngombe kilo 10 nimenunua kwa 100,000, robo nauza 6,000, nusu nauza 12,000, kilo nauza 22,000')!;
+    const resumed = resumePortionSetup(draft, 'robo = 0.25 kilo; nusu = 0.5 kilo');
+    expect(resumed.kind).toBe('ready');
+    if (resumed.kind !== 'ready') return;
+    expect(resumed.setup.purchaseSize).toBe(1);
+    expect(resumed.setup.baseUnit).toBe('kilo');
+    // 100,000 for 10 kilo is 10,000 a kilo, and a quarter costs 2,500.
+    expect(resumed.setup.purchaseCost).toBe(10000);
+    const confirmation = portionSetupConfirmation(resumed.setup, 'sw');
+    expect(confirmation).not.toMatch(/kilo 1 = 1 kilo/);
+    expect(confirmation).toContain('TSh 10,000 kwa kilo');
+  });
+
+  it('still refuses an answer that leaves a real unit out', () => {
+    const draft = parsePortionSetupOffer('mafuta ndoo @20000 nauza robo 700 nusu 1200 lita 2500')!;
+    const resumed = resumePortionSetup(draft, 'robo = 0.25 lita; nusu = 0.5 lita; lita = 1 lita');
+    expect(resumed.kind).toBe('missing');
+    if (resumed.kind === 'missing') expect(resumed.units).toEqual(['ndoo']);
   });
 });

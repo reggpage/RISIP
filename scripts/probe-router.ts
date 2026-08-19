@@ -64,16 +64,17 @@ const CORPUS: Case[] = [
   // reached the daily record parser whole and were asked whether 100 was the
   // price of each notebook.
   { said: 'nimeuza daftari kubwa 10 rejareja naongeza daftari 100 stoo', expect: 'quantity_sale' },
-  // KNOWN GAP, unchanged by the split: a one-line "naongeza sukari 20" is not
-  // a stock count to any parser, so the acted half lands on the record path.
-  { said: 'naongeza sukari 20 kisha nimeuza mkate 4', expect: 'daily_record' },
+  { said: 'naongeza sukari 20 kisha nimeuza mkate 4', expect: 'stock_count' },
+  { said: 'naongeza sukari 20', expect: 'stock_count' },
   // One till roll is never torn in half.
   { said: 'nimeuza daftari 5 kwa 7500 na nimeuza kalamu 3 kwa 1500', expect: 'daily_record_parsed' },
 
   // ── Known gaps. Listed so they stop being a surprise ───────────────────
   { said: 'product gani inauza sana', expect: 'product_analytics' },
   { said: 'nimeuza nguvu ya sala 8 marker 7 na anton wa padua 6', expect: 'quantity_sale' },
-  { said: 'atlas ziko ngapi', expect: 'conversational_ai' },
+  { said: 'atlas ziko ngapi', expect: 'stock_question' },
+  { said: 'bidhaa ziko ngapi store', expect: 'stock_question' },
+  { said: 'daftari zimebaki ngapi?', expect: 'stock_question' },
 ];
 
 const byRoute = new Map<string, number>();

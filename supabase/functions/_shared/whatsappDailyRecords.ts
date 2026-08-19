@@ -378,8 +378,18 @@ function stockPurchaseRecord(text: string): ParsedDailyRecord | null {
     /^(?:nimenunua|nimeongeza|nimeingiza|bought|purchased|added)\s+/i,
   );
   if (!payload) return null;
-  // The explicit signal. Without it we do not claim the message.
-  if (!/\b(stock|stoo|bidhaa|mzigo)\b/i.test(payload)) return null;
+  // The explicit signal — "nimenunua STOCK ya sukari" — or an unmistakable one:
+  // goods, a quantity and a price.
+  //
+  // MEASURED FAILURE: "nimenunua vitabu 10 kila moja 7000" was answered
+  // "Sijaelewa vizuri", while the identical sentence with "nimeuza" recorded
+  // perfectly. Restocking is half the ledger and half the stock count, and a
+  // shopkeeper does not say the word "stock" when they say what they bought.
+  //
+  // A purchase with no quantity is still not claimed here: "nimenunua chakula
+  // 5000" is as likely to be lunch as goods, and guessing turns a running cost
+  // into an investment in stock that will never be sold.
+  const declared = /\b(stock|stoo|bidhaa|mzigo)\b/i.test(payload);
 
   // What came in, and how much of it. Stock purchases used to record only a
   // total, which is why stock-on-hand could not exist: you cannot subtract sales
@@ -393,7 +403,9 @@ function stockPurchaseRecord(text: string): ParsedDailyRecord | null {
     .replace(/\s+/g, ' ')
     .trim();
   const stockLines = goods ? parseSaleLines(goods) : null;
-  if (stockLines) {
+  // Without the word, a quantity has to stand in its place.
+  const quantified = Boolean(stockLines?.every((line) => (line.quantity ?? 0) > 0));
+  if (stockLines && (declared || quantified)) {
     const amount = roundMoney(stockLines.reduce((sum, line) => sum + lineTotal(line), 0));
     if (validAmount(amount)) {
       return {
@@ -416,8 +428,15 @@ function stockPurchaseRecord(text: string): ParsedDailyRecord | null {
   // says so rather than leaving the trader to wonder why the count did not move.
   const description = stripMoney(payload)
     .replace(/^(?:ya|za|wa|of|for)\s+/i, '')
+    // The preposition the price was hanging off, now dangling: "daftari kwa".
+    .replace(/\s+(?:kwa|for|at|ya|za|wa|of)\s*$/i, '')
     .replace(/[:]+$/, '')
     .trim() || null;
+  // Undeclared and unquantified: two numbers — a count and a price — are what
+  // separate goods from lunch. "nimenunua daftari 100 kwa 120000" is a restock
+  // whose quantity could not be read cleanly; "nimenunua chakula 5000" is not a
+  // restock at all, and turning it into one would put a lunch on the shelf.
+  if (!declared && (payload.match(/[0-9][0-9,.]*/g) ?? []).length < 2) return null;
   return { kind: 'stock_purchase', amount, partyName: null, description, lines: [] };
 }
 
@@ -567,11 +586,13 @@ export function parseDailyRecord(text: string | null | undefined, lang: Lang = '
     parsed = debtRecord(value);
   } else if (/\b(nimeuza|uza|sold|mauzo)\b/i.test(value)) {
     parsed = saleRecord(value);
-  } else if (/\b(stock|stoo|bidhaa|mzigo)\b/i.test(value)
-             && /\b(nimenunua|nimeongeza|nimeingiza|bought|purchased|added)\b/i.test(value)) {
+  } else if (/\b(nimenunua|nilinunua|nimeongeza|nimeingiza|bought|purchased|added)\b/i.test(value)) {
     // Before expense on purpose: "nimenunua stock ya sukari 50000" is an
     // investment in goods, not a running cost.
     parsed = stockPurchaseRecord(value);
+    // Goods it would not claim can still be an ordinary cost, as long as the
+    // sentence says so itself. Nothing is guessed from "nimenunua" alone.
+    if (!parsed && /\b(nimelipa|nimetumia|expense|paid|spent)\b/i.test(value)) parsed = expenseRecord(value);
   } else if (/\b(nimelipa|nimetumia|expense|paid|spent)\b/i.test(value)) {
     parsed = expenseRecord(value);
   }

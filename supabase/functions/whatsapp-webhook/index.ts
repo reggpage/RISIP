@@ -233,6 +233,7 @@ import { compareWithTra, fetchTraReceipt } from '../_shared/traVerify.ts';
 import { qrCorrectionReply } from '../_shared/qrFollowUp.ts';
 import {
   parseStockCount,
+  parseStockQuestion,
   stockCountConfirmation,
   stockListReply,
   stockReply,
@@ -4483,6 +4484,25 @@ Deno.serve(async (req) => {
               : 'I could not load that information right now. Please try again later.');
             await audit(db, identity, waMessageId, 'read_only_tool', readRequest.tool, 'failed');
           }
+          await finish('skipped');
+          continue;
+        }
+
+        // "atlas ziko ngapi", "bidhaa ziko ngapi store". Counting is arithmetic
+        // over the shop's own counts and movements, so it never needed the
+        // model — but parseStockQuestion was written and then never wired in,
+        // so every one of these went to the model to be talked into calling a
+        // tool. This calls that same tool directly: same figures, no budget
+        // spent, and no chance of a number being improvised on the way.
+        const stockQuestion = mixed ? null : parseStockQuestion(body);
+        if (stockQuestion) {
+          const answered = await executeAssistantTool(
+            db, identity, waMessageId, lang, 'get_stock_on_hand',
+            stockQuestion.product ? { product_name: stockQuestion.product } : {},
+          );
+          await reply(phone, answered.content);
+          await audit(db, identity, waMessageId, 'stock_question',
+            stockQuestion.product ? 'product' : 'all', 'applied');
           await finish('skipped');
           continue;
         }

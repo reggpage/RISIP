@@ -397,3 +397,47 @@ describe('deciding "total or each" instead of asking', () => {
     expect(webhook).toContain('if (perItemReading === totalReading) return null;');
   });
 });
+
+describe('buying goods is half the ledger', () => {
+  it('records a restock that never says the word "stock"', () => {
+    // MEASURED FAILURE: this was answered "Sijaelewa vizuri", while the same
+    // sentence with "nimeuza" recorded perfectly. No shopkeeper says "stock"
+    // when they say what they bought.
+    const parsed = parseDailyRecord('nimenunua vitabu 10 kila moja 7000', 'sw');
+    expect(parsed.kind).toBe('parsed');
+    if (parsed.kind !== 'parsed') return;
+    expect(parsed.record.kind).toBe('stock_purchase');
+    expect(parsed.record.amount).toBe(70000);
+    expect(parsed.record.lines).toEqual([{ description: 'vitabu', quantity: 10, unit_amount: 7000 }]);
+  });
+
+  it('records the money when the quantity cannot be read cleanly', () => {
+    const parsed = parseDailyRecord('nimenunua daftari 100 kwa 120000', 'sw');
+    expect(parsed.kind).toBe('parsed');
+    if (parsed.kind !== 'parsed') return;
+    expect(parsed.record.amount).toBe(120000);
+    // No line, so nothing moves on the shelf, and the description reads cleanly.
+    expect(parsed.record.lines).toEqual([]);
+    expect(parsed.record.description).toBe('daftari');
+  });
+
+  it('still refuses to turn lunch into stock', () => {
+    // One number and no goods count: as likely a running cost as a restock, and
+    // a wrong guess puts a meal on the shelf for ever.
+    expect(parseDailyRecord('nimenunua chakula 5000', 'sw').kind).toBe('clarify');
+    expect(parseDailyRecord('nimenunua mafuta 20000', 'sw').kind).toBe('clarify');
+  });
+
+  it('leaves the declared form exactly as it was', () => {
+    const parsed = parseDailyRecord('nimenunua stock ya sukari 70000', 'sw');
+    expect(parsed.kind).toBe('parsed');
+    if (parsed.kind !== 'parsed') return;
+    expect(parsed.record.kind).toBe('stock_purchase');
+    expect(parsed.record.amount).toBe(70000);
+  });
+
+  it('still lets the sentence call itself an expense', () => {
+    const parsed = parseDailyRecord('nimelipa nimenunua petrol 20000', 'sw');
+    expect(parsed.kind === 'parsed' && parsed.record.kind).toBe('expense');
+  });
+});
