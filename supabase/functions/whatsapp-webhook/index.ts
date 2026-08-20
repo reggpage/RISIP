@@ -183,6 +183,22 @@ import {
   priceBandStillOpen,
 } from '../_shared/whatsappPriceBand.ts';
 import {
+  type ComboCandidate,
+  type ComboPiece,
+  type ComboSplit,
+  type SavedCombo,
+  comboAmbiguous,
+  comboKey,
+  comboNotice,
+  comboQuestion,
+  comboQuestions,
+  comboSaveNotAllowed,
+  comboSaveOffer,
+  comboSaved,
+  parseComboAnswer,
+  splitCombo,
+} from '../_shared/whatsappCombos.ts';
+import {
   normalizeProductReadResolution,
   productReadClarification,
   productReadMatchNotice,
@@ -351,6 +367,29 @@ type NewProductSaleSetup = {
  * the total and the total is what gets confirmed. Nothing is written until the
  * usual NDIYO.
  */
+/**
+ * A sale held while one combination is explained: which measure, how many.
+ *
+ * Asked once. What comes back is offered for saving, so a kijiwe answers
+ * "chips kuku" one time in its life and never sees the question again.
+ */
+type ComboPending = {
+  kind: 'combo_clarification';
+  sale: QuantitySale;
+  split: ComboSplit;
+  /** Already-settled combinations from earlier turns of the same sale. */
+  known: ComboSplit[];
+  units: [string, string[]][];
+  orders: number;
+  sourceMessageId: string;
+};
+
+/** Offered after the sale is confirmed, to owner and accountant only. */
+type ComboSavePending = {
+  kind: 'combo_save';
+  splits: ComboSplit[];
+};
+
 type PriceBandPending = {
   kind: 'price_band_choice';
   sale: QuantitySale;
@@ -380,13 +419,24 @@ async function priceQuantitySale(
   identity: ResolvedWhatsAppIdentity,
   sale: QuantitySale,
   lang: Lang,
+  /**
+   * Combinations already settled in this conversation.
+   *
+   * Consulted before the catalogue, so an answer given a moment ago is not
+   * asked for again: without this, re-pricing after "kuku nusu" would read
+   * "chips kuku" from scratch and ask which measure all over again.
+   */
+  known: ComboSplit[] = [],
 ): Promise<
-  | { kind: 'priced'; record: ParsedDailyRecord; lines: PricedLine[]; notCounted: string[] }
+  | { kind: 'priced'; record: ParsedDailyRecord; lines: PricedLine[]; notCounted: string[]; combos: ComboSplit[] }
   | { kind: 'blocked'; message: string }
   | { kind: 'unknown'; products: string[]; sale: QuantitySale }
   // Both prices registered, the line named neither, and the quantity does not
   // settle it. Guessing here is guessing at the takings.
   | { kind: 'band'; choices: PriceBandChoice[]; sale: QuantitySale }
+  // "chips kuku" — the shop sells chicken by robo, nusu and kilo, and the order
+  // named none of them. Three thousand or ten thousand for the same word.
+  | { kind: 'combo_question'; splits: ComboSplit[]; sale: QuantitySale; units: [string, string[]][] }
   | { kind: 'skip' }
 > {
   const { data: declaredRows, error: declaredError } = await db.rpc('wa_company_product_sale_units', {
@@ -415,10 +465,14 @@ async function priceQuantitySale(
     declared: DeclaredSaleUnit | null;
     /** Where this came from in the message, so an answer lands on the right line. */
     at: number;
+    /** Set when this line is one piece of a combination such as "chips yai". */
+    piece?: ComboPiece;
   }[] = [];
   // Named back to the shopkeeper, never silently dropped: a line missing from a
   // till roll is money they believe they took and Risip does not.
   const unknown: string[] = [];
+  /** Phrases read as several products, shown back before anything is saved. */
+  const combos: ComboSplit[] = [];
   for (const [at, item] of sale.items.entries()) {
     const portion = matchDeclaredSaleUnit(item.product, declaredUnits);
     if (portion.kind === 'unit_required') {
@@ -444,6 +498,36 @@ async function priceQuantitySale(
       return { kind: 'blocked', message: productReadClarification(resolved.resolution, lang) };
     }
     if (resolved.resolution.kind === 'not_found') {
+      // "chips yai", "chipssosej", "zege" — goods the shop DOES sell, written
+      // the way they are shouted across a counter. Only tried once the ordinary
+      // lookup has failed, and only against this company's own catalogue, so it
+      // can never invent a product nobody sells.
+      const reading = known.find((split) => comboKey(split.phrase) === comboKey(item.product))
+        ?? await readCombo(db, identity, item.product);
+      if (reading && 'token' in reading) {
+        return {
+          kind: 'blocked',
+          message: comboAmbiguous(item.product, reading.token, lang),
+        };
+      }
+      if (reading) {
+        combos.push(reading);
+        for (const piece of reading.pieces) {
+          resolvedItems.push({
+            key: piece.key,
+            name: piece.name,
+            quantity: item.quantity * piece.quantity,
+            band: item.band,
+            declared: piece.unit
+              ? declaredUnits.find((unit) =>
+                unit.productKey === piece.key && comboKey(unit.unitName) === comboKey(piece.unit ?? '')) ?? null
+              : null,
+            at,
+            piece,
+          });
+        }
+        continue;
+      }
       unknown.push(item.product);
       continue;
     }
@@ -463,6 +547,17 @@ async function priceQuantitySale(
   // omitted from a multi-line sale. Registration and its own confirmation come
   // first; the original sale is resumed afterwards.
   if (unknown.length > 0) return { kind: 'unknown', products: unknown, sale };
+
+  // A combination that left something unsaid is asked about ONCE, before any
+  // price is worked out — and the answer is what gets remembered.
+  const openCombos = combos.filter((split) => comboQuestions(split).length > 0);
+  if (openCombos.length > 0) {
+    const units = new Map<string, string[]>();
+    for (const unit of declaredUnits) {
+      units.set(unit.productKey, [...(units.get(unit.productKey) ?? []), unit.unitName]);
+    }
+    return { kind: 'combo_question', splits: openCombos, sale, units: [...units.entries()] };
+  }
 
   const { data, error } = await db.rpc('wa_product_pricing', {
     p_company_id: identity.company_id,
@@ -531,6 +626,7 @@ async function priceQuantitySale(
     kind: 'priced',
     lines,
     notCounted: [],
+    combos,
     record: {
       kind: 'sale',
       amount,
@@ -545,6 +641,49 @@ async function priceQuantitySale(
       confidence: 0.99,
     },
   };
+}
+
+/**
+ * Reads a phrase as several of THIS company's products, or null.
+ *
+ * The catalogue is the dictionary, so a split can only ever produce goods the
+ * shop actually sells. Portion units come along because "kuku" priced by robo,
+ * nusu and kilo cannot be read without knowing which one was meant.
+ */
+async function readCombo(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  phrase: string,
+): Promise<ComboSplit | { kind: 'ambiguous'; token: string } | null> {
+  const [names, units, saved] = await Promise.all([
+    db.rpc('company_product_names', { p_company_id: identity.company_id }),
+    db.rpc('wa_company_product_sale_units', { p_company_id: identity.company_id }),
+    db.rpc('wa_company_combos', { p_company_id: identity.company_id }),
+  ]);
+  if (names.error) return null;
+
+  const unitsByProduct = new Map<string, string[]>();
+  for (const row of (units.error ? [] : units.data ?? []) as Array<Record<string, unknown>>) {
+    const key = String(row.product_key);
+    unitsByProduct.set(key, [...(unitsByProduct.get(key) ?? []), String(row.unit_name)]);
+  }
+
+  const catalogue: ComboCandidate[] = ((names.data ?? []) as Array<Record<string, unknown>>)
+    .map((row) => String(row.product_name ?? '').trim())
+    .filter(Boolean)
+    .map((name) => {
+      const key = productKey(name);
+      return { key, name, ...(unitsByProduct.has(key) ? { units: unitsByProduct.get(key) } : {}) };
+    });
+
+  const nicknames: SavedCombo[] = ((saved.error ? [] : saved.data ?? []) as Array<Record<string, unknown>>)
+    .map((row) => ({
+      name: String(row.name ?? ''),
+      pieces: (Array.isArray(row.pieces) ? row.pieces : []) as SavedCombo['pieces'],
+    }))
+    .filter((combo) => combo.name && combo.pieces.length >= 2);
+
+  return splitCombo(phrase, catalogue, nicknames);
 }
 
 /**
@@ -2618,6 +2757,14 @@ Deno.serve(async (req) => {
           && (convo.options as { kind?: string; step?: string; product?: string } | null)?.kind === 'add_product_setup'
           ? convo.options as { kind: 'add_product_setup'; step: 'name' | 'cost'; product?: string }
           : null;
+        const comboPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<ComboPending> | null)?.kind === 'combo_clarification'
+          ? convo.options as ComboPending
+          : null;
+        const comboSavePending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<ComboSavePending> | null)?.kind === 'combo_save'
+          ? convo.options as ComboSavePending
+          : null;
         const bandPending = convo?.awaiting === 'product_cost'
           && (convo.options as Partial<PriceBandPending> | null)?.kind === 'price_band_choice'
           ? convo.options as PriceBandPending
@@ -2629,6 +2776,31 @@ Deno.serve(async (req) => {
          * worded once and the parked state has one shape. Nothing is written:
          * the sale is still a message until the usual NDIYO.
          */
+        /** One question about one combination, with the sale parked behind it. */
+        const askAboutCombo = async (
+          split: ComboSplit,
+          sale: QuantitySale,
+          units: [string, string[]][],
+          sourceMessageId: string,
+          orders: number,
+        ) => {
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: {
+              kind: 'combo_clarification',
+              sale, split, units, orders, sourceMessageId,
+              known: settledCombos,
+            } satisfies ComboPending,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          await replyQuietly(phone, comboQuestion(split, orders, new Map(units), lang));
+        };
+
         const askForPriceBand = async (
           choices: PriceBandChoice[],
           sale: QuantitySale,
@@ -2657,7 +2829,7 @@ Deno.serve(async (req) => {
           && !costPrompt && !costBatchPending && !stockBatchPending && !sellingBatchPending
           && !newProductPending && !newProductSaleSetup && !portionSizePending && !portionConfirmPending
           && !quantityMeaningPending && !portionQuantityPending && !productRenamePending
-          && !addProductSetupPending && !bandPending
+          && !addProductSetupPending && !bandPending && !comboPending && !comboSavePending
           ? { cost: convo.options as unknown as ProductCost }
           : null;
         const productContext = convo?.awaiting === 'product_analytics'
@@ -2669,6 +2841,8 @@ Deno.serve(async (req) => {
           ? convo.options as HypotheticalPortionChoice
           : null;
         let resumedQuantitySale: QuantitySale | null = null;
+        /** Combinations settled earlier in this same conversation. */
+        let settledCombos: ComboSplit[] = [];
         // ── Signing out ──────────────────────────────────────────────────
         // The phone number is the credential, so this unlinks it. It runs
         // before the stop command on purpose: bare "toka" means both "cancel
@@ -2823,6 +2997,95 @@ Deno.serve(async (req) => {
           await audit(db, identity, waMessageId, 'daily_record', 'topic_switch_cancel', 'applied');
           dailyConversation = null;
           convo = null;
+        }
+
+        // "chips kuku" — which measure of chicken, and how many of what rides
+        // along. One question, once, and the answer is offered for saving so it
+        // is never asked twice.
+        if (comboPending && releasesParkedQuestion(body ?? '')) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'combo', 'abandoned', 'skipped');
+        } else if (comboPending) {
+          const units = new Map(comboPending.units);
+          const open = comboQuestions(comboPending.split);
+          const heard = parseComboAnswer(body, open, units);
+          if (!heard) {
+            await reply(phone, comboQuestion(comboPending.split, comboPending.orders, units, lang));
+            await audit(db, identity, waMessageId, 'combo', 'reask', 'skipped');
+            await finish('skipped');
+            continue;
+          }
+          const settled: ComboSplit = {
+            ...comboPending.split,
+            pieces: comboPending.split.pieces.map((piece) => {
+              const at = open.findIndex((asked) => asked.key === piece.key);
+              const answer = at < 0 ? null : heard[at];
+              if (!answer) return piece;
+              if ('unit' in answer) {
+                const { unitMissing: _drop, ...rest } = piece;
+                return { ...rest, unit: answer.unit };
+              }
+              const { quantityAssumed: _drop, ...rest } = piece;
+              return { ...rest, quantity: answer.quantity };
+            }),
+          };
+          const stillOpen = comboQuestions(settled);
+          if (stillOpen.length > 0) {
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'product_cost',
+              receipt_id: null,
+              options: { ...comboPending, split: settled } satisfies ComboPending,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await reply(phone, comboQuestion(settled, comboPending.orders, units, lang));
+            await audit(db, identity, waMessageId, 'combo', 'partial', 'pending');
+            await finish('skipped');
+            continue;
+          }
+          resumedQuantitySale = comboPending.sale;
+          settledCombos = [...comboPending.known, settled];
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'combo', 'answered', 'applied');
+        }
+
+        // "Nihifadhi chips yai = chips kavu + yai?" — asked after the sale is
+        // safely recorded, so a no costs nothing.
+        if (comboSavePending && !isDailyRecordConfirmation(body ?? '')) {
+          await clearConversation(db, identity.id as string);
+          if (!isDailyRecordRejection(body ?? '')) {
+            // Anything that is not an answer is a new subject; the offer simply
+            // lapses rather than standing in the way.
+            await audit(db, identity, waMessageId, 'combo_save', 'lapsed', 'skipped');
+          } else {
+            await audit(db, identity, waMessageId, 'combo_save', 'declined', 'applied');
+            await replyQuietly(phone, lang === 'sw' ? 'Sawa, sijahifadhi jina hilo.' : 'Fine, I did not save that name.');
+            await finish('skipped');
+            continue;
+          }
+        } else if (comboSavePending) {
+          await clearConversation(db, identity.id as string);
+          const saved: string[] = [];
+          for (const split of comboSavePending.splits) {
+            const { error } = await db.rpc('wa_save_combo', {
+              p_phone: phone,
+              p_name: split.phrase,
+              p_pieces: split.pieces.map((piece) => ({
+                key: piece.key, name: piece.name, quantity: piece.quantity, unit: piece.unit,
+              })),
+            });
+            if (!error) saved.push(split.phrase);
+          }
+          await replyQuietly(phone, saved.length > 0
+            ? comboSaved(saved.join(', '), lang)
+            : (lang === 'sw' ? 'Sikuweza kuhifadhi jina hilo sasa.' : 'I could not save that name just now.'));
+          await audit(db, identity, waMessageId, 'combo_save', String(saved.length),
+            saved.length > 0 ? 'applied' : 'failed');
+          await finish('skipped');
+          continue;
         }
 
         // Which of the two prices was this sold at? The sale waits here, whole,
@@ -3131,9 +3394,35 @@ Deno.serve(async (req) => {
               // The warning rides on a message that was going out anyway. An
               // unprompted one costs money and interrupts; this one arrives at
               // the single moment the shopkeeper is certainly looking.
+              // A reading worth remembering is offered AFTER the sale is safely
+              // recorded, so saying no to it costs nothing. Finance only: a
+              // worker who saved "zege = chips + kuku kilo" would misprice
+              // every zege sold after it.
+              const worthSaving = ((dailyConversation.combos ?? []) as ComboSplit[])
+                .filter((split) => split?.source === 'split' && Array.isArray(split.pieces));
+              const mayTeach = canUseCompanyFinanceReads(identity.role);
               await replyQuietly(phone, buildDailyRecordConfirmed(dailyConversation.record, lang)
-                + await lowStockNoticeFor(db, identity, dailyConversation.record, lang));
+                + await lowStockNoticeFor(db, identity, dailyConversation.record, lang)
+                + (worthSaving.length === 0
+                  ? ''
+                  : mayTeach
+                    ? worthSaving.map((split) => comboSaveOffer(split, lang)).join('')
+                    : comboSaveNotAllowed(lang)));
               await audit(db, identity, waMessageId, 'daily_record', 'confirm', 'applied');
+              if (worthSaving.length > 0 && mayTeach) {
+                await db.from('whatsapp_conversations').upsert({
+                  identity_id: identity.id,
+                  company_id: identity.company_id,
+                  profile_id: identity.profile_id,
+                  awaiting: 'product_cost',
+                  receipt_id: null,
+                  options: { kind: 'combo_save', splits: worthSaving } satisfies ComboSavePending,
+                  expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'identity_id' });
+                await finish('skipped');
+                continue;
+              }
               // The record is safely saved first. Asking what the product costs
               // is a separate, optional favour — if any of it fails, the sale is
               // still recorded and the person is simply not asked.
@@ -4252,6 +4541,14 @@ Deno.serve(async (req) => {
             // "viberiti 2" with two prices on the shelf. This is the owner's own
             // example, and it arrives with no verb at all — which is exactly why
             // the question has to live here too and not only on the sale path.
+            if (priced.kind === 'combo_question') {
+              await askAboutCombo(priced.splits[0], priced.sale, priced.units, waMessageId,
+                bare.items.find((item) =>
+                  comboKey(item.product) === comboKey(priced.splits[0].phrase))?.quantity ?? 1);
+              await audit(db, identity, waMessageId, 'bare_quantity_sale', 'combo', 'pending');
+              await finish('skipped');
+              continue;
+            }
             if (priced.kind === 'band') {
               await askForPriceBand(priced.choices, priced.sale, waMessageId);
               await audit(db, identity, waMessageId, 'bare_quantity_sale', 'band', 'pending');
@@ -4277,7 +4574,7 @@ Deno.serve(async (req) => {
                   expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
                   updated_at: new Date().toISOString(),
                 }, { onConflict: 'identity_id' });
-                await replyQuietly(phone, quantitySaleConfirmation(priced.lines, lang, bare.expenses, []));
+                await replyQuietly(phone, quantitySaleConfirmation(priced.lines, lang, bare.expenses, []) + comboNotice(priced.combos, lang));
                 await audit(db, identity, waMessageId, 'bare_quantity_sale',
                   String(priced.lines.length), 'pending');
                 await finish('skipped');
@@ -4620,7 +4917,7 @@ Deno.serve(async (req) => {
           // already gave. Only reached when no parser above claimed the message.
           const quantitySale = resumedQuantitySale ?? parseQuantityOnlySale(writeBody);
           if (quantitySale) {
-            const priced = await priceQuantitySale(db, identity, quantitySale, lang);
+            const priced = await priceQuantitySale(db, identity, quantitySale, lang, settledCombos);
             if (priced.kind === 'unknown') {
               if (!canUseCompanyFinanceReads(identity.role)) {
                 await replyQuietly(phone, newProductSaleWorkerBlocked(priced.products, lang));
@@ -4646,6 +4943,14 @@ Deno.serve(async (req) => {
               }, { onConflict: 'identity_id' });
               await replyQuietly(phone, newProductSaleOffer(priced.products, lang));
               await audit(db, identity, waMessageId, 'quantity_sale', 'unknown_product', 'pending');
+              await finish('skipped');
+              continue;
+            }
+            if (priced.kind === 'combo_question') {
+              await askAboutCombo(priced.splits[0], priced.sale, priced.units, waMessageId,
+                quantitySale.items.find((item) =>
+                  comboKey(item.product) === comboKey(priced.splits[0].phrase))?.quantity ?? 1);
+              await audit(db, identity, waMessageId, 'quantity_sale', 'combo', 'pending');
               await finish('skipped');
               continue;
             }
@@ -4699,6 +5004,7 @@ Deno.serve(async (req) => {
                   }, { onConflict: 'identity_id' });
                   await replyQuietly(phone,
                     quantitySaleConfirmation(priced.lines, lang, quantitySale.expenses, priced.notCounted)
+                  + comboNotice(priced.combos, lang)
                   + offerNewProducts(priced.notCounted, lang));
                   await audit(db, identity, waMessageId, 'quantity_sale',
                     `${priced.lines.length}+${quantitySale.expenses.length}`, 'pending');
@@ -4713,6 +5019,7 @@ Deno.serve(async (req) => {
                   dailyRecordId: created.id,
                   sourceMessageId: waMessageId,
                   record: guardedRecord,
+                  ...(priced.combos.length > 0 ? { combos: priced.combos } : {}),
                 };
                 await db.from('whatsapp_conversations').upsert({
                   identity_id: identity.id,
@@ -4725,6 +5032,7 @@ Deno.serve(async (req) => {
                   updated_at: new Date().toISOString(),
                 }, { onConflict: 'identity_id' });
                 await replyQuietly(phone, quantitySaleConfirmation(priced.lines, lang, quantitySale.expenses, priced.notCounted)
+                  + comboNotice(priced.combos, lang)
                   + offerNewProducts(priced.notCounted, lang));
                 await audit(db, identity, waMessageId, 'quantity_sale', 'create', 'pending');
                 await finish('skipped');

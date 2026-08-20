@@ -45,6 +45,13 @@ export type DailyRecordConversation = {
   dailyRecordId: string;
   sourceMessageId: string;
   record: ParsedDailyRecord;
+  /**
+   * Phrases this sale was read out of — "chips yai" = chips kavu + yai.
+   *
+   * Carried through to the confirmation so the reading can be offered for
+   * saving the moment the sale is safely recorded, and never before it.
+   */
+  combos?: unknown[];
 };
 
 export const MAX_DAILY_RECORD_AMOUNT = 100_000_000;
