@@ -126,7 +126,7 @@ export function businessWelcome(
       + '1️⃣ *nasajili bidhaa* — bei ya kununua na ya kuuza, mstari mmoja kwa kila bidhaa:\n'
       + `_nasajili bidhaa_\n${italic(eg.register)}\n`
       + `_${eg.bulk}_\n`
-      + 'Ukiuza kwa vipimo, sema hivyo: _kwa kilo_, _nusu_, _robo_.\n'
+      + 'Ukiuza kwa vipimo, sema hivi: _kwa kilo_, _nusu_, _robo_.\n'
       + 'Usipotaja rejareja au jumla, natumia rejareja.\n\n'
       + '2️⃣ *mauzo* — kisha orodha ya vilivyouzwa:\n'
       + `_mauzo_\n${italic(eg.sold)}\n\n`

@@ -93,6 +93,14 @@ export function normalizeNumberWords(text: string): string {
   for (const [word, number] of Object.entries(NUMBER_WORDS).sort((a, b) => b[0].length - a[0].length)) {
     normalized = normalized.replace(new RegExp(`\\b${word}\\b`, 'gi'), number);
   }
+  // "nyama kilo moja na nusu" is one and a half kilos, not one kilo and a
+  // separate thing called nusu. Only a fraction directly after a number counts:
+  // a bare "nusu" or "robo" is left alone, because for a shop that sells oil
+  // those are the names of its measures, not halves of anything.
+  normalized = normalized
+    .replace(/\b([0-9]+)\s+na\s+nusu\b/gi, (_all, whole: string) => `${Number(whole) + 0.5}`)
+    .replace(/\b([0-9]+)\s+na\s+robo\b/gi, (_all, whole: string) => `${Number(whole) + 0.25}`)
+    .replace(/\b([0-9]+)\s+na\s+theluthi\b/gi, (_all, whole: string) => `${Number(whole) + 0.33}`);
   return normalized.replace(/__KILA_MOJA_\d+__/g, 'kila moja');
 }
 

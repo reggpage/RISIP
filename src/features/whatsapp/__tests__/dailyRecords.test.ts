@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   MAX_DAILY_RECORD_AMOUNT,
+  normalizeNumberWords,
   buildDailyRecordConfirmation,
   buildDailyRecordConfirmationChunks,
   buildDailyRecordConfirmed,
@@ -480,5 +481,33 @@ describe('a named person taking goods is credit', () => {
   it('is not a record when it is a question', () => {
     expect(parseDailyRecord('nani amechukua zaidi', 'sw').kind).toBe('none');
     expect(parseDailyRecord('amechukua ngapi', 'sw').kind).toBe('none');
+  });
+});
+
+describe('a kilo and a half', () => {
+  it('reads a fraction stuck onto a number', () => {
+    // "mtu anaweza kuchanganya, asema mauzo nyama kilo moja na nusu au 1.5".
+    expect(normalizeNumberWords('nyama kilo moja na nusu')).toBe('nyama kilo 1.5');
+    expect(normalizeNumberWords('nyama kilo mbili na nusu')).toBe('nyama kilo 2.5');
+    expect(normalizeNumberWords('nyama kilo 1 na robo')).toBe('nyama kilo 1.25');
+  });
+
+  it('prices it as one and a half, not as one', () => {
+    const parsed = parseDailyRecord('nimeuza nyama kilo moja na nusu kwa 15000', 'sw');
+    expect(parsed.kind).toBe('parsed');
+    if (parsed.kind !== 'parsed') return;
+    expect(parsed.record.lines[0]).toMatchObject({ description: 'nyama', quantity: 1.5, unit: 'kilo' });
+    expect(parsed.record.amount).toBe(15000);
+  });
+
+  it('leaves a bare measure alone, because it is the name of a portion', () => {
+    // A shop selling oil sells "robo" and "nusu" — those are its units, not
+    // halves of anything, and turning them into 0.25 would wreck every sale.
+    expect(normalizeNumberWords('nimeuza mafuta robo 3')).toBe('nimeuza mafuta robo 3');
+    expect(normalizeNumberWords('nusu kilo')).toBe('nusu kilo');
+  });
+
+  it('does not eat an ordinary "na" between two products', () => {
+    expect(normalizeNumberWords('daftari 5 na kalamu 3')).toBe('daftari 5 na kalamu 3');
   });
 });
