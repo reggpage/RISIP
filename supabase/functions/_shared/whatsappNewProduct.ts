@@ -83,7 +83,12 @@ export function parseNewProductLine(text: string | null | undefined): NewProduct
     .replace(new RegExp(`${WHOLESALE.source}\\s*(?:ni|is|:)?\\s*${NUMBER}`, 'gi'), ' ')
     .replace(/(?:kuanzia|from|starting(?:\s+at)?)\s*(?:pcs|vipande)?\s*[0-9]+(?:\.[0-9]+)?/gi, ' ')
     .replace(/\s(?:kwa|per|kila)\s+(?:kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni)\s*$/i, ' ')
-    .replace(/\b(?:bei|price|ongeza|weka|bidhaa|product|add)\b/gi, ' ')
+    .replace(/\b(?:bei|price|ongeza|weka|bidhaa|product|add|nasajili|sajili|register)\b/gi, ' ')
+    // A label left standing because a LATER label matched the number first:
+    // "Soda @700 nauza rejareja 1000" strips "rejareja 1000" and leaves the
+    // shop with a product called "Soda nauza". The welcome now teaches exactly
+    // this line, so it has to read cleanly.
+    .replace(/\b(?:nauza|ninauza|selling|sell|rejareja|reja\s*reja|retail|jumla|wholesale|kununua|nanunua|ninanunua|gharama|buying|cost)\b/gi, ' ')
     // Standalone numbers only. A digit welded to letters is part of the name —
     // "karatasi A4 rimu" is a real product, and stripping every digit turned it
     // into "karatasi A rimu", a product that does not exist.

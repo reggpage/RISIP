@@ -34,10 +34,12 @@ export type OnboardingAction =
       kind: 'create_business';
       businessName: string;
       fullName: string;
-      category: BusinessCategory;
-      subCategory: BusinessSubCategory;
-      confidence: number;
+      category: BusinessCategory | null;
+      subCategory: BusinessSubCategory | null;
+      confidence: number | null;
       detectedKeywords: string[];
+      /** What the shopkeeper typed about the shop, in their own words. */
+      description: string;
     }
   | { kind: 'join_business'; code: string; fullName: string }
   | { kind: 'explain_linking' };   // they already have an account: link from the web
@@ -52,8 +54,8 @@ export type OnboardingResult = {
 
 const T = {
   lang: {
-    en: 'Karibu Risip 👋\n\nChagua lugha / Choose a language:\n1. Kiswahili\n2. English',
-    sw: 'Karibu Risip 👋\n\nChagua lugha / Choose a language:\n1. Kiswahili\n2. English',
+    en: 'Mambo vip Mdau! Karibu Risip 👋\n\nChagua lugha / Choose a language:\n1. Kiswahili\n2. English',
+    sw: 'Mambo vip Mdau! Karibu Risip 👋\n\nChagua lugha / Choose a language:\n1. Kiswahili\n2. English',
   },
   menu: {
     sw: 'Vizuri. Chagua:\n1. Fungua biashara mpya\n2. Jiunge na biashara niliyoalikwa\n3. Nina akaunti tayari',
@@ -85,6 +87,21 @@ const T = {
   unclearDescription: {
     sw: 'Sijaweza kutambua aina ya biashara kwa uhakika. Nitajie bidhaa au huduma kuu mbili au tatu, mfano “chips na kuku”, “nguo na viatu”, au “daftari na photocopy”.',
     en: 'I could not classify the business confidently. Tell me two or three main products or services, for example “chips and chicken”, “clothes and shoes”, or “books and photocopying”.',
+  },
+  /**
+   * What replaced "is that right?".
+   *
+   * The owner's instruction, and it is the right one: "mwache mtu tu ajielezee,
+   * akituma mjibu sawa nimekuelewa". The label was ours, not theirs — a shop
+   * that sells wholesale was being asked to agree it was "Duka la Mang'aa /
+   * Rejareja", and saying no to a question nobody needed answered is not
+   * onboarding, it is an argument. What they typed is the description. The
+   * classifier still runs, silently, for the examples and for what the AI is
+   * told about the shop.
+   */
+  descriptionUnderstood: {
+    sw: 'Sawa, nimekuelewa.',
+    en: 'Got it, thank you.',
   },
   confirmCategoryAgain: {
     sw: 'Jibu NDIYO kama nimepata sawa, au HAPANA unieleze tena biashara yako.',
@@ -215,70 +232,45 @@ export function advanceOnboarding(
 
     case 'create_description': {
       if (said.length < 3) return stay(T.unclearDescription[lang]);
-      // MEASURED FAILURE: "Allen's cake" + "I sell food" was classified as
-      // Bakery, refused, and classified as Bakery again — because the business
-      // NAME was thrown in with the description every time, and "cake"
-      // outweighed everything the person said afterwards. Once they have
-      // described the business in words, those words are the evidence; the name
-      // only helps on the first attempt, when there is nothing else to go on.
-      const refused = (draft.rejectedCategories ?? '').split('|').filter(Boolean);
-      const evidence = refused.length > 0 ? said : `${draft.businessName ?? ''} ${said}`;
-      const classified = classifyBusinessDescription(evidence, refused);
-      if (!classified) return stay(T.unclearDescription[lang]);
-      const reply = lang === 'sw'
-        ? `${classified.swahili_confirmation_message}\n\nJibu NDIYO au HAPANA.`
-        : `I understand your business as ${classified.sub_category}. Is that right?\n\nReply YES or NO.`;
+      // No confirmation question. See T.descriptionUnderstood: the category is
+      // our word for their shop, and asking them to agree with it earned a "no"
+      // from anybody selling wholesale. A classification that fails now costs
+      // nothing — the description is kept either way, and the trade only
+      // decides which examples the welcome shows.
+      const guess = classifyBusinessDescription(`${draft.businessName ?? ''} ${said}`);
       return {
-        step: 'create_category_confirm',
-        reply,
+        step: 'create_person',
+        reply: `${T.descriptionUnderstood[lang]}\n\n${T.askPerson[lang]}`,
         action: { kind: 'none' },
         draft: {
           ...draft,
           businessDescription: said.slice(0, 300),
-          businessCategory: classified.category,
-          businessSubCategory: classified.sub_category,
-          classificationConfidence: String(classified.confidence),
-          classificationKeywords: JSON.stringify(classified.detected_keywords),
+          ...(guess ? {
+            businessCategory: guess.category,
+            businessSubCategory: guess.sub_category,
+            classificationConfidence: String(guess.confidence),
+            classificationKeywords: JSON.stringify(guess.detected_keywords),
+          } : {}),
         },
       };
     }
 
+    // Kept only for conversations already parked here when the question was
+    // removed. Any answer moves on; nobody is asked it again.
     case 'create_category_confirm': {
-      if (/^(?:ndiyo|ndio|yes|correct|sahihi|sawa)[.! ]*$/i.test(said)) {
-        return { step: 'create_person', reply: T.askPerson[lang], action: { kind: 'none' }, draft };
-      }
-      if (/^(?:hapana|no|wrong|sio|si sahihi)[.! ]*$/i.test(said)) {
-        // The refused guess is remembered so it cannot be offered again, and the
-        // next question says plainly that naming the goods is what helps —
-        // asking the identical question after a NO is what made this a loop.
-        const refused = [...(draft.rejectedCategories ?? '').split('|').filter(Boolean)];
-        if (draft.businessSubCategory) refused.push(draft.businessSubCategory);
-        return {
-          step: 'create_description',
-          reply: T.askDescriptionAgain[lang],
-          action: { kind: 'none' },
-          draft: {
-            businessName: draft.businessName ?? '',
-            rejectedCategories: refused.join('|'),
-          },
-        };
-      }
-      return stay(T.confirmCategoryAgain[lang]);
+      return { step: 'create_person', reply: T.askPerson[lang], action: { kind: 'none' }, draft };
     }
 
     case 'create_person': {
       if (said.length < 2) return stay(T.tooShortName[lang]);
-      const category = draft.businessCategory as BusinessCategory | undefined;
-      const subCategory = draft.businessSubCategory as BusinessSubCategory | undefined;
-      const confidence = Number(draft.classificationConfidence);
-      if (!category || !subCategory || !Number.isFinite(confidence)) {
-        return {
-          step: 'create_description',
-          reply: T.askDescription[lang],
-          action: { kind: 'none' },
-          draft: { businessName: draft.businessName ?? '' },
-        };
-      }
+      // A trade we could not name is not a reason to send somebody back round
+      // the loop. The description they wrote is kept whatever happens, and the
+      // classification is only there to choose which examples the welcome
+      // shows; without one, the general examples are shown.
+      const category = (draft.businessCategory ?? null) as BusinessCategory | null;
+      const subCategory = (draft.businessSubCategory ?? null) as BusinessSubCategory | null;
+      const rawConfidence = Number(draft.classificationConfidence);
+      const confidence = Number.isFinite(rawConfidence) ? rawConfidence : null;
       let detectedKeywords: string[] = [];
       try {
         const parsed = JSON.parse(draft.classificationKeywords ?? '[]');
@@ -297,6 +289,7 @@ export function advanceOnboarding(
           subCategory,
           confidence,
           detectedKeywords,
+          description: draft.businessDescription ?? '',
         },
         draft,
       };
@@ -350,16 +343,18 @@ export function isSwitchRequest(text: string | null): boolean {
  */
 export function isLoginRequest(text: string | null): boolean {
   const said = clean(text).toLowerCase();
-  if (/^(?:ingia|login|log in|sign in|weblink)(?:\s+tafadhali|\s+please)?[.!?]*$/i.test(said)) return true;
+  // "dashboard" is a word on its own now: the welcome teaches it, and the
+  // dashboard IS the web app, so it is the same short-lived link.
+  if (/^(?:ingia|login|log in|sign in|weblink|dashboard|dashibodi|dashbodi)(?:\s+tafadhali|\s+please)?[.!?]*$/i.test(said)) return true;
   if (/^link[.!?]*$/i.test(said)) return true;
 
   const mentionsLogin = /\b(?:ingia|kuingia|login|log in|sign in|kulogin|yakulogin)\b/i.test(said);
   const mentionsDashboard = /\b(?:dashboard|dashibodi)\b/i.test(said);
   const mentionsLink = /\b(?:link|kiungo|weblink)\b/i.test(said);
-  const requestsAccess = /\b(?:nipe|nipatie|naomba|nataka|nahitaji|nitumie|tuma|fungua|nichek|angalia|nawezaje|jinsi|send|give|get|open|check|access|how|can)\b/i.test(said);
+  const requestsAccess = /\b(?:nipe|nipatie|naomba|nataka|nahitaji|nitumie|tuma|fungua|nichek|angalia|nionyeshe|onyesha|kuona|nawezaje|jinsi|send|give|get|open|check|show|see|access|how|can)\b/i.test(said);
 
   return (mentionsLogin && (mentionsLink || mentionsDashboard || requestsAccess))
-    || (mentionsDashboard && mentionsLink && requestsAccess);
+    || (mentionsDashboard && (mentionsLink || requestsAccess));
 }
 
 /**

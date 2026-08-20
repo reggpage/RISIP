@@ -78,16 +78,10 @@ const add = (section: Section) => sections.push(section);
   rows.push({ ask: 'Duka la Asha', reply: named.reply, status: 'kazi' });
 
   const described = advanceOnboarding('create_description', 'nauza sukari, mchele na sabuni', 'sw', named.draft);
-  rows.push({ ask: 'nauza sukari, mchele na sabuni', reply: described.reply, status: 'kazi' });
+  rows.push({ ask: 'nauza sukari, mchele na sabuni', reply: described.reply, status: 'kazi',
+    note: 'Hakuna swali la kuthibitisha aina ya biashara. Maelezo yako yanahifadhiwa kama ulivyoandika, na ndiyo yanayotumika kuelewesha AI.' });
 
-  const refused = advanceOnboarding('create_category_confirm', 'hapana', 'sw', described.draft);
-  rows.push({ ask: 'hapana (kama aina si sahihi)', reply: refused.reply, status: 'kazi',
-    note: 'Aina iliyokataliwa hairudishwi tena, na swali la pili ni tofauti na la kwanza.' });
-
-  const confirmed = advanceOnboarding('create_category_confirm', 'ndiyo', 'sw', described.draft);
-  rows.push({ ask: 'ndiyo', reply: confirmed.reply, status: 'kazi' });
-
-  const person = advanceOnboarding('create_person', 'Asha Mkwawa', 'sw', confirmed.draft);
+  const person = advanceOnboarding('create_person', 'Asha Mkwawa', 'sw', described.draft);
   rows.push({ ask: 'Asha Mkwawa', reply: person.reply || '(hakuna majibu hapa — biashara inatengenezwa, kisha ujumbe wa karibu unatumwa)', status: 'kazi' });
 
   const join = advanceOnboarding('menu', '2', 'sw');
@@ -113,10 +107,10 @@ const add = (section: Section) => sections.push(section);
 {
   const rows: Row[] = [];
   rows.push({
-    ask: 'login',
-    reply: 'Tuma *login* kupata link ya kuingia kwenye web app. Link hudumu dakika 15 na ni ya matumizi moja.',
+    ask: 'ingia (au: login, dashboard)',
+    reply: '(link ya kuingia kwenye web app — hudumu dakika 15, ya matumizi moja)',
     status: 'kazi',
-    note: 'Link halisi haiwezi kuonyeshwa hapa; hutumwa kwenye chat.',
+    note: 'Maneno yote matatu yanafanya kazi. Link halisi haiwezi kuchapishwa hapa.',
   });
   rows.push({ ask: 'invite', reply: inviteRoleQuestion('sw'), status: 'kazi' });
   rows.push({

@@ -2158,6 +2158,17 @@ async function handleOnboarding(
       return rpcErr.message;
     }
 
+    // Their own sentence about the shop, kept as they wrote it. Onboarding no
+    // longer asks anybody to agree with our label for their trade, so this is
+    // the only description that exists — and it is what the assistant is told
+    // when it needs to know what kind of shop it is talking to.
+    const companyId = (result as { company_id?: string } | null)?.company_id;
+    if (next.action.kind === 'create_business' && companyId && next.action.description) {
+      await db.from('companies')
+        .update({ business_description: next.action.description.slice(0, 300) })
+        .eq('id', companyId);
+    }
+
     const name = (result as { company_name?: string } | null)?.company_name ?? '';
     const person = next.action.fullName;
     // The single most-read message in the product lives in one place, beside

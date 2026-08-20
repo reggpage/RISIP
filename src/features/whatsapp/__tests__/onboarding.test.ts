@@ -52,17 +52,25 @@ describe('the three ways in', () => {
     expect(r.reply).not.toMatch(/password|nywila/i);
   });
 
-  it('asks what the business does before asking the polished person-name question', () => {
+  it('takes the description as given and goes straight to the name', () => {
+    // The owner's instruction: "mwache mtu tu ajielezee, akituma mjibu sawa
+    // nimekuelewa na swali wewe unaitwa nani?". Nobody is asked to agree with a
+    // label they did not choose — a wholesaler was being asked to confirm it
+    // was "Rejareja", and saying no to that is not onboarding, it is an
+    // argument.
     const sw = advanceOnboarding('create_name', 'Duka la Asha', 'sw');
     expect(sw.step).toBe('create_description');
     expect(sw.reply).toContain('inauza nini');
-    const classified = advanceOnboarding(sw.step, 'Nauza daftari, kalamu na photocopy', 'sw', sw.draft);
-    expect(classified.step).toBe('create_category_confirm');
-    expect(advanceOnboarding(classified.step, 'ndiyo', 'sw', classified.draft).reply).toBe('Wewe unaitwa nani?');
+    const said = advanceOnboarding(sw.step, 'Nauza daftari, kalamu na photocopy', 'sw', sw.draft);
+    expect(said.step).toBe('create_person');
+    expect(said.reply).toBe('Sawa, nimekuelewa.\n\nWewe unaitwa nani?');
+    // Kept for the AI and for the welcome examples, never read back at them.
+    expect(said.draft.businessDescription).toBe('Nauza daftari, kalamu na photocopy');
+    expect(said.draft.businessSubCategory).toBe('Stationery na Fedha');
 
     const en = advanceOnboarding('create_name', 'Asha Shop', 'en');
-    const enClassified = advanceOnboarding(en.step, 'I sell clothes and shoes', 'en', en.draft);
-    expect(advanceOnboarding(enClassified.step, 'yes', 'en', enClassified.draft).reply).toBe('What is your name?');
+    const enSaid = advanceOnboarding(en.step, 'I sell clothes and shoes', 'en', en.draft);
+    expect(enSaid.reply).toBe('Got it, thank you.\n\nWhat is your name?');
   });
 
   it('does not guess at anything else', () => {
@@ -71,20 +79,33 @@ describe('the three ways in', () => {
 });
 
 describe('creating a business', () => {
-  it('asks for the business, classifies it with confirmation, then asks the person and acts', () => {
+  it('asks for the business, keeps what they said, then asks the person and acts', () => {
     const a = advanceOnboarding('create_name', 'Duka la Asha', 'sw');
     expect(a.step).toBe('create_description');
     expect(a.draft.businessName).toBe('Duka la Asha');
 
     const b = advanceOnboarding(a.step, 'Nauza daftari, kalamu na kutoa photocopy', 'sw', a.draft);
-    expect(b.step).toBe('create_category_confirm');
+    expect(b.step).toBe('create_person');
     expect(b.draft.businessSubCategory).toBe('Stationery na Fedha');
-    const c = advanceOnboarding(b.step, 'NDIYO', 'sw', b.draft);
-    expect(c.step).toBe('create_person');
-    const d = advanceOnboarding(c.step, 'Asha Mwinyi', 'sw', c.draft);
-    expect(d.action).toMatchObject({
+    const c = advanceOnboarding(b.step, 'Asha Mwinyi', 'sw', b.draft);
+    expect(c.action).toMatchObject({
       kind: 'create_business', businessName: 'Duka la Asha', fullName: 'Asha Mwinyi',
       category: 'Services & Micro-Manufacturing', subCategory: 'Stationery na Fedha',
+      description: 'Nauza daftari, kalamu na kutoa photocopy',
+    });
+  });
+
+  it('finishes signup even when the trade cannot be named', () => {
+    // A classification we cannot make is not a reason to refuse somebody a
+    // business. The description is kept; the welcome falls back to general
+    // examples.
+    const a = advanceOnboarding('create_name', 'Kwa Mzee', 'sw');
+    const b = advanceOnboarding(a.step, 'nafanya vitu vingi vya hapa mtaani', 'sw', a.draft);
+    expect(b.step).toBe('create_person');
+    const c = advanceOnboarding(b.step, 'Mzee Juma', 'sw', b.draft);
+    expect(c.action).toMatchObject({
+      kind: 'create_business', category: null, subCategory: null,
+      description: 'nafanya vitu vingi vya hapa mtaani',
     });
   });
 
@@ -93,17 +114,17 @@ describe('creating a business', () => {
     expect(advanceOnboarding('create_person', '', 'sw').action.kind).toBe('none');
   });
 
-  it('does not guess a category from a vague description and lets the person correct it', () => {
+  it('keeps a description it cannot classify, without labelling the shop', () => {
     const named = advanceOnboarding('create_name', 'Asha Ventures', 'sw');
     const vague = advanceOnboarding(named.step, 'nafanya biashara', 'sw', named.draft);
-    expect(vague.step).toBe('create_description');
-    expect(vague.reply).toContain('Sijaweza kutambua');
+    expect(vague.step).toBe('create_person');
+    expect(vague.draft.businessDescription).toBe('nafanya biashara');
+    // No guess is stored, so the welcome shows the general examples rather than
+    // somebody else's trade.
+    expect(vague.draft.businessCategory).toBeUndefined();
 
-    const classified = advanceOnboarding(named.step, 'saluni ya nywele', 'sw', named.draft);
-    const corrected = advanceOnboarding(classified.step, 'hapana', 'sw', classified.draft);
-    expect(corrected.step).toBe('create_description');
-    expect(corrected.draft.businessName).toBe('Asha Ventures');
-    expect(corrected.draft.businessCategory).toBeUndefined();
+    const clear = advanceOnboarding(named.step, 'saluni ya nywele', 'sw', named.draft);
+    expect(clear.draft.businessSubCategory).toBe('Saluni');
   });
 
   it('trims runaway input rather than storing it whole', () => {
@@ -225,11 +246,11 @@ describe('asking for a way in to the web', () => {
   });
 });
 
-describe('a refused guess is not offered again', () => {
-  it('stops the Bakery loop the owner walked into', () => {
-    // "Allen's cake" + "I sell food" → Bakery → No → Bakery again, because the
-    // business NAME was classified alongside the description every time and
-    // "cake" outweighed everything the person said afterwards.
+describe('the guess is never argued about', () => {
+  it('never asks the Bakery question that started the loop', () => {
+    // "Allen's cake" + "I sell food" was classified Bakery, refused, and
+    // classified Bakery again. The fix that survived is not a better guess —
+    // it is not asking. The label is ours; the description is theirs.
     let step = 'create_name';
     let draft: Record<string, string> = {};
     const say = (text: string) => {
@@ -239,20 +260,36 @@ describe('a refused guess is not offered again', () => {
       return next.reply;
     };
     say("Allen's cake");
-    expect(say('I sell food')).toMatch(/Bakery/);
-    const afterNo = say('No');
-    expect(afterNo).not.toMatch(/Bakery/);
-    // And the second question is a different question — repeating the first one
-    // is what made it a loop.
-    expect(afterNo).toMatch(/Name the actual goods/);
-    expect(say('I sell different types of food')).not.toMatch(/Bakery/);
+    const after = say('I sell food');
+    expect(after).not.toMatch(/Bakery/);
+    expect(after).not.toMatch(/Is that right|YES or NO/i);
+    expect(after).toBe('Got it, thank you.\n\nWhat is your name?');
+    expect(step).toBe('create_person');
   });
 
-  it('remembers every refusal, not just the last one', () => {
-    const first = advanceOnboarding('create_category_confirm' as never, 'No', 'en', {
-      businessName: 'X', businessSubCategory: 'Bakery', rejectedCategories: 'Mama Lishe',
-    });
-    expect(first.draft?.rejectedCategories).toContain('Mama Lishe');
-    expect(first.draft?.rejectedCategories).toContain('Bakery');
+  it('lets a conversation parked on the old question through', () => {
+    // Somebody was mid-signup when the question was removed. Whatever they
+    // answer, they move on; nobody is asked it a second time.
+    for (const answer of ['ndiyo', 'hapana', 'sijui']) {
+      const next = advanceOnboarding('create_category_confirm' as never, answer, 'sw', {
+        businessName: 'X', businessSubCategory: 'Bakery',
+      });
+      expect(next.step, answer).toBe('create_person');
+      expect(next.reply, answer).toBe('Wewe unaitwa nani?');
+    }
+  });
+});
+
+describe('the words the welcome teaches all work', () => {
+  it('opens the web app for every word it offers', () => {
+    for (const word of ['ingia', 'login', 'dashboard', 'dashbodi', 'nataka dashboard', 'nionyeshe dashboard']) {
+      expect(isLoginRequest(word), word).toBe(true);
+    }
+  });
+
+  it('does not read a sale as a request for a link', () => {
+    for (const other of ['nimeuza daftari 5', 'faida ya leo', 'naongeza sukari 20']) {
+      expect(isLoginRequest(other), other).toBe(false);
+    }
   });
 });

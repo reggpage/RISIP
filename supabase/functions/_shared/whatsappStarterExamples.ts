@@ -15,6 +15,14 @@
 export type StarterExample = {
   /** Registering a product: name, buying price, selling price. */
   register: string[];
+  /**
+   * One registration line that carries BOTH prices.
+   *
+   * A shop shown only retail examples never registers a wholesale price, and
+   * then gets asked "rejareja au jumla?" on every sale it makes. One worked
+   * line in the welcome is cheaper than that question, for ever.
+   */
+  bulk: string;
   /** Two goods for the sale example. */
   sold: string[];
   /** Two goods for the stock example, with plausible shelf quantities. */
@@ -22,34 +30,40 @@ export type StarterExample = {
 };
 
 const GENERAL: StarterExample = {
-  register: ['Sukari @2500 nauza 3500 kwa kilo', 'Sabuni @900 nauza 1200', 'Soda @700 nauza 1000'],
+  register: ['Sukari @2500 nauza 3500 kwa kilo', 'Sabuni @900 nauza 1200'],
+  bulk: 'Soda @700 nauza rejareja 1000 jumla 900 kuanzia 12',
   sold: ['sukari 2', 'soda 5'],
   onShelf: ['sukari 40', 'soda 24'],
 };
 
 const BY_SUBCATEGORY: Record<string, StarterExample> = {
   'Kijiwe cha Chips': {
-    register: ['Chips kavu @1500 nauza 2500', 'Chips mayai @2000 nauza 3500', 'Soda @700 nauza 1000'],
+    register: ['Chips kavu @1500 nauza 2500', 'Chips mayai @2000 nauza 3500'],
+    bulk: 'Soda @700 nauza rejareja 1000 jumla 900 kuanzia 12',
     sold: ['zege 8', 'kavu 5'],
     onShelf: ['viazi gunia 2', 'mayai treya 6'],
   },
   'Mama Lishe': {
-    register: ['Wali maharage @1200 nauza 2000', 'Chai @300 nauza 500', 'Maandazi @150 nauza 300'],
+    register: ['Wali maharage @1200 nauza 2000', 'Chai @300 nauza 500'],
+    bulk: 'Maandazi @150 nauza rejareja 300 jumla 250 kuanzia 10',
     sold: ['wali maharage 12', 'chai 20'],
     onShelf: ['mchele kilo 25', 'maharage kilo 15'],
   },
   Bakery: {
-    register: ['Keki kipande @800 nauza 1500', 'Mkate @1800 nauza 2500', 'Maandazi @150 nauza 300'],
+    register: ['Keki kipande @800 nauza 1500', 'Mkate @1800 nauza 2500'],
+    bulk: 'Maandazi @150 nauza rejareja 300 jumla 250 kuanzia 10',
     sold: ['keki 6', 'mkate 4'],
     onShelf: ['unga kilo 25', 'sukari kilo 10'],
   },
   'Genge la Mboga na Matunda': {
-    register: ['Nyanya @400 nauza 700 kwa kilo', 'Vitunguu @1200 nauza 1800 kwa kilo', 'Ndizi @300 nauza 500'],
+    register: ['Nyanya @400 nauza 700 kwa kilo', 'Vitunguu @1200 nauza 1800 kwa kilo'],
+    bulk: 'Ndizi @300 nauza rejareja 500 jumla 400 kuanzia 12',
     sold: ['nyanya kilo 4', 'ndizi 12'],
     onShelf: ['nyanya kilo 20', 'vitunguu kilo 15'],
   },
   'Duka la Vinywaji na Grocery': {
-    register: ['Soda @700 nauza 1000', 'Maji @400 nauza 600', 'Juice @1000 nauza 1500'],
+    register: ['Maji @400 nauza 600', 'Juice @1000 nauza 1500'],
+    bulk: 'Soda @700 nauza rejareja 1000 jumla 900 kuanzia 12',
     sold: ['soda 12', 'maji 8'],
     onShelf: ['soda kreti 6', 'maji kreti 4'],
   },
@@ -98,31 +112,45 @@ export function businessWelcome(
 ): string {
   const eg = starterExample(category, subCategory);
   const italic = (lines: string[]) => lines.map((line) => `_${line}_`).join('\n');
+  // Three words, not two. Registering a product and putting stock on the shelf
+  // are different things and the owner asked for a word for each: *nasajili
+  // bidhaa* sets the prices once, *naongeza bidhaa* is how many arrived.
+  //
+  // The registration example carries BOTH prices, because a shop that only ever
+  // sees a retail example never tells us its wholesale price and then gets
+  // asked about it on every sale. Where nothing says which, retail is what is
+  // used — so the example says that too, in one line.
   return lang === 'sw'
     ? `Sawa ${person}, karibu ${businessName} 🎉\n\n`
-      + 'Anza kwa kusajili bidhaa zako. Nitumie orodha yako ikiwa na bei ya '
-      + 'kununua na bei ya kuuza, mstari mmoja kwa kila bidhaa:\n\n'
-      + `${italic(eg.register)}\n\n`
-      + 'Baada ya hapo, maneno mawili ndiyo yanatosha:\n\n'
-      + '*mauzo* — kisha orodha ya vilivyouzwa\n'
+      + 'Maneno matatu ndiyo yanatosha kuendesha duka lako hapa.\n\n'
+      + '1️⃣ *nasajili bidhaa* — bei ya kununua na ya kuuza, mstari mmoja kwa kila bidhaa:\n'
+      + `_nasajili bidhaa_\n${italic(eg.register)}\n`
+      + `_${eg.bulk}_\n`
+      + 'Ukiuza kwa vipimo, sema hivyo: _kwa kilo_, _nusu_, _robo_.\n'
+      + 'Usipotaja rejareja au jumla, natumia rejareja.\n\n'
+      + '2️⃣ *mauzo* — kisha orodha ya vilivyouzwa:\n'
       + `_mauzo_\n${italic(eg.sold)}\n\n`
-      + '*naongeza bidhaa* — kisha orodha ya vilivyoingia dukani\n'
+      + '3️⃣ *naongeza bidhaa* — kisha orodha ya vilivyoingia dukani:\n'
       + `_naongeza bidhaa_\n${italic(eg.onShelf)}\n\n`
-      + 'Bei sitakuuliza tena — nitatumia zile ulizosajili mwenyewe.\n'
-      + 'Ukitaka kuingia kwenye webapp andika *ingia*.\n'
-      + 'Ukitaka kumualika mfanyakazi andika *mualike*.\n'
-      + 'Ukikwama andika *msaada*.'
+      + 'Bei sitakuuliza tena — nitatumia zile ulizosajili mwenyewe.\n\n'
+      + 'Ukitaka kuingia kwenye webapp tuma *ingia*.\n'
+      + 'Ukitaka kuona dashboard tuma *dashboard*.\n'
+      + 'Ukitaka kumualika mfanyakazi tuma *mualike*.\n'
+      + 'Ukikwama tuma *msaada*.'
     : `Okay ${person}, welcome to ${businessName} 🎉\n\n`
-      + 'Start by registering your products. Send me your list with the buying '
-      + 'price and the selling price, one line per product:\n\n'
-      + `${italic(eg.register)}\n\n`
-      + 'After that, two words are all you need:\n\n'
-      + '*mauzo* — then the list of what sold\n'
+      + 'Three words are all you need to run your shop here.\n\n'
+      + '1️⃣ *nasajili bidhaa* — the buying and selling price, one line per product:\n'
+      + `_nasajili bidhaa_\n${italic(eg.register)}\n`
+      + `_${eg.bulk}_\n`
+      + 'If you sell by measure, say so: _kwa kilo_, _nusu_, _robo_.\n'
+      + 'If a sale names neither retail nor wholesale, I use retail.\n\n'
+      + '2️⃣ *mauzo* — then the list of what sold:\n'
       + `_mauzo_\n${italic(eg.sold)}\n\n`
-      + '*add product* — then the list of what came into the shop\n'
-      + `_add product_\n${italic(eg.onShelf)}\n\n`
-      + 'I will not ask for prices again — I use the ones you registered.\n'
-      + 'If you want to log in on the web app send *login*.\n'
-      + 'If you want to invite a co-worker send *invite*.\n'
-      + 'If you get stuck send *help*.';
+      + '3️⃣ *naongeza bidhaa* — then the list of what came into the shop:\n'
+      + `_naongeza bidhaa_\n${italic(eg.onShelf)}\n\n`
+      + 'I will not ask for prices again — I use the ones you registered.\n\n'
+      + 'To log in on the web app send *ingia*.\n'
+      + 'To see the dashboard send *dashboard*.\n'
+      + 'To invite a co-worker send *mualike*.\n'
+      + 'If you get stuck send *msaada*.';
 }
