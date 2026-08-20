@@ -71,7 +71,7 @@ export function isHelp(text: string | null | undefined): boolean {
   // Greetings are conversation, not a request for a static command menu. A
   // linked user saying “mambo vipi?” must reach Risip AI so it can respond
   // naturally and retain the turn in conversation memory.
-  return /^(help|msaada|start|menu)\b/.test(t);
+  return /^(help|msaada|saidia|nisaidie|start|menu)\b/.test(t);
 }
 
 export type Intent =

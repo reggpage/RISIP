@@ -28,7 +28,8 @@ export function parseInviteRequest(text: string | null | undefined): boolean {
   // knew "kualika" and "kumuinvite" but not "kumualika". Swahili puts the object
   // inside the verb — ku-M-ualika, ku-WA-alika, ni-M-ualike — so the stem is
   // what to match on, with the infix optional.
-  return /\b(?:ku|ni|tu|a)?(?:m|mu|wa|w)?(?:alika|alike)\b|\b(?:invite|inviting)\b|\bku(?:mu|wa)?invite\b|\bkuongeza mtu\b|\badd (?:a )?(?:user|worker|staff|member)\b|\b(?:mfanyakazi|staff|mtumiaji) mpya\b/
+  // "mw" is the same infix written the way people type it — mwalike, mwalika.
+  return /\b(?:ku|ni|tu|a)?(?:mw|mu|m|wa|w)?(?:alika|alike)\b|\b(?:invite|inviting)\b|\bku(?:mu|wa)?invite\b|\bkuongeza mtu\b|\badd (?:a )?(?:user|worker|staff|member)\b|\b(?:mfanyakazi|staff|mtumiaji) mpya\b/
     .test(said);
 }
 

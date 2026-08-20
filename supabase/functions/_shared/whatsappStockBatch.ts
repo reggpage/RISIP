@@ -101,10 +101,10 @@ export function stockCountBatchConfirmation(batch: StockCountBatch, lang: Lang):
       + batch.unreadable.map((line) => `• ${line}`).join('\n'));
 
   return lang === 'sw'
-    ? `Hesabu ya store — bidhaa ${batch.counts.length}:\n${rows}${problem}\n\n`
+    ? `Bidhaa na idadi zake — ${batch.counts.length}:\n${rows}${problem}\n\n`
       + 'Hii itakuwa nanga mpya: kuanzia sasa nitafuatilia mwenyewe kadri unavyouza na kuingiza.\n\n'
       + 'Nihifadhi zote? NDIYO / HAPANA'
-    : `Store count — ${batch.counts.length} products:\n${rows}${problem}\n\n`
+    : `Stock on hand — ${batch.counts.length} products:\n${rows}${problem}\n\n`
       + 'This becomes the new anchor: from here I keep count as you sell and restock.\n\n'
       + 'Save them all? YES / NO';
 }

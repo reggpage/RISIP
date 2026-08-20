@@ -70,6 +70,19 @@ export type ExpenseLine = { label: string; amount: number };
 // and "Nauli 9500" is bus fare, and nothing about 10 versus 9500 says so.
 const EXPENSE_LINE = /^([\p{L}][\p{L}\s'’.\-\/]{1,60}?)[\s:=-]+((?:tshs?|tzs|sh)?\s*[0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:\/=)?$/iu;
 
+/** A line that is only a heading: everything after it is money going out. */
+const SPENDING_SECTION = /^(?:matumizi|gharama|expenses?|spending|matumizi ya leo)\s*:?\s*$/iu;
+
+/**
+ * Labels that are spending wherever they appear, header or no header.
+ *
+ * Deliberately a short list of things a shop pays for and never sells. A word
+ * that could be either — "mafuta", "chakula" — is NOT here: under a sales
+ * header those are goods, and guessing otherwise would delete a sale.
+ */
+const SPENDING_LABEL =
+  /^(?:matumizi|gharama|nauli|usafiri|umeme|maji|kodi|pango|mshahara|posho|leseni|internet|bando|luku)\b/iu;
+
 function readExpense(line: string): ExpenseLine | null {
   const match = EXPENSE_LINE.exec(clean(line));
   if (!match) return null;
@@ -160,15 +173,31 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   // a price. The band is read off the header and handed to every line.
   const header = SALE_HEADER
     .exec(lines[0] ?? '');
+  // Kept as typed, alongside the prefixed copy. Under a header every line is
+  // rewritten as "nimeuza <line>", which is what makes "daftari 10" a sale —
+  // and it is also what turned the day's spending into a phantom product
+  // called "matumizi" that the shop was then invited to register.
+  let raw = lines;
   if (lines.length > 1 && header) {
     const band = header[1] ? ` ${header[1]}` : '';
-    lines = lines.slice(1).map((line) => (OPENER.test(line) ? line : `nimeuza ${line}${band}`));
+    raw = lines.slice(1);
+    lines = raw.map((line) => (OPENER.test(line) ? line : `nimeuza ${line}${band}`));
   }
 
   if (lines.length > 1) {
     const items: QuantitySaleItem[] = [];
     const expenses: ExpenseLine[] = [];
-    for (const line of lines) {
+    // "Matumizi:" on a line of its own used to kill the whole parse — it is
+    // neither a sale nor a readable expense — and everything under it went with
+    // it. It is a heading: what follows is money out.
+    let spending = false;
+    for (const [at, line] of lines.entries()) {
+      const typed = raw[at] ?? line;
+      if (SPENDING_SECTION.test(typed)) { spending = true; continue; }
+      if (spending || SPENDING_LABEL.test(typed)) {
+        const spent = readExpense(typed);
+        if (spent) { expenses.push(spent); continue; }
+      }
       const one = parseQuantityOnlySale(line);
       if (!one) {
         // Not a sale line. It may still be the day's spending, written at the

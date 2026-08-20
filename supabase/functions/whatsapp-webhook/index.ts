@@ -160,7 +160,7 @@ import {
   type PortionQuantityPrompt,
 } from '../_shared/whatsappPortions.ts';
 import { lowStockNotice, type StockLevel } from '../_shared/whatsappLowStock.ts';
-import { starterExample } from '../_shared/whatsappStarterExamples.ts';
+import { businessWelcome } from '../_shared/whatsappStarterExamples.ts';
 import {
   parseBareExpense,
   parseBareQuantityList,
@@ -2160,44 +2160,10 @@ async function handleOnboarding(
 
     const name = (result as { company_name?: string } | null)?.company_name ?? '';
     const person = next.action.fullName;
-    // The old welcome ended at "send login for a link", and a shopkeeper who
-    // has just answered four questions still had no idea what to type next.
-    // These are the first three things worth doing, in the order that makes
-    // each one useful — a price list makes a sale priceable, a count makes
-    // stock answerable — with a real sentence to copy for each.
-    // The examples come from the trade the classifier just identified. A bakery
-    // welcomed with a dictionary and a kilo of sugar has to translate the
-    // instructions before it can follow them — the owner's words were "mifano
-    // haiendani na biashara kabisa". Nothing here is written to the database:
-    // these illustrate the shape, and a shop's products are its own.
-    const eg = starterExample(next.action.category, next.action.subCategory);
-    return lang === 'sw'
-      ? `Sawa ${person}, karibu ${name} 🎉\n\n`
-        + 'Anza kwa kusajili bidhaa zako. Nitumie orodha yako ikiwa na bei ya '
-        + 'kununua na bei ya kuuza, mstari mmoja kwa kila bidhaa:\n\n'
-        + eg.register.map((line) => `_${line}_`).join('\n') + '\n\n'
-        + 'Baada ya hapo, maneno mawili ndiyo yanatosha:\n\n'
-        + '*mauzo* — kisha orodha ya vilivyouzwa\n'
-        + `_mauzo_\n${eg.sold.map((line) => `_${line}_`).join('\n')}\n\n`
-        + '*naongeza bidhaa* — kisha orodha ya vilivyoingia dukani\n'
-        + `_naongeza bidhaa_\n${eg.onShelf.map((line) => `_${line}_`).join('\n')}\n\n`
-        + 'Bei sitakuuliza tena — nitatumia zile ulizosajili mwenyewe.\n'
-        + 'Ukitaka kuingia kwenye webapp andika *ingia*.\n'
-        + 'Ukitaka kumualika mfanyakazi andika *mualike*.\n'
-        + 'Ukikwama andika *msaada*.'
-      : `Okay ${person}, welcome to ${name} 🎉\n\n`
-        + 'Start by registering your products. Send me your list with the buying '
-        + 'price and the selling price, one line per product:\n\n'
-        + eg.register.map((line) => `_${line}_`).join('\n') + '\n\n'
-        + 'After that, two words are all you need:\n\n'
-        + '*mauzo* — then the list of what sold\n'
-        + `_mauzo_\n${eg.sold.map((line) => `_${line}_`).join('\n')}\n\n`
-        + '*add product* — then the list of what came into the shop\n'
-        + `_add product_\n${eg.onShelf.map((line) => `_${line}_`).join('\n')}\n\n`
-        + 'I will not ask for prices again — I use the ones you registered.\n'
-        + 'If you want to log in on the web app send *login*.\n'
-        + 'If you want to invite a co-worker send *invite*.\n'
-        + 'If you get stuck send *help*.';
+    // The single most-read message in the product lives in one place, beside
+    // the trade examples it is built from, so it can be reviewed and quoted
+    // without reading the webhook.
+    return businessWelcome(person, name, next.action.category, next.action.subCategory, lang);
   }
 
   await db.from('whatsapp_onboarding').update({

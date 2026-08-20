@@ -534,3 +534,33 @@ describe('the way people actually head a day’s takings', () => {
     }
   });
 });
+
+
+describe('the day\'s spending at the foot of a till roll', () => {
+  it('does not turn "matumizi 15000" into a product under a sales header', () => {
+    // Under a header every line is rewritten as "nimeuza <line>", which is what
+    // makes "daftari 10" a sale — and it turned the day's spending into a
+    // phantom product the shop was then invited to register.
+    const sale = parseQuantityOnlySale('Mauzo ya leo rejareja\ndaftari 10\nkalamu 4\nmatumizi 15000')!;
+    expect(sale.items.map((item) => item.product)).toEqual(['daftari', 'kalamu']);
+    expect(sale.expenses).toEqual([{ label: 'matumizi', amount: 15000 }]);
+  });
+
+  it('reads a "Matumizi:" heading instead of dying on it', () => {
+    // A heading is neither a sale nor a readable expense, so it used to kill
+    // the whole parse and take the sales above it with it.
+    const sale = parseQuantityOnlySale(
+      'Mauzo ya leo\ndaftari 10\nkalamu 4\nMatumizi:\nnauli 3000\numeme 12000')!;
+    expect(sale.items).toHaveLength(2);
+    expect(sale.expenses).toEqual([
+      { label: 'nauli', amount: 3000 }, { label: 'umeme', amount: 12000 },
+    ]);
+  });
+
+  it('never takes goods for spending on a word that could be either', () => {
+    // "mafuta" and "chakula" are stock in half the shops in the country.
+    const sale = parseQuantityOnlySale('Mauzo ya leo\nmafuta 10\nchakula 4')!;
+    expect(sale.items.map((item) => item.product)).toEqual(['mafuta', 'chakula']);
+    expect(sale.expenses).toEqual([]);
+  });
+});

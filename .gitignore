@@ -14,3 +14,7 @@ supabase/.temp
 
 # Vite dev-time config cache
 vite.config.ts.timestamp-*.mjs
+
+# Generated from scripts/qa-catalogue.ts — regenerate, never hand-edit.
+qa-catalogue.json
+Risip-Maswali-na-Majibu.docx

@@ -72,9 +72,19 @@ const RULES: Rule[] = [
     { phrase: 'bakery', weight: 4 }, { phrase: 'mkate', weight: 2 }, { phrase: 'keki', weight: 2 },
     { phrase: 'cake', weight: 2 }, { phrase: 'maandazi', weight: 1.5 },
   ] },
+  // MEASURED FAILURE: the commonest shop in the country could not be
+  // recognised. "nauza sukari, mchele, sabuni na soda" is a duka la mang'aa in
+  // every street in Tanzania, and it came back "sijaweza kutambua aina ya
+  // biashara" — because the rule knew the WORD "mangaa" but none of the goods.
+  // Each staple is light on its own (sugar alone could be a grocery); two or
+  // three of them together are unmistakable.
   { category: 'Retail & General Stores', subCategory: "Duka la Mang'aa / Rejareja", keywords: [
     { phrase: 'rejareja', weight: 3 }, { phrase: 'mangaa', weight: 3 }, { phrase: 'duka la kawaida', weight: 2 },
     { phrase: 'general store', weight: 3 }, { phrase: 'shop', weight: 1 },
+    { phrase: 'sukari', weight: 1.2 }, { phrase: 'sabuni', weight: 1.2 }, { phrase: 'mchele', weight: 1.2 },
+    { phrase: 'unga', weight: 1.2 }, { phrase: 'chumvi', weight: 1.2 }, { phrase: 'mafuta ya kupika', weight: 1 },
+    { phrase: 'vitu vya nyumbani', weight: 2.5 }, { phrase: 'bidhaa za nyumbani', weight: 2.5 },
+    { phrase: 'household', weight: 2 }, { phrase: 'duka la vyakula', weight: 2 },
   ] },
   { category: 'Retail & General Stores', subCategory: 'Duka la Nguo na Viatu', keywords: [
     { phrase: 'nguo', weight: 2.5 }, { phrase: 'viatu', weight: 2.5 }, { phrase: 'boutique', weight: 3 },
