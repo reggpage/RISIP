@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   type ComboCandidate,
   type ComboSplit,
+  applyOrderQuantity,
   comboNotice,
   comboQuestion,
   comboQuestions,
   comboSaveOffer,
   comboTotal,
   parseComboAnswer,
+  parseComboVariant,
   splitCombo,
 } from '../../../../supabase/functions/_shared/whatsappCombos';
 
@@ -87,7 +89,9 @@ describe('what it refuses to read', () => {
       { key: 'chips mayai', name: 'Chips mayai' },
       { key: 'soseji', name: 'Soseji' },
     ];
-    expect(splitCombo('chips soseji', twoChips)).toEqual({ kind: 'ambiguous', token: 'chips' });
+    expect(splitCombo('chips soseji', twoChips)).toEqual({
+      kind: 'ambiguous', token: 'chips', candidates: ['Chips kavu', 'Chips mayai'],
+    });
   });
 });
 
@@ -194,5 +198,86 @@ describe('the answer cannot land on the wrong piece', () => {
   it('ignores a measure offered for a count question', () => {
     const open = comboQuestions(split('chips yai')!);
     expect(parseComboAnswer('nusu', open, units)).toBeNull();
+  });
+});
+
+describe('what the number at the end is counting', () => {
+  // The owner: "kikawaida wakisema chips yai mbili wanamaanisha chips 2000, yai
+  // zinachanganywa mbili kwenye kavu moja jumla 1000, kwa hiyo inakuwa 3000.
+  // Sasa wakisema zege mbili wanamaanisha 6000."
+  const prices = new Map([['chips kavu', 2000], ['yai', 500]]);
+  const priceOf = (piece: { key: string }) => prices.get(piece.key) ?? null;
+
+  it('counts the last thing named, not the orders, on a fresh reading', () => {
+    const read = split('chips yai')!;
+    const { orders, split: counted } = applyOrderQuantity(read, 2);
+    expect(orders).toBe(1);
+    expect(counted.pieces.find((piece) => piece.key === 'yai')?.quantity).toBe(2);
+    expect(counted.pieces.find((piece) => piece.key === 'chips kavu')?.quantity).toBe(1);
+    // 2,000 for the chips + two eggs at 500 = 3,000. Not 5,000.
+    expect(comboTotal(counted, priceOf)).toBe(3000);
+  });
+
+  it('counts orders once the name has been saved', () => {
+    const saved = [{ name: 'zege', pieces: [
+      { key: 'chips kavu', name: 'Chips kavu', quantity: 1, unit: null },
+      { key: 'yai', name: 'Yai', quantity: 2, unit: null },
+    ] }];
+    const read = splitCombo('zege', KIJIWE, saved) as ComboSplit;
+    const { orders, split: counted } = applyOrderQuantity(read, 2);
+    expect(orders).toBe(2);
+    // Two zege at 3,000 each.
+    expect(comboTotal(counted, priceOf)! * orders).toBe(6000);
+  });
+
+  it('stops asking how many, once the number has said so', () => {
+    const { split: counted } = applyOrderQuantity(split('chips yai')!, 2);
+    expect(comboQuestions(counted).map((piece) => piece.key)).not.toContain('yai');
+  });
+});
+
+describe('one product registered in several kinds', () => {
+  const withKinds: ComboCandidate[] = [
+    { key: 'chips kavu', name: 'Chips kavu' },
+    { key: 'yai', name: 'Yai' },
+    { key: 'mishikaki wa ngombe', name: 'Mishikaki wa ngombe' },
+    { key: 'mishikaki wa kuku', name: 'Mishikaki wa kuku' },
+  ];
+
+  it('asks which kind, naming the ones the shop actually registered', () => {
+    // The owner: "inauliza wa kuku au ngombe pale tu kama zilisajiliwa".
+    const reading = splitCombo('chips yai na mishikaki', withKinds);
+    expect(reading).toEqual({
+      kind: 'ambiguous',
+      token: 'mishikaki',
+      candidates: ['Mishikaki wa ngombe', 'Mishikaki wa kuku'],
+    });
+  });
+
+  it('does not ask when the whole name is already there', () => {
+    // The joining word "wa" belongs to the name. Dropping it read this as
+    // mishikaki plus kuku — two products, and one of them the wrong price.
+    const reading = splitCombo('chips yai na mishikaki wa kuku', withKinds) as ComboSplit;
+    expect(reading.pieces.map((piece) => piece.key))
+      .toEqual(['chips kavu', 'yai', 'mishikaki wa kuku']);
+  });
+
+  it('does not ask a shop that registered only one kind', () => {
+    const oneKind: ComboCandidate[] = [
+      { key: 'chips kavu', name: 'Chips kavu' },
+      { key: 'mishikaki', name: 'Mishikaki' },
+    ];
+    const reading = splitCombo('chips mishikaki', oneKind) as ComboSplit;
+    expect(reading.pieces.map((piece) => piece.key)).toEqual(['chips kavu', 'mishikaki']);
+  });
+
+  it('reads the answer by name, by the distinguishing words, or by number', () => {
+    const kinds = ['Mishikaki wa ngombe', 'Mishikaki wa kuku'];
+    expect(parseComboVariant('wa kuku', kinds)).toBe('Mishikaki wa kuku');
+    expect(parseComboVariant('Mishikaki wa ngombe', kinds)).toBe('Mishikaki wa ngombe');
+    expect(parseComboVariant('2', kinds)).toBe('Mishikaki wa kuku');
+    expect(parseComboVariant('sijui', kinds)).toBeNull();
+    // "mishikaki" alone still names both, so it is still not an answer.
+    expect(parseComboVariant('mishikaki', kinds)).toBeNull();
   });
 });

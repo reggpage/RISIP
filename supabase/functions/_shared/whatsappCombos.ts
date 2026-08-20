@@ -114,6 +114,23 @@ function looksLike(piece: string, form: string): boolean {
 
 type Resolved = { item: ComboCandidate; quantity: number | null; unit: string | null } | 'ambiguous' | null;
 
+/**
+ * Which of the shop's products a word could have meant.
+ *
+ * Named back, so the question is answerable in one word: "Mishikaki ipi? wa
+ * ngombe / wa kuku". A shop that registered only one kind is never asked.
+ */
+export function candidatesFor(token: string, catalogue: ComboCandidate[]): string[] {
+  const wanted = comboKey(token);
+  const names = catalogue
+    .filter((item) => {
+      const full = comboKey(item.name);
+      return full === wanted || full.startsWith(`${wanted} `) || squash(item.name).startsWith(wanted);
+    })
+    .map((item) => item.name);
+  return [...new Set(names)].slice(0, 8);
+}
+
 function resolveToken(
   token: string,
   forms: Map<string, ComboCandidate | null>,
@@ -143,7 +160,7 @@ export function splitCombo(
   phrase: string | null | undefined,
   catalogue: ComboCandidate[],
   saved: SavedCombo[] = [],
-): ComboSplit | { kind: 'ambiguous'; token: string } | null {
+): ComboSplit | { kind: 'ambiguous'; token: string; candidates: string[] } | null {
   const said = comboKey(phrase);
   if (!said || catalogue.length === 0) return null;
 
@@ -161,7 +178,10 @@ export function splitCombo(
   // A phrase that IS one product is not a combination; the ordinary path owns it.
   if (forms.get(said)) return null;
 
-  const tokens = said.split(' ').filter((token) => token && !JOINERS.has(token));
+  // Joiners are NOT dropped before matching. "mishikaki wa kuku" is one
+  // product's whole name, and throwing away the "wa" first read it as mishikaki
+  // plus kuku — two products, two prices, one of them invented.
+  const tokens = said.split(' ').filter(Boolean);
   if (tokens.length === 0) return null;
 
   const pieces: ComboPiece[] = [];
@@ -188,31 +208,58 @@ export function splitCombo(
     });
   };
 
-  for (const token of tokens) {
-    // A number belongs to the piece it follows: "mishakaki 3".
+  // Longest window first, so a whole registered name beats its first word:
+  // "mishikaki wa kuku" is matched before "mishikaki" ever gets a chance to be
+  // called ambiguous.
+  let at = 0;
+  while (at < tokens.length) {
+    const token = tokens[at];
+    // A number belongs to the piece it follows: "yai mbili", "mishikaki 3".
     if (/^[0-9]+(?:\.[0-9]+)?$/.test(token)) {
       const last = pieces[pieces.length - 1];
       if (!last) return null;
       last.quantity = Number(token);
       delete last.quantityAssumed;
+      at += 1;
       continue;
     }
-    const resolved = resolveToken(token, forms, catalogue);
-    if (resolved === 'ambiguous') return { kind: 'ambiguous', token };
-    if (resolved) {
+
+    let taken = 0;
+    let ambiguousToken: string | null = null;
+    for (let take = Math.min(4, tokens.length - at); take >= 1; take -= 1) {
+      const window = tokens.slice(at, at + take).join(' ');
+      const resolved = resolveToken(window, forms, catalogue);
+      if (resolved === 'ambiguous') {
+        // Keep looking: a shorter window is no better, but a LONGER one already
+        // failed, so this is the most specific reading available. Remember it in
+        // case nothing else matches at all.
+        ambiguousToken = window;
+        continue;
+      }
+      if (!resolved) continue;
       if (resolved.unit && pieces.length > 0 && pieces[pieces.length - 1].key === resolved.item.key) {
         pieces[pieces.length - 1].unit = resolved.unit;
         delete pieces[pieces.length - 1].unitMissing;
-        continue;
+      } else {
+        push(resolved.item, resolved.quantity, resolved.unit);
       }
-      push(resolved.item, resolved.quantity, resolved.unit);
-      continue;
+      taken = take;
+      break;
     }
-    // 3. Glued: "chipssosej" is one token holding two products.
+    if (taken > 0) { at += taken; continue; }
+    if (ambiguousToken) {
+      return { kind: 'ambiguous', token: ambiguousToken, candidates: candidatesFor(ambiguousToken, catalogue) };
+    }
+    // A joining word that is not part of any name is just glue.
+    if (JOINERS.has(token)) { at += 1; continue; }
+    // Glued: "chipssosej" is one token holding two products.
     const cut = cutGlued(token, forms);
-    if (cut === 'ambiguous') return { kind: 'ambiguous', token };
+    if (cut === 'ambiguous') {
+      return { kind: 'ambiguous', token, candidates: candidatesFor(token, catalogue) };
+    }
     if (!cut) return null;
     for (const item of cut) push(item, null, null);
+    at += 1;
   }
 
   // One product is not a combination.
@@ -434,4 +481,63 @@ export function comboAmbiguous(phrase: string, token: string, lang: Lang): strin
       + 'Andika jina kamili, mfano: _chips kavu na yai 2_.'
     : `“${phrase}” — the word *${token}* could be more than one of your products.\n\n`
       + 'Write the full name, for example: _chips kavu na yai 2_.';
+}
+
+/**
+ * Where the number at the end of the phrase belongs.
+ *
+ * The owner, on how a kijiwe actually counts: "kikawaida wakisema chips yai
+ * mbili wanamaanisha chips 2000, yai zinachanganywa mbili kwenye kavu moja
+ * jumla 1000, kwa hiyo inakuwa 3000. Sasa wakisema zege mbili wanamaanisha
+ * 6000."
+ *
+ * So the same word "mbili" means two different things, and which one depends on
+ * what it is attached to:
+ *
+ *   SPLIT   "chips yai mbili" — the number counts the LAST THING NAMED. One
+ *           plate of chips with two eggs mixed in. 2,000 + 2×500 = 3,000.
+ *   SAVED   "zege mbili" — the nickname is a single item, so the number counts
+ *           the ORDERS. Two zege. 2 × 3,000 = 6,000.
+ *
+ * A shop that saves "chips yai" turns the first case into the second, which is
+ * exactly what saving it is for.
+ */
+export function applyOrderQuantity(split: ComboSplit, quantity: number): { orders: number; split: ComboSplit } {
+  if (!(quantity > 0)) return { orders: 1, split };
+  if (split.source === 'saved') return { orders: quantity, split };
+  if (split.pieces.length === 0) return { orders: 1, split };
+  const last = split.pieces.length - 1;
+  return {
+    orders: 1,
+    split: {
+      ...split,
+      pieces: split.pieces.map((piece, at) => {
+        if (at !== last) return piece;
+        const { quantityAssumed: _stated, ...rest } = piece;
+        return { ...rest, quantity };
+      }),
+    },
+  };
+}
+
+/** "Mishikaki ipi?" — asked only where the shop registered more than one. */
+export function comboVariantQuestion(phrase: string, token: string, candidates: string[], lang: Lang): string {
+  const rows = candidates.map((name, index) => `${index + 1}. ${name}`).join('\n');
+  return lang === 'sw'
+    ? `“${phrase}” — *${token}* ipi?\n${rows}\n\nJibu kwa jina au namba, mfano: _${candidates[0] ?? ''}_.`
+    : `“${phrase}” — which *${token}*?\n${rows}\n\nAnswer by name or number, e.g. _${candidates[0] ?? ''}_.`;
+}
+
+/** Reads which one they meant, or null. */
+export function parseComboVariant(text: string | null | undefined, candidates: string[]): string | null {
+  const said = comboKey(text);
+  if (!said || candidates.length === 0) return null;
+  const row = Number(said);
+  if (Number.isInteger(row) && row >= 1 && row <= candidates.length) return candidates[row - 1];
+  // The distinguishing words are what people type: "wa kuku", not the whole
+  // registered name.
+  const scored = candidates
+    .map((name) => ({ name, key: comboKey(name) }))
+    .filter(({ key }) => key === said || key.includes(said) || said.includes(key));
+  return scored.length === 1 ? scored[0].name : null;
 }

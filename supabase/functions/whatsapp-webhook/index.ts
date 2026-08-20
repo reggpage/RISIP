@@ -187,6 +187,7 @@ import {
   type ComboPiece,
   type ComboSplit,
   type SavedCombo,
+  applyOrderQuantity,
   comboAmbiguous,
   comboKey,
   comboNotice,
@@ -195,7 +196,9 @@ import {
   comboSaveNotAllowed,
   comboSaveOffer,
   comboSaved,
+  comboVariantQuestion,
   parseComboAnswer,
+  parseComboVariant,
   splitCombo,
 } from '../_shared/whatsappCombos.ts';
 import {
@@ -390,6 +393,17 @@ type ComboSavePending = {
   splits: ComboSplit[];
 };
 
+/** "Mishikaki ipi — wa ngombe au wa kuku?" with the sale held behind it. */
+type ComboVariantPending = {
+  kind: 'combo_variant';
+  sale: QuantitySale;
+  phrase: string;
+  token: string;
+  candidates: string[];
+  known: ComboSplit[];
+  sourceMessageId: string;
+};
+
 type PriceBandPending = {
   kind: 'price_band_choice';
   sale: QuantitySale;
@@ -437,6 +451,9 @@ async function priceQuantitySale(
   // "chips kuku" — the shop sells chicken by robo, nusu and kilo, and the order
   // named none of them. Three thousand or ten thousand for the same word.
   | { kind: 'combo_question'; splits: ComboSplit[]; sale: QuantitySale; units: [string, string[]][] }
+  // "mishikaki" where the shop sells wa ngombe and wa kuku. Which one is the
+  // price, so which one is asked.
+  | { kind: 'combo_variant'; phrase: string; token: string; candidates: string[]; sale: QuantitySale }
   | { kind: 'skip' }
 > {
   const { data: declaredRows, error: declaredError } = await db.rpc('wa_company_product_sale_units', {
@@ -505,18 +522,23 @@ async function priceQuantitySale(
       const reading = known.find((split) => comboKey(split.phrase) === comboKey(item.product))
         ?? await readCombo(db, identity, item.product);
       if (reading && 'token' in reading) {
-        return {
-          kind: 'blocked',
-          message: comboAmbiguous(item.product, reading.token, lang),
-        };
+        // "mishikaki" where the shop registered wa ngombe AND wa kuku. Which
+        // one decides the price, so it is asked — and only ever asked where the
+        // shop really did register more than one.
+        return reading.candidates.length > 1
+          ? { kind: 'combo_variant', phrase: item.product, token: reading.token, candidates: reading.candidates, sale }
+          : { kind: 'blocked', message: comboAmbiguous(item.product, reading.token, lang) };
       }
       if (reading) {
-        combos.push(reading);
-        for (const piece of reading.pieces) {
+        // Where the number belongs: "chips yai mbili" is one plate with two
+        // eggs in it, while "zege mbili" is two zege. See applyOrderQuantity.
+        const counted = applyOrderQuantity(reading, item.quantity);
+        combos.push(counted.split);
+        for (const piece of counted.split.pieces) {
           resolvedItems.push({
             key: piece.key,
             name: piece.name,
-            quantity: item.quantity * piece.quantity,
+            quantity: counted.orders * piece.quantity,
             band: item.band,
             declared: piece.unit
               ? declaredUnits.find((unit) =>
@@ -654,7 +676,7 @@ async function readCombo(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
   phrase: string,
-): Promise<ComboSplit | { kind: 'ambiguous'; token: string } | null> {
+): Promise<ComboSplit | { kind: 'ambiguous'; token: string; candidates: string[] } | null> {
   const [names, units, saved] = await Promise.all([
     db.rpc('company_product_names', { p_company_id: identity.company_id }),
     db.rpc('wa_company_product_sale_units', { p_company_id: identity.company_id }),
@@ -2761,6 +2783,10 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<ComboPending> | null)?.kind === 'combo_clarification'
           ? convo.options as ComboPending
           : null;
+        const comboVariantPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<ComboVariantPending> | null)?.kind === 'combo_variant'
+          ? convo.options as ComboVariantPending
+          : null;
         const comboSavePending = convo?.awaiting === 'product_cost'
           && (convo.options as Partial<ComboSavePending> | null)?.kind === 'combo_save'
           ? convo.options as ComboSavePending
@@ -2776,6 +2802,30 @@ Deno.serve(async (req) => {
          * worded once and the parked state has one shape. Nothing is written:
          * the sale is still a message until the usual NDIYO.
          */
+        /** "Mishikaki ipi?", with the sale parked behind it. */
+        const askWhichVariant = async (
+          phrase: string,
+          token: string,
+          candidates: string[],
+          sale: QuantitySale,
+          sourceMessageId: string,
+        ) => {
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: {
+              kind: 'combo_variant', sale, phrase, token, candidates,
+              known: settledCombos, sourceMessageId,
+            } satisfies ComboVariantPending,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          await replyQuietly(phone, comboVariantQuestion(phrase, token, candidates, lang));
+        };
+
         /** One question about one combination, with the sale parked behind it. */
         const askAboutCombo = async (
           split: ComboSplit,
@@ -2830,6 +2880,7 @@ Deno.serve(async (req) => {
           && !newProductPending && !newProductSaleSetup && !portionSizePending && !portionConfirmPending
           && !quantityMeaningPending && !portionQuantityPending && !productRenamePending
           && !addProductSetupPending && !bandPending && !comboPending && !comboSavePending
+          && !comboVariantPending
           ? { cost: convo.options as unknown as ProductCost }
           : null;
         const productContext = convo?.awaiting === 'product_analytics'
@@ -2997,6 +3048,40 @@ Deno.serve(async (req) => {
           await audit(db, identity, waMessageId, 'daily_record', 'topic_switch_cancel', 'applied');
           dailyConversation = null;
           convo = null;
+        }
+
+        // "Mishikaki ipi?" The answer is put back into the sentence they wrote,
+        // so the sale is read again exactly as if they had typed the full name.
+        if (comboVariantPending && releasesParkedQuestion(body ?? '')) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'combo_variant', 'abandoned', 'skipped');
+        } else if (comboVariantPending) {
+          const chosen = parseComboVariant(body, comboVariantPending.candidates);
+          if (!chosen) {
+            await reply(phone, comboVariantQuestion(
+              comboVariantPending.phrase, comboVariantPending.token,
+              comboVariantPending.candidates, lang));
+            await audit(db, identity, waMessageId, 'combo_variant', 'reask', 'skipped');
+            await finish('skipped');
+            continue;
+          }
+          const wanted = comboKey(comboVariantPending.token);
+          resumedQuantitySale = {
+            ...comboVariantPending.sale,
+            items: comboVariantPending.sale.items.map((item) => (
+              comboKey(item.product) === comboKey(comboVariantPending.phrase)
+                ? {
+                  ...item,
+                  product: item.product.replace(
+                    new RegExp(`\\b${wanted.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'),
+                    chosen,
+                  ),
+                }
+                : item)),
+          };
+          settledCombos = comboVariantPending.known;
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'combo_variant', 'answered', 'applied');
         }
 
         // "chips kuku" — which measure of chicken, and how many of what rides
@@ -4541,6 +4626,12 @@ Deno.serve(async (req) => {
             // "viberiti 2" with two prices on the shelf. This is the owner's own
             // example, and it arrives with no verb at all — which is exactly why
             // the question has to live here too and not only on the sale path.
+            if (priced.kind === 'combo_variant') {
+              await askWhichVariant(priced.phrase, priced.token, priced.candidates, priced.sale, waMessageId);
+              await audit(db, identity, waMessageId, 'quantity_sale', 'combo_variant', 'pending');
+              await finish('skipped');
+              continue;
+            }
             if (priced.kind === 'combo_question') {
               await askAboutCombo(priced.splits[0], priced.sale, priced.units, waMessageId,
                 bare.items.find((item) =>
@@ -4943,6 +5034,12 @@ Deno.serve(async (req) => {
               }, { onConflict: 'identity_id' });
               await replyQuietly(phone, newProductSaleOffer(priced.products, lang));
               await audit(db, identity, waMessageId, 'quantity_sale', 'unknown_product', 'pending');
+              await finish('skipped');
+              continue;
+            }
+            if (priced.kind === 'combo_variant') {
+              await askWhichVariant(priced.phrase, priced.token, priced.candidates, priced.sale, waMessageId);
+              await audit(db, identity, waMessageId, 'quantity_sale', 'combo_variant', 'pending');
               await finish('skipped');
               continue;
             }
