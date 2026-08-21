@@ -12,6 +12,7 @@ import { formatMoney } from '@/lib/format';
 import {
   fetchCurrentProductCost,
   fetchSellingPrice,
+  fetchStockOnHand,
   findProductByBarcode,
   recordStockCount,
   saveProductBarcode,
@@ -56,7 +57,7 @@ const COPY = {
     retail: 'Bei ya kuuza (rejareja)',
     wholesale: 'Bei ya jumla (si lazima)',
     stock: 'Store (idadi iliyopo)',
-    stockHelp: 'Ukiiacha wazi, sitagusa hesabu ya store.',
+    stockHelp: 'Hii ndiyo idadi niliyo nayo sasa. Ibadilishe ikiwa si sahihi.',
     save: 'Hifadhi bidhaa',
     edit: 'Badilisha bidhaa',
     saving: 'Inahifadhi…',
@@ -96,7 +97,7 @@ const COPY = {
     retail: 'Selling price (retail)',
     wholesale: 'Wholesale price (optional)',
     stock: 'Store (how many are there)',
-    stockHelp: 'Leave it blank and I will not touch the stock count.',
+    stockHelp: 'This is what I hold right now. Change it if the shelf says otherwise.',
     save: 'Save product',
     edit: 'Update product',
     saving: 'Saving…',
@@ -137,6 +138,9 @@ export default function ScanPage() {
   const [loadingKnown, setLoadingKnown] = useState(false);
   // Read when the product was recognised, written back untouched on save.
   const [keptMinQty, setKeptMinQty] = useState<number | null>(null);
+  // What the shelf held when the product was recognised. Saving without
+  // touching it must not write a fresh count that says the same thing.
+  const [stockWas, setStockWas] = useState('');
   const [name, setName] = useState('');
   const [cost, setCost] = useState('');
   const [retail, setRetail] = useState('');
@@ -167,21 +171,27 @@ export default function ScanPage() {
       const already = await findProductByBarcode(rawCode);
       setKnown(already);
       setName(already?.productName ?? '');
+      // A product nobody has registered holds nothing yet, and the box says so
+      // rather than sitting empty for somebody to wonder about.
+      if (!already) { setStock('0'); setStockWas(''); }
       if (already) {
         // The prices are the reason to recognise it at all. Showing the name
         // and leaving the money blank asks somebody to remember what they
         // registered, which is the job this page exists to do for them.
-        const [costRow, priceRow] = await Promise.all([
+        const [costRow, priceRow, onHand] = await Promise.all([
           fetchCurrentProductCost(already.productKey).catch(() => null),
           fetchSellingPrice(already.productKey).catch(() => null),
+          fetchStockOnHand(already.productKey).catch(() => null),
         ]);
         setCost(costRow ? String(costRow.unitCost) : '');
         setRetail(priceRow ? String(priceRow.retailPrice) : '');
         setWholesale(priceRow?.wholesalePrice != null ? String(priceRow.wholesalePrice) : '');
-        // The count is deliberately NOT prefilled: it is a physical count, and
-        // showing yesterday's number invites somebody to confirm it without
-        // looking at the shelf.
-        setStock('');
+        // Never counted shows a zero rather than a blank: a shopkeeper holding
+        // the packet wants to see what Risip believes, and zero is the honest
+        // answer for something nobody has counted.
+        const held = onHand === null ? '0' : String(onHand);
+        setStock(held);
+        setStockWas(held);
         setKeptMinQty(priceRow?.wholesaleMinQty ?? null);
       }
     } catch (err) {
@@ -197,6 +207,7 @@ export default function ScanPage() {
     setKnown(null);
     setName(''); setCost(''); setRetail(''); setWholesale(''); setStock('');
     setKeptMinQty(null);
+    setStockWas('');
     setTyped('');
     setTyping(false);
     scanner.resume();
@@ -225,7 +236,9 @@ export default function ScanPage() {
       // longer asks for it, and passing null would quietly wipe it.
       await setSellingPrice(productName, selling, bulk && bulk > 0 ? bulk : null, keptMinQty);
       await saveProductBarcode(code!, productName);
-      if (counted !== null && counted >= 0) {
+      // Only when it actually changed. A count is a ledger row, and re-saving
+      // the same figure would fill the history with entries nobody made.
+      if (counted !== null && counted >= 0 && stock.trim() !== stockWas) {
         await recordStockCount(productName, counted, null, 'barcode scan');
       }
       setLastSaved(productName);

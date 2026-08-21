@@ -652,3 +652,20 @@ export async function fetchBarcodeCatalogue(): Promise<Map<string, ScannedProduc
   }
   return catalogue;
 }
+
+/**
+ * What the shelf holds for one product, or null when nobody has ever counted it.
+ *
+ * The scanner shows this in the store box so a shopkeeper holding a packet can
+ * see what Risip believes and correct it, rather than being asked a question
+ * they have already answered. Never counted comes back null, and the page shows
+ * a zero it can overwrite — a figure it invented would be worse than a blank.
+ */
+export async function fetchStockOnHand(productKey: string): Promise<number | null> {
+  const { data, error } = await supabase.rpc('company_stock_on_hand');
+  if (error) throw error;
+  const row = ((data ?? []) as unknown as Record<string, unknown>[])
+    .find((item) => String(item.product_key ?? '') === productKey);
+  if (!row || !row.has_count) return null;
+  return Math.max(0, Number(row.on_hand ?? 0));
+}

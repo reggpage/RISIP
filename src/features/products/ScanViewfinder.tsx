@@ -1,4 +1,4 @@
-import { Check, Flashlight, Keyboard, Loader2, RefreshCw, SwitchCamera, X } from 'lucide-react';
+import { Check, Flashlight, Keyboard, Loader2, RefreshCw, X } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import type { ScannerControls } from './useScanner';
 
@@ -22,7 +22,7 @@ export function ScanViewfinder({
   height: string;
   onType?: () => void;
 }) {
-  const { camera, cameras, hasTorch, torchOn, stats, videoRef } = controls;
+  const { camera, hasTorch, torchOn, stats, videoRef } = controls;
   const broken = camera === 'denied' || camera === 'missing' || camera === 'failed';
 
   // Ten seconds of looking with nothing to show for it. WHICH nothing matters:
@@ -72,20 +72,10 @@ export function ScanViewfinder({
                   aria-label="torch"
                   onClick={controls.toggleTorch}
                   className={`rounded-full p-2.5 shadow-lg transition-colors ${
-                    torchOn ? 'bg-amber-400 text-black' : 'bg-black/50 text-white'
+                    torchOn ? 'bg-[#FFCE1B] text-black' : 'bg-black/50 text-white'
                   }`}
                 >
                   <Flashlight className="h-5 w-5" />
-                </button>
-              ) : null}
-              {cameras.length > 1 ? (
-                <button
-                  type="button"
-                  aria-label="switch camera"
-                  onClick={controls.switchCamera}
-                  className="rounded-full bg-black/50 p-2.5 text-white shadow-lg"
-                >
-                  <SwitchCamera className="h-5 w-5" />
                 </button>
               ) : null}
             </div>
@@ -101,7 +91,7 @@ export function ScanViewfinder({
 
         {broken ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/85 p-6 text-center">
-            <X className="h-6 w-6 text-amber-400" />
+            <X className="h-6 w-6 text-[#FFCE1B]" />
             <p className="text-xs text-white/90">{copy[camera]}</p>
             <div className="flex gap-2">
               <Button variant="secondary" onClick={controls.retry}>
@@ -117,7 +107,7 @@ export function ScanViewfinder({
         ) : null}
       </div>
 
-      {blind ? <p className="text-center text-xs text-amber-700">{copy.noPictures}</p> : null}
+      {blind ? <p className="text-center text-xs text-ink">{copy.noPictures}</p> : null}
       {stalled ? <p className="text-center text-xs text-ink-muted">{copy.noReads}</p> : null}
     </div>
   );

@@ -127,37 +127,6 @@ function torchControls(stream: MediaStream) {
 }
 
 /**
- * The cameras worth offering: one back, one front.
- *
- * MEASURED FAILURE: "ukibonyeza ya kugeuza kamera inafanya scanner isifanye
- * kazi". An iPhone reports five video inputs — Back Camera, Back Ultra Wide,
- * Back Telephoto, Back Dual Wide, Front — and cycling through them lands on a
- * lens that cannot focus on a packet held at arm's length. The picture is live,
- * so nothing looks broken, and nothing decodes.
- *
- * So the ultra-wide and the telephoto are not offered at all. What a shopkeeper
- * means by "switch camera" is front or back.
- */
-export async function listCameras(): Promise<MediaDeviceInfo[]> {
-  if (!navigator.mediaDevices?.enumerateDevices) return [];
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  const cameras = devices.filter((device) => device.kind === 'videoinput');
-  const isFront = (label: string) => /front|user|mbele/i.test(label);
-  const isOddLens = (label: string) => /ultra|wide|tele|depth|desk/i.test(label);
-
-  const backs = cameras.filter((device) => !isFront(device.label));
-  const fronts = cameras.filter((device) => isFront(device.label));
-  // The plain one where the labels say which is plain; otherwise the first,
-  // which on every phone tested is the main lens.
-  const plainBack = backs.find((device) => !isOddLens(device.label)) ?? backs[0];
-  const plainFront = fronts.find((device) => !isOddLens(device.label)) ?? fronts[0];
-  const chosen = [plainBack, plainFront].filter(Boolean) as MediaDeviceInfo[];
-  // Labels are empty until permission is granted; with nothing to go on, offer
-  // what there is rather than nothing.
-  return chosen.length > 0 ? chosen : cameras.slice(0, 2);
-}
-
-/**
  * The strip of the picture the barcode is actually in.
  *
  * Two reasons, and both of them are the difference between scanning and not:

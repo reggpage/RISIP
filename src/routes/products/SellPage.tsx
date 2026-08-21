@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Loader2, Minus, Plus, ScanLine, Trash2 } from 'lucide-react';
+import { AlertTriangle, Loader2, Minus, Plus, ScanLine, Trash2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
@@ -256,22 +256,24 @@ export default function SellPage() {
       <ScanViewfinder controls={scanner} copy={c} hit={hit} height="h-52" />
 
       {problem ? (
-        <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
-          {problem.kind === 'unknown' ? (
-            <>
-              <p className="font-medium">{c.unknown}</p>
-              <p className="mt-0.5 font-mono text-xs">{problem.text}</p>
-              <p className="mt-1 text-xs">{c.unknownHelp}</p>
-              <Link to="/scan" className="mt-2 inline-block">
-                <Button variant="secondary">{c.register}</Button>
-              </Link>
-            </>
-          ) : (
-            <>
-              <p className="font-medium">{problem.text} — {c.noPrice}</p>
-              <p className="mt-1 text-xs">{c.noPriceHelp}</p>
-            </>
-          )}
+        <div className="flex items-start gap-3 py-1">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-[#FFCE1B]" aria-hidden />
+          <div className="min-w-0 flex-1">
+            {problem.kind === 'unknown' ? (
+              <>
+                <p className="text-sm font-medium text-ink">{c.unknown}</p>
+                <p className="mt-0.5 font-mono text-xs text-ink-muted">{problem.text}</p>
+                <Link to="/scan" className="mt-2 inline-block">
+                  <Button variant="secondary">{c.register}</Button>
+                </Link>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-ink">{problem.text} — {c.noPrice}</p>
+                <p className="mt-0.5 text-xs text-ink-muted">{c.noPriceHelp}</p>
+              </>
+            )}
+          </div>
         </div>
       ) : null}
 

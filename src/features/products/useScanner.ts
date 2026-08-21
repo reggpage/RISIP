@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { listCameras, startScanner, type ScannerHandle } from './scanner';
+import { startScanner, type ScannerHandle } from './scanner';
 
 // Owning a camera from React, which is harder than it looks.
 //
@@ -22,13 +22,11 @@ export type CameraState = 'starting' | 'live' | 'denied' | 'missing' | 'failed';
 export type ScannerControls = {
   videoRef: React.RefObject<HTMLVideoElement>;
   camera: CameraState;
-  cameras: MediaDeviceInfo[];
   torchOn: boolean;
   hasTorch: boolean;
   /** Frames drawn and codes decoded, for telling silent failures apart. */
   stats: { frames: number; decodes: number };
   toggleTorch: () => void;
-  switchCamera: () => void;
   retry: () => void;
   pause: () => void;
   resume: () => void;
@@ -42,13 +40,11 @@ export function useScanner(active: boolean, onCode: (code: string) => void): Sca
   onCodeRef.current = onCode;
 
   const [camera, setCamera] = useState<CameraState>('starting');
-  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
-  const [cameraAt, setCameraAt] = useState(0);
   const [torchOn, setTorchOn] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
   const [stats, setStats] = useState({ frames: 0, decodes: 0 });
 
-  const open = useCallback(async (deviceId?: string) => {
+  const open = useCallback(async () => {
     handleRef.current?.stop();
     handleRef.current = null;
     setTorchOn(false);
@@ -58,7 +54,6 @@ export function useScanner(active: boolean, onCode: (code: string) => void): Sca
     if (!video) return;
     const handle = await startScanner({
       video,
-      deviceId,
       onCode: (found) => onCodeRef.current(found.code),
       onError: (why) => setCamera(why),
     });
@@ -66,9 +61,6 @@ export function useScanner(active: boolean, onCode: (code: string) => void): Sca
     handleRef.current = handle;
     setHasTorch(handle.hasTorch());
     setCamera('live');
-    // Labels are empty until permission is granted, so this is only worth
-    // reading once a stream exists.
-    void listCameras().then(setCameras).catch(() => setCameras([]));
   }, []);
 
   // ONE dependency, and it changes at most once — see the note above.
@@ -95,18 +87,11 @@ export function useScanner(active: boolean, onCode: (code: string) => void): Sca
   return {
     videoRef,
     camera,
-    cameras,
     torchOn,
     hasTorch,
     stats,
     toggleTorch: () => void handleRef.current?.toggleTorch().then(setTorchOn),
-    switchCamera: () => {
-      if (cameras.length < 2) return;
-      const next = (cameraAt + 1) % cameras.length;
-      setCameraAt(next);
-      void open(cameras[next]?.deviceId);
-    },
-    retry: () => void open(cameras[cameraAt]?.deviceId),
+    retry: () => void open(),
     pause: () => handleRef.current?.pause(),
     resume: () => handleRef.current?.resume(),
   };
