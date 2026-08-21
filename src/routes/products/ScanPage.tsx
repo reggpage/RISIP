@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Barcode, Camera, CameraOff, Check, Keyboard, Loader2, Package } from 'lucide-react';
+import {
+  Barcode, Check, Flashlight, Keyboard, Loader2, Package, RefreshCw, SwitchCamera, X,
+} from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -17,31 +19,31 @@ import {
   setSellingPrice,
   type ProductBarcode,
 } from '@/features/products/products';
+import { beep, listCameras, startScanner, type ScannerHandle } from '@/features/products/scanner';
 import { formatBarcode, readBarcode } from '../../../supabase/functions/_shared/barcode';
 
 // Registering the shelf by scanning it.
 //
-// The one thing a scan is worth is a key that cannot be mistyped — "daftari"
-// and "daftari kubwa" are two rows a person has to keep straight, and
-// 6011040121093 is the same packet every time. It is not worth a name or a
-// price: there is no free database of Tanzanian goods, and inventing one would
-// put names in the ledger nobody chose. So the camera gives the number and the
-// shopkeeper gives the meaning, once.
+// The camera opens the moment the page does. A shopkeeper who tapped "scan bar
+// code" has a packet in their hand already, and every tap between them and a
+// working lens is one they have to be told about.
 //
-// The camera is native BarcodeDetector where the browser has it — Android
-// Chrome, which is what these shops hold — and every phone that does not gets
-// the same page with the number typed in instead. Typing is not a degraded
-// mode here: the number is printed under the stripes, and a shop with a broken
-// camera lens must still be able to finish the job.
+// What a scan is worth is a key that cannot be mistyped — "daftari" and
+// "daftari kubwa" are two rows a person must keep straight, and 6011040121093
+// is the same packet every time. It is not worth a name or a price: there is no
+// free database of Tanzanian goods, and inventing one would put names in the
+// ledger nobody chose. Camera gives the number, shopkeeper gives the meaning.
 
 const COPY = {
   sw: {
     title: 'Sajili kwa bar code',
-    lead: 'Piga scan bar code ya bidhaa, kisha niambie jina na bei. Nitakumbuka namba hiyo milele.',
-    start: 'Washa kamera',
-    stop: 'Zima kamera',
-    typeInstead: 'Andika namba badala yake',
-    scanInstead: 'Rudi kwenye kamera',
+    lead: 'Mulika bar code ya bidhaa. Nikiisoma nitakuuliza jina na bei mara moja tu.',
+    aim: 'Weka bar code ndani ya mstari',
+    starting: 'Nafungua kamera…',
+    torch: 'Taa',
+    switch: 'Badili kamera',
+    typeInstead: 'Andika namba kwa mkono',
+    scanInstead: 'Tumia kamera',
     numberLabel: 'Namba ya bar code',
     numberHelp: 'Namba iliyo chini ya mistari kwenye pakiti.',
     check: 'Tafuta',
@@ -58,22 +60,27 @@ const COPY = {
     saving: 'Inahifadhi…',
     saved: 'Nimehifadhi',
     scanNext: 'Scan nyingine',
-    noCamera: 'Simu hii haiwezi ku-scan kwenye browser. Andika namba kwa mkono — iko chini ya mistari.',
-    denied: 'Ruhusa ya kamera imekataliwa. Ifungue kwenye settings za browser, au andika namba kwa mkono.',
+    cancel: 'Ghairi',
+    denied: 'Ruhusa ya kamera imekataliwa. Ifungue kwenye settings za browser, kisha ujaribu tena — au andika namba kwa mkono.',
+    missing: 'Sikuweza kufungua kamera ya simu hii. Andika namba kwa mkono — iko chini ya mistari.',
+    failed: 'Kamera imefunguka lakini scanner haikuanza. Jaribu tena, au andika namba kwa mkono.',
+    retry: 'Jaribu tena',
     badCode: 'Namba hii si bar code sahihi. Angalia tena.',
     needName: 'Naomba jina la bidhaa.',
     needPrices: 'Naomba bei ya kununua na bei ya kuuza.',
     notAllowed: 'Ni owner au accountant pekee anayeweza kusajili bidhaa.',
     back: 'Rudi kwenye bidhaa',
-    aim: 'Elekeza kamera kwenye bar code',
+    margin: 'Faida kwa kimoja',
   },
   en: {
     title: 'Register by barcode',
-    lead: 'Scan the product barcode, then tell me the name and prices. I will remember that number for good.',
-    start: 'Start camera',
-    stop: 'Stop camera',
-    typeInstead: 'Type the number instead',
-    scanInstead: 'Back to the camera',
+    lead: 'Point at the product barcode. When I read it I will ask for the name and prices, once.',
+    aim: 'Line the barcode up inside the line',
+    starting: 'Opening the camera…',
+    torch: 'Light',
+    switch: 'Switch camera',
+    typeInstead: 'Type the number by hand',
+    scanInstead: 'Use the camera',
     numberLabel: 'Barcode number',
     numberHelp: 'The number printed under the stripes on the packet.',
     check: 'Look up',
@@ -90,24 +97,21 @@ const COPY = {
     saving: 'Saving…',
     saved: 'Saved',
     scanNext: 'Scan another',
-    noCamera: 'This browser cannot scan. Type the number by hand — it is under the stripes.',
-    denied: 'Camera permission was refused. Allow it in your browser settings, or type the number.',
+    cancel: 'Cancel',
+    denied: 'Camera permission was refused. Allow it in your browser settings and try again — or type the number by hand.',
+    missing: 'I could not open this phone’s camera. Type the number by hand — it is under the stripes.',
+    failed: 'The camera opened but the scanner did not start. Try again, or type the number.',
+    retry: 'Try again',
     badCode: 'That is not a valid barcode. Please check it.',
     needName: 'The product needs a name.',
     needPrices: 'Both the buying price and the selling price are needed.',
     notAllowed: 'Only an owner or accountant can register products.',
     back: 'Back to products',
-    aim: 'Point the camera at the barcode',
+    margin: 'Margin each',
   },
 } as const;
 
-type Detector = { detect: (source: HTMLVideoElement) => Promise<{ rawValue: string }[]> };
-
-const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'itf'];
-
-function detectorAvailable(): boolean {
-  return typeof window !== 'undefined' && 'BarcodeDetector' in window;
-}
+type CameraState = 'starting' | 'live' | 'denied' | 'missing' | 'failed';
 
 export default function ScanPage() {
   const auth = useAuth();
@@ -118,13 +122,14 @@ export default function ScanPage() {
   const toast = useToast();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const loopRef = useRef<number | null>(null);
+  const handleRef = useRef<ScannerHandle | null>(null);
 
-  const [scanning, setScanning] = useState(false);
-  const [manual, setManual] = useState(!detectorAvailable());
-  const [cameraError, setCameraError] = useState('');
+  const [camera, setCamera] = useState<CameraState>('starting');
+  const [typing, setTyping] = useState(false);
   const [typed, setTyped] = useState('');
+  const [torchOn, setTorchOn] = useState(false);
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
+  const [cameraAt, setCameraAt] = useState(0);
 
   const [code, setCode] = useState<string | null>(null);
   const [known, setKnown] = useState<ProductBarcode | null>(null);
@@ -136,75 +141,69 @@ export default function ScanPage() {
   const [busy, setBusy] = useState(false);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
 
-  const stopCamera = useCallback(() => {
-    if (loopRef.current !== null) { window.clearInterval(loopRef.current); loopRef.current = null; }
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    setScanning(false);
+  const stop = useCallback(() => {
+    handleRef.current?.stop();
+    handleRef.current = null;
+    setTorchOn(false);
   }, []);
 
-  // The camera must not outlive the page. A stream left running keeps the torch
-  // and the lens busy, and on a shop phone that is a battery gone by midday.
-  useEffect(() => stopCamera, [stopCamera]);
-
-  const accept = useCallback(async (raw: string) => {
-    const found = readBarcode(raw);
-    if (!found) { toast.error(c.badCode); return; }
-    stopCamera();
-    setCode(found.code);
+  /** A found code stops the camera and asks for the meaning. */
+  const found = useCallback(async (rawCode: string) => {
+    stop();
+    setCode(rawCode);
     setLastSaved(null);
+    beep();
     if (navigator.vibrate) navigator.vibrate(60);
     try {
-      const already = await findProductByBarcode(found.code);
+      const already = await findProductByBarcode(rawCode);
       setKnown(already);
       setName(already?.productName ?? '');
     } catch (err) {
       setKnown(null);
       toast.error(friendlyError(err));
     }
-  }, [c.badCode, stopCamera, toast]);
+  }, [stop, toast]);
 
-  const startCamera = useCallback(async () => {
-    setCameraError('');
-    if (!detectorAvailable()) { setManual(true); setCameraError(c.noCamera); return; }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } },
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-      const BarcodeDetectorCtor = (window as unknown as {
-        BarcodeDetector: new (options: { formats: string[] }) => Detector;
-      }).BarcodeDetector;
-      const detector = new BarcodeDetectorCtor({ formats: FORMATS });
-      setScanning(true);
-      loopRef.current = window.setInterval(async () => {
-        const video = videoRef.current;
-        if (!video || video.readyState < 2) return;
-        try {
-          const codes = await detector.detect(video);
-          const first = codes[0]?.rawValue;
-          if (first) await accept(first);
-        } catch {
-          // A frame that cannot be read is not an error worth showing; the next
-          // one is 300ms away.
-        }
-      }, 300);
-    } catch (err) {
-      stopCamera();
-      setManual(true);
-      setCameraError((err as Error)?.name === 'NotAllowedError' ? c.denied : c.noCamera);
-    }
-  }, [accept, c.denied, c.noCamera, stopCamera]);
+  const start = useCallback(async (deviceId?: string) => {
+    stop();
+    setCamera('starting');
+    const video = videoRef.current;
+    if (!video) return;
+    const handle = await startScanner({
+      video,
+      deviceId,
+      onCode: (barcode) => void found(barcode.code),
+      onError: (why) => setCamera(why),
+    });
+    if (!handle) return;
+    handleRef.current = handle;
+    setCamera('live');
+    // Labels are blank until permission is granted, so the list is only worth
+    // reading once the stream is live.
+    void listCameras().then(setCameras);
+  }, [found, stop]);
+
+  // Open the camera as soon as the page does, and never leave it running: a
+  // stream left open holds the lens and the torch, and on a shop phone that is
+  // a battery gone by midday.
+  useEffect(() => {
+    if (!allowed || code !== null || typing) return;
+    void start(cameras[cameraAt]?.deviceId);
+    return stop;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowed, code, typing, cameraAt]);
 
   const reset = () => {
     setCode(null);
     setKnown(null);
     setName(''); setCost(''); setRetail(''); setWholesale(''); setMinQty('');
     setTyped('');
+  };
+
+  const acceptTyped = async () => {
+    const parsed = readBarcode(typed);
+    if (!parsed) { toast.error(c.badCode); return; }
+    await found(parsed.code);
   };
 
   const save = async () => {
@@ -246,6 +245,8 @@ export default function ScanPage() {
     );
   }
 
+  const scanning = code === null && !typing;
+
   return (
     <div className="mx-auto max-w-md space-y-4 p-4">
       <div>
@@ -261,77 +262,111 @@ export default function ScanPage() {
         </Card>
       ) : null}
 
-      {code === null ? (
-        <Card className="space-y-3 p-4">
-          {!manual ? (
-            <>
-              <div className="relative overflow-hidden rounded-xl bg-black">
-                <video
-                  ref={videoRef}
-                  className="h-56 w-full object-cover"
-                  playsInline
-                  muted
-                />
-                {!scanning ? (
-                  <div className="absolute inset-0 flex items-center justify-center text-xs text-white/70">
-                    {c.aim}
-                  </div>
-                ) : (
-                  <div className="pointer-events-none absolute inset-x-8 top-1/2 h-0.5 -translate-y-1/2 bg-red-500/80" />
-                )}
+      {/* The video element stays mounted while scanning so the stream has
+          somewhere to go from the first frame. */}
+      <div className={scanning ? 'block' : 'hidden'}>
+        <Card className="space-y-3 overflow-hidden p-0">
+          <div className="relative bg-black">
+            <video ref={videoRef} className="h-72 w-full object-cover" playsInline muted />
+
+            {camera === 'live' ? (
+              <>
+                {/* The window a shopkeeper aims with. */}
+                <div className="pointer-events-none absolute inset-x-6 top-1/2 h-28 -translate-y-1/2 rounded-lg border-2 border-white/70" />
+                <div className="pointer-events-none absolute inset-x-8 top-1/2 h-0.5 -translate-y-1/2 animate-pulse bg-red-500" />
+                <p className="pointer-events-none absolute inset-x-0 bottom-3 text-center text-xs text-white/80">
+                  {c.aim}
+                </p>
+              </>
+            ) : null}
+
+            {camera === 'starting' ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/80">
+                <Loader2 className="h-6 w-6 animate-spin" />
+                <span className="text-xs">{c.starting}</span>
               </div>
-              {scanning ? (
-                <Button variant="secondary" className="w-full justify-center" onClick={stopCamera}>
-                  <CameraOff className="mr-2 h-4 w-4" /> {c.stop}
-                </Button>
-              ) : (
-                <Button className="w-full justify-center" onClick={() => void startCamera()}>
-                  <Camera className="mr-2 h-4 w-4" /> {c.start}
-                </Button>
-              )}
-              <button
-                type="button"
-                className="w-full text-center text-xs text-ink-muted underline"
-                onClick={() => { stopCamera(); setManual(true); }}
-              >
-                {c.typeInstead}
-              </button>
-            </>
-          ) : (
-            <>
-              {cameraError ? <p className="text-xs text-amber-700">{cameraError}</p> : null}
-              <label className="block text-sm font-medium text-ink" htmlFor="barcode">
-                {c.numberLabel}
-              </label>
-              <Input
-                id="barcode"
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="6011040121093"
-                value={typed}
-                onChange={(event) => setTyped(event.target.value)}
-              />
-              <p className="text-xs text-ink-muted">{c.numberHelp}</p>
-              <Button className="w-full justify-center" onClick={() => void accept(typed)}>
-                <Keyboard className="mr-2 h-4 w-4" /> {c.check}
-              </Button>
-              {detectorAvailable() ? (
-                <button
-                  type="button"
-                  className="w-full text-center text-xs text-ink-muted underline"
-                  onClick={() => { setManual(false); setCameraError(''); }}
+            ) : null}
+
+            {camera === 'denied' || camera === 'missing' || camera === 'failed' ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/80 p-6 text-center">
+                <X className="h-6 w-6 text-amber-400" />
+                <p className="text-xs text-white/90">{c[camera]}</p>
+                <div className="flex gap-2">
+                  <Button variant="secondary" onClick={() => void start(cameras[cameraAt]?.deviceId)}>
+                    <RefreshCw className="h-4 w-4" aria-hidden />{c.retry}
+                  </Button>
+                  <Button onClick={() => { stop(); setTyping(true); }}>
+                    <Keyboard className="h-4 w-4" aria-hidden />{c.typeInstead}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 p-3">
+            <div className="flex gap-2">
+              {handleRef.current?.hasTorch() ? (
+                <Button
+                  variant={torchOn ? 'primary' : 'secondary'}
+                  onClick={() => void handleRef.current?.toggleTorch().then(setTorchOn)}
                 >
-                  {c.scanInstead}
-                </button>
+                  <Flashlight className="h-4 w-4" aria-hidden />{c.torch}
+                </Button>
               ) : null}
-            </>
-          )}
+              {cameras.length > 1 ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => setCameraAt((at) => (at + 1) % cameras.length)}
+                >
+                  <SwitchCamera className="h-4 w-4" aria-hidden />{c.switch}
+                </Button>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              className="text-xs text-ink-muted underline"
+              onClick={() => { stop(); setTyping(true); }}
+            >
+              {c.typeInstead}
+            </button>
+          </div>
         </Card>
-      ) : (
+      </div>
+
+      {typing && code === null ? (
+        <Card className="space-y-3 p-4">
+          <label className="block text-sm font-medium text-ink" htmlFor="barcode">{c.numberLabel}</label>
+          <Input
+            id="barcode"
+            inputMode="numeric"
+            autoComplete="off"
+            placeholder="6011040121093"
+            value={typed}
+            onChange={(event) => setTyped(event.target.value)}
+          />
+          <p className="text-xs text-ink-muted">{c.numberHelp}</p>
+          <Button className="w-full justify-center" onClick={() => void acceptTyped()}>
+            <Keyboard className="mr-2 h-4 w-4" />{c.check}
+          </Button>
+          <button
+            type="button"
+            className="w-full text-center text-xs text-ink-muted underline"
+            onClick={() => { setTyping(false); setTyped(''); }}
+          >
+            {c.scanInstead}
+          </button>
+        </Card>
+      ) : null}
+
+      {code !== null ? (
         <Card className="space-y-3 p-4">
           <div className="flex items-center justify-between">
             <span className="font-mono text-sm text-ink">{formatBarcode(code)}</span>
-            <button type="button" className="text-xs text-ink-muted underline" onClick={reset}>
+            <button
+              type="button"
+              className="text-xs text-ink-muted underline"
+              onClick={() => { reset(); setTyping(false); }}
+            >
               {c.scanNext}
             </button>
           </div>
@@ -375,18 +410,22 @@ export default function ScanPage() {
             </div>
             {Number(cost) > 0 && Number(retail) > 0 ? (
               <p className="text-xs text-ink-muted">
-                {lang === 'sw' ? 'Faida kwa kimoja' : 'Margin each'}:{' '}
-                {formatMoney(Number(retail) - Number(cost))}
+                {c.margin}: {formatMoney(Number(retail) - Number(cost))}
               </p>
             ) : null}
           </div>
 
-          <Button className="w-full justify-center" disabled={busy} onClick={() => void save()}>
-            {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            {busy ? c.saving : c.save}
-          </Button>
+          <div className="flex gap-2">
+            <Button className="flex-1 justify-center" disabled={busy} onClick={() => void save()}>
+              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {busy ? c.saving : c.save}
+            </Button>
+            <Button variant="secondary" onClick={() => { reset(); setTyping(false); }}>
+              {c.cancel}
+            </Button>
+          </div>
         </Card>
-      )}
+      ) : null}
 
       <Link to="/products" className="block text-center text-xs text-ink-muted underline">
         {c.back}
