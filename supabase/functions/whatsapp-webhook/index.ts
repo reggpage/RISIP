@@ -160,6 +160,7 @@ import {
   type PortionQuantityPrompt,
 } from '../_shared/whatsappPortions.ts';
 import { lowStockNotice, type StockLevel } from '../_shared/whatsappLowStock.ts';
+import { formatBarcode, isScanRequest, parseBarcodeMessage } from '../_shared/barcode.ts';
 import { businessWelcome } from '../_shared/whatsappStarterExamples.ts';
 import {
   parseBareExpense,
@@ -2364,6 +2365,40 @@ async function handleLoginLink(db: Admin, phone: string, lang: Lang): Promise<{ 
   };
 }
 
+/**
+ * The same short-lived link, landing on the scanner instead of the dashboard.
+ *
+ * WhatsApp cannot open a camera, so registering by barcode has to hop to the
+ * web — and asking somebody to log in first would lose most of them at the
+ * password they do not have. One tap, already signed in, straight at the lens.
+ */
+async function handleScanLink(db: Admin, phone: string, lang: Lang): Promise<{ reply: string; issued: boolean }> {
+  const { data: token, error } = await db.rpc('wa_issue_login_token', { p_phone: phone });
+  if (error || !token) {
+    return {
+      issued: false,
+      reply: lang === 'sw'
+        ? 'Sikuweza kufungua scanner sasa. Jaribu tena baada ya muda mfupi.'
+        : 'I could not open the scanner just now. Please try again in a moment.',
+    };
+  }
+  const url = `${appUrl()}/wa-login?t=${token}&n=/scan`;
+  return {
+    issued: true,
+    reply: lang === 'sw'
+      ? '📷 Fungua link hii ili ku-scan bar code za bidhaa zako:\n'
+        + `${url}\n\n`
+        + 'Kamera itafunguka. Piga scan, andika jina na bei mara moja — '
+        + 'baadaye ukiscan namba hiyo nitaijua.\n'
+        + '_Link inatumika mara moja, ndani ya dakika 5._'
+      : '📷 Open this link to scan your product barcodes:\n'
+        + `${url}\n\n`
+        + 'The camera opens. Scan, then give the name and prices once — '
+        + 'after that the number is enough.\n'
+        + '_The link works once, within 5 minutes._',
+  };
+}
+
 /** Fire-and-forget: nudge the worker without blocking the 200 back to Meta. */
 function nudgeWorker(): void {
   const url = Deno.env.get('SUPABASE_URL');
@@ -2621,6 +2656,50 @@ Deno.serve(async (req) => {
         // Login is a protected control-plane command. Resolve it before any
         // conversational/record parser so natural requests such as “nipe link
         // ya login nichek dashboard” cannot be answered (or refused) by AI.
+        // Scanning is checked before login, because "scan" is itself a way of
+        // asking for the web app and the login patterns already claim the word.
+        if (identity && isScanRequest(body)) {
+          if (!canUseCompanyFinanceReads(identity.role)) {
+            await replyQuietly(phone, lang === 'sw'
+              ? 'Ni owner au accountant pekee anayeweza kusajili bidhaa.'
+              : 'Only an owner or accountant can register products.');
+            await audit(db, identity, waMessageId, 'scan_link', 'blocked', 'blocked');
+            await finish('skipped');
+            continue;
+          }
+          const scan = await handleScanLink(db, phone, lang);
+          await replyQuietly(phone, scan.reply);
+          await audit(db, identity, waMessageId, 'scan_link', 'issued', scan.issued ? 'applied' : 'failed');
+          await finish('skipped');
+          continue;
+        }
+
+        // A message that is nothing but a barcode is a question about a packet
+        // somebody is holding. Answered from the shop's own table, never the
+        // model: the number either is in the catalogue or it is not.
+        if (identity && parseBarcodeMessage(body)) {
+          const scanned = parseBarcodeMessage(body)!;
+          const { data: rows } = await db.rpc('wa_find_product_barcode', {
+            p_company_id: identity.company_id,
+            p_barcode: scanned.code,
+          });
+          const hit = (rows as { product_name: string }[] | null)?.[0] ?? null;
+          await replyQuietly(phone, hit
+            ? (lang === 'sw'
+              ? `📦 ${formatBarcode(scanned.code)} ni *${hit.product_name}*.\n\n`
+                + `Kuandika mauzo: "nimeuza ${hit.product_name} 2".`
+              : `📦 ${formatBarcode(scanned.code)} is *${hit.product_name}*.\n\n`
+                + `To record a sale: "nimeuza ${hit.product_name} 2".`)
+            : (lang === 'sw'
+              ? `❓ Sina bidhaa yenye bar code ${formatBarcode(scanned.code)}.\n\n`
+                + 'Tuma *scan* ili kuisajili kwa kamera, au niambie jina na bei zake hapa.'
+              : `❓ No product carries the barcode ${formatBarcode(scanned.code)}.\n\n`
+                + 'Send *scan* to register it with the camera, or give me its name and prices here.'));
+          await audit(db, identity, waMessageId, 'barcode_lookup', hit ? 'found' : 'unknown', 'applied');
+          await finish('skipped');
+          continue;
+        }
+
         if (identity && isLoginRequest(body)) {
           const login = await handleLoginLink(db, phone, lang);
           await replyQuietly(phone, login.reply);

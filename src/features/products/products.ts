@@ -486,3 +486,36 @@ export function useCurrentSellingPrices() {
   useEffect(() => { void load(); }, [load]);
   return { prices, loading, reload: load };
 }
+
+// ── Barcodes ────────────────────────────────────────────────────────────────
+//
+// A scan is worth one thing: a key that cannot be mistyped. It carries no name
+// and no price — there is no free database of Tanzanian goods — so the number
+// is stored against the shop's own product_key and the shopkeeper supplies the
+// meaning once.
+
+export type ProductBarcode = { barcode: string; productKey: string; productName: string };
+
+/** Which product this code belongs to in THIS shop, or null. */
+export async function findProductByBarcode(barcode: string): Promise<ProductBarcode | null> {
+  const { data, error } = await (supabase as any).rpc('find_product_barcode', { p_barcode: barcode });
+  if (error) throw error;
+  const row = (data as { barcode: string; product_key: string; product_name: string }[] | null)?.[0];
+  return row ? { barcode: row.barcode, productKey: row.product_key, productName: row.product_name } : null;
+}
+
+/**
+ * Ties a code to a product. Re-scanning a code the shop already knows updates
+ * the name rather than failing, so correcting "sukri" to "sukari" just works.
+ */
+export async function saveProductBarcode(barcode: string, productName: string): Promise<ProductBarcode> {
+  const key = productName.trim().toLowerCase();
+  const { data, error } = await (supabase as any).rpc('set_product_barcode', {
+    p_barcode: barcode,
+    p_product_key: key,
+    p_product_name: productName.trim(),
+  });
+  if (error) throw error;
+  const row = data as { barcode: string; product_key: string; product_name: string };
+  return { barcode: row.barcode, productKey: row.product_key, productName: row.product_name };
+}

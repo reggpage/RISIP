@@ -3,7 +3,6 @@ import {
   parseStockCount,
   parseStockQuestion,
   stockShortfall,
-  type StockRow,
   stockCountConfirmation,
   stockListReply,
   stockReply,

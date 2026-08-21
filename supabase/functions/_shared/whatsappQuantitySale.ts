@@ -124,7 +124,7 @@ const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, 
  * Only a dash that sits in front of a NUMBER is removed. "T-shirt" and
  * "chips-mayai" keep theirs, because there the dash is part of the name.
  */
-function dashToSpace(text: string): string {
+function dashToSpace(text: string | null | undefined): string {
   return String(text ?? '').replace(/\s*[-–—−]\s*(?=[0-9])/gu, ' ');
 }
 
@@ -290,7 +290,7 @@ const TRAILING_CHATTER =
 const TRAILING_MOOD =
   /[,;]\s*(?:leo\s+)?(?:mambo|biashara|soko|mauzo)\s+(?:hovyo|ngumu|mazuri|mabaya|poa|safi)\b.*$/iu;
 
-export function stripTrailingChatter(text: string): string {
+export function stripTrailingChatter(text: string | null | undefined): string {
   let said = String(text ?? '').trim();
   for (let pass = 0; pass < 3; pass += 1) {
     const before = said;

@@ -53,7 +53,14 @@ export default function WaLogin() {
     if (spent.current) return;
     spent.current = true;
 
-    const token = new URLSearchParams(window.location.search).get('t');
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('t');
+    // Where to land. An ALLOW-LIST, not a validated string: anything else here
+    // is an open redirect wearing a login token, and this link arrives over
+    // WhatsApp where a forwarded message is one tap from a stranger.
+    const asked = params.get('n') ?? '';
+    const next = (['/scan', '/products', '/receipts', '/daily-records', '/dashboard'] as const)
+      .find((path) => path === asked) ?? '/dashboard';
     // Out of the address bar before anything else, so it cannot be shared by a
     // pasted URL, leak through a referrer header, or sit in browser history.
     window.history.replaceState({}, '', '/wa-login');
@@ -101,7 +108,7 @@ export default function WaLogin() {
           return;
         }
 
-        navigate('/dashboard', { replace: true });
+        navigate(next, { replace: true });
       } catch {
         setPhase('failed');
         setMessage(c.invalid);

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Archive, Package, Plus, RefreshCw, Search, TrendingDown } from 'lucide-react';
+import { AlertTriangle, Archive, Barcode, Package, Plus, RefreshCw, Search, TrendingDown } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -55,7 +56,7 @@ const ui = lang === 'sw' ? {
   noMatch: 'Hakuna bidhaa yenye jina hilo.',
   onlyFinance: 'Bei za kununua zinaonekana kwa owner na accountant tu.',
   measured: 'Inapimwa', counted: 'Inahesabiwa', period: 'Kipindi',
-  add: 'Ongeza bidhaa', merge: 'Unganisha', archive: 'Ficha', restore: 'Rudisha',
+  add: 'Ongeza bidhaa', scan: 'Scan bar code', merge: 'Unganisha', archive: 'Ficha', restore: 'Rudisha',
   showArchived: 'Onyesha zilizofichwa', archivedBadge: 'Imefichwa',
   archived: 'Bidhaa imefichwa. Mauzo yake ya zamani bado yanahesabiwa.',
   restored: 'Bidhaa imerudishwa kwenye orodha.',
@@ -83,7 +84,7 @@ const ui = lang === 'sw' ? {
   noMatch: 'No product matches that name.',
   onlyFinance: 'Buying prices are visible to an owner or accountant only.',
   measured: 'Measured', counted: 'Counted', period: 'Period',
-  add: 'Add product', merge: 'Merge', archive: 'Hide', restore: 'Restore',
+  add: 'Add product', scan: 'Scan barcode', merge: 'Merge', archive: 'Hide', restore: 'Restore',
   showArchived: 'Show hidden', archivedBadge: 'Hidden',
   archived: 'Product hidden. Its past sales still count.',
   restored: 'Product is back on the list.',
@@ -273,9 +274,18 @@ export default function ProductsPage() {
             <RefreshCw className="h-4 w-4" aria-hidden />{ui.refresh}
           </Button>
           {canPrice ? (
-            <Button onClick={() => setAdding(true)}>
-              <Plus className="h-4 w-4" aria-hidden />{ui.add}
-            </Button>
+            <>
+              {/* Scanning is the fast way in for a shop whose goods carry codes:
+                  the number is the one part of a product nobody can mistype. */}
+              <Link to="/scan">
+                <Button variant="secondary">
+                  <Barcode className="h-4 w-4" aria-hidden />{ui.scan}
+                </Button>
+              </Link>
+              <Button onClick={() => setAdding(true)}>
+                <Plus className="h-4 w-4" aria-hidden />{ui.add}
+              </Button>
+            </>
           ) : null}
         </div>
       </div>

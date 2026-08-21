@@ -6,6 +6,7 @@ import {
   buildPortionHypotheticalProfitReply,
   parseHypotheticalProfitRequest,
   parseHypotheticalQuantity,
+  type HypotheticalProfitInput,
 } from '../../../../supabase/functions/_shared/whatsappHypotheticalProfit';
 
 describe('deterministic hypothetical product profit', () => {
@@ -79,11 +80,11 @@ describe('deterministic hypothetical product profit', () => {
 });
 
 describe('answering the quantity that was actually asked', () => {
-  const shop = {
+  const shop: HypotheticalProfitInput = {
     productName: 'marker', onHand: 79, hasCount: true, unit: null,
     unitCost: 1300, retailPrice: 2000, wholesalePrice: 1800,
-    avgUnitPrice: null, onHandBase: null,
-  } as never;
+    avgUnitPrice: null,
+  };
 
   it('reads the number out of the question', () => {
     // "kwa bei ya reja reja marker nikiuza kumi ntapata shingapi?"
