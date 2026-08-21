@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  Check, Flashlight, Loader2, Minus, Plus, ScanLine, SwitchCamera, Trash2, X,
-} from 'lucide-react';
+import { Loader2, Minus, Plus, ScanLine, Trash2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
@@ -19,7 +17,9 @@ import {
   recordCounterSale,
   type CounterLine,
 } from '@/features/products/products';
-import { beep, listCameras, startScanner, type ScannerHandle } from '@/features/products/scanner';
+import { beep } from '@/features/products/scanner';
+import { useScanner } from '@/features/products/useScanner';
+import { ScanViewfinder } from '@/features/products/ScanViewfinder';
 
 // The till.
 //
@@ -58,6 +58,8 @@ const COPY = {
     missing: 'Sikuweza kufungua kamera ya simu hii.',
     failed: 'Kamera imefunguka lakini scanner haikuanza.',
     retry: 'Jaribu tena',
+    noPictures: 'Kamera haitoi picha. Jaribu kubadili kamera, au funga na ufungue ukurasa tena.',
+    noReads: 'Bado sijaisoma. Sogeza karibu kidogo, washa taa, au ihakikishe bar code iko ndani ya mstari.',
     back: 'Rudi kwenye bidhaa',
   },
   en: {
@@ -84,11 +86,11 @@ const COPY = {
     missing: 'I could not open this phone’s camera.',
     failed: 'The camera opened but the scanner did not start.',
     retry: 'Try again',
+    noPictures: 'The camera is not delivering pictures. Try switching camera, or close and reopen the page.',
+    noReads: 'Not read yet. Move a little closer, turn the light on, or line the barcode up inside the box.',
     back: 'Back to products',
   },
 } as const;
-
-type CameraState = 'starting' | 'live' | 'denied' | 'missing' | 'failed';
 
 export default function SellPage() {
   const auth = useAuth();
@@ -96,18 +98,11 @@ export default function SellPage() {
   const c = COPY[lang];
   const toast = useToast();
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const handleRef = useRef<ScannerHandle | null>(null);
-  const startedRef = useRef(false);
   // The basket is read inside the scan callback, which is created once. A ref
   // keeps that callback looking at the current basket rather than the empty one
   // it closed over.
   const linesRef = useRef<CounterLine[]>([]);
 
-  const [camera, setCamera] = useState<CameraState>('starting');
-  const [torchOn, setTorchOn] = useState(false);
-  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
-  const [cameraAt, setCameraAt] = useState(0);
   const [lines, setLines] = useState<CounterLine[]>([]);
   const [problem, setProblem] = useState<{ kind: 'unknown' | 'no_price'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -164,34 +159,8 @@ export default function SellPage() {
     }
   }, [toast]);
 
-  const start = useCallback(async (deviceId?: string) => {
-    handleRef.current?.stop();
-    handleRef.current = null;
-    setTorchOn(false);
-    setCamera('starting');
-    const video = videoRef.current;
-    if (!video) return;
-    const handle = await startScanner({
-      video,
-      deviceId,
-      onCode: (found) => void scanned(found.code),
-      onError: (why) => setCamera(why),
-    });
-    if (!handle) return;
-    handleRef.current = handle;
-    setCamera('live');
-    void listCameras().then(setCameras);
-  }, [scanned]);
-
-  useEffect(() => {
-    if (auth.status !== 'signed-in' || startedRef.current) return;
-    startedRef.current = true;
-    void start();
-    return () => {
-      handleRef.current?.stop();
-      handleRef.current = null;
-    };
-  }, [auth.status, start]);
+  // One camera, opened once — see useScanner.
+  const scanner = useScanner(auth.status === 'signed-in', (code) => void scanned(code));
 
   const setQuantity = (barcode: string, quantity: number) => {
     if (quantity <= 0) {
@@ -224,13 +193,6 @@ export default function SellPage() {
     }
   };
 
-  const switchCamera = () => {
-    const next = (cameraAt + 1) % Math.max(1, cameras.length);
-    setCameraAt(next);
-    void start(cameras[next]?.deviceId);
-  };
-
-  const broken = camera === 'denied' || camera === 'missing' || camera === 'failed';
   const total = basketTotal(lines);
   const count = lines.reduce((sum, line) => sum + line.quantity, 0);
 
@@ -243,74 +205,7 @@ export default function SellPage() {
         <p className="mt-1 text-sm text-ink-muted">{c.lead}</p>
       </div>
 
-      <div className="relative overflow-hidden rounded-2xl bg-black">
-        <video ref={videoRef} className="h-52 w-full object-cover" playsInline muted />
-        {camera === 'live' ? (
-          <>
-            <div
-              className={`pointer-events-none absolute inset-x-2 top-1/2 h-[45%] -translate-y-1/2 rounded-lg border-2 transition-colors ${
-                hit ? 'border-emerald-400' : 'border-white/70'
-              }`}
-            />
-            <div
-              className={`pointer-events-none absolute inset-x-4 top-1/2 h-0.5 -translate-y-1/2 transition-colors ${
-                hit ? 'bg-emerald-400' : 'animate-pulse bg-red-500'
-              }`}
-            />
-            {hit ? (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <span className="rounded-full bg-emerald-500 p-2 text-white shadow-lg">
-                  <Check className="h-5 w-5" />
-                </span>
-              </div>
-            ) : null}
-            <p className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-xs text-white/80">
-              {c.aim}
-            </p>
-            <div className="absolute right-3 top-3 flex flex-col gap-2">
-              {handleRef.current?.hasTorch() ? (
-                <button
-                  type="button"
-                  aria-label="torch"
-                  onClick={() => void handleRef.current?.toggleTorch().then(setTorchOn)}
-                  className={`rounded-full p-2.5 shadow-lg transition-colors ${
-                    torchOn ? 'bg-amber-400 text-black' : 'bg-black/50 text-white'
-                  }`}
-                >
-                  <Flashlight className="h-5 w-5" />
-                </button>
-              ) : null}
-              {cameras.length > 1 ? (
-                <button
-                  type="button"
-                  aria-label="camera"
-                  onClick={switchCamera}
-                  className="rounded-full bg-black/50 p-2.5 text-white shadow-lg"
-                >
-                  <SwitchCamera className="h-5 w-5" />
-                </button>
-              ) : null}
-            </div>
-          </>
-        ) : null}
-
-        {camera === 'starting' ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/80">
-            <Loader2 className="h-6 w-6 animate-spin" />
-            <span className="text-xs">{c.starting}</span>
-          </div>
-        ) : null}
-
-        {broken ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/85 p-6 text-center">
-            <X className="h-6 w-6 text-amber-400" />
-            <p className="text-xs text-white/90">{c[camera]}</p>
-            <Button variant="secondary" onClick={() => void start(cameras[cameraAt]?.deviceId)}>
-              {c.retry}
-            </Button>
-          </div>
-        ) : null}
-      </div>
+      <ScanViewfinder controls={scanner} copy={c} hit={hit} height="h-52" />
 
       {problem ? (
         <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">

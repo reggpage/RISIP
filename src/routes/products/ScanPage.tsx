@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  Barcode, Check, Flashlight, Keyboard, Loader2, RefreshCw, SwitchCamera, X,
-} from 'lucide-react';
+import { Barcode, Check, Loader2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import NumberInput from '@/components/ui/NumberInput';
@@ -20,7 +18,9 @@ import {
   setSellingPrice,
   type ProductBarcode,
 } from '@/features/products/products';
-import { beep, listCameras, startScanner, type ScannerHandle } from '@/features/products/scanner';
+import { beep } from '@/features/products/scanner';
+import { useScanner } from '@/features/products/useScanner';
+import { ScanViewfinder } from '@/features/products/ScanViewfinder';
 import { formatBarcode, readBarcode } from '../../../supabase/functions/_shared/barcode';
 
 // Registering the shelf by scanning it.
@@ -71,6 +71,8 @@ const COPY = {
     notAllowed: 'Ni owner au accountant pekee anayeweza kusajili bidhaa.',
     back: 'Rudi kwenye bidhaa',
     margin: 'Faida kwa kimoja',
+    noPictures: 'Kamera haitoi picha. Jaribu kubadili kamera, au funga na ufungue ukurasa tena.',
+    noReads: 'Bado sijaisoma. Sogeza karibu kidogo, washa taa, au ihakikishe bar code iko ndani ya mstari.',
     loadingPrices: 'Naangalia bei zilizosajiliwa…',
   },
   en: {
@@ -106,11 +108,11 @@ const COPY = {
     notAllowed: 'Only an owner or accountant can register products.',
     back: 'Back to products',
     margin: 'Margin each',
+    noPictures: 'The camera is not delivering pictures. Try switching camera, or close and reopen the page.',
+    noReads: 'Not read yet. Move a little closer, turn the light on, or line the barcode up inside the box.',
     loadingPrices: 'Checking the registered prices…',
   },
 } as const;
-
-type CameraState = 'starting' | 'live' | 'denied' | 'missing' | 'failed';
 
 export default function ScanPage() {
   const auth = useAuth();
@@ -120,16 +122,8 @@ export default function ScanPage() {
   const c = COPY[lang];
   const toast = useToast();
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const handleRef = useRef<ScannerHandle | null>(null);
-  const startedRef = useRef(false);
-
-  const [camera, setCamera] = useState<CameraState>('starting');
   const [typing, setTyping] = useState(false);
   const [typed, setTyped] = useState('');
-  const [torchOn, setTorchOn] = useState(false);
-  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
-  const [cameraAt, setCameraAt] = useState(0);
 
   const [code, setCode] = useState<string | null>(null);
   const [known, setKnown] = useState<ProductBarcode | null>(null);
@@ -143,6 +137,10 @@ export default function ScanPage() {
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [hit, setHit] = useState(false);
 
+  // One camera, opened once. See useScanner for why that has to be enforced
+  // somewhere other than an effect dependency list.
+  const scanner = useScanner(allowed, (rawCode) => void found(rawCode));
+
   /**
    * A code stops the DECODING, never the camera, and fills in everything the
    * shop already told us about this product.
@@ -152,7 +150,7 @@ export default function ScanPage() {
     beep();
     if (navigator.vibrate) navigator.vibrate(60);
     window.setTimeout(() => setHit(false), 900);
-    handleRef.current?.pause();
+    scanner.pause();
     setCode(rawCode);
     setLastSaved(null);
     setLoadingKnown(true);
@@ -181,50 +179,13 @@ export default function ScanPage() {
     }
   }, [toast]);
 
-  const start = useCallback(async (deviceId?: string) => {
-    handleRef.current?.stop();
-    handleRef.current = null;
-    setTorchOn(false);
-    setCamera('starting');
-    const video = videoRef.current;
-    if (!video) return;
-    const handle = await startScanner({
-      video,
-      deviceId,
-      onCode: (barcode) => void found(barcode.code),
-      onError: (why) => setCamera(why),
-    });
-    if (!handle) return;
-    handleRef.current = handle;
-    setCamera('live');
-    void listCameras().then(setCameras);
-  }, [found]);
-
-  // Opened once, for the life of the page. Everything after that is pause and
-  // resume — see the note at the top of this file.
-  useEffect(() => {
-    if (!allowed || startedRef.current) return;
-    startedRef.current = true;
-    void start();
-    return () => {
-      handleRef.current?.stop();
-      handleRef.current = null;
-    };
-  }, [allowed, start]);
-
   const backToScanning = () => {
     setCode(null);
     setKnown(null);
     setName(''); setCost(''); setRetail(''); setWholesale(''); setMinQty('');
     setTyped('');
     setTyping(false);
-    handleRef.current?.resume();
-  };
-
-  const switchCamera = () => {
-    const next = (cameraAt + 1) % Math.max(1, cameras.length);
-    setCameraAt(next);
-    void start(cameras[next]?.deviceId);
+    scanner.resume();
   };
 
   const acceptTyped = async () => {
@@ -270,7 +231,6 @@ export default function ScanPage() {
   }
 
   const scanning = code === null && !typing;
-  const broken = camera === 'denied' || camera === 'missing' || camera === 'failed';
 
   return (
     <div className="mx-auto max-w-md space-y-5 p-4">
@@ -289,87 +249,14 @@ export default function ScanPage() {
 
       {/* Mounted for the life of the page: the stream has to have somewhere to
           go, and hiding it is cheaper than tearing the camera down. */}
-      <div className={scanning ? 'block space-y-3' : 'hidden'}>
-        <div className="relative overflow-hidden rounded-2xl bg-black">
-          <video ref={videoRef} className="h-80 w-full object-cover" playsInline muted />
-
-          {camera === 'live' ? (
-            <>
-              <div
-                className={`pointer-events-none absolute inset-x-2 top-1/2 h-[45%] -translate-y-1/2 rounded-lg border-2 transition-colors ${
-                  hit ? 'border-emerald-400' : 'border-white/70'
-                }`}
-              />
-              <div
-                className={`pointer-events-none absolute inset-x-4 top-1/2 h-0.5 -translate-y-1/2 transition-colors ${
-                  hit ? 'bg-emerald-400' : 'animate-pulse bg-red-500'
-                }`}
-              />
-              {hit ? (
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                  <span className="rounded-full bg-emerald-500 p-2 text-white shadow-lg">
-                    <Check className="h-6 w-6" />
-                  </span>
-                </div>
-              ) : null}
-              <p className="pointer-events-none absolute inset-x-0 bottom-3 text-center text-xs text-white/80">
-                {c.aim}
-              </p>
-            </>
-          ) : null}
-
-          {camera === 'starting' ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white/80">
-              <Loader2 className="h-6 w-6 animate-spin" />
-              <span className="text-xs">{c.starting}</span>
-            </div>
-          ) : null}
-
-          {broken ? (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/85 p-6 text-center">
-              <X className="h-6 w-6 text-amber-400" />
-              <p className="text-xs text-white/90">{c[camera]}</p>
-              <div className="flex gap-2">
-                <Button variant="secondary" onClick={() => void start(cameras[cameraAt]?.deviceId)}>
-                  <RefreshCw className="h-4 w-4" aria-hidden />{c.retry}
-                </Button>
-                {/* Only here. A working camera needs no keyboard, and offering
-                    one next to a live lens is a choice nobody wanted to make. */}
-                <Button onClick={() => setTyping(true)}>
-                  <Keyboard className="h-4 w-4" aria-hidden />{c.typeInstead}
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {/* Icons only, over the picture, where a camera app puts them. */}
-          {camera === 'live' ? (
-            <div className="absolute right-3 top-3 flex flex-col gap-2">
-              {handleRef.current?.hasTorch() ? (
-                <button
-                  type="button"
-                  aria-label={c.title}
-                  onClick={() => void handleRef.current?.toggleTorch().then(setTorchOn)}
-                  className={`rounded-full p-2.5 shadow-lg transition-colors ${
-                    torchOn ? 'bg-amber-400 text-black' : 'bg-black/50 text-white'
-                  }`}
-                >
-                  <Flashlight className="h-5 w-5" />
-                </button>
-              ) : null}
-              {cameras.length > 1 ? (
-                <button
-                  type="button"
-                  aria-label="camera"
-                  onClick={switchCamera}
-                  className="rounded-full bg-black/50 p-2.5 text-white shadow-lg"
-                >
-                  <SwitchCamera className="h-5 w-5" />
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
+      <div className={scanning ? 'block' : 'hidden'}>
+        <ScanViewfinder
+          controls={scanner}
+          copy={c}
+          hit={hit}
+          height="h-80"
+          onType={() => setTyping(true)}
+        />
       </div>
 
       {typing && code === null ? (

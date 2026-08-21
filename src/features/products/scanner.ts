@@ -40,6 +40,16 @@ export type ScannerHandle = {
   /** Torch, where the camera has one. Returns whether it is now on. */
   toggleTorch: () => Promise<boolean>;
   hasTorch: () => boolean;
+  /**
+   * What the loop has actually done.
+   *
+   * Both silent failures so far looked identical from the outside — a live
+   * picture and nothing happening — and were completely different underneath:
+   * once a decoder reading a 0x0 canvas, once a camera that had been stopped by
+   * a stray effect cleanup. FRAMES tells those apart at a glance, which is why
+   * the page can now say something useful instead of nothing.
+   */
+  stats: () => { frames: number; decodes: number };
 };
 
 export type StartOptions = {
@@ -255,13 +265,16 @@ export async function startScanner(options: StartOptions): Promise<ScannerHandle
   }
 
   let paused = false;
+  let frames = 0;
+  let decodes = 0;
   const loop = async () => {
     if (stopped) return;
     try {
       if (paused) { timer = window.setTimeout(() => void loop(), 200); return; }
       if (drawScanBand(video, canvas)) {
+        frames += 1;
         const raw = await decodeFrame(canvas);
-        if (raw) gate(raw);
+        if (raw) { decodes += 1; gate(raw); }
       }
     } catch {
       // One bad frame is not worth a message; the next is 120ms away.
@@ -274,6 +287,7 @@ export async function startScanner(options: StartOptions): Promise<ScannerHandle
     engine,
     hasTorch: torch.hasTorch,
     toggleTorch: torch.toggleTorch,
+    stats: () => ({ frames, decodes }),
     pause: () => { paused = true; },
     // A fresh gate on resume: the packet in front of the lens when scanning
     // stopped must be scannable again the moment it starts.
