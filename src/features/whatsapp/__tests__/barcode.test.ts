@@ -3,6 +3,7 @@ import {
   checkDigit,
   formatBarcode,
   isScanRequest,
+  isSellScanRequest,
   parseBarcodeMessage,
   readBarcode,
 } from '../../../../supabase/functions/_shared/barcode';
@@ -99,5 +100,29 @@ describe('asking for the scanner', () => {
     for (const other of ['nimeuza scanner 2', 'bei ya scanner ni 45000', '']) {
       expect(isScanRequest(other), other).toBe(false);
     }
+  });
+});
+
+describe('asking for the till', () => {
+  it('takes the words a shopkeeper would use for selling by scan', () => {
+    for (const said of ['pos', 'uza kwa scan', 'nataka kuuza kwa bar code', 'sell by scanning']) {
+      expect(isSellScanRequest(said), said).toBe(true);
+    }
+  });
+
+  it('does not claim a plain sale, which is recorded not scanned', () => {
+    for (const other of ['nimeuza daftari 5', 'uza', 'nauza sukari', '']) {
+      expect(isSellScanRequest(other), other).toBe(false);
+    }
+  });
+
+  it('is told apart from asking to register, in both directions', () => {
+    // Selling and registering are different pages and neither may claim the
+    // other's words: a shopkeeper with a customer waiting who lands on the
+    // registration form has to find their own way back.
+    expect(isSellScanRequest('uza kwa scan')).toBe(true);
+    expect(isScanRequest('uza kwa scan')).toBe(false);
+    expect(isScanRequest('scan bidhaa')).toBe(true);
+    expect(isSellScanRequest('scan bidhaa')).toBe(false);
   });
 });

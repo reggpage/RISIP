@@ -59,7 +59,7 @@ export default function WaLogin() {
     // is an open redirect wearing a login token, and this link arrives over
     // WhatsApp where a forwarded message is one tap from a stranger.
     const asked = params.get('n') ?? '';
-    const next = (['/scan', '/products', '/receipts', '/daily-records', '/dashboard'] as const)
+    const next = (['/scan', '/sell', '/products', '/receipts', '/daily-records', '/dashboard'] as const)
       .find((path) => path === asked) ?? '/dashboard';
     // Out of the address bar before anything else, so it cannot be shared by a
     // pasted URL, leak through a referrer header, or sit in browser history.

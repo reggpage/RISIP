@@ -160,7 +160,9 @@ import {
   type PortionQuantityPrompt,
 } from '../_shared/whatsappPortions.ts';
 import { lowStockNotice, type StockLevel } from '../_shared/whatsappLowStock.ts';
-import { formatBarcode, isScanRequest, parseBarcodeMessage } from '../_shared/barcode.ts';
+import {
+  formatBarcode, isScanRequest, isSellScanRequest, parseBarcodeMessage,
+} from '../_shared/barcode.ts';
 import { businessWelcome } from '../_shared/whatsappStarterExamples.ts';
 import {
   parseBareExpense,
@@ -2372,7 +2374,12 @@ async function handleLoginLink(db: Admin, phone: string, lang: Lang): Promise<{ 
  * web — and asking somebody to log in first would lose most of them at the
  * password they do not have. One tap, already signed in, straight at the lens.
  */
-async function handleScanLink(db: Admin, phone: string, lang: Lang): Promise<{ reply: string; issued: boolean }> {
+async function handleScanLink(
+  db: Admin,
+  phone: string,
+  lang: Lang,
+  landing: '/scan' | '/sell' = '/scan',
+): Promise<{ reply: string; issued: boolean }> {
   const { data: token, error } = await db.rpc('wa_issue_login_token', { p_phone: phone });
   if (error || !token) {
     return {
@@ -2656,6 +2663,18 @@ Deno.serve(async (req) => {
         // Login is a protected control-plane command. Resolve it before any
         // conversational/record parser so natural requests such as “nipe link
         // ya login nichek dashboard” cannot be answered (or refused) by AI.
+        // Selling by scanning, before registering by scanning: "uza kwa scan"
+        // holds both words and the till is the one with a customer waiting.
+        // Every role may sell; a worker's sale waits for confirmation exactly
+        // as it does here.
+        if (identity && isSellScanRequest(body)) {
+          const till = await handleScanLink(db, phone, lang, '/sell');
+          await replyQuietly(phone, till.reply);
+          await audit(db, identity, waMessageId, 'sell_scan_link', 'issued', till.issued ? 'applied' : 'failed');
+          await finish('skipped');
+          continue;
+        }
+
         // Scanning is checked before login, because "scan" is itself a way of
         // asking for the web app and the login patterns already claim the word.
         if (identity && isScanRequest(body)) {

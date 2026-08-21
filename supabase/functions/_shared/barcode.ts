@@ -120,3 +120,18 @@ export function isScanRequest(text: string | null | undefined): boolean {
   return /\b(?:scan|skani|piga\s*picha ya bar\s*code)\b/.test(said)
     && /\b(?:bar\s*code|barcode|bidhaa|product|products|mzigo)\b/.test(said);
 }
+
+/**
+ * Asking for the till.
+ *
+ * Scanning to SELL is a different job from scanning to register, and a
+ * shopkeeper with a customer in front of them should not have to find their way
+ * from one to the other.
+ */
+export function isSellScanRequest(text: string | null | undefined): boolean {
+  const said = String(text ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!said || said.length > 80) return false;
+  if (/^(?:pos|till|kauntа|kaunta)$/.test(said)) return true;
+  return /\b(?:uza|kuuza|nauza|sell|selling)\b/.test(said)
+    && /\b(?:scan|scanning|skani|bar\s*code|barcode|pos)\b/.test(said);
+}

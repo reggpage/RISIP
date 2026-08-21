@@ -29,6 +29,7 @@ import ReimbursementsPage from '@/routes/reimbursements/ReimbursementsPage';
 import DailyRecordsPage from '@/routes/dailyRecords/DailyRecordsPage';
 import ProductsPage from '@/routes/products/ProductsPage';
 import ScanPage from '@/routes/products/ScanPage';
+import SellPage from '@/routes/products/SellPage';
 
 export default function App() {
   return (
@@ -84,6 +85,7 @@ export default function App() {
         <Route path="/daily-records" element={<DailyRecordsPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/scan" element={<ScanPage />} />
+        <Route path="/sell" element={<SellPage />} />
         <Route
           path="/claims"
           element={

@@ -519,3 +519,89 @@ export async function saveProductBarcode(barcode: string, productName: string): 
   const row = data as { barcode: string; product_key: string; product_name: string };
   return { barcode: row.barcode, productKey: row.product_key, productName: row.product_name };
 }
+
+// ── Selling at the counter ──────────────────────────────────────────────────
+
+export type CounterLine = {
+  productKey: string;
+  productName: string;
+  barcode: string;
+  quantity: number;
+  retail: number;
+  wholesale: number | null;
+  wholesaleMinQty: number | null;
+  /** Which price this line is charged at right now. */
+  band: 'retail' | 'wholesale';
+};
+
+/** What one line costs, at the band it is set to. */
+export function lineUnitPrice(line: CounterLine): number {
+  return line.band === 'wholesale' && line.wholesale !== null ? line.wholesale : line.retail;
+}
+
+export function lineTotal(line: CounterLine): number {
+  return Math.round(lineUnitPrice(line) * line.quantity * 100) / 100;
+}
+
+export function basketTotal(lines: CounterLine[]): number {
+  return Math.round(lines.reduce((sum, line) => sum + lineTotal(line), 0) * 100) / 100;
+}
+
+/**
+ * The band the shop's own rule implies for this quantity.
+ *
+ * Applied on its own rather than asked about: at a counter with a customer
+ * waiting, a question per line is not a till, it is an interrogation. The line
+ * SHOWS which price it used and one tap changes it, which is how a POS has
+ * always handled this.
+ */
+export function bandForQuantity(
+  quantity: number,
+  wholesale: number | null,
+  minQty: number | null,
+): 'retail' | 'wholesale' {
+  if (wholesale === null) return 'retail';
+  if (minQty === null) return 'retail';
+  return quantity >= minQty ? 'wholesale' : 'retail';
+}
+
+/**
+ * Records a counter sale and confirms it where the role allows.
+ *
+ * A worker's sale stays pending an owner or accountant, exactly as it does over
+ * WhatsApp: the till may be theirs, the books are not.
+ */
+export async function recordCounterSale(
+  lines: CounterLine[],
+): Promise<{ id: string; confirmed: boolean }> {
+  const amount = basketTotal(lines);
+  const { data, error } = await (supabase as any).rpc('create_daily_record_draft', {
+    p_kind: 'sale',
+    p_amount: amount,
+    p_party_name: null,
+    p_description: null,
+    p_occurred_at: new Date().toISOString(),
+    p_project_id: null,
+    p_source: 'app',
+    p_source_message_id: null,
+    p_lines: lines.map((line) => ({
+      description: line.productName,
+      quantity: line.quantity,
+      unit_amount: lineUnitPrice(line),
+    })),
+  });
+  if (error) throw error;
+  const id = String(data);
+  try {
+    await confirmDailyRecordById(id);
+    return { id, confirmed: true };
+  } catch {
+    // Only an owner or accountant may confirm. The sale is saved either way.
+    return { id, confirmed: false };
+  }
+}
+
+async function confirmDailyRecordById(id: string): Promise<void> {
+  const { error } = await (supabase as any).rpc('confirm_daily_record', { p_daily_record_id: id });
+  if (error) throw error;
+}
