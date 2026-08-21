@@ -13,6 +13,7 @@ import {
   fetchCurrentProductCost,
   fetchSellingPrice,
   findProductByBarcode,
+  recordStockCount,
   saveProductBarcode,
   setProductCost,
   setSellingPrice,
@@ -54,7 +55,8 @@ const COPY = {
     cost: 'Bei ya kununua',
     retail: 'Bei ya kuuza (rejareja)',
     wholesale: 'Bei ya jumla (si lazima)',
-    minQty: 'Jumla kuanzia idadi',
+    stock: 'Store (idadi iliyopo)',
+    stockHelp: 'Ukiiacha wazi, sitagusa hesabu ya store.',
     save: 'Hifadhi bidhaa',
     edit: 'Badilisha bidhaa',
     saving: 'Inahifadhi…',
@@ -93,7 +95,8 @@ const COPY = {
     cost: 'Buying price',
     retail: 'Selling price (retail)',
     wholesale: 'Wholesale price (optional)',
-    minQty: 'Wholesale from quantity',
+    stock: 'Store (how many are there)',
+    stockHelp: 'Leave it blank and I will not touch the stock count.',
     save: 'Save product',
     edit: 'Update product',
     saving: 'Saving…',
@@ -132,11 +135,13 @@ export default function ScanPage() {
   const [code, setCode] = useState<string | null>(null);
   const [known, setKnown] = useState<ProductBarcode | null>(null);
   const [loadingKnown, setLoadingKnown] = useState(false);
+  // Read when the product was recognised, written back untouched on save.
+  const [keptMinQty, setKeptMinQty] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [cost, setCost] = useState('');
   const [retail, setRetail] = useState('');
   const [wholesale, setWholesale] = useState('');
-  const [minQty, setMinQty] = useState('');
+  const [stock, setStock] = useState('');
   const [busy, setBusy] = useState(false);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
   const [hit, setHit] = useState(false);
@@ -173,7 +178,11 @@ export default function ScanPage() {
         setCost(costRow ? String(costRow.unitCost) : '');
         setRetail(priceRow ? String(priceRow.retailPrice) : '');
         setWholesale(priceRow?.wholesalePrice != null ? String(priceRow.wholesalePrice) : '');
-        setMinQty(priceRow?.wholesaleMinQty != null ? String(priceRow.wholesaleMinQty) : '');
+        // The count is deliberately NOT prefilled: it is a physical count, and
+        // showing yesterday's number invites somebody to confirm it without
+        // looking at the shelf.
+        setStock('');
+        setKeptMinQty(priceRow?.wholesaleMinQty ?? null);
       }
     } catch (err) {
       setKnown(null);
@@ -186,7 +195,8 @@ export default function ScanPage() {
   const backToScanning = () => {
     setCode(null);
     setKnown(null);
-    setName(''); setCost(''); setRetail(''); setWholesale(''); setMinQty('');
+    setName(''); setCost(''); setRetail(''); setWholesale(''); setStock('');
+    setKeptMinQty(null);
     setTyped('');
     setTyping(false);
     scanner.resume();
@@ -204,15 +214,20 @@ export default function ScanPage() {
     const buying = Number(cost);
     const selling = Number(retail);
     const bulk = wholesale.trim() === '' ? null : Number(wholesale);
-    const from = minQty.trim() === '' ? null : Number(minQty);
+    const counted = stock.trim() === '' ? null : Number(stock);
     // A product with a name and no prices is a name: the next sale of it fails
     // in exactly the way that sent them here.
     if (!(buying > 0) || !(selling > 0)) { toast.error(c.needPrices); return; }
     setBusy(true);
     try {
       await setProductCost(productName, buying, null, 'barcode scan');
-      await setSellingPrice(productName, selling, bulk && bulk > 0 ? bulk : null, from && from > 0 ? from : null);
+      // The wholesale threshold keeps whatever it already had: this form no
+      // longer asks for it, and passing null would quietly wipe it.
+      await setSellingPrice(productName, selling, bulk && bulk > 0 ? bulk : null, keptMinQty);
       await saveProductBarcode(code!, productName);
+      if (counted !== null && counted >= 0) {
+        await recordStockCount(productName, counted, null, 'barcode scan');
+      }
       setLastSaved(productName);
       toast.success(`${known ? c.edited : c.saved}: ${productName}`);
       backToScanning();
@@ -332,10 +347,11 @@ export default function ScanPage() {
                 <NumberInput id="wholesale" value={wholesale} onChange={setWholesale} />
               </div>
               <div>
-                <label className="block text-sm font-medium text-ink" htmlFor="minQty">{c.minQty}</label>
-                <NumberInput id="minQty" value={minQty} onChange={setMinQty} />
+                <label className="block text-sm font-medium text-ink" htmlFor="stock">{c.stock}</label>
+                <NumberInput id="stock" value={stock} onChange={setStock} />
               </div>
             </div>
+            <p className="text-xs text-ink-muted">{c.stockHelp}</p>
             {Number(cost) > 0 && Number(retail) > 0 ? (
               <p className="text-xs text-ink-muted">
                 {c.margin}: {formatMoney(Number(retail) - Number(cost))}

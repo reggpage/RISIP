@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Loader2, Minus, Plus, ScanLine, Trash2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
@@ -10,13 +10,17 @@ import { formatMoney } from '@/lib/format';
 import {
   bandForQuantity,
   basketTotal,
+  fetchBarcodeCatalogue,
   fetchSellingPrice,
   findProductByBarcode,
   lineTotal,
   lineUnitPrice,
   recordCounterSale,
   type CounterLine,
+  type ScannedProduct,
 } from '@/features/products/products';
+import { useCompany } from '@/features/company/useCompany';
+import { SaleDone } from '@/features/products/SaleDone';
 import { beep } from '@/features/products/scanner';
 import { useScanner } from '@/features/products/useScanner';
 import { ScanViewfinder } from '@/features/products/ScanViewfinder';
@@ -103,10 +107,25 @@ export default function SellPage() {
   // it closed over.
   const linesRef = useRef<CounterLine[]>([]);
 
+  // The whole barcode table, in memory before the first customer. Looking each
+  // scan up over the network put the line on screen a beat after the beep, and
+  // at a counter that beat is the difference between a till and a form.
+  const catalogueRef = useRef<Map<string, ScannedProduct>>(new Map());
+  const company = useCompany();
+
   const [lines, setLines] = useState<CounterLine[]>([]);
   const [problem, setProblem] = useState<{ kind: 'unknown' | 'no_price'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [hit, setHit] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [done, setDone] = useState<{ lines: CounterLine[]; confirmed: boolean } | null>(null);
+
+  useEffect(() => {
+    if (auth.status !== 'signed-in') return;
+    void fetchBarcodeCatalogue()
+      .then((catalogue) => { catalogueRef.current = catalogue; })
+      .catch(() => { /* a slow load only means the first scan waits */ });
+  }, [auth.status]);
 
   const apply = (next: CounterLine[]) => {
     linesRef.current = next;
@@ -123,37 +142,51 @@ export default function SellPage() {
   /** A scan adds one, or adds one more. The camera never stops. */
   const scanned = useCallback(async (barcode: string) => {
     flash();
-    const already = linesRef.current.find((line) => line.barcode === barcode);
-    if (already) {
-      const quantity = already.quantity + 1;
-      apply(linesRef.current.map((line) => (line.barcode === barcode
-        ? { ...line, quantity, band: bandForQuantity(quantity, line.wholesale, line.wholesaleMinQty) }
-        : line)));
+    // By PRODUCT, not by barcode. A book carries its ISBN and often a second
+    // code for the same book, and the owner's till showed "Eat that frog"
+    // twice, three each, as though they were different things.
+    const add = (product: ScannedProduct) => {
       setProblem(null);
-      return;
-    }
-    try {
-      const product = await findProductByBarcode(barcode);
-      if (!product) {
-        setProblem({ kind: 'unknown', text: barcode });
+      const already = linesRef.current.find((line) => line.productKey === product.productKey);
+      if (already) {
+        const quantity = already.quantity + 1;
+        apply(linesRef.current.map((line) => (line.productKey === product.productKey
+          ? { ...line, quantity, band: bandForQuantity(quantity, line.wholesale, line.wholesaleMinQty) }
+          : line)));
         return;
       }
-      const price = await fetchSellingPrice(product.productKey);
-      if (!price) {
-        setProblem({ kind: 'no_price', text: product.productName });
-        return;
-      }
-      setProblem(null);
       apply([...linesRef.current, {
         productKey: product.productKey,
         productName: product.productName,
-        barcode,
+        barcode: product.barcode,
         quantity: 1,
+        retail: product.retail,
+        wholesale: product.wholesale,
+        wholesaleMinQty: product.wholesaleMinQty,
+        band: bandForQuantity(1, product.wholesale, product.wholesaleMinQty),
+      }]);
+    };
+
+    const known = catalogueRef.current.get(barcode);
+    if (known) { add(known); return; }
+
+    // Not in the table we loaded: either the shop registered it since this page
+    // opened, or it is genuinely unknown. Worth one round trip to find out.
+    try {
+      const product = await findProductByBarcode(barcode);
+      if (!product) { setProblem({ kind: 'unknown', text: barcode }); return; }
+      const price = await fetchSellingPrice(product.productKey);
+      if (!price) { setProblem({ kind: 'no_price', text: product.productName }); return; }
+      const resolved: ScannedProduct = {
+        barcode,
+        productKey: product.productKey,
+        productName: product.productName,
         retail: price.retailPrice,
         wholesale: price.wholesalePrice,
         wholesaleMinQty: price.wholesaleMinQty,
-        band: bandForQuantity(1, price.wholesalePrice, price.wholesaleMinQty),
-      }]);
+      };
+      catalogueRef.current.set(barcode, resolved);
+      add(resolved);
     } catch (err) {
       toast.error(friendlyError(err));
     }
@@ -162,18 +195,18 @@ export default function SellPage() {
   // One camera, opened once — see useScanner.
   const scanner = useScanner(auth.status === 'signed-in', (code) => void scanned(code));
 
-  const setQuantity = (barcode: string, quantity: number) => {
-    if (quantity <= 0) {
-      apply(linesRef.current.filter((line) => line.barcode !== barcode));
+  const setQuantity = (productKey: string, quantity: number) => {
+    if (!(quantity > 0)) {
+      apply(linesRef.current.filter((line) => line.productKey !== productKey));
       return;
     }
-    apply(linesRef.current.map((line) => (line.barcode === barcode
+    apply(linesRef.current.map((line) => (line.productKey === productKey
       ? { ...line, quantity, band: bandForQuantity(quantity, line.wholesale, line.wholesaleMinQty) }
       : line)));
   };
 
-  const toggleBand = (barcode: string) => {
-    apply(linesRef.current.map((line) => (line.barcode === barcode && line.wholesale !== null
+  const toggleBand = (productKey: string) => {
+    apply(linesRef.current.map((line) => (line.productKey === productKey && line.wholesale !== null
       ? { ...line, band: line.band === 'retail' ? 'wholesale' : 'retail' }
       : line)));
   };
@@ -183,7 +216,9 @@ export default function SellPage() {
     setBusy(true);
     try {
       const result = await recordCounterSale(lines);
-      toast.success(result.confirmed ? c.saved : c.pending);
+      // Nothing may be scanned into the next sale while this one is on screen.
+      scanner.pause();
+      setDone({ lines, confirmed: result.confirmed });
       apply([]);
       setProblem(null);
     } catch (err) {
@@ -198,6 +233,19 @@ export default function SellPage() {
 
   return (
     <div className="mx-auto max-w-md space-y-4 p-4 pb-32">
+      {done ? (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-surface pt-10">
+          <SaleDone
+            lines={done.lines}
+            confirmed={done.confirmed}
+            businessName={company?.name ?? 'Risip'}
+            logoUrl={company?.logo_url ?? null}
+            lang={lang}
+            onNext={() => { setDone(null); scanner.resume(); }}
+          />
+        </div>
+      ) : null}
+
       <div>
         <h1 className="flex items-center gap-2 text-lg font-semibold text-ink">
           <ScanLine className="h-5 w-5" /> {c.title}
@@ -232,12 +280,12 @@ export default function SellPage() {
       ) : (
         <ul className="divide-y divide-border">
           {lines.map((line) => (
-            <li key={line.barcode} className="flex items-center gap-3 py-3">
+            <li key={line.productKey} className="flex items-center gap-3 py-3">
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-ink">{line.productName}</p>
                 <button
                   type="button"
-                  onClick={() => toggleBand(line.barcode)}
+                  onClick={() => toggleBand(line.productKey)}
                   disabled={line.wholesale === null}
                   className="mt-0.5 text-xs text-ink-muted disabled:opacity-100"
                 >
@@ -254,16 +302,38 @@ export default function SellPage() {
                   type="button"
                   aria-label="less"
                   className="rounded-full bg-surface-muted p-1.5"
-                  onClick={() => setQuantity(line.barcode, line.quantity - 1)}
+                  onClick={() => setQuantity(line.productKey, line.quantity - 1)}
                 >
                   {line.quantity === 1 ? <Trash2 className="h-4 w-4" /> : <Minus className="h-4 w-4" />}
                 </button>
-                <span className="w-6 text-center text-sm font-medium tabular-nums">{line.quantity}</span>
+                {/* Twelve of something is two taps to type and eleven to tap. */}
+                {editing === line.productKey ? (
+                  <input
+                    autoFocus
+                    inputMode="numeric"
+                    className="w-12 rounded-md border border-border bg-surface px-1 py-0.5 text-center text-sm tabular-nums"
+                    defaultValue={String(line.quantity)}
+                    onBlur={(event) => {
+                      const typed = Number(event.target.value.replace(/[^0-9.]/g, ''));
+                      setEditing(null);
+                      if (Number.isFinite(typed)) setQuantity(line.productKey, typed);
+                    }}
+                    onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="w-8 rounded-md py-0.5 text-center text-sm font-medium tabular-nums text-ink underline decoration-dotted underline-offset-4"
+                    onClick={() => setEditing(line.productKey)}
+                  >
+                    {line.quantity}
+                  </button>
+                )}
                 <button
                   type="button"
                   aria-label="more"
                   className="rounded-full bg-surface-muted p-1.5"
-                  onClick={() => setQuantity(line.barcode, line.quantity + 1)}
+                  onClick={() => setQuantity(line.productKey, line.quantity + 1)}
                 >
                   <Plus className="h-4 w-4" />
                 </button>

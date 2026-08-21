@@ -277,9 +277,6 @@ export default function ProductsPage() {
               <ScanLine className="h-4 w-4" aria-hidden />{ui.sell}
             </Button>
           </Link>
-          <Button variant="secondary" onClick={() => void state.reload()}>
-            <RefreshCw className="h-4 w-4" aria-hidden />{ui.refresh}
-          </Button>
           {canPrice ? (
             <>
               {/* Scanning is the fast way in for a shop whose goods carry codes:
@@ -317,6 +314,15 @@ export default function ProductsPage() {
       </div>
 
       <div className="mt-5 flex flex-wrap items-end gap-3">
+        <button
+          type="button"
+          aria-label={ui.refresh}
+          title={ui.refresh}
+          onClick={() => void state.reload()}
+          className="mb-2 rounded-lg p-2 text-ink-muted transition hover:bg-surface-muted hover:text-ink"
+        >
+          <RefreshCw className={`h-4 w-4 ${state.loading ? 'animate-spin' : ''}`} aria-hidden />
+        </button>
         <UnderlineTabs tabs={ranges} value={range} onChange={setRange} label={ui.period} className="flex-1" />
         <div className="relative w-full min-w-[12rem] sm:w-64">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" aria-hidden />

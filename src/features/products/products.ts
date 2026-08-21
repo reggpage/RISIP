@@ -605,3 +605,50 @@ async function confirmDailyRecordById(id: string): Promise<void> {
   const { error } = await (supabase as any).rpc('confirm_daily_record', { p_daily_record_id: id });
   if (error) throw error;
 }
+
+/**
+ * Every barcode this shop has, with the price it sells at, in one round trip.
+ *
+ * MEASURED FAILURE: the till looked up each scan when it happened — a barcode
+ * query, then a price query — and the line arrived on screen a beat after the
+ * beep. At a counter that beat is the whole difference between a till and a
+ * form. A shop has tens or hundreds of products, not thousands, so the whole
+ * table is worth having in memory before the first customer.
+ */
+export type ScannedProduct = {
+  barcode: string;
+  productKey: string;
+  productName: string;
+  retail: number;
+  wholesale: number | null;
+  wholesaleMinQty: number | null;
+};
+
+export async function fetchBarcodeCatalogue(): Promise<Map<string, ScannedProduct>> {
+  const [codes, prices] = await Promise.all([
+    (supabase as any).from('product_barcodes').select('barcode, product_key, product_name'),
+    fetchCurrentSellingPrices(),
+  ]);
+  if (codes.error) throw codes.error;
+  const priceOf = new Map<string, SellingPriceRow>();
+  for (const price of prices) {
+    // One row per product; a portioned product's own units are priced on the
+    // portion path and are not scanned at a counter.
+    if (price.productKey && !priceOf.has(price.productKey)) priceOf.set(price.productKey, price);
+  }
+  const catalogue = new Map<string, ScannedProduct>();
+  for (const row of (codes.data ?? []) as Array<Record<string, unknown>>) {
+    const productKey = String(row.product_key);
+    const price = priceOf.get(productKey);
+    if (!price) continue;
+    catalogue.set(String(row.barcode), {
+      barcode: String(row.barcode),
+      productKey,
+      productName: String(row.product_name),
+      retail: price.retailPrice,
+      wholesale: price.wholesalePrice,
+      wholesaleMinQty: price.wholesaleMinQty,
+    });
+  }
+  return catalogue;
+}

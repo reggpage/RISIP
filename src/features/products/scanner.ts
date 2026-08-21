@@ -126,15 +126,35 @@ function torchControls(stream: MediaStream) {
   };
 }
 
-/** Every camera the phone will admit to, back ones first. */
+/**
+ * The cameras worth offering: one back, one front.
+ *
+ * MEASURED FAILURE: "ukibonyeza ya kugeuza kamera inafanya scanner isifanye
+ * kazi". An iPhone reports five video inputs — Back Camera, Back Ultra Wide,
+ * Back Telephoto, Back Dual Wide, Front — and cycling through them lands on a
+ * lens that cannot focus on a packet held at arm's length. The picture is live,
+ * so nothing looks broken, and nothing decodes.
+ *
+ * So the ultra-wide and the telephoto are not offered at all. What a shopkeeper
+ * means by "switch camera" is front or back.
+ */
 export async function listCameras(): Promise<MediaDeviceInfo[]> {
   if (!navigator.mediaDevices?.enumerateDevices) return [];
   const devices = await navigator.mediaDevices.enumerateDevices();
   const cameras = devices.filter((device) => device.kind === 'videoinput');
-  return cameras.sort((a, b) => {
-    const back = (label: string) => (/back|rear|environment|nyuma/i.test(label) ? 0 : 1);
-    return back(a.label) - back(b.label);
-  });
+  const isFront = (label: string) => /front|user|mbele/i.test(label);
+  const isOddLens = (label: string) => /ultra|wide|tele|depth|desk/i.test(label);
+
+  const backs = cameras.filter((device) => !isFront(device.label));
+  const fronts = cameras.filter((device) => isFront(device.label));
+  // The plain one where the labels say which is plain; otherwise the first,
+  // which on every phone tested is the main lens.
+  const plainBack = backs.find((device) => !isOddLens(device.label)) ?? backs[0];
+  const plainFront = fronts.find((device) => !isOddLens(device.label)) ?? fronts[0];
+  const chosen = [plainBack, plainFront].filter(Boolean) as MediaDeviceInfo[];
+  // Labels are empty until permission is granted; with nothing to go on, offer
+  // what there is rather than nothing.
+  return chosen.length > 0 ? chosen : cameras.slice(0, 2);
 }
 
 /**
@@ -270,7 +290,7 @@ export async function startScanner(options: StartOptions): Promise<ScannerHandle
   const loop = async () => {
     if (stopped) return;
     try {
-      if (paused) { timer = window.setTimeout(() => void loop(), 200); return; }
+      if (paused) { timer = window.setTimeout(() => void loop(), 250); return; }
       if (drawScanBand(video, canvas)) {
         frames += 1;
         const raw = await decodeFrame(canvas);
@@ -279,7 +299,7 @@ export async function startScanner(options: StartOptions): Promise<ScannerHandle
     } catch {
       // One bad frame is not worth a message; the next is 120ms away.
     }
-    if (!stopped) timer = window.setTimeout(() => void loop(), 120);
+    if (!stopped) timer = window.setTimeout(() => void loop(), 80);
   };
   void loop();
 
