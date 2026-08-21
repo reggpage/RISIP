@@ -24,6 +24,18 @@ export type ScanEngine = 'native' | 'zxing';
 
 export type ScannerHandle = {
   engine: ScanEngine;
+  /**
+   * Stops DECODING and leaves the camera running.
+   *
+   * MEASURED FAILURE: the first version stopped the stream after every scan and
+   * asked for the camera again for the next one. iOS refuses that often enough
+   * that the owner could scan once and then had to reload the page —
+   * "nikighairi nikijaribu kuscan tena inagoma mpaka ni-refresh browser". A
+   * camera that is already open cannot be refused.
+   */
+  pause: () => void;
+  resume: () => void;
+  /** Closes the camera. Only when the page is leaving. */
   stop: () => void;
   /** Torch, where the camera has one. Returns whether it is now on. */
   toggleTorch: () => Promise<boolean>;
@@ -242,9 +254,11 @@ export async function startScanner(options: StartOptions): Promise<ScannerHandle
     }
   }
 
+  let paused = false;
   const loop = async () => {
     if (stopped) return;
     try {
+      if (paused) { timer = window.setTimeout(() => void loop(), 200); return; }
       if (drawScanBand(video, canvas)) {
         const raw = await decodeFrame(canvas);
         if (raw) gate(raw);
@@ -260,6 +274,10 @@ export async function startScanner(options: StartOptions): Promise<ScannerHandle
     engine,
     hasTorch: torch.hasTorch,
     toggleTorch: torch.toggleTorch,
+    pause: () => { paused = true; },
+    // A fresh gate on resume: the packet in front of the lens when scanning
+    // stopped must be scannable again the moment it starts.
+    resume: () => { paused = false; },
     stop: () => {
       stopped = true;
       window.clearTimeout(timer);
