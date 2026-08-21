@@ -40,7 +40,8 @@ export type StartOptions = {
 /** The four shapes a shop's goods actually carry. */
 const NATIVE_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'itf'];
 
-type NativeDetector = { detect: (source: HTMLVideoElement) => Promise<{ rawValue: string }[]> };
+// detect() takes any ImageBitmapSource; a canvas is what this file gives it.
+type NativeDetector = { detect: (source: CanvasImageSource) => Promise<{ rawValue: string }[]> };
 
 export function nativeDetectorAvailable(): boolean {
   return typeof window !== 'undefined' && 'BarcodeDetector' in window;
@@ -114,11 +115,53 @@ export async function listCameras(): Promise<MediaDeviceInfo[]> {
   });
 }
 
+/**
+ * The strip of the picture the barcode is actually in.
+ *
+ * Two reasons, and both of them are the difference between scanning and not:
+ *
+ *   SPEED     a 1D barcode needs the full WIDTH of the frame and almost none of
+ *             its height. Decoding a 720-row picture to read forty rows is
+ *             most of the work thrown away, and on a mid-range phone that is
+ *             the gap between four frames a second and fifteen.
+ *   ACCURACY  everything above and below the code is noise — the owner's test
+ *             photo had a paragraph of English, a price sticker and an FSC logo
+ *             in frame. Cropping to the guide box is why a scanner has a guide
+ *             box.
+ *
+ * Sized from the video EVERY frame, never once at the start. See startScanner.
+ */
+function drawScanBand(video: HTMLVideoElement, canvas: HTMLCanvasElement): boolean {
+  const width = video.videoWidth;
+  const height = video.videoHeight;
+  if (!width || !height) return false;
+  const bandHeight = Math.max(96, Math.round(height * 0.45));
+  const top = Math.round((height - bandHeight) / 2);
+  // Downscale wide frames: past about 1280 across, the extra pixels cost time
+  // and buy nothing on bars this size.
+  const scale = Math.min(1, 1280 / width);
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(bandHeight * scale);
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return false;
+  ctx.drawImage(video, 0, top, width, bandHeight, 0, 0, canvas.width, canvas.height);
+  return true;
+}
+
 export async function startScanner(options: StartOptions): Promise<ScannerHandle | null> {
   if (!navigator.mediaDevices?.getUserMedia) {
     options.onError?.('missing');
     return null;
   }
+
+  const video = options.video;
+  // Set BEFORE the stream arrives. iOS Safari decides whether it may play
+  // inline at the moment it gets a source, and a video it refuses to play
+  // inline goes fullscreen instead — or does not start at all.
+  video.setAttribute('playsinline', 'true');
+  video.setAttribute('webkit-playsinline', 'true');
+  video.setAttribute('muted', 'true');
+  video.muted = true;
 
   let stream: MediaStream;
   try {
@@ -129,81 +172,101 @@ export async function startScanner(options: StartOptions): Promise<ScannerHandle
     return null;
   }
 
-  const video = options.video;
   video.srcObject = stream;
-  video.setAttribute('playsinline', 'true');
-  video.muted = true;
   try {
     await video.play();
   } catch {
-    // Autoplay can be refused until a gesture; the stream is live either way
-    // and the decoder reads frames from it.
+    // Autoplay can be refused until a gesture. The stream is live either way
+    // and the loop below reads frames from it.
   }
 
   const gate = makeScanGate(options.onCode);
   const torch = torchControls(stream);
+  const canvas = document.createElement('canvas');
   let stopped = false;
+  let timer = 0;
+
+  // MEASURED FAILURE, on the owner's iPhone: the camera showed a live picture
+  // with the barcode square in the guide box, and nothing ever happened.
+  //
+  // ZXing's own decodeFromVideoElement builds its capture canvas ONCE, from
+  // video.videoWidth at the instant scanning starts. On iOS, play() resolves
+  // before the metadata gives dimensions, so that canvas is 0×0 — and every
+  // frame after it decodes an empty picture, silently, for ever.
+  //
+  // So the loop is ours. The canvas is sized from the video on EVERY frame,
+  // which costs nothing and cannot be caught out by a slow phone.
+  let decodeFrame: (source: HTMLCanvasElement) => Promise<string | null>;
+  let engine: ScanEngine;
 
   if (nativeDetectorAvailable()) {
     const Ctor = (window as unknown as {
       BarcodeDetector: new (options: { formats: string[] }) => NativeDetector;
     }).BarcodeDetector;
     const detector = new Ctor({ formats: NATIVE_FORMATS });
-    const tick = window.setInterval(async () => {
-      if (stopped || video.readyState < 2) return;
-      try {
-        const codes = await detector.detect(video);
-        if (codes[0]?.rawValue) gate(codes[0].rawValue);
-      } catch {
-        // An unreadable frame is not an error worth showing.
-      }
-    }, 200);
-    return {
-      engine: 'native',
-      hasTorch: torch.hasTorch,
-      toggleTorch: torch.toggleTorch,
-      stop: () => {
-        stopped = true;
-        window.clearInterval(tick);
-        stream.getTracks().forEach((track) => track.stop());
-        video.srcObject = null;
-      },
+    engine = 'native';
+    decodeFrame = async (source) => {
+      const codes = await detector.detect(source);
+      return codes[0]?.rawValue ?? null;
     };
+  } else {
+    try {
+      const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] = await Promise.all([
+        import('@zxing/browser'),
+        import('@zxing/library'),
+      ]);
+      const hints = new Map();
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+        BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A,
+        BarcodeFormat.UPC_E, BarcodeFormat.CODE_128, BarcodeFormat.ITF,
+      ]);
+      // TRY_HARDER earns its cost here: the band is small and the shopkeeper is
+      // holding the phone by hand, so a frame is often slightly rotated or
+      // blurred. Without it, a code that a person can read plainly is refused.
+      hints.set(DecodeHintType.TRY_HARDER, true);
+      const reader = new BrowserMultiFormatReader(hints);
+      engine = 'zxing';
+      decodeFrame = async (source) => {
+        try {
+          return reader.decodeFromCanvas(source).getText();
+        } catch {
+          // NotFoundException on a frame with no code in it: the normal case,
+          // fifteen times a second.
+          return null;
+        }
+      };
+    } catch {
+      stream.getTracks().forEach((track) => track.stop());
+      options.onError?.('failed');
+      return null;
+    }
   }
 
-  // Everywhere else: the decoder is fetched only now, and only once.
-  try {
-    const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] = await Promise.all([
-      import('@zxing/browser'),
-      import('@zxing/library'),
-    ]);
-    const hints = new Map();
-    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-      BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A,
-      BarcodeFormat.UPC_E, BarcodeFormat.CODE_128, BarcodeFormat.ITF,
-    ]);
-    // A retail barcode is one line of a picture. Telling the decoder to try
-    // harder costs frames per second and buys nothing on 1D codes.
-    const reader = new BrowserMultiFormatReader(hints, { delayBetweenScanAttempts: 150 });
-    const controls = await reader.decodeFromVideoElement(video, (result) => {
-      if (!stopped && result) gate(result.getText());
-    });
-    return {
-      engine: 'zxing',
-      hasTorch: torch.hasTorch,
-      toggleTorch: torch.toggleTorch,
-      stop: () => {
-        stopped = true;
-        try { controls.stop(); } catch { /* already stopped */ }
-        stream.getTracks().forEach((track) => track.stop());
-        video.srcObject = null;
-      },
-    };
-  } catch {
-    stream.getTracks().forEach((track) => track.stop());
-    options.onError?.('failed');
-    return null;
-  }
+  const loop = async () => {
+    if (stopped) return;
+    try {
+      if (drawScanBand(video, canvas)) {
+        const raw = await decodeFrame(canvas);
+        if (raw) gate(raw);
+      }
+    } catch {
+      // One bad frame is not worth a message; the next is 120ms away.
+    }
+    if (!stopped) timer = window.setTimeout(() => void loop(), 120);
+  };
+  void loop();
+
+  return {
+    engine,
+    hasTorch: torch.hasTorch,
+    toggleTorch: torch.toggleTorch,
+    stop: () => {
+      stopped = true;
+      window.clearTimeout(timer);
+      stream.getTracks().forEach((track) => track.stop());
+      video.srcObject = null;
+    },
+  };
 }
 
 /**
@@ -215,7 +278,8 @@ export async function startScanner(options: StartOptions): Promise<ScannerHandle
  */
 export function beep(): void {
   try {
-    const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const Ctx = window.AudioContext
+      ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!Ctx) return;
     const ctx = new Ctx();
     const oscillator = ctx.createOscillator();

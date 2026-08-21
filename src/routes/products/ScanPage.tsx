@@ -140,6 +140,7 @@ export default function ScanPage() {
   const [minQty, setMinQty] = useState('');
   const [busy, setBusy] = useState(false);
   const [lastSaved, setLastSaved] = useState<string | null>(null);
+  const [hit, setHit] = useState(false);
 
   const stop = useCallback(() => {
     handleRef.current?.stop();
@@ -149,11 +150,15 @@ export default function ScanPage() {
 
   /** A found code stops the camera and asks for the meaning. */
   const found = useCallback(async (rawCode: string) => {
+    // Green first, then stop. The flash is the whole feedback a person gets
+    // while they are looking at the packet rather than the screen.
+    setHit(true);
+    beep();
+    if (navigator.vibrate) navigator.vibrate(60);
+    window.setTimeout(() => setHit(false), 900);
     stop();
     setCode(rawCode);
     setLastSaved(null);
-    beep();
-    if (navigator.vibrate) navigator.vibrate(60);
     try {
       const already = await findProductByBarcode(rawCode);
       setKnown(already);
@@ -272,8 +277,23 @@ export default function ScanPage() {
             {camera === 'live' ? (
               <>
                 {/* The window a shopkeeper aims with. */}
-                <div className="pointer-events-none absolute inset-x-6 top-1/2 h-28 -translate-y-1/2 rounded-lg border-2 border-white/70" />
-                <div className="pointer-events-none absolute inset-x-8 top-1/2 h-0.5 -translate-y-1/2 animate-pulse bg-red-500" />
+<div
+                  className={`pointer-events-none absolute inset-x-2 top-1/2 h-[45%] -translate-y-1/2 rounded-lg border-2 transition-colors ${
+                    hit ? 'border-emerald-400' : 'border-white/70'
+                  }`}
+                />
+                <div
+                  className={`pointer-events-none absolute inset-x-4 top-1/2 h-0.5 -translate-y-1/2 transition-colors ${
+                    hit ? 'bg-emerald-400' : 'animate-pulse bg-red-500'
+                  }`}
+                />
+                {hit ? (
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <span className="rounded-full bg-emerald-500 p-2 text-white shadow-lg">
+                      <Check className="h-6 w-6" />
+                    </span>
+                  </div>
+                ) : null}
                 <p className="pointer-events-none absolute inset-x-0 bottom-3 text-center text-xs text-white/80">
                   {c.aim}
                 </p>
