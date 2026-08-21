@@ -3,6 +3,8 @@ import { ArrowLeftRight, CreditCard, FileText, HandCoins, Receipt, TrendingUp, U
 import { Link } from 'react-router-dom';
 import StaffDashboard from '@/routes/dashboard/StaffDashboard';
 import { useAuth } from '@/lib/auth';
+import Button from '@/components/ui/Button';
+import { navVisible } from '@/lib/nav';
 import { getLang, type LangCode } from '@/lib/lang';
 import { sw } from '@/i18n/sw';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -31,8 +33,31 @@ const copy: Record<LangCode, {
 export default function Dashboard() {
   const auth = useAuth();
   const role = auth.status === 'signed-in' ? auth.profile?.role : undefined;
-  if (role && role !== 'owner' && role !== 'accountant') return <StaffDashboard />;
+  // A shop has no receipts to chase and no projects to file them against, so
+  // the staff dashboard — which is entirely about both — is not what a worker
+  // at a counter should be shown. See lib/nav.ts for why those are off.
+  if (role && role !== 'owner' && role !== 'accountant') {
+    return navVisible('receipts') ? <StaffDashboard /> : <ShopDashboard />;
+  }
   return <CompanyDashboard />;
+}
+
+/** What a worker in a shop sees: today's takings, and the two things they do. */
+function ShopDashboard() {
+  const lang = getLang();
+  const text = copy[lang];
+  const dailyRecords = useDailyRecords();
+  const dailySummary = getDailyRecordSummary(dailyRecords.records);
+  return (
+    <div className="mx-auto max-w-6xl p-4 sm:p-6">
+      <h1 className="mb-5 text-2xl font-semibold text-ink">{sw.nav.dashboard}</h1>
+      <div className="mb-6 flex flex-wrap gap-2">
+        <Link to="/sell"><Button tint="admin">{lang === 'sw' ? 'Uza kwa scan' : 'Sell by scan'}</Button></Link>
+        <Link to="/products"><Button variant="secondary">{lang === 'sw' ? 'Bidhaa' : 'Products'}</Button></Link>
+      </div>
+      <DailyDashboardContent dailyRecords={dailyRecords} dailySummary={dailySummary} text={text} lang={lang} />
+    </div>
+  );
 }
 
 function CompanyDashboard() {
@@ -40,7 +65,10 @@ function CompanyDashboard() {
   const text = copy[lang];
   const { state: projectsState } = useProjects();
   const [projectId, setProjectId] = useState('');
-  const [dashboardTab, setDashboardTab] = useState<'project' | 'daily'>('project');
+  // With projects and receipts off, there is only one dashboard and no reason
+  // to make somebody choose it from a tab bar.
+  const projectsOn = navVisible('projects') || navVisible('receipts');
+  const [dashboardTab, setDashboardTab] = useState<'project' | 'daily'>(projectsOn ? 'project' : 'daily');
   const data = useDashboardData(projectId || undefined);
   const dailyRecords = useDailyRecords();
   const dailySummary = getDailyRecordSummary(dailyRecords.records);
@@ -57,18 +85,18 @@ function CompanyDashboard() {
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <div className="mb-5 flex items-end justify-between gap-3">
         <h1 className="text-2xl font-semibold text-ink">{sw.nav.dashboard}</h1>
-        {dashboardTab === 'project' && activeProjects.length > 1 && <div className="min-w-[220px]"><Select label={sw.dashboard.filterProject} value={projectId} onChange={setProjectId} placeholder={sw.dashboard.allProjects} options={[{ value: '', label: sw.dashboard.allProjects }, ...activeProjects.map((project) => ({ value: project.id, label: project.name }))]} /></div>}
+        {projectsOn && dashboardTab === 'project' && activeProjects.length > 1 && <div className="min-w-[220px]"><Select label={sw.dashboard.filterProject} value={projectId} onChange={setProjectId} placeholder={sw.dashboard.allProjects} options={[{ value: '', label: sw.dashboard.allProjects }, ...activeProjects.map((project) => ({ value: project.id, label: project.name }))]} /></div>}
       </div>
 
-      <UnderlineTabs
+      {projectsOn ? <UnderlineTabs
         className="mb-6"
         tabs={[{ value: 'project', label: text.project }, { value: 'daily', label: text.daily }]}
         value={dashboardTab}
         onChange={setDashboardTab}
         label={lang === 'sw' ? 'Aina ya dashibodi' : 'Dashboard view'}
-      />
+      /> : null}
 
-      {dashboardTab === 'project' ? (
+      {projectsOn && dashboardTab === 'project' ? (
         <ProjectDashboardContent data={data} recentActivity={recentActivity} />
       ) : (
         <DailyDashboardContent dailyRecords={dailyRecords} dailySummary={dailySummary} text={text} lang={lang} />
@@ -93,7 +121,7 @@ function ProjectDashboardContent({ data, recentActivity }: { data: ReturnType<ty
     <div className="grid gap-6 lg:grid-cols-5">
       <div className="min-w-0 lg:col-span-3"><Card>{data.loading ? <div className="flex flex-col gap-3 pb-2">{Array.from({ length: 4 }).map((_, index) => <CategoryBarSkeleton key={index} />)}</div> : <SpendByCategory receipts={data.receipts} />}</Card></div>
       <div className="min-w-0 lg:col-span-2">
-        <div className="mb-3 flex items-center justify-between"><h3 className="text-base font-semibold text-ink">{sw.dashboard.recentTitle}</h3><Link to="/receipts" className="text-sm font-medium text-role-admin hover:underline">{getLang() === 'sw' ? 'Zaidi' : 'See more'}</Link></div>
+        <div className="mb-3 flex items-center justify-between"><h3 className="text-base font-semibold text-ink">{sw.dashboard.recentTitle}</h3>{navVisible('receipts') ? <Link to="/receipts" className="text-sm font-medium text-role-admin hover:underline">{getLang() === 'sw' ? 'Zaidi' : 'See more'}</Link> : null}</div>
         {data.loading ? <div className="flex flex-col gap-2">{Array.from({ length: 3 }).map((_, index) => <ListItemSkeleton key={index} lines={2} />)}</div> : recentActivity.length === 0 ? <p className="text-sm text-ink-muted">{sw.dashboard.noReceipts}</p> : <div className="flex flex-col gap-2">{recentActivity.map((receipt) => <ReceiptCard key={receipt.id} receipt={receipt} linkedToDuplicate={receipt.status === 'duplicate' || recentActivity.some((candidate) => candidate.duplicate_of === receipt.id)} />)}</div>}
       </div>
     </div>

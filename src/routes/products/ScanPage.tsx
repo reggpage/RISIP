@@ -56,8 +56,10 @@ const COPY = {
     wholesale: 'Bei ya jumla (si lazima)',
     minQty: 'Jumla kuanzia idadi',
     save: 'Hifadhi bidhaa',
+    edit: 'Badilisha bidhaa',
     saving: 'Inahifadhi…',
     saved: 'Nimehifadhi',
+    edited: 'Nimebadilisha',
     scanNext: 'Scan nyingine',
     cancel: 'Ghairi',
     denied: 'Ruhusa ya kamera imekataliwa. Ifungue kwenye settings za browser, kisha ujaribu tena.',
@@ -93,8 +95,10 @@ const COPY = {
     wholesale: 'Wholesale price (optional)',
     minQty: 'Wholesale from quantity',
     save: 'Save product',
+    edit: 'Update product',
     saving: 'Saving…',
     saved: 'Saved',
+    edited: 'Updated',
     scanNext: 'Scan another',
     cancel: 'Cancel',
     denied: 'Camera permission was refused. Allow it in your browser settings and try again.',
@@ -210,7 +214,7 @@ export default function ScanPage() {
       await setSellingPrice(productName, selling, bulk && bulk > 0 ? bulk : null, from && from > 0 ? from : null);
       await saveProductBarcode(code!, productName);
       setLastSaved(productName);
-      toast.success(`${c.saved}: ${productName}`);
+      toast.success(`${known ? c.edited : c.saved}: ${productName}`);
       backToScanning();
     } catch (err) {
       toast.error(friendlyError(err));
@@ -342,7 +346,7 @@ export default function ScanPage() {
           <div className="flex gap-2">
             <Button className="flex-1 justify-center" disabled={busy} onClick={() => void save()}>
               {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {busy ? c.saving : c.save}
+              {busy ? c.saving : known ? c.edit : c.save}
             </Button>
             <Button variant="secondary" onClick={backToScanning}>{c.cancel}</Button>
           </div>

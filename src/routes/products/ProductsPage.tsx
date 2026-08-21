@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Archive, Barcode, Package, Plus, RefreshCw, Search, TrendingDown } from 'lucide-react';
+import { AlertTriangle, Archive, Barcode, Package, Plus, RefreshCw, ScanLine, Search, TrendingDown } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
@@ -56,7 +56,7 @@ const ui = lang === 'sw' ? {
   noMatch: 'Hakuna bidhaa yenye jina hilo.',
   onlyFinance: 'Bei za kununua zinaonekana kwa owner na accountant tu.',
   measured: 'Inapimwa', counted: 'Inahesabiwa', period: 'Kipindi',
-  add: 'Ongeza bidhaa', scan: 'Scan bar code', merge: 'Unganisha', archive: 'Ficha', restore: 'Rudisha',
+  add: 'Ongeza bidhaa', scan: 'Scan bar code', sell: 'Uza kwa scan', merge: 'Unganisha', archive: 'Ficha', restore: 'Rudisha',
   showArchived: 'Onyesha zilizofichwa', archivedBadge: 'Imefichwa',
   archived: 'Bidhaa imefichwa. Mauzo yake ya zamani bado yanahesabiwa.',
   restored: 'Bidhaa imerudishwa kwenye orodha.',
@@ -84,7 +84,7 @@ const ui = lang === 'sw' ? {
   noMatch: 'No product matches that name.',
   onlyFinance: 'Buying prices are visible to an owner or accountant only.',
   measured: 'Measured', counted: 'Counted', period: 'Period',
-  add: 'Add product', scan: 'Scan barcode', merge: 'Merge', archive: 'Hide', restore: 'Restore',
+  add: 'Add product', scan: 'Scan barcode', sell: 'Sell by scan', merge: 'Merge', archive: 'Hide', restore: 'Restore',
   showArchived: 'Show hidden', archivedBadge: 'Hidden',
   archived: 'Product hidden. Its past sales still count.',
   restored: 'Product is back on the list.',
@@ -270,6 +270,13 @@ export default function ProductsPage() {
           <p className="mt-1 text-sm text-ink-muted">{ui.description}</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {/* Selling is what a shop does all day, so it is the first button
+              here and not buried behind the catalogue. Every role may use it. */}
+          <Link to="/sell">
+            <Button tint="admin">
+              <ScanLine className="h-4 w-4" aria-hidden />{ui.sell}
+            </Button>
+          </Link>
           <Button variant="secondary" onClick={() => void state.reload()}>
             <RefreshCw className="h-4 w-4" aria-hidden />{ui.refresh}
           </Button>
