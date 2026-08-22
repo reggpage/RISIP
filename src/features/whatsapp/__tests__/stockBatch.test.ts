@@ -24,6 +24,26 @@ describe('counting the whole shelf in one message', () => {
     expect(batch?.counts.map((c) => c.quantity)).toEqual([90, 240, 18]);
   });
 
+  it('treats “jaza … ziwe …” as separate absolute stock counts', () => {
+    const batch = parseStockCountBatch([
+      'Jaza birika ziwe 100',
+      'Daftari ziwe 400',
+      'Dumu la maji ziwe 100',
+    ].join('\n'));
+    expect(batch?.counts).toEqual([
+      { product: 'birika', quantity: 100, unit: null },
+      { product: 'Daftari', quantity: 400, unit: null },
+      { product: 'Dumu la maji', quantity: 100, unit: null },
+    ]);
+    expect(batch?.unreadable).toEqual([]);
+  });
+
+  it('accepts one explicit absolute correction but not a vague add instruction', () => {
+    expect(parseStockCountBatch('weka birika iwe 100')?.counts)
+      .toEqual([{ product: 'birika', quantity: 100, unit: null }]);
+    expect(parseStockCountBatch('jaza birika 100')).toBeNull();
+  });
+
   it('keeps a unit on either side of the number, and a fraction of one', () => {
     const batch = parseStockCountBatch(list('sukari kilo 12.5\nmafuta 20 lita'));
     expect(batch?.counts).toEqual([
@@ -105,7 +125,8 @@ describe('what the trader is shown before anything is saved', () => {
 
   it('says plainly that this becomes the new anchor', () => {
     const batch = parseStockCountBatch(list('daftari 90\nkalamu 240'))!;
-    expect(stockCountBatchConfirmation(batch, 'sw')).toMatch(/nanga mpya/);
+    expect(stockCountBatchConfirmation(batch, 'sw')).toMatch(/idadi zilizopo sasa/);
+    expect(stockCountBatchConfirmation(batch, 'sw')).not.toMatch(/Nimekumbuka|Kumbuka/);
   });
 
   it('shows the lines it could not read, before the question', () => {

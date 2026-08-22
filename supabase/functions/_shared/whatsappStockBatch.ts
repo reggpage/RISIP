@@ -41,6 +41,12 @@ const HEADER = new RegExp(
   + '|nilizonazo|ninazo|zilizopo|store|stock\\s*count|counted'
   + ')\\b', 'i');
 
+// “Jaza birika ziwe 100” is an absolute shelf correction, not a purchase.
+// The word “ziwe/iwe” is the safety anchor: “jaza birika 100” on its own can
+// mean add 100 more, so it is deliberately left for clarification.
+const SET_COUNT_HEADER = /^(?:jaza|weka|wekea|sahihisha)\b/iu;
+const SET_COUNT_PREFIX = /^(?:jaza|weka|wekea|sahihisha)\s+/iu;
+
 const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
 /** "daftari 90", "sukari kilo 12.5", "mafuta 20 lita", "daftari - 90" */
@@ -50,8 +56,14 @@ export function parseStockCountLine(line: string): StockCountItem | null {
   // A line that reports a movement is not a count.
   if (/^(?:nimeuza|niliuza|nimenunua|nimelipa|amechukua|amelipa)\b/i.test(said)) return null;
 
-  const match = new RegExp(`^(.+?)[\\s:=-]+(?:(${UNITS})\\s+)?([0-9]+(?:\\.[0-9]+)?)\\s*(${UNITS})?$`, 'i')
-    .exec(said);
+  const absolute = new RegExp(
+    `^(.+?)\\s+(?:ziwe|iwe|zibaki|ibaki)\\s+(?:(${UNITS})\\s+)?([0-9]+(?:\\.[0-9]+)?)\\s*(${UNITS})?$`,
+    'i',
+  ).exec(said.replace(SET_COUNT_PREFIX, ''));
+  const match = absolute ?? new RegExp(
+    `^(.+?)[\\s:=-]+(?:(${UNITS})\\s+)?([0-9]+(?:\\.[0-9]+)?)\\s*(${UNITS})?$`,
+    'i',
+  ).exec(said);
   if (!match) return null;
 
   const product = clean(match[1]).replace(/[:=-]+$/, '').trim();
@@ -65,14 +77,21 @@ export function parseStockCountLine(line: string): StockCountItem | null {
 
 export function parseStockCountBatch(text: string | null | undefined): StockCountBatch | null {
   const raw = String(text ?? '').split(/\r?\n/);
-  if (raw.length < 2) return null;
-  if (!HEADER.test(raw[0] ?? '')) return null;
+  const first = raw[0] ?? '';
+  const explicitSet = SET_COUNT_HEADER.test(first)
+    && /\b(?:ziwe|iwe|zibaki|ibaki)\b/iu.test(first);
+  if (!explicitSet && raw.length < 2) return null;
+  if (!explicitSet && !HEADER.test(first)) return null;
 
   const counts: StockCountItem[] = [];
   const unreadable: string[] = [];
   const seen = new Set<string>();
 
-  for (const line of raw.slice(1, MAX_LINES + 1)) {
+  // A conventional batch has a heading on line one. An explicit correction
+  // carries its first product on line one, so keep that line and every newline
+  // after it; flattening would turn three products into one long name.
+  const lines = explicitSet ? raw.slice(0, MAX_LINES) : raw.slice(1, MAX_LINES + 1);
+  for (const line of lines) {
     const said = clean(line);
     if (!said) continue;
     const parsed = parseStockCountLine(said);
@@ -84,7 +103,7 @@ export function parseStockCountBatch(text: string | null | undefined): StockCoun
     if (at >= 0) counts[at] = parsed; else { seen.add(key); counts.push(parsed); }
   }
 
-  return counts.length >= 2 ? { kind: 'stock_count_batch', counts, unreadable } : null;
+  return counts.length >= (explicitSet ? 1 : 2) ? { kind: 'stock_count_batch', counts, unreadable } : null;
 }
 
 const amount = (item: StockCountItem) =>
@@ -101,9 +120,9 @@ export function stockCountBatchConfirmation(batch: StockCountBatch, lang: Lang):
       + batch.unreadable.map((line) => `• ${line}`).join('\n'));
 
   return lang === 'sw'
-    ? `Bidhaa na idadi zake — ${batch.counts.length}:\n${rows}${problem}\n\n`
-      + 'Hii itakuwa nanga mpya: kuanzia sasa nitafuatilia mwenyewe kadri unavyouza na kuingiza.\n\n'
-      + 'Nihifadhi zote? NDIYO / HAPANA'
+    ? `Stock itakayowekwa — bidhaa ${batch.counts.length}:\n${rows}${problem}\n\n`
+      + 'Hizi ni idadi zilizopo sasa; si manunuzi mapya.\n\n'
+      + 'Niweke? NDIYO / HAPANA'
     : `Stock on hand — ${batch.counts.length} products:\n${rows}${problem}\n\n`
       + 'This becomes the new anchor: from here I keep count as you sell and restock.\n\n'
       + 'Save them all? YES / NO';

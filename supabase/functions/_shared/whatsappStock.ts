@@ -135,6 +135,31 @@ export function parseStockQuestion(text: string | null | undefined): { product: 
   return null;
 }
 
+/** “Bidhaa gani zimeisha?” asks for counted products at zero, not the whole shelf. */
+export function parseOutOfStockQuestion(text: string | null | undefined): boolean {
+  const said = clean(text).replace(/\?+\s*$/, '').trim();
+  if (!said) return false;
+  return /^(?:(?:nipe|onyesha|nionyeshe|orodha ya|list)\s+)?(?:bidhaa|vitu|products?|items?)\s+(?:gani\s+)?(?:zimeisha|zilizoisha|zimekwisha|zenye\s+stock\s+0|out\s+of\s+stock)$/iu.test(said)
+    || /^(?:nini|what)\s+(?:kimeisha|zimeisha|is\s+out\s+of\s+stock)$/iu.test(said);
+}
+
+export function outOfStockReply(rows: StockRow[], lang: Lang): string {
+  const out = rows.filter((row) => row.hasCount && row.onHand <= 0);
+  const uncounted = rows.filter((row) => !row.hasCount).length;
+  const unknown = uncounted === 0 ? '' : (lang === 'sw'
+    ? `\n\nBidhaa ${uncounted} bado hazijahesabiwa, kwa hiyo hazipo kwenye orodha hii.`
+    : `\n\n${uncounted} products have not been counted yet, so they are not included here.`);
+  if (out.length === 0) {
+    return (lang === 'sw'
+      ? 'Hakuna bidhaa iliyohesabiwa yenye stock 0.'
+      : 'No counted product currently has zero stock.') + unknown;
+  }
+  const names = out.map((row) => `• ${row.productName}`).join('\n');
+  return (lang === 'sw'
+    ? `Bidhaa zenye stock 0:\n${names}`
+    : `Products with zero stock:\n${names}`) + unknown;
+}
+
 /**
  * How far the books have gone below zero, which is not the same as stock.
  *

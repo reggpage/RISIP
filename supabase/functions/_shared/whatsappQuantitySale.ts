@@ -301,7 +301,11 @@ export function stripTrailingChatter(text: string | null | undefined): string {
 }
 
 export function parseBareQuantityList(text: string | null | undefined): QuantitySale | null {
-  const said = stripTrailingChatter(clean(dashToSpace(text)));
+  // Keep line breaks until the quantity parser sees them. Flattening here made
+  // “birika 100 / daftari 400 / dumu 100” one product whose name contained the
+  // first two quantities. The flattened copy is only for classification tests.
+  const preserved = stripTrailingChatter(dashToSpace(text));
+  const said = clean(preserved);
   if (!said || OPENER.test(said) || STATES_MONEY.test(said)) return null;
   // Do not ban a word wherever it appears: "kitabu cha hesabu" is a real
   // product. Only an unmistakable opener makes this a stock/purchase message.
@@ -330,8 +334,8 @@ export function parseBareQuantityList(text: string | null | undefined): Quantity
   // "mafuta dumu moja 78000" — the count is a word, not a digit. The daily
   // record parser has always known these; this one did not, so the number was
   // invisible and the whole line went to the model.
-  const digits = normalizeNumberWords(said);
-  const sale = parseQuantityOnlySale(`mauzo ${digits}`);
+  const digits = normalizeNumberWords(preserved);
+  const sale = parseQuantityOnlySale(digits.includes('\n') ? `mauzo\n${digits}` : `mauzo ${digits}`);
   // One product is enough. "Nguvu ya sala 21" was answered with a request for
   // a price the shop had already set, because a single item did not qualify —
   // and the owner's point stands: a sentence should not need a verb to be read.

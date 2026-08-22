@@ -255,7 +255,9 @@ import { compareWithTra, fetchTraReceipt } from '../_shared/traVerify.ts';
 import { qrCorrectionReply } from '../_shared/qrFollowUp.ts';
 import {
   parseStockCount,
+  parseOutOfStockQuestion,
   parseStockQuestion,
+  outOfStockReply,
   stockCountConfirmation,
   stockListReply,
   stockReply,
@@ -1845,6 +1847,8 @@ async function executeAssistantTool(
     return {
       content: asked && matched
         ? productReadMatchNotice(matched, lang) + stockReply(rows[0] ?? null, matched.match.productName, lang)
+        : input.only_out_of_stock === true
+          ? outOfStockReply(rows, lang)
         : stockListReply(rows, lang),
     };
   }
@@ -3330,6 +3334,30 @@ Deno.serve(async (req) => {
             await clearConversation(db, identity.id as string);
             await reply(phone, stockPurchaseNeedsPrices(quantityMeaningPending, lang));
             await audit(db, identity, waMessageId, 'quantity_meaning', 'stock_purchase', 'clarification');
+            await finish('skipped');
+            continue;
+          } else if (meaning === 'stock_count') {
+            const stockBatch: StockCountBatch = {
+              kind: 'stock_count_batch',
+              counts: quantityMeaningPending.sale.items.map((item) => ({
+                product: item.product,
+                quantity: item.quantity,
+                unit: item.unit ?? null,
+              })),
+              unreadable: [],
+            };
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'product_cost',
+              receipt_id: null,
+              options: stockBatch,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await reply(phone, stockCountBatchConfirmation(stockBatch, lang));
+            await audit(db, identity, waMessageId, 'quantity_meaning', 'stock_count', 'pending');
             await finish('skipped');
             continue;
           } else {
@@ -4866,6 +4894,8 @@ Deno.serve(async (req) => {
         // conversation history. The deterministic parsers below remain the
         // availability fallback when the provider or budget is unavailable.
         let conversationalAiBudgetBlock: AiBudgetDecision | null = null;
+        const outOfStockQuestion = parseOutOfStockQuestion(body);
+        const directStockQuestion = parseStockQuestion(body);
         const aiEligible = Boolean(body?.trim())
           && (!convo || convo.awaiting === 'product_analytics')
           && !isSwitchRequest(body)
@@ -4876,6 +4906,14 @@ Deno.serve(async (req) => {
           // Daily-record arithmetic is deterministic first. Its dedicated
           // branch below owns the bounded structured-AI fallback.
           && !isDailyRecordCandidate(body)
+          // Stock reads and physical counts are exact server arithmetic. Let
+          // the deterministic path answer in its own concise words instead of
+          // letting the model paraphrase zero as a guess or turn “ziwe” into a
+          // purchase.
+          && !outOfStockQuestion
+          && !directStockQuestion
+          && !parseStockCountBatch(body)
+          && !parseStockCount(body)
           // A mixed message belongs to the write chain below. MEASURED FAILURE:
           // "nimeuza nguvu ya sala 2 kwa 20000 kisha nionyeshe risiti za leo"
           // was claimed here by the read half, the receipts were listed, and the
@@ -4957,7 +4995,17 @@ Deno.serve(async (req) => {
         // so every one of these went to the model to be talked into calling a
         // tool. This calls that same tool directly: same figures, no budget
         // spent, and no chance of a number being improvised on the way.
-        const stockQuestion = mixed ? null : parseStockQuestion(body);
+        if (!mixed && outOfStockQuestion) {
+          const answered = await executeAssistantTool(
+            db, identity, waMessageId, lang, 'get_stock_on_hand', { only_out_of_stock: true },
+          );
+          await reply(phone, answered.content);
+          await audit(db, identity, waMessageId, 'stock_question', 'out_of_stock', 'applied');
+          await finish('skipped');
+          continue;
+        }
+
+        const stockQuestion = mixed ? null : directStockQuestion;
         if (stockQuestion) {
           const answered = await executeAssistantTool(
             db, identity, waMessageId, lang, 'get_stock_on_hand',

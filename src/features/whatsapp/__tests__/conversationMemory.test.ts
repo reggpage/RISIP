@@ -3,6 +3,8 @@ import { parseBareQuantityList } from '../../../../supabase/functions/_shared/wh
 import {
   matchHypotheticalPortionAnswer,
   parseQuantityMeaningAnswer,
+  quantityMeaningQuestion,
+  stockPurchaseNeedsPrices,
   type HypotheticalPortionChoice,
 } from '../../../../supabase/functions/_shared/whatsappConversationMemory';
 
@@ -20,7 +22,21 @@ describe('short WhatsApp follow-up memory', () => {
     expect(parseQuantityMeaningAnswer('ni mauzo')).toBe('sale');
     expect(parseQuantityMeaningAnswer('sales')).toBe('sale');
     expect(parseQuantityMeaningAnswer('ni manunuzi')).toBe('stock_purchase');
+    expect(parseQuantityMeaningAnswer('stock iliyopo')).toBe('stock_count');
     expect(parseQuantityMeaningAnswer('sawa')).toBeNull();
+  });
+
+  it('asks naturally and keeps every product on its own line', () => {
+    const sale = parseBareQuantityList('birika 100\nDaftari 400\nDumu la maji 100')!;
+    const state = {
+      kind: 'quantity_meaning_clarification' as const,
+      sourceMessageId: 'wamid-1',
+      originalText: 'birika 100\nDaftari 400\nDumu la maji 100',
+      sale,
+    };
+    expect(quantityMeaningQuestion('sw')).not.toMatch(/Nimekumbuka|Kumbuka/);
+    expect(stockPurchaseNeedsPrices(state, 'sw')).toContain('• birika: 100\n• Daftari: 400\n• Dumu la maji: 100');
+    expect(stockPurchaseNeedsPrices(state, 'sw')).not.toMatch(/Nimekumbuka|Kumbuka|sitaikisia/);
   });
 
   it('resolves a short portion answer against only the parked choices', () => {

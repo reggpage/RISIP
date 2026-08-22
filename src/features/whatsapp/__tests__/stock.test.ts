@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   parseStockCount,
+  parseOutOfStockQuestion,
   parseStockQuestion,
+  outOfStockReply,
   stockShortfall,
   stockCountConfirmation,
   stockListReply,
@@ -77,6 +79,29 @@ describe('asking what is left', () => {
   it('does not claim an unrelated question', () => {
     expect(parseStockQuestion('faida yangu ni ngapi')).toBeNull();
     expect(parseStockQuestion('nani anadaiwa')).toBeNull();
+  });
+});
+
+describe('asking what has run out', () => {
+  it('recognises natural Swahili and English questions', () => {
+    expect(parseOutOfStockQuestion('Bidhaa gani zimeisha?')).toBe(true);
+    expect(parseOutOfStockQuestion('nionyeshe bidhaa zenye stock 0')).toBe(true);
+    expect(parseOutOfStockQuestion('products out of stock')).toBe(true);
+    expect(parseOutOfStockQuestion('bidhaa ziko ngapi')).toBe(false);
+  });
+
+  it('answers concisely without the robotic reminder paragraph', () => {
+    const said = outOfStockReply([
+      row({ productName: 'Birika', onHand: 0 }),
+      row({ productName: 'Daftari', onHand: -4 }),
+      row({ productName: 'Kalamu', onHand: 8 }),
+      row({ productName: 'Sabuni', hasCount: false }),
+    ], 'sw');
+    expect(said).toContain('• Birika');
+    expect(said).toContain('• Daftari');
+    expect(said).not.toContain('• Kalamu');
+    expect(said).toContain('Bidhaa 1 bado hazijahesabiwa');
+    expect(said).not.toMatch(/Kumbuka|si lazima ziwe zimeisha/);
   });
 });
 
