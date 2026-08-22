@@ -90,7 +90,11 @@ export function useScanner(active: boolean, onCode: (code: string) => void): Sca
     torchOn,
     hasTorch,
     stats,
-    toggleTorch: () => void handleRef.current?.toggleTorch().then(setTorchOn),
+    toggleTorch: () => {
+      const handle = handleRef.current;
+      if (!handle) return;
+      void handle.toggleTorch().then(setTorchOn).catch(() => setTorchOn(false));
+    },
     retry: () => void open(),
     pause: () => handleRef.current?.pause(),
     resume: () => handleRef.current?.resume(),

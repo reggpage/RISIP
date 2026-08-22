@@ -111,16 +111,29 @@ async function openCamera(deviceId?: string): Promise<MediaStream> {
 
 function torchControls(stream: MediaStream) {
   const track = stream.getVideoTracks()[0];
-  const capabilities = (track?.getCapabilities?.() ?? {}) as { torch?: boolean };
   let on = false;
+
+  const supportsTorch = () => {
+    if (!track || track.readyState !== 'live' || typeof track.getCapabilities !== 'function') return false;
+    const capabilities = track.getCapabilities() as MediaTrackCapabilities & { torch?: boolean };
+    return capabilities.torch === true;
+  };
+
   return {
-    hasTorch: () => Boolean(capabilities.torch),
+    hasTorch: supportsTorch,
     toggleTorch: async () => {
-      if (!capabilities.torch || !track) return false;
-      on = !on;
+      if (!supportsTorch()) return false;
+      const next = !on;
       // `torch` is real on Android and absent from the DOM types, which is why
       // the capability is checked above rather than the type trusted here.
-      await track.applyConstraints({ advanced: [{ torch: on }] } as unknown as MediaTrackConstraints);
+      try {
+        await track.applyConstraints({ advanced: [{ torch: next }] } as unknown as MediaTrackConstraints);
+        on = next;
+      } catch {
+        // Some browsers advertise torch support but reject it for the selected
+        // camera or current permission state. Keep UI and hardware safely off.
+        on = false;
+      }
       return on;
     },
   };
