@@ -1,0 +1,27 @@
+{
+  "name": "Risip",
+  "short_name": "Risip",
+  "description": "Receipts, sales, expenses and daily business records in one place.",
+  "lang": "en",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#DD2D4A",
+  "categories": ["business", "finance", "productivity"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    { "name": "Receipts", "short_name": "Receipts", "url": "/receipts" },
+    { "name": "Daily Records", "short_name": "Records", "url": "/daily-records" },
+    { "name": "Products", "short_name": "Products", "url": "/products" }
+  ]
+}

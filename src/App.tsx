@@ -30,10 +30,12 @@ import DailyRecordsPage from '@/routes/dailyRecords/DailyRecordsPage';
 import ProductsPage from '@/routes/products/ProductsPage';
 import ScanPage from '@/routes/products/ScanPage';
 import SellPage from '@/routes/products/SellPage';
+import InstallPromptBanner from '@/components/pwa/InstallPromptBanner';
 
 export default function App() {
   return (
-    <Routes>
+    <>
+      <Routes>
       {/* Public routes */}
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
@@ -124,6 +126,8 @@ export default function App() {
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+      <InstallPromptBanner />
+    </>
   );
 }
