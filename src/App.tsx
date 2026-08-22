@@ -2,13 +2,8 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import AppShell from '@/components/layout/AppShell';
 import RequireAuth from '@/guards/RequireAuth';
 import RequireRole from '@/guards/RequireRole';
-import Login from '@/routes/auth/Login';
-import ForgotPassword from '@/routes/auth/ForgotPassword';
 import WaLogin from '@/routes/auth/WaLogin';
-import SignupCompany from '@/routes/auth/SignupCompany';
-import JoinPage from '@/routes/join/JoinPage';
-import FindCompany from '@/routes/find/FindCompany';
-import SupplierPortal from '@/routes/claims/SupplierPortal';
+import WhatsAppAuth from '@/routes/auth/WhatsAppAuth';
 import ClaimsInbox from '@/routes/claims/ClaimsInbox';
 import Landing from '@/routes/marketing/Landing';
 import ProjectsList from '@/routes/projects/ProjectsList';
@@ -38,15 +33,17 @@ export default function App() {
       <Routes>
       {/* Public routes */}
       <Route path="/" element={<Landing />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/login" element={<WhatsAppAuth mode="login" />} />
+      <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
       {/* Spends a one-shot WhatsApp login token and starts a session. Public
           because the token is the credential; it lives 5 minutes and works once. */}
       <Route path="/wa-login" element={<WaLogin />} />
-      <Route path="/signup" element={<SignupCompany />} />
-      <Route path="/find-company" element={<FindCompany />} />
-      <Route path="/supplier-claims" element={<SupplierPortal />} />
-      <Route path="/join/:token" element={<JoinPage />} />
+      <Route path="/signup" element={<WhatsAppAuth mode="register" />} />
+      {/* Retired public entry points never expose the old company directory or
+          shared-password flow. Existing links land on WhatsApp onboarding. */}
+      <Route path="/find-company" element={<Navigate to="/signup" replace />} />
+      <Route path="/supplier-claims" element={<Navigate to="/login" replace />} />
+      <Route path="/join/:token" element={<Navigate to="/signup" replace />} />
       {/* Public, no-login invoice view opened by the client via secure token. */}
       <Route path="/public/invoices/:token" element={<PublicInvoice />} />
 

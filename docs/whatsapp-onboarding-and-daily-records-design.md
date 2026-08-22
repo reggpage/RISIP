@@ -76,16 +76,23 @@ create function private.auth_role() ... as $$
 $$;
 ```
 
-Joining paths that exist: company shared-password (`join-company`), project invite
-token + company password (`join-project`), and company signup (`signup-company`).
-`invite_links` is **project-scoped** (`project_id NOT NULL`) and role-bound — there
-is no company-level invite code.
+> Historical note (superseded August 2026): the public shared-password and email
+> registration paths described below were retired when Risip moved to WhatsApp
+> passwordless onboarding. Their database history remains intact, but the public
+> frontend and legacy Edge Function source no longer expose these flows.
+
+The former joining paths were company shared-password (`join-company`), project
+invite token + company password (`join-project`), and company signup
+(`signup-company`). `invite_links` is **project-scoped** (`project_id NOT NULL`)
+and role-bound — there is no company-level invite code.
 
 ## 5. Magic link / passwordless
 
-**None.** The app uses `signInWithPassword`, email OTP at signup
-(`verifyOtp type:'signup'`), and `resetPasswordForEmail` + `verifyOtp type:'recovery'`.
-`login-by-company` is disabled (returns 410). Phone/SMS auth is not configured.
+**Implemented (August 2026).** Public login and registration now start with a
+WhatsApp number. Linked users receive a five-minute, single-use `/wa-login` link;
+unknown users enter the existing WhatsApp onboarding conversation. Risip does not
+use SMS phone auth or expose email/password login publicly. See
+`docs/whatsapp-passwordless-auth.md` for the current design and rollout gates.
 
 The WhatsApp deep link (`/receipts?receipt=<id>`) is a **plain authenticated link** —
 it assumes an existing web session and grants nothing by itself. That is the correct
@@ -98,8 +105,10 @@ Works: image → idempotent record → media download → storage under
 `extract-receipt` → always `status='pending_review'`, `source='whatsapp'`. Never
 counts as approved spend without a human completing it in the web app.
 
-**Unknown senders get no onboarding.** The webhook resolves an identity and, without
-one, does not begin any sign-up conversation.
+**Unknown senders enter onboarding.** The webhook resolves an identity and starts
+the language and create/join-business flow when no linked identity exists. Account,
+profile, company, and membership records are created together only when onboarding
+is completed.
 
 ## 7. Active business context
 

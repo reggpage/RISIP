@@ -37,22 +37,6 @@ export default function AppShell() {
   }, []);
 
   useEffect(() => {
-    if (auth.status !== 'signed-in') return;
-    const noticeKey = `risip:emailVerifyNoticeShown:${auth.session.user.id}`;
-    if (window.localStorage.getItem(noticeKey) === '1') return;
-    let cancelled = false;
-    void supabase.auth.getUser().then(({ data }) => {
-      if (cancelled || data.user?.email_confirmed_at) return;
-      window.localStorage.setItem(noticeKey, '1');
-      toast.info('Verify your email for password recovery and claim notifications.', {
-        label: 'Open settings',
-        onClick: () => navigate('/settings?verify=email'),
-      });
-    });
-    return () => { cancelled = true; };
-  }, [auth.status, navigate, toast]);
-
-  useEffect(() => {
     if (!profile?.id) return;
     if (!notificationToasts) return;
     const channel = supabase

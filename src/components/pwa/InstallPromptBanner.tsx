@@ -90,7 +90,7 @@ export default function InstallPromptBanner() {
     <aside
       role="dialog"
       aria-label={sw ? 'Sakinisha programu ya Risip' : 'Install Risip App'}
-      className="fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-[70] mx-auto flex max-w-md items-center gap-3 rounded-2xl border border-surface-border bg-white p-3 shadow-2xl sm:left-auto sm:right-4 sm:mx-0"
+      className="fixed right-3 top-[calc(env(safe-area-inset-top)+4.75rem)] z-[70] flex w-[calc(100%-1.5rem)] max-w-sm items-center gap-3 rounded-2xl border border-surface-border bg-white p-3 shadow-2xl sm:right-4"
     >
       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#DD2D4A] text-white">
         <RisipLogo className="h-8 w-8" />
@@ -105,12 +105,11 @@ export default function InstallPromptBanner() {
         type="button"
         onClick={() => void install()}
         disabled={installing}
-        className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl bg-[#DD2D4A] px-3 text-sm font-semibold text-white shadow-sm transition hover:bg-[#C92643] focus:outline-none focus:ring-2 focus:ring-[#DD2D4A] focus:ring-offset-2 disabled:cursor-wait disabled:opacity-70"
+        aria-label={installing ? (sw ? 'Inafungua usakinishaji' : 'Opening installer') : (sw ? 'Sakinisha Risip' : 'Install Risip App')}
+        title={sw ? 'Sakinisha Risip' : 'Install Risip App'}
+        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#DD2D4A] text-white shadow-sm transition hover:bg-[#C92643] focus:outline-none focus:ring-2 focus:ring-[#DD2D4A] focus:ring-offset-2 disabled:cursor-wait disabled:opacity-70"
       >
-        <Download className="h-4 w-4" aria-hidden />
-        {installing
-          ? (sw ? 'Inafungua…' : 'Opening…')
-          : (sw ? 'Sakinisha Risip' : 'Install Risip App')}
+        <Download className={`h-5 w-5 ${installing ? 'animate-pulse' : ''}`} aria-hidden />
       </button>
       <button
         type="button"

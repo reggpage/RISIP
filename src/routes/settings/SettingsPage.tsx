@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Bell, Building2, Check, Copy, KeyRound, Languages, Lock, Mail, MessageCircle, Printer, User, Users } from 'lucide-react';
+import { AlertTriangle, Bell, Building2, Check, Copy, Languages, Mail, MessageCircle, Printer, User, Users } from 'lucide-react';
 import { getLang, setLang, LANG_OPTIONS, type LangCode } from '@/lib/lang';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
-import PasswordField from '@/components/ui/PasswordField';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { CompanyProfileSkeleton, MemberRowSkeleton } from '@/components/ui/Skeleton';
 import { useToast } from '@/components/ui/Toast';
@@ -63,13 +62,6 @@ export default function SettingsPage() {
   const [myPhone, setMyPhone] = useState('');
   const [savingMe, setSavingMe] = useState(false);
   const [editingMe, setEditingMe] = useState(false);
-  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
-  const [emailChangeOpen, setEmailChangeOpen] = useState(false);
-  const [newEmail, setNewEmail] = useState('');
-  const [emailPassword, setEmailPassword] = useState('');
-  const [changingEmail, setChangingEmail] = useState(false);
-  const [emailChangeMsg, setEmailChangeMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-  const emailSectionRef = useRef<HTMLElement | null>(null);
   const [notificationToasts, setNotificationToasts] = useState(() =>
     window.localStorage.getItem('risip:notificationToasts') !== 'off',
   );
@@ -99,21 +91,6 @@ export default function SettingsPage() {
   const [membersError, setMembersError] = useState<string | null>(null);
   const [busyMember, setBusyMember] = useState<string | null>(null);
 
-  // ── Change personal password ───────────────────────────────────────────────
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [changingPw, setChangingPw] = useState(false);
-  const [personalPasswordOpen, setPersonalPasswordOpen] = useState(false);
-  const [pwMsg, setPwMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
-
-  // ── Staff shared password (owner only) ────────────────────────────────────
-  const [staffPasswordOpen, setStaffPasswordOpen] = useState(false);
-  const [staffCurrentPw, setStaffCurrentPw] = useState('');
-  const [staffNewPw, setStaffNewPw] = useState('');
-  const [staffConfirmPw, setStaffConfirmPw] = useState('');
-  const [settingStaffPw, setSettingStaffPw] = useState(false);
-  const [staffPwMsg, setStaffPwMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // ── Delete company ─────────────────────────────────────────────────────────
   const [deleteInput, setDeleteInput] = useState('');
@@ -127,22 +104,6 @@ export default function SettingsPage() {
     setMyName(profile.full_name ?? '');
     setMyPhone(profile.phone ?? '');
   }, [profile]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void supabase.auth.getUser().then(({ data }) => {
-      if (cancelled) return;
-      setEmailVerified(Boolean(data.user?.email_confirmed_at));
-    });
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('verify') !== 'email') return;
-    window.setTimeout(() => {
-      emailSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 150);
-  }, []);
 
   async function saveMyProfile() {
     if (!profile) return;
@@ -286,105 +247,6 @@ export default function SettingsPage() {
     setBusyMember(null);
   }
 
-  async function changePassword() {
-    if (!currentPassword) return setPwMsg({ type: 'err', text: 'Enter your current personal password.' });
-    if (newPassword !== confirmPassword) return setPwMsg({ type: 'err', text: sw.auth.passwordMismatch });
-    if (newPassword.length < 8) return setPwMsg({ type: 'err', text: sw.auth.passwordHint });
-    setChangingPw(true);
-    setPwMsg(null);
-    const currentEmail = auth.status === 'signed-in' ? (auth.session.user.email ?? '') : '';
-    const { error: reauthError } = await supabase.auth.signInWithPassword({
-      email: currentEmail,
-      password: currentPassword,
-    });
-    if (reauthError) {
-      setChangingPw(false);
-      setPwMsg({ type: 'err', text: 'Your current personal password is incorrect.' });
-      return;
-    }
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    setChangingPw(false);
-    if (error) setPwMsg({ type: 'err', text: error.message });
-    else {
-      setPwMsg({ type: 'ok', text: sw.settings.passwordChanged });
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setPersonalPasswordOpen(false);
-    }
-  }
-
-  async function changeEmail() {
-    const currentEmail = auth.status === 'signed-in' ? (auth.session.user.email ?? '').trim().toLowerCase() : '';
-    const nextEmail = newEmail.trim().toLowerCase();
-    if (!currentEmail || !nextEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail)) {
-      setEmailChangeMsg({ type: 'err', text: 'Enter a valid new email address.' });
-      return;
-    }
-    if (nextEmail === currentEmail) {
-      setEmailChangeMsg({ type: 'err', text: 'The new email must be different from your current email.' });
-      return;
-    }
-    if (!emailPassword) {
-      setEmailChangeMsg({ type: 'err', text: 'Enter your current personal password to continue.' });
-      return;
-    }
-
-    setChangingEmail(true);
-    setEmailChangeMsg(null);
-    const { error: reauthError } = await supabase.auth.signInWithPassword({
-      email: currentEmail,
-      password: emailPassword,
-    });
-    if (reauthError) {
-      setChangingEmail(false);
-      setEmailChangeMsg({ type: 'err', text: 'Your current personal password is incorrect.' });
-      return;
-    }
-
-    const { error } = await supabase.auth.updateUser({ email: nextEmail });
-    setChangingEmail(false);
-    if (error) {
-      setEmailChangeMsg({ type: 'err', text: error.message });
-      return;
-    }
-    setEmailChangeMsg({
-      type: 'ok',
-      text: 'Confirmation emails were sent to your current and new email addresses. The change applies after both are confirmed.',
-    });
-    setNewEmail('');
-    setEmailPassword('');
-    setEmailChangeOpen(false);
-  }
-
-  async function setStaffPassword() {
-    if (!company) return;
-    if (!staffCurrentPw) return setStaffPwMsg({ type: 'err', text: 'Enter the current staff shared password.' });
-    if (staffNewPw.length < 6) return setStaffPwMsg({ type: 'err', text: 'New password must be at least 6 characters.' });
-    if (staffNewPw !== staffConfirmPw) return setStaffPwMsg({ type: 'err', text: 'New passwords do not match.' });
-    setSettingStaffPw(true);
-    setStaffPwMsg(null);
-    const { data: validCurrent, error: verifyError } = await supabase.rpc('verify_company_password', {
-      p_company_id: company.id,
-      p_password: staffCurrentPw,
-    });
-    if (verifyError || !validCurrent) {
-      setSettingStaffPw(false);
-      setStaffPwMsg({ type: 'err', text: 'The current staff shared password is incorrect.' });
-      return;
-    }
-    const { error } = await supabase.rpc('set_company_password', { p_password: staffNewPw });
-    setSettingStaffPw(false);
-    if (error) setStaffPwMsg({ type: 'err', text: error.message });
-    else {
-      setStaffPwMsg({ type: 'ok', text: sw.settings.companyPasswordSet });
-      setStaffCurrentPw('');
-      setStaffNewPw('');
-      setStaffConfirmPw('');
-      setStaffPasswordOpen(false);
-    }
-  }
-
   async function deleteCompany() {
     if (!company || !isOwner) return;
     if (deleteInput.trim() !== company.name) return setDeleteError(sw.settings.deleteCompanyMismatch);
@@ -478,115 +340,6 @@ export default function SettingsPage() {
       </header>
 
       <div className="divide-y divide-surface-border">
-        <section ref={emailSectionRef}>
-          <SettingsSection
-            icon={<Mail className="h-4 w-4" />}
-            title="Email verification"
-            description="Verify your email so password resets, security notices, and supplier claim updates can reach the right person."
-          >
-            <Card className="p-6 sm:p-8">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-ink">
-                    {emailVerified === null
-                      ? 'Checking email verification...'
-                      : emailVerified
-                        ? 'Your email is verified'
-                        : 'Your email is not verified yet'}
-                  </div>
-                  <p className="mt-1 text-sm text-ink-muted">
-                    Verification protects account recovery and confirms where claim/payment notifications should be sent.
-                  </p>
-                </div>
-                {emailVerified === null ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-surface-muted px-3 py-1 text-sm font-medium text-ink-muted">
-                    Checking...
-                  </span>
-                ) : emailVerified ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700">
-                    <Check className="h-4 w-4" /> Verified
-                  </span>
-                ) : (
-                  <Button
-                    tint="admin"
-                    onClick={() => {
-                      toast.info('Use the verification email from Risip, or request a fresh code from login/signup.');
-                    }}
-                  >
-                    Why verify?
-                  </Button>
-                )}
-              </div>
-              <div className="mt-6 border-t border-surface-border pt-5">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Account email</p>
-                    <p className="mt-1 text-sm font-medium text-ink">
-                      {auth.status === 'signed-in' ? auth.session.user.email : '—'}
-                    </p>
-                  </div>
-                  {!emailChangeOpen && (
-                    <Button variant="secondary" tint="admin" onClick={() => {
-                      setEmailChangeMsg(null);
-                      setEmailChangeOpen(true);
-                    }}>
-                      Change email
-                    </Button>
-                  )}
-                </div>
-
-                {emailChangeOpen && (
-                  <div className="mt-5 rounded-lg border border-surface-border bg-surface-muted/40 p-4 sm:p-5">
-                    <div className="flex flex-col gap-4">
-                      <Input
-                        label="New email address"
-                        type="email"
-                        autoComplete="email"
-                        value={newEmail}
-                        onChange={(e) => setNewEmail(e.target.value)}
-                        placeholder="name@company.com"
-                      />
-                      <PasswordField
-                        label="Current personal password"
-                        autoComplete="current-password"
-                        value={emailPassword}
-                        onChange={(e) => setEmailPassword(e.target.value)}
-                        hint="This confirms the sensitive change. It is not the company access password."
-                      />
-                    </div>
-                    <p className="mt-4 text-xs leading-relaxed text-ink-muted">
-                      We will send confirmation messages to both email addresses. Your account email changes only after both confirmations.
-                    </p>
-                    {emailChangeMsg && (
-                      <p className={`mt-3 text-sm ${emailChangeMsg.type === 'ok' ? 'text-emerald-700' : 'text-red-600'}`}>
-                        {emailChangeMsg.text}
-                      </p>
-                    )}
-                    <div className="mt-5 flex flex-wrap gap-3">
-                      <Button tint="admin" disabled={changingEmail} onClick={() => void changeEmail()}>
-                        {changingEmail ? sw.common.loading : 'Send confirmation emails'}
-                      </Button>
-                      <Button variant="ghost" disabled={changingEmail} onClick={() => {
-                        setEmailChangeOpen(false);
-                        setEmailChangeMsg(null);
-                        setNewEmail('');
-                        setEmailPassword('');
-                      }}>
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                )}
-                {emailChangeMsg && !emailChangeOpen && (
-                  <p className={`mt-3 text-sm ${emailChangeMsg.type === 'ok' ? 'text-emerald-700' : 'text-red-600'}`}>
-                    {emailChangeMsg.text}
-                  </p>
-                )}
-              </div>
-            </Card>
-          </SettingsSection>
-        </section>
-
         {/* ── Language (any role) ─────────────────────────────────────────── */}
         <SettingsSection
           icon={<Bell className="h-4 w-4" />}
@@ -882,127 +635,6 @@ export default function SettingsPage() {
                     </li>
                   ))}
             </ul>
-          </Card>
-        </SettingsSection>
-        )}
-
-        {/* ── Change personal password ────────────────────────────────────── */}
-        <SettingsSection
-          icon={<KeyRound className="h-4 w-4" />}
-          title={sw.settings.changePassword}
-          description={sw.settingsCopy.changePasswordDesc}
-        >
-          <Card className={personalPasswordOpen ? 'p-6 sm:p-8' : 'border-0 bg-transparent p-0 shadow-none'}>
-            {pwMsg && <p className={`mt-4 text-sm ${pwMsg.type === 'ok' ? 'text-emerald-700' : 'text-red-600'}`}>{pwMsg.text}</p>}
-            {!personalPasswordOpen ? (
-              <div className="mt-6">
-                <Button variant="secondary" tint="admin" onClick={() => { setPwMsg(null); setPersonalPasswordOpen(true); }}>
-                  Change password
-                </Button>
-              </div>
-            ) : (
-              <div className="mt-6 rounded-lg border border-surface-border bg-surface-muted/40 p-4 sm:p-5">
-                <div className="flex flex-col gap-5">
-                  <PasswordField
-                    label="Current personal password"
-                    autoComplete="current-password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                  />
-                  <PasswordField
-                    label={sw.settings.newPassword}
-                    autoComplete="new-password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    hint={sw.auth.passwordHint}
-                  />
-                  <PasswordField
-                    label={sw.settings.confirmNewPassword}
-                    autoComplete="new-password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    error={confirmPassword.length > 0 && newPassword !== confirmPassword ? sw.auth.passwordMismatch : undefined}
-                  />
-                </div>
-                <div className="mt-6 flex flex-wrap gap-3">
-                  <Button tint="admin" disabled={changingPw} onClick={() => void changePassword()}>
-                    {changingPw ? sw.common.loading : 'Change password'}
-                  </Button>
-                  <Button variant="ghost" disabled={changingPw} onClick={() => {
-                    setPersonalPasswordOpen(false);
-                    setCurrentPassword('');
-                    setNewPassword('');
-                    setConfirmPassword('');
-                    setPwMsg(null);
-                  }}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            )}
-          </Card>
-        </SettingsSection>
-
-        {/* ── Staff shared password ───────────────────────────────────────── */}
-        {isOwner && (
-          <SettingsSection
-            icon={<Lock className="h-4 w-4" />}
-            title={sw.settings.companyPassword}
-            description={sw.settingsCopy.companyPasswordDesc}
-        >
-          <Card className="p-6 sm:p-8">
-              <p className="text-sm text-ink-muted">
-                This is the shared password staff use to find and join your company without an invite link.
-              </p>
-              {staffPwMsg && (
-                <p className={`mt-3 text-sm ${staffPwMsg.type === 'ok' ? 'text-emerald-700' : 'text-red-600'}`}>{staffPwMsg.text}</p>
-              )}
-              {!staffPasswordOpen ? (
-                <div className="mt-6">
-                  <Button tint="admin" onClick={() => { setStaffPwMsg(null); setStaffPasswordOpen(true); }}>
-                    Change password
-                  </Button>
-                </div>
-              ) : (
-                <div className="mt-6 rounded-lg border border-surface-border bg-surface-muted/40 p-4 sm:p-5">
-                  <div className="flex flex-col gap-4">
-                    <PasswordField
-                      label="Current staff shared password"
-                      autoComplete="current-password"
-                      value={staffCurrentPw}
-                      onChange={(e) => setStaffCurrentPw(e.target.value)}
-                    />
-                    <PasswordField
-                      label="New staff shared password"
-                      autoComplete="new-password"
-                      value={staffNewPw}
-                      onChange={(e) => setStaffNewPw(e.target.value)}
-                      hint="At least 6 characters"
-                    />
-                    <PasswordField
-                      label="Confirm new staff shared password"
-                      autoComplete="new-password"
-                      value={staffConfirmPw}
-                      onChange={(e) => setStaffConfirmPw(e.target.value)}
-                      error={staffConfirmPw.length > 0 && staffNewPw !== staffConfirmPw ? 'New passwords do not match.' : undefined}
-                    />
-                  </div>
-                  <div className="mt-5 flex flex-wrap gap-3">
-                    <Button tint="admin" disabled={settingStaffPw} onClick={() => void setStaffPassword()}>
-                      {settingStaffPw ? sw.common.loading : 'Change password'}
-                    </Button>
-                    <Button variant="ghost" disabled={settingStaffPw} onClick={() => {
-                      setStaffPasswordOpen(false);
-                      setStaffCurrentPw('');
-                      setStaffNewPw('');
-                      setStaffConfirmPw('');
-                      setStaffPwMsg(null);
-                    }}>
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              )}
           </Card>
         </SettingsSection>
         )}

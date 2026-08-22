@@ -27,7 +27,7 @@ const COPY = {
     used: 'Link hii ilishatumika. Andika "ingia" WhatsApp upate mpya.',
     invalid: 'Link hii si sahihi. Andika "ingia" WhatsApp upate mpya.',
     missing: 'Hakuna link hapa. Fungua ile uliyotumiwa WhatsApp.',
-    toLogin: 'Ingia kwa barua pepe',
+    toLogin: 'Omba link mpya WhatsApp',
   },
   en: {
     working: 'Signing you in…',
@@ -36,7 +36,7 @@ const COPY = {
     used: 'That link has already been used. Send "login" on WhatsApp for a fresh one.',
     invalid: 'That link is not valid. Send "login" on WhatsApp for a fresh one.',
     missing: 'There is no link here. Open the one sent to you on WhatsApp.',
-    toLogin: 'Sign in with email instead',
+    toLogin: 'Request a new WhatsApp link',
   },
 } as const;
 

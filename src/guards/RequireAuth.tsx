@@ -17,8 +17,8 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  // Auth user exists but no profile row — signup-company didn't finish, or the profile
-  // was deleted. Give the user a way out rather than an infinite spinner.
+  // Auth user exists but no profile row — WhatsApp onboarding did not finish,
+  // or the profile was deleted. Never open the app without company context.
   if (!auth.profile) {
     return (
       <div className="mx-auto flex min-h-full max-w-sm items-center px-4 py-16">
