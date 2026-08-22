@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { makeScanGate } from '../scanner';
+import { vi } from 'vitest';
+import {
+  createMagnifierControls,
+  makeScanGate,
+  preferredFocusMode,
+  zoomFromCapabilities,
+} from '../scanner';
 
 // The rule that stands between a camera and the wrong product being registered.
 const EAN13 = '6011040121093';
@@ -62,5 +68,63 @@ describe('a code has to be read twice before it counts', () => {
     gate('6011040121094'); gate('6011040121094'); gate('6011040121094');
     gate('hello'); gate('hello');
     expect(seen).toEqual([]);
+  });
+});
+
+describe('camera magnifier capabilities', () => {
+  it('prefers macro focus and falls back to continuous focus', () => {
+    expect(preferredFocusMode({ focusMode: ['manual', 'continuous', 'macro'] })).toBe('macro');
+    expect(preferredFocusMode({ focusMode: ['single-shot', 'continuous'] })).toBe('continuous');
+    expect(preferredFocusMode({ focusMode: ['manual'] })).toBeNull();
+  });
+
+  it('starts hardware zoom at 2x and respects the camera range', () => {
+    expect(zoomFromCapabilities({ zoom: { min: 1, max: 8, step: 0.1 } })).toEqual({
+      min: 1, max: 8, step: 0.1, value: 2,
+    });
+    expect(zoomFromCapabilities({ zoom: { min: 3, max: 10, step: 0.5 } })).toEqual({
+      min: 3, max: 10, step: 0.5, value: 3,
+    });
+  });
+
+  it('uses the camera setting for the slider and hides it when unsupported', () => {
+    expect(zoomFromCapabilities({ zoom: { min: 1, max: 5 } }, 3.5)).toEqual({
+      min: 1, max: 5, step: 0.1, value: 3.5,
+    });
+    expect(zoomFromCapabilities({}, 2)).toBeNull();
+    expect(zoomFromCapabilities({ zoom: { min: 1, max: 1 } }, 1)).toBeNull();
+  });
+
+  it('applies macro focus and a safe 2x default only when supported', async () => {
+    const applyConstraints = vi.fn().mockResolvedValue(undefined);
+    const track = {
+      readyState: 'live',
+      getCapabilities: () => ({ focusMode: ['continuous', 'macro'], zoom: { min: 1, max: 5, step: 0.1 } }),
+      getSettings: () => ({ zoom: 1 }),
+      applyConstraints,
+    };
+    const controls = createMagnifierControls({ getVideoTracks: () => [track] } as unknown as MediaStream);
+
+    await controls.initialize();
+
+    expect(applyConstraints).toHaveBeenNthCalledWith(1, { advanced: [{ focusMode: 'macro' }] });
+    expect(applyConstraints).toHaveBeenNthCalledWith(2, { advanced: [{ zoom: 2 }] });
+    expect(controls.zoom()?.value).toBe(2);
+  });
+
+  it('falls back without applying constraints on a camera with no magnifier capabilities', async () => {
+    const applyConstraints = vi.fn();
+    const controls = createMagnifierControls({
+      getVideoTracks: () => [{
+        readyState: 'live',
+        getCapabilities: () => ({}),
+        getSettings: () => ({}),
+        applyConstraints,
+      }],
+    } as unknown as MediaStream);
+
+    await expect(controls.initialize()).resolves.toBeUndefined();
+    expect(controls.zoom()).toBeNull();
+    expect(applyConstraints).not.toHaveBeenCalled();
   });
 });

@@ -22,6 +22,13 @@ import { readBarcode, type Barcode } from '../../../supabase/functions/_shared/b
 
 export type ScanEngine = 'native' | 'zxing';
 
+export type CameraZoom = {
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+};
+
 export type ScannerHandle = {
   engine: ScanEngine;
   /**
@@ -40,6 +47,9 @@ export type ScannerHandle = {
   /** Torch, where the camera has one. Returns whether it is now on. */
   toggleTorch: () => Promise<boolean>;
   hasTorch: () => boolean;
+  /** Hardware zoom, where the selected camera exposes it. */
+  zoom: () => CameraZoom | null;
+  setZoom: (value: number) => Promise<number | null>;
   /**
    * What the loop has actually done.
    *
@@ -99,14 +109,126 @@ export function makeScanGate(onCode: (found: Barcode) => void, now: () => number
 }
 
 async function openCamera(deviceId?: string): Promise<MediaStream> {
-  return navigator.mediaDevices.getUserMedia({
-    video: deviceId
+  const video = {
+    ...(deviceId
       ? { deviceId: { exact: deviceId } }
       // The back camera, and enough resolution to resolve thin bars. A phone
       // handed the default front camera points at the shopkeeper's face.
-      : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      : { facingMode: { ideal: 'environment' } }),
+    // Ask for the sharpest useful picture. These are ideals, not hard minimums,
+    // so a lower-resolution phone still opens instead of failing outright.
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+  };
+  return navigator.mediaDevices.getUserMedia({
+    video,
     audio: false,
   });
+}
+
+type NumericCapability = { min: number; max: number; step?: number };
+type MagnifierCapabilities = MediaTrackCapabilities & {
+  focusMode?: string[];
+  zoom?: NumericCapability;
+};
+type MagnifierSettings = MediaTrackSettings & { zoom?: number };
+
+function finiteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+export function preferredFocusMode(capabilities: unknown): 'macro' | 'continuous' | null {
+  const modes = (capabilities as { focusMode?: unknown } | null)?.focusMode;
+  if (!Array.isArray(modes)) return null;
+  if (modes.includes('macro')) return 'macro';
+  if (modes.includes('continuous')) return 'continuous';
+  return null;
+}
+
+export function zoomFromCapabilities(capabilities: unknown, current?: unknown): CameraZoom | null {
+  const capability = (capabilities as { zoom?: Partial<NumericCapability> } | null)?.zoom;
+  if (!capability || !finiteNumber(capability.min) || !finiteNumber(capability.max)) return null;
+  if (capability.max <= capability.min) return null;
+  const step = finiteNumber(capability.step) && capability.step > 0 ? capability.step : 0.1;
+  const value = finiteNumber(current)
+    ? Math.min(capability.max, Math.max(capability.min, current))
+    : Math.min(capability.max, Math.max(capability.min, 2));
+  return { min: capability.min, max: capability.max, step, value };
+}
+
+/**
+ * Makes a normal camera behave like a magnifier where the hardware permits it.
+ *
+ * focusMode and zoom are real MediaStream constraints but are still missing
+ * from some TypeScript DOM definitions. Every capability is checked at runtime
+ * before it is requested; an old iPhone or a laptop webcam simply keeps its
+ * normal focus and exposes no slider.
+ */
+export function createMagnifierControls(stream: MediaStream) {
+  const track = stream.getVideoTracks()[0];
+  let zoom: CameraZoom | null = null;
+
+  const live = () => Boolean(track && track.readyState === 'live');
+  const applyAdvanced = async (constraint: Record<string, string | number>) => {
+    if (!live()) return false;
+    try {
+      await track.applyConstraints({ advanced: [constraint] } as unknown as MediaTrackConstraints);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  return {
+    initialize: async () => {
+      if (!live() || typeof track.getCapabilities !== 'function') return;
+      try {
+        const capabilities = track.getCapabilities() as MagnifierCapabilities;
+        const preferred = preferredFocusMode(capabilities);
+        if (preferred) {
+          const focused = await applyAdvanced({ focusMode: preferred });
+          // A few cameras advertise macro but only accept continuous through
+          // the browser. Fall back once, then leave the hardware alone.
+          if (!focused && preferred === 'macro' && capabilities.focusMode?.includes('continuous')) {
+            await applyAdvanced({ focusMode: 'continuous' });
+          }
+        }
+
+        let setting: number | undefined;
+        try {
+          setting = (track.getSettings() as MagnifierSettings).zoom;
+        } catch {
+          // getSettings is not reliable on older WebKit; capabilities suffice.
+        }
+        zoom = zoomFromCapabilities(capabilities, setting);
+        if (!zoom) return;
+
+        // Start close enough to read a small packet, but clamp to what this
+        // exact camera supports. No zoom is requested on unsupported devices.
+        const initial = Math.min(zoom.max, Math.max(zoom.min, 2));
+        if (await applyAdvanced({ zoom: initial })) zoom = { ...zoom, value: initial };
+      } catch {
+        // Capability inspection itself can throw on partially implemented
+        // browsers. Standard camera mode remains fully usable.
+        zoom = null;
+      }
+    },
+    zoom: () => zoom ? { ...zoom } : null,
+    setZoom: async (requested: number) => {
+      if (!zoom || !finiteNumber(requested)) return null;
+      const next = Math.min(zoom.max, Math.max(zoom.min, requested));
+      if (!await applyAdvanced({ zoom: next })) return zoom.value;
+      let actual = next;
+      try {
+        const reported = (track.getSettings() as MagnifierSettings).zoom;
+        if (finiteNumber(reported)) actual = Math.min(zoom.max, Math.max(zoom.min, reported));
+      } catch {
+        // The applied value is still the best available source of truth.
+      }
+      zoom = { ...zoom, value: actual };
+      return actual;
+    },
+  };
 }
 
 function torchControls(stream: MediaStream) {
@@ -206,6 +328,8 @@ export async function startScanner(options: StartOptions): Promise<ScannerHandle
 
   const gate = makeScanGate(options.onCode);
   const torch = torchControls(stream);
+  const magnifier = createMagnifierControls(stream);
+  await magnifier.initialize();
   const canvas = document.createElement('canvas');
   let stopped = false;
   let timer = 0;
@@ -289,6 +413,8 @@ export async function startScanner(options: StartOptions): Promise<ScannerHandle
     engine,
     hasTorch: torch.hasTorch,
     toggleTorch: torch.toggleTorch,
+    zoom: magnifier.zoom,
+    setZoom: magnifier.setZoom,
     stats: () => ({ frames, decodes }),
     pause: () => { paused = true; },
     // A fresh gate on resume: the packet in front of the lens when scanning
