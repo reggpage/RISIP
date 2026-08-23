@@ -3154,7 +3154,9 @@ Deno.serve(async (req) => {
 
         // "Mishikaki ipi?" The answer is put back into the sentence they wrote,
         // so the sale is read again exactly as if they had typed the full name.
-        if (comboVariantPending && releasesParkedQuestion(body ?? '')) {
+        const variantAnswer = comboVariantPending
+          ? parseComboVariant(body, comboVariantPending.candidates) : null;
+        if (comboVariantPending && !variantAnswer && releasesParkedQuestion(body ?? '')) {
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'combo_variant', 'abandoned', 'skipped');
         } else if (comboVariantPending) {
@@ -3189,7 +3191,9 @@ Deno.serve(async (req) => {
         // "chips kuku" — which measure of chicken, and how many of what rides
         // along. One question, once, and the answer is offered for saving so it
         // is never asked twice.
-        if (comboPending && releasesParkedQuestion(body ?? '')) {
+        const comboAnswer = comboPending
+          ? parseComboAnswer(body, comboQuestions(comboPending.split), new Map(comboPending.units)) : null;
+        if (comboPending && !comboAnswer && releasesParkedQuestion(body ?? '')) {
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'combo', 'abandoned', 'skipped');
         } else if (comboPending) {
@@ -3278,11 +3282,13 @@ Deno.serve(async (req) => {
         // Which of the two prices was this sold at? The sale waits here, whole,
         // until the answer comes back, and then goes through pricing again as
         // though the message had said "jumla" in the first place.
-        if (bandPending && releasesParkedQuestion(body ?? '')) {
+        const bandAnswer = bandPending
+          ? parsePriceBandAnswer(body, bandPending.choices) : null;
+        if (bandPending && !bandAnswer && releasesParkedQuestion(body ?? '')) {
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'price_band', 'abandoned', 'skipped');
         } else if (bandPending) {
-          const heard = parsePriceBandAnswer(body, bandPending.choices);
+          const heard = bandAnswer;
           if (!heard) {
             await reply(phone, priceBandQuestion(bandPending.choices, lang));
             await audit(db, identity, waMessageId, 'price_band', 'reask', 'skipped');

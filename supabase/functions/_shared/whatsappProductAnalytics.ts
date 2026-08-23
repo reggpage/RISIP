@@ -51,12 +51,17 @@ export function parseProductAnalyticsRequest(text: string | null | undefined, no
   // table of sales.
   if (/\b(?:zimeisha|zilizoisha|zimekwisha|kimeisha|out of stock)\b/.test(value)) return null;
   const asksProduct = /(?:\b(?:bidhaa|bidha|product|products)\b.*\b(?:gani|which|zote|inauza|inauzika|imeuzwa|iliuzwa|ninazouza|ninauza|selling|sold|faida|profit|revenue|mapato)\b)|(?:\b(?:inauza zaidi|inauza sana|inauza ngapi|imeuzw\w* ngap\w*|iliuzwa ngapi|(?:ina|kina)uzika sana|nini (?:kiliuza|iliuza|kiliuzwa|iliyouzwa) (?:zaidi|sana)|best selling|(?:what |wht )?sold (?:the )?most|top)\b)/.test(value);
+  // MEASURED FAILURE: "nini kimeuzika leo" — what sold today — was answered
+  // with the day's cash summary, because this parser only recognised the
+  // question when it carried the word "bidhaa". A shopkeeper asking what moved
+  // says "nini", not "bidhaa gani".
+  const asksWhatSold = /^(?:nini|vitu gani|what)(?:\s+na\s+nini)?\s+(?:ki|zi|vi)?(?:me|li)uz\w*/i.test(value);
   const asksProfit = /\b(faida|margin|profit|earn)\b/.test(value);
   const asksRevenue = /\b(mapato|revenue|money|fedha nyingi|pesa nyingi)\b/.test(value);
   // A bare "faida ya leo" is a period profit question, not a product ranking.
   // Product analytics only claims messages that explicitly mention products or
   // selling; this prevents it from stealing the future profit-intent route.
-  if (!asksProduct) return null;
+  if (!asksProduct && !asksWhatSold) return null;
 
   const period: ProductPeriod = /\b(leo|today)\b/.test(value)
     ? 'today'
