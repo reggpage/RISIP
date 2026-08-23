@@ -133,7 +133,11 @@ function dashToSpace(text: string | null | undefined): string {
   return String(text ?? '').replace(/\s*[-–—−]\s*(?=[0-9])/gu, ' ');
 }
 
-const OPENER = /^(?:leo\s+|today\s+)?(?:nimeuza|niliuza|nimuza|uza|mauzo|(?:i\s+)?sold)\b/iu;
+// MEASURED (scripts/interrogate.ts): "tumeuza daftari 5" — WE sold — was not a
+// sale here and fell through to be asked whether five was the price or the
+// total. Any shop with a second person behind the counter says "tumeuza", and
+// the plural was simply never in this list.
+const OPENER = /^(?:leo\s+|today\s+)?(?:nimeuza|niliuza|nimuza|tumeuza|tuliuza|uza|mauzo|(?:i\s+|we\s+)?sold)\b/iu;
 
 /**
  * "Mauzo" standing alone at the top of a block, saying what the block is.
@@ -228,7 +232,12 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
     return items.length > 0 ? { kind: 'quantity_sale', items, expenses } : null;
   }
 
-  const said = clean(dashToSpace(text));
+  // MEASURED (scripts/interrogate.ts): "nimeuza marker 5 cash" was not a sale.
+  // The leftover check below counts letters, "cash" is four of them, and the
+  // whole line was handed to the parser that asks whether five is the price.
+  // How it was paid is not part of what was sold — see TRAILING_CHATTER, which
+  // keeps "mkopo" and "deni" precisely because those are not payment methods.
+  const said = stripTrailingChatter(clean(dashToSpace(text)));
   if (!said || !OPENER.test(said)) return null;
   if (STATES_MONEY.test(said)) return null;
 
@@ -297,8 +306,18 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
  * but a trailing word. Only stripped from the END, and only these words: cutting
  * anywhere else would eat a product name.
  */
-const TRAILING_CHATTER =
-  /(?:[,\s]+(?:leo|jana|juzi|asubuhi|mchana|jioni|usiku|tu|basi|kabisa|sasa|hivi|hapa|today|now|only))+\s*$/iu;
+// MEASURED (scripts/interrogate.ts, chaos templates): "nimeuza marker 5 cash"
+// was not a sale. One English word on the end and the whole line went to "is
+// five the price or the total?".
+//
+// How it was PAID is not part of what was sold. Only the cash-shaped words are
+// dropped: "mkopo" and "deni" stay, because those do not describe a payment
+// method — they say the goods left without money, which is a different record
+// entirely and must never be swept off the end of a line.
+const TRAILING_CHATTER = new RegExp(
+  '(?:[,\\s]+(?:leo|jana|juzi|asubuhi|mchana|jioni|usiku|tu|basi|kabisa|sasa|hivi|hapa|today|now|only'
+  + '|cash|taslimu|pesa\\s+taslimu|mpesa|m-pesa|tigopesa|tigo\\s+pesa|airtel\\s+money|halopesa|mixx'
+  + '))+\\s*$', 'iu');
 
 /** "leo mambo hovyo", "biashara ngumu" — a whole clause of mood, not data. */
 const TRAILING_MOOD =

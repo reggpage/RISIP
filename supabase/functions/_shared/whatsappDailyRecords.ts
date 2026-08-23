@@ -57,7 +57,11 @@ export type DailyRecordConversation = {
 
 export const MAX_DAILY_RECORD_AMOUNT = 100_000_000;
 
-const MONEY_PATTERN = '(?:@\\s*)?(?:(?:tshs?|tzs|sh)\\s*)?[0-9][0-9,]*(?:\\.[0-9]+)?\\s*(?:k\\b)?\\s*(?:/=)?';
+// "/=" and "/-" both mean shillings on a Tanzanian receipt, and both get typed.
+// MEASURED (scripts/interrogate.ts): "nimelipa umeme 20000/=" recorded twenty
+// thousand; "nimelipa umeme 20000/-" recorded nothing and asked what the amount
+// was, because only one of the two suffixes was here.
+const MONEY_PATTERN = '(?:@\\s*)?(?:(?:tshs?|tzs|sh)\\s*)?[0-9][0-9,]*(?:\\.[0-9]+)?\\s*(?:k\\b)?\\s*(?:/[=-])?';
 const QUANTITY_PATTERN = '[0-9]+(?:\\.[0-9]+)?';
 
 type MoneyToken = { raw: string; value: number; start: number; end: number };
@@ -87,7 +91,70 @@ const NUMBER_WORDS: Record<string, string> = {
   sita: '6', saba: '7', nane: '8', tisa: '9', kumi: '10', kuminamoja: '11', kuminambili: '12',
   kuminatatu: '13', kuminanne: '14', kuminatano: '15', kuminasita: '16', kuminasaba: '17',
   kuminanane: '18', kuminatisa: '19', ishirini: '20',
+  // The tens. Without them "hamsini" was not a number at all, so "nimelipa
+  // mshahara hamsini elfu" had no amount in it.
+  thelathini: '30', arobaini: '40', hamsini: '50', sitini: '60',
+  sabini: '70', themanini: '80', tisini: '90',
 };
+
+/**
+ * The words that make a number BIG.
+ *
+ * MEASURED FAILURE (scripts/interrogate.ts, chaos templates): "nimelipa umeme
+ * elfu ishirini" — twenty thousand shillings — was recorded as **TSh 20**.
+ * "laki mbili" became 2. The digit table above turned "ishirini" into 20 and
+ * then nothing multiplied it, so the message parsed cleanly, confirmed cleanly,
+ * and put a number three orders of magnitude too small into the ledger. A
+ * failure that parses is worse than one that does not: nobody is asked to check
+ * it.
+ *
+ * This is how money is said out loud in Tanzania. "Elfu tano" is not slang and
+ * not an edge case; it is the default.
+ */
+const MULTIPLIER_WORDS: Record<string, number> = {
+  mia: 100, elfu: 1000, elf: 1000, laki: 100_000, milioni: 1_000_000, milion: 1_000_000,
+};
+const MULTIPLIERS = Object.keys(MULTIPLIER_WORDS).join('|');
+
+/**
+ * Collapses "elfu 7 na mia 5" into 7500.
+ *
+ * Each resolved chunk is wrapped in a sentinel so the final pass can tell a
+ * number that CAME FROM a multiplier from an ordinary number standing next to
+ * one. Without that, "nimeuza daftari 5 na elfu 2" would add the five notebooks
+ * to the two thousand shillings.
+ *
+ * A multiplier absorbs the compound that follows it — "elfu ishirini na tano"
+ * is twenty-five thousand, not twenty thousand and five — but stops at the next
+ * multiplier, because "elfu saba na mia tano" is seven thousand five hundred.
+ */
+function collapseMultipliers(text: string): string {
+  const open = '⸢';
+  const close = '⸣';
+  let out = text;
+
+  // <multiplier> <number> [na <number>]
+  out = out.replace(
+    new RegExp(`\\b(${MULTIPLIERS})\\s+([0-9]+(?:\\.[0-9]+)?)(?:\\s+na\\s+([0-9]+(?:\\.[0-9]+)?))?(?!\\s*(?:${MULTIPLIERS})\\b)`, 'gi'),
+    (_all, word: string, first: string, second: string | undefined) => {
+      const scale = MULTIPLIER_WORDS[word.toLowerCase()];
+      const value = (Number(first) + (second === undefined ? 0 : Number(second))) * scale;
+      return `${open}${value}${close}`;
+    },
+  );
+  // <number> <multiplier> — "5 elfu", the order English speakers reach for.
+  out = out.replace(
+    new RegExp(`\\b([0-9]+(?:\\.[0-9]+)?)\\s+(${MULTIPLIERS})\\b`, 'gi'),
+    (_all, first: string, word: string) =>
+      `${open}${Number(first) * MULTIPLIER_WORDS[word.toLowerCase()]}${close}`,
+  );
+  // Two resolved chunks joined by "na" are one amount: 7000 na 500 → 7500.
+  const joined = new RegExp(`${open}([0-9.]+)${close}\\s+na\\s+${open}([0-9.]+)${close}`, 'g');
+  while (joined.test(out)) {
+    out = out.replace(joined, (_all, a: string, b: string) => `${open}${Number(a) + Number(b)}${close}`);
+  }
+  return out.replace(new RegExp(`[${open}${close}]`, 'g'), '');
+}
 
 export function normalizeNumberWords(text: string): string {
   const protectedPhrases: string[] = [];
@@ -114,11 +181,15 @@ export function normalizeNumberWords(text: string): string {
     .replace(/\b([0-9]+)\s+na\s+nusu\b/gi, (_all, whole: string) => `${Number(whole) + 0.5}`)
     .replace(/\b([0-9]+)\s+na\s+robo\b/gi, (_all, whole: string) => `${Number(whole) + 0.25}`)
     .replace(/\b([0-9]+)\s+na\s+theluthi\b/gi, (_all, whole: string) => `${Number(whole) + 0.33}`);
+  // Last, so "elfu moja na nusu" is one and a half thousand and not one
+  // thousand plus a half of something.
+  normalized = collapseMultipliers(normalized);
   return normalized.replace(/__KILA_MOJA_\d+__/g, 'kila moja');
 }
 
 function parseMoneyToken(raw: string): number | null {
-  let value = raw.toLowerCase().replace(/\s+/g, '').replace(/\/$/, '').replace(/=$/, '').replace(/\/$/, '');
+  let value = raw.toLowerCase().replace(/\s+/g, '')
+    .replace(/\/[=-]$/, '').replace(/\/$/, '').replace(/=$/, '').replace(/\/$/, '');
   value = value.replace(/^@/, '').replace(/^(?:tshs?|tzs|sh)/, '');
   const thousands = value.endsWith('k');
   if (thousands) value = value.slice(0, -1);
@@ -164,7 +235,7 @@ function splitParts(text: string): string[] {
 }
 
 function stripRepeatedSalePrefix(text: string): string {
-  return text.replace(/^(?:leo\s+|today\s+)?(?:nimeuza|uza|mauzo|(?:i\s+)?sold)\s+/i, '').trim();
+  return text.replace(SALE_OPENING, '').trim();
 }
 
 function lineTotal(line: DailyRecordLine): number {
@@ -322,8 +393,8 @@ function parseAmbiguousSaleLines(payload: string): AmbiguousSaleLine[] | null {
 }
 
 function saleRecord(text: string): ParsedDailyRecord | null {
-  const swahili = text.match(/^(?:leo\s+)?nimeuza\s+(.+)$/i);
-  const english = text.match(/^(?:today\s+)?(?:i\s+)?sold\s+(.+)$/i);
+  const swahili = text.match(/^(?:leo\s+)?(?:ni(?:me|li)uza|tu(?:me|li)uza)\s+(.+)$/i);
+  const english = text.match(/^(?:today\s+)?(?:i\s+|we\s+)?sold\s+(.+)$/i);
   const payload = swahili?.[1] ?? english?.[1];
   if (!payload) return null;
 
@@ -363,13 +434,13 @@ function saleRecord(text: string): ParsedDailyRecord | null {
 }
 
 function expenseRecord(text: string): ParsedDailyRecord | null {
-  const payload = stripPrefix(text, /^(?:nimelipa|nimetumia|expense\s+(?:ya|for)|paid|spent(?:\s+on)?)\s+/i);
+  const payload = stripPrefix(text, EXPENSE_OPENING);
   if (!payload || !moneyTokens(payload).length) return null;
 
   const parts = splitParts(payload);
   const lines: DailyRecordLine[] = [];
   for (const part of parts) {
-    const lineText = part.replace(/^(?:nimelipa|nimetumia|expense\s+(?:ya|for)|paid|spent(?:\s+on)?)\s+/i, '').trim();
+    const lineText = part.replace(EXPENSE_OPENING, '').trim();
     const tokens = moneyTokens(lineText);
     if (tokens.length !== 1 || tokens[0].value <= 0) return null;
     if (lineText.slice(tokens[0].end).trim()) return null;
@@ -487,6 +558,15 @@ function partyName(text: string): string | null {
 }
 
 function debtRecord(text: string): ParsedDailyRecord | null {
+  // MEASURED (scripts/interrogate.ts, chaos templates): "nimeuza daftari 3
+  // mkopo" — three notebooks sold on credit — was recorded as a DEBT OF THREE
+  // SHILLINGS. partyName read "nimeuza" as a customer, and the quantity was
+  // then the only number left to be the amount.
+  //
+  // A debt is money owed BY SOMEBODY. The shopkeeper writing about their own
+  // selling is not that somebody, and a sentence that opens in the first person
+  // has no customer in it at all.
+  if (/^(?:leo\s+|today\s+)?(?:ni|tu)(?:me|li)\w+/i.test(text.trim())) return null;
   const party = partyName(text);
   if (!party) return null;
   // As many words as the name took, not one: "Mama Asha amechukua sukari" left
@@ -508,6 +588,14 @@ function debtRecord(text: string): ParsedDailyRecord | null {
   if (tokens.length === 0) return null;
   const amount = tokens[tokens.length - 1].value;
   if (!validAmount(amount)) return null;
+  // A bare number under a hundred, with nothing in the sentence saying it is
+  // money, is a QUANTITY. "Juma amechukua daftari 3" is three notebooks, not
+  // three shillings, and the cheapest thing on this shelf is two hundred.
+  // Asking is the only honest answer; guessing here writes a debt that is wrong
+  // by three orders of magnitude and looks perfectly ordinary in the ledger.
+  const saysMoney = /\b(?:kwa|tshs?|tzs|sh|shilingi|elfu|laki|milioni|mia)\b|[0-9]\s*(?:\/[=-]|k\b)|[0-9],[0-9]{3}/i
+    .test(took);
+  if (!saysMoney && amount < 100) return null;
   const description = stripMoney(took)
     .replace(/\bkwa\s+mkopo\b.*$/i, '')
     .replace(/\s+/g, ' ')
@@ -537,7 +625,7 @@ function customerPaymentRecord(text: string): ParsedDailyRecord | null {
 const RECORD_VERBS = new RegExp(
   '\\b(?:'
   + 'ni(?:me|li)uza|tu(?:me|li)uza|a(?:me|li)uza|uza|sold'
-  + '|ni(?:me|li)lipa|a(?:me|li)lipa|kalipa|ni(?:me|li)tumia|paid|spent|expense'
+  + '|ni(?:me|li)lipa|tu(?:me|li)lipa|a(?:me|li)lipa|kalipa|ni(?:me|li)tumia|tu(?:me|li)tumia|paid|spent|expense'
   + '|ni(?:me|li)nunua|tu(?:me|li)nunua|bought|purchased'
   + '|ni(?:me|li)ongeza|ni(?:me|li)ingiza'
   + '|mkopo|loan|ananidai|customer payment'
@@ -546,6 +634,16 @@ const RECORD_VERBS = new RegExp(
   // own stock and is nobody's debt.
   + '|a(?:me|li)chukua|wamechukua|kachukua'
   + ')\\b', 'i');
+
+// MEASURED (scripts/interrogate.ts): "tumeuza daftari 5 kwa 7500" — WE sold —
+// reached RECORD_VERBS, which knows the plural, and then fell through every
+// branch below, which did not. Any shop with a second person behind the counter
+// writes this. One definition each, used everywhere.
+const SAYS_SALE = /\b(?:ni(?:me|li)uza|tu(?:me|li)uza|uza|sold|mauzo)\b/i;
+const SAYS_PURCHASE = /\b(?:ni(?:me|li)nunua|tu(?:me|li)nunua|ni(?:me|li)ongeza|ni(?:me|li)ingiza|bought|purchased|added)\b/i;
+const SAYS_EXPENSE = /\b(?:ni(?:me|li)lipa|tu(?:me|li)lipa|ni(?:me|li)tumia|tu(?:me|li)tumia|expense|paid|spent)\b/i;
+const EXPENSE_OPENING = /^(?:ni(?:me|li)lipa|tu(?:me|li)lipa|ni(?:me|li)tumia|tu(?:me|li)tumia|expense\s+(?:ya|for)|paid|spent(?:\s+on)?)\s+/i;
+const SALE_OPENING = /^(?:leo\s+|today\s+)?(?:ni(?:me|li)uza|tu(?:me|li)uza|uza|sold|mauzo)\s+/i;
 
 // A noun only NAMES the subject. On its own it is as likely to open a question
 // as a record — "mauzo ya leo ni ngapi" is not a sale, and routing it into the
@@ -646,26 +744,26 @@ export function parseDailyRecord(text: string | null | undefined, lang: Lang = '
     || /^[\p{L}][\p{L}'’-]*(?:\s+[\p{L}][\p{L}'’-]*){0,2}\s+(?:amechukua|alichukua|kachukua|wamechukua)\b/iu
       .test(value)) {
     parsed = debtRecord(value);
-  } else if (/\b(nimeuza|uza|sold|mauzo)\b/i.test(value)) {
+  } else if (SAYS_SALE.test(value)) {
     parsed = saleRecord(value);
-  } else if (/\b(nimenunua|nilinunua|nimeongeza|nimeingiza|bought|purchased|added)\b/i.test(value)) {
+  } else if (SAYS_PURCHASE.test(value)) {
     // Before expense on purpose: "nimenunua stock ya sukari 50000" is an
     // investment in goods, not a running cost.
     parsed = stockPurchaseRecord(value);
     // Goods it would not claim can still be an ordinary cost, as long as the
     // sentence says so itself. Nothing is guessed from "nimenunua" alone.
-    if (!parsed && /\b(nimelipa|nimetumia|expense|paid|spent)\b/i.test(value)) parsed = expenseRecord(value);
-  } else if (/\b(nimelipa|nimetumia|expense|paid|spent)\b/i.test(value)) {
+    if (!parsed && SAYS_EXPENSE.test(value)) parsed = expenseRecord(value);
+  } else if (SAYS_EXPENSE.test(value)) {
     parsed = expenseRecord(value);
   }
 
   if (parsed) return enforceLimit(parsed, lang);
   const tokens = moneyTokens(value);
-  if (/\b(nimeuza|uza|sold|mauzo)\b/i.test(value) && /\bkila moja\b/i.test(value) && tokens.length === 1) {
+  if (SAYS_SALE.test(value) && /\bkila moja\b/i.test(value) && tokens.length === 1) {
     return { kind: 'clarify', reason: 'amount', question: question('amount', lang) };
   }
-  if (/\b(nimeuza|uza|sold|mauzo)\b/i.test(value) && tokens.length >= 2) {
-    const payload = value.replace(/^(?:leo\s+)?(?:nimeuza|uza|sold|mauzo)\s+/i, '');
+  if (SAYS_SALE.test(value) && tokens.length >= 2) {
+    const payload = value.replace(SALE_OPENING, '');
     const sales = parseAmbiguousSaleLines(payload);
     const draft: DailyRecordClarification | undefined = sales && sales.length > 0
       ? { kind: 'daily_record_clarification' as const, originalText, lang, sale: sales[0] }

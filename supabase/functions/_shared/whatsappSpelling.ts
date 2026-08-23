@@ -33,6 +33,9 @@ const CONTROL_WORDS = [
   // Money moving, and which way.
   'nimeuza', 'niliuza', 'tumeuza', 'nimenunua', 'nilinunua', 'tumenunua',
   'nimelipa', 'nililipa', 'nimetumia', 'nimehesabu', 'nimeongeza', 'naongeza',
+  // The plural forms. A shop with one employee writes "tuliuza"; a slip in it
+  // ("tliuza") had the sale improvised by the model instead of recorded.
+  'tuliuza', 'tulinunua', 'tumelipa', 'tulilipa', 'tumetumia',
   // Counting the shelf. A slip in one of these does not merely fail to count —
   // "kikokotoo zimbeaki 17" is read as a LIST OF GOODS called "kikokotoo
   // zimbeaki", and the shop is then offered the chance to register it as a new

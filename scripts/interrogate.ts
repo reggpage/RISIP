@@ -37,6 +37,16 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import { computedAmount, recordKind, route } from './lib/route.ts';
 import {
+  bandFor,
+  changesSince,
+  displayScore,
+  score,
+  summaryLine,
+  type Change,
+  type RunRecord,
+  type TopicScore,
+} from './lib/grade.ts';
+import {
   buildBusinessSummaryReply,
   buildDebtorsReply,
   buildProfitReply,
@@ -79,15 +89,42 @@ import {
 
 // --------------------------------------------------------------- connection
 
+/**
+ * The environment, from the process first and the file second.
+ *
+ * CI has no .env.local and must never have one — the service-role key lives in
+ * the runner's secret store and is passed in as an environment variable. A
+ * developer's machine has the file and no exported variables. Both work, and
+ * neither puts the key anywhere it can be committed.
+ */
 function env(): { url: string; key: string } {
-  const text = readFileSync(resolvePath(process.cwd(), '.env.local'), 'utf8');
-  const read = (name: string) => {
-    const line = text.split(/\r?\n/).find((row) => row.startsWith(name + '='));
-    return line ? line.slice(name.length + 1).trim() : '';
+  let fromFile = (_name: string): string => '';
+  try {
+    const text = readFileSync(resolvePath(process.cwd(), '.env.local'), 'utf8');
+    fromFile = (name: string) => {
+      const line = text.split(/\r?\n/).find((row) => row.startsWith(name + '='));
+      return line ? line.slice(name.length + 1).trim() : '';
+    };
+  } catch {
+    // No file. In CI that is the normal case, not an error.
+  }
+  const read = (...names: string[]) => {
+    for (const name of names) {
+      const value = process.env[name];
+      if (value) return value.trim();
+    }
+    for (const name of names) {
+      const value = fromFile(name);
+      if (value) return value;
+    }
+    return '';
   };
-  const url = read('VITE_SUPABASE_URL');
+  const url = read('SUPABASE_URL', 'VITE_SUPABASE_URL');
   const key = read('SUPABASE_SERVICE_ROLE_KEY');
-  if (!url || !key) throw new Error('.env.local needs VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+  if (!url || !key) {
+    throw new Error('Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, '
+      + 'or put VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local');
+  }
   return { url, key };
 }
 
@@ -284,27 +321,35 @@ const chance = (dice: Dice, p: number) => dice() < p;
  * a missing question mark, a double space where a thumb hit twice.
  */
 function mistype(dice: Dice, text: string): string {
-  const words = text.split(' ');
+  // Split KEEPING the separators. Rejoining on a plain space used to weld a
+  // twenty-line till roll into one line — "mauzo ya leo\nmkoba wa shule 2"
+  // became "mauzo ya leomkoba wa shule 2", which is not a typo anybody makes
+  // and left the harness marking its own damage as a defect in Risip.
+  const parts = text.split(/(\s+)/);
+  const wordAt = (min: number) =>
+    parts.findIndex((part, at) => at % 2 === 0 && part.length >= min);
   const kind = Math.floor(dice() * 5);
+
   if (kind === 0) {
-    const at = words.findIndex((word) => word.length >= 5);
+    const at = wordAt(5);
     if (at < 0) return text;
-    const word = words[at];
+    const word = parts[at];
     const i = 1 + Math.floor(dice() * (word.length - 2));
-    words[at] = word.slice(0, i) + word[i + 1] + word[i] + word.slice(i + 2);
-    return words.join(' ');
+    parts[at] = word.slice(0, i) + word[i + 1] + word[i] + word.slice(i + 2);
+    return parts.join('');
   }
   if (kind === 1) {
-    const at = words.findIndex((word) => word.length >= 6);
+    const at = wordAt(6);
     if (at < 0) return text;
-    const word = words[at];
+    const word = parts[at];
     const i = 1 + Math.floor(dice() * (word.length - 2));
-    words[at] = word.slice(0, i) + word.slice(i + 1);
-    return words.join(' ');
+    parts[at] = word.slice(0, i) + word.slice(i + 1);
+    return parts.join('');
   }
   if (kind === 2) return text.toUpperCase();
   if (kind === 3) return text.replace(/[?.,]/g, '');
-  return text.replace(' ', '  ');
+  // A thumb hitting the space bar twice. Only a real space, never a newline.
+  return text.replace(/ /, '  ');
 }
 
 // ------------------------------------------------------------- the question bank
@@ -324,9 +369,18 @@ type Ask = {
   truth: string;
   /** Set when the answer has to come from the database, not from a parser. */
   execute?: boolean;
+  /**
+   * Routes that would be actively WRONG, whatever else happens.
+   *
+   * For messages where the valuable assertion is a negative: "sijauza chochote
+   * leo" — I sold nothing today — must never become a sale, and a string of
+   * emoji must never become a price. `want` says what good looks like; this
+   * says what unacceptable looks like, and the two are not the same test.
+   */
+  forbid?: string[];
 };
 
-const SALE_VERB = ['nimeuza', 'niliuza', 'nimeuza leo', 'nimeuza'];
+const SALE_VERB = ['nimeuza', 'niliuza', 'nimeuza leo', 'nimeuza', 'tumeuza'];
 const ASK_STOCK = [
   (name: string) => `${name} ziko ngapi?`,
   (name: string) => `nina ${name} ngapi`,
@@ -580,6 +634,8 @@ function buildAsks(shop: Shop, dice: Dice, count: number): Ask[] {
     truth: 'hakuna hesabu inayohitajika',
   }));
 
+  addChaos(make, shop, dice);
+
   while (asks.length < count) {
     const built = pick(dice, make)();
     if (!built) continue;
@@ -589,8 +645,287 @@ function buildAsks(shop: Shop, dice: Dice, count: number): Ask[] {
   return asks;
 }
 
+// ------------------------------------------------------------------- the chaos
+//
+// The templates above ask reasonably. These do not.
+//
+// Everything here came from watching how the messages that actually break
+// things are shaped: money said in words rather than digits, a till roll
+// twenty lines long, a sentence that says nothing was sold, a thumb that hit
+// the emoji key. The point is not to be difficult for its own sake — each of
+// these has a right answer that can be checked, and several of them found
+// defects the polite templates never touched.
+//
+// MONEY IN WORDS is the one that mattered most. "Nimelipa umeme elfu ishirini"
+// was recorded as **TSh 20**. It parsed, it confirmed, and nobody was asked to
+// look at it. That is how a shop's books quietly stop being true.
+
+/** How money is said out loud, and what it is worth. */
+const SPOKEN_MONEY: Array<[string, number]> = [
+  ['elfu tano', 5_000],
+  ['elfu kumi', 10_000],
+  ['elfu ishirini', 20_000],
+  ['elfu hamsini', 50_000],
+  ['laki mbili', 200_000],
+  ['mia tano', 500],
+  ['elfu saba na mia tano', 7_500],
+  ['elfu ishirini na tano', 25_000],
+  ['milioni moja', 1_000_000],
+];
+
+/** The same amount, written the way a phone keypad writes it. */
+const WRITTEN_MONEY: Array<[string, number]> = [
+  ['12,500/=', 12_500],
+  ['12500/-', 12_500],
+  ['20k', 20_000],
+  ['TSh 8,000', 8_000],
+  ['35000', 35_000],
+];
+
+const NOTHING_HAPPENED = [
+  'sijauza chochote leo',
+  'hakuna kilichouzwa leo',
+  'leo hakuna mauzo',
+  'sijanunua kitu',
+  'usirekodi hilo',
+  'hapana sio hivyo',
+];
+
+const NOISE = ['😀😀😀', '?????', '.....', '👍', 'aaaaaaa', '...', '???'];
+
+function addChaos(make: Array<() => Ask | null>, shop: Shop, dice: Dice): void {
+  const priced = shop.products.filter((product) => (product.retail ?? 0) > 0 && !product.portioned);
+  if (priced.length === 0) return;
+  const counted = shop.stock.filter((row) => row.hasCount);
+
+  // Money said in words. The amount is fixed by the phrase, not by the shop, so
+  // the arithmetic is beyond argument.
+  make.push(() => {
+    const [phrase, amount] = pick(dice, SPOKEN_MONEY);
+    const what = pick(dice, ['umeme', 'maji', 'kodi ya duka', 'usafiri', 'mshahara']);
+    return {
+      topic: 'fedha kwa maneno',
+      said: `${pick(dice, ['nimelipa', 'nimetumia'])} ${what} ${phrase}`,
+      want: ['daily_record', 'daily_record_parsed', 'bare_expense'],
+      wantAmount: amount,
+      wantKind: 'expense',
+      truth: `"${phrase}" = ${amount}`,
+    };
+  });
+  make.push(() => {
+    const [phrase, amount] = pick(dice, SPOKEN_MONEY);
+    const product = pick(dice, priced);
+    return {
+      topic: 'mauzo kwa fedha za maneno',
+      said: `nimeuza ${product.name} kwa ${phrase}`,
+      want: ['daily_record', 'daily_record_parsed'],
+      wantAmount: amount,
+      wantKind: 'sale',
+      truth: `"${phrase}" = ${amount}`,
+    };
+  });
+
+  // The same amount in the shorthand a keypad produces.
+  make.push(() => {
+    const [written, amount] = pick(dice, WRITTEN_MONEY);
+    return {
+      topic: 'fedha kwa mkato',
+      said: `nimelipa ${pick(dice, ['umeme', 'bando', 'usafiri'])} ${written}`,
+      want: ['daily_record', 'daily_record_parsed', 'bare_expense'],
+      wantAmount: amount,
+      wantKind: 'expense',
+      truth: `"${written}" = ${amount}`,
+    };
+  });
+
+  // A till roll. Twelve to twenty-two lines in one message, which is what a
+  // Saturday looks like when somebody writes the day up at closing.
+  make.push(() => {
+    const howMany = 12 + Math.floor(dice() * 11);
+    const chosen: Product[] = [];
+    while (chosen.length < howMany && chosen.length < priced.length) {
+      const product = pick(dice, priced);
+      if (!chosen.some((seen) => seen.key === product.key)) chosen.push(product);
+    }
+    const lines = chosen.map((product) => `${product.name} ${1 + Math.floor(dice() * 9)}`);
+    return {
+      topic: 'orodha ndefu ya siku',
+      said: `mauzo ya leo\n${lines.join('\n')}`,
+      want: ['quantity_sale', 'daily_record_parsed', 'daily_record_batch'],
+      truth: `mistari ${lines.length}`,
+    };
+  });
+
+  // Nothing happened. The only wrong answer is a record.
+  make.push(() => ({
+    topic: 'hakuna kilichotokea',
+    said: pick(dice, NOTHING_HAPPENED),
+    want: ['conversational_ai'],
+    forbid: [
+      'daily_record', 'daily_record_parsed', 'daily_record_batch', 'quantity_sale',
+      'bare_quantity_sale', 'bare_expense', 'stock_count', 'selling_price', 'product_cost',
+    ],
+    truth: 'hakuna rekodi inayotakiwa kuundwa',
+  }));
+
+  // A thumb on the wrong key. Nothing may be recorded and nothing may be priced.
+  make.push(() => ({
+    topic: 'kelele',
+    said: pick(dice, NOISE),
+    want: ['conversational_ai'],
+    forbid: [
+      'daily_record', 'daily_record_parsed', 'quantity_sale', 'bare_quantity_sale',
+      'bare_expense', 'stock_count', 'selling_price', 'product_cost', 'selling_price_batch',
+    ],
+    truth: 'si ujumbe wa biashara',
+  }));
+
+  // Numbers at both ends of what a shop can mean.
+  make.push(() => {
+    const product = pick(dice, priced);
+    const quantity = pick(dice, [0.5, 1.5, 2.5, 100, 500, 1000]);
+    const two = (product.wholesale ?? 0) > 0 && product.wholesale !== product.retail;
+    return {
+      topic: 'idadi za mwisho kabisa',
+      said: `nimeuza ${product.name} ${quantity}`,
+      want: ['quantity_sale'],
+      wantsBandQuestion: two,
+      wantAmount: two ? undefined : quantity * (product.retail as number),
+      truth: `${quantity} x ${product.retail}`,
+    };
+  });
+
+  // A sale by a shop with two people in it. "Tumeuza" is not a variant; it is
+  // what gets typed the moment somebody is employed.
+  make.push(() => {
+    const product = pick(dice, priced);
+    const quantity = 1 + Math.floor(dice() * 6);
+    const total = quantity * (product.retail as number);
+    return {
+      topic: 'wingi (tumeuza)',
+      said: `${pick(dice, ['tumeuza', 'tuliuza'])} ${product.name} ${quantity} kwa ${total}`,
+      want: ['daily_record', 'daily_record_parsed', 'quantity_sale'],
+      wantAmount: total,
+      wantKind: 'sale',
+      truth: `${total} imetajwa kwenye ujumbe`,
+    };
+  });
+  make.push(() => {
+    const product = pick(dice, priced);
+    const quantity = 5 + Math.floor(dice() * 30);
+    const spent = quantity * Math.max(100, Math.round((product.cost ?? (product.retail as number) * 0.8) / 50) * 50);
+    return {
+      topic: 'wingi (tumenunua)',
+      said: `tumenunua ${product.name} ${quantity} kwa ${spent}`,
+      want: ['daily_record', 'daily_record_parsed'],
+      wantAmount: spent,
+      wantKind: 'stock_purchase',
+      truth: `manunuzi ya ${spent}`,
+    };
+  });
+
+  // Two languages in one sentence, which is how half of Dar es Salaam writes.
+  make.push(() => {
+    const product = pick(dice, priced);
+    const quantity = 1 + Math.floor(dice() * 5);
+    const two = (product.wholesale ?? 0) > 0 && product.wholesale !== product.retail;
+    return {
+      topic: 'lugha mbili kwenye sentensi moja',
+      said: `nimeuza ${product.name} ${quantity} cash`,
+      want: ['quantity_sale'],
+      wantsBandQuestion: two,
+      wantAmount: two ? undefined : quantity * (product.retail as number),
+      truth: `${quantity} x ${product.retail}`,
+    };
+  });
+
+  // A stock question with the place and the slang attached.
+  make.push(() => {
+    const row = counted.length > 0 ? pick(dice, counted) : null;
+    if (!row) return null;
+    return {
+      topic: 'swali la stoko kwa mtaa',
+      said: pick(dice, [
+        `${row.productName} zipo?`,
+        `nina ${row.productName} ngapi stoo`,
+        `${row.productName} ziko ngapi store`,
+        `zimebaki ${row.productName} ngapi dukani`,
+      ]),
+      want: ['stock_question'],
+      wantAmount: Math.max(0, Math.round(row.onHand)),
+      truth: `${row.productName}: ${row.onHand}`,
+      execute: true,
+    };
+  });
+
+  // Risip is a shillings-only product — see src/lib/format.ts, where TZS is the
+  // only currency there is. So the edge case worth testing is not a second
+  // currency; it is the currency PREFIX being typed in every form a Tanzanian
+  // keyboard produces, next to a number that must survive it intact.
+  make.push(() => {
+    const amount = pick(dice, [3_500, 12_000, 45_000, 120_000]);
+    const written = pick(dice, [
+      `TSh ${amount.toLocaleString('en-US')}`,
+      `Tsh${amount}`,
+      `TZS ${amount}`,
+      `sh ${amount}`,
+      `${amount}/=`,
+    ]);
+    return {
+      topic: 'alama ya shilingi',
+      said: `nimelipa kodi ya duka ${written}`,
+      want: ['daily_record', 'daily_record_parsed', 'bare_expense'],
+      wantAmount: amount,
+      wantKind: 'expense',
+      truth: `${written} = ${amount}`,
+    };
+  });
+}
+
 // -------------------------------------------------------------- answering them
 
+
+/**
+ * Two lookups that cannot change while a run is in flight.
+ *
+ * The catalogue and the price list are read once per name and once per key,
+ * not once per question. Without this a 2,400-question run made about five
+ * thousand sequential round trips to Frankfurt and took forty minutes, which
+ * is longer than the CI budget and long enough that nobody runs it by hand.
+ * The harness is read-only, so a snapshot is not a shortcut — it is the same
+ * answer, fetched once.
+ */
+const resolutionCache = new Map<string, unknown>();
+const pricingCache = new Map<string, Record<string, unknown> | null>();
+
+async function resolveOnce(db: SupabaseClient, shop: Shop, asked: string) {
+  const key = asked.trim().toLocaleLowerCase('sw-TZ');
+  if (!resolutionCache.has(key)) {
+    const { data, error } = await db.rpc('wa_resolve_company_product_read', {
+      p_profile_id: shop.profileId,
+      p_company_id: shop.companyId,
+      p_name: asked,
+    });
+    if (error) return { data: null, error };
+    resolutionCache.set(key, data);
+  }
+  return { data: resolutionCache.get(key), error: null };
+}
+
+async function pricingOnce(db: SupabaseClient, shop: Shop, keys: string[]) {
+  const missing = keys.filter((key) => !pricingCache.has(key));
+  if (missing.length > 0) {
+    const { data } = await db.rpc('wa_product_pricing', {
+      p_company_id: shop.companyId,
+      p_product_keys: missing,
+    });
+    for (const key of missing) pricingCache.set(key, null);
+    for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+      pricingCache.set(String(row.product_key), row);
+    }
+  }
+  return keys.map((key) => pricingCache.get(key) ?? null).filter(Boolean) as Array<Record<string, unknown>>;
+}
 
 /**
  * The webhook's own resolution, including the one-edit fallback it falls back
@@ -621,11 +956,7 @@ async function executeRead(db: SupabaseClient, shop: Shop, said: string): Promis
 
   const priceAsk = parseSellingPriceQuestion(said);
   if (priceAsk) {
-    const { data, error } = await db.rpc('wa_resolve_company_product_read', {
-      p_profile_id: shop.profileId,
-      p_company_id: shop.companyId,
-      p_name: priceAsk.product,
-    });
+    const { data, error } = await resolveOnce(db, shop, priceAsk.product);
     if (error) return { route: 'selling_price_question', reply: null, note: 'RPC imeshindwa: ' + error.message };
     const resolution = resolveName(shop, data, priceAsk.product);
     if (resolution.kind !== 'matched') {
@@ -635,11 +966,7 @@ async function executeRead(db: SupabaseClient, shop: Shop, said: string): Promis
         note: 'haikupatikana kwenye orodha: ' + JSON.stringify(priceAsk.product),
       };
     }
-    const { data: pricingRows } = await db.rpc('wa_product_pricing', {
-      p_company_id: shop.companyId,
-      p_product_keys: [resolution.match.productKey],
-    });
-    const row = ((pricingRows ?? []) as Array<Record<string, unknown>>)[0];
+    const row = (await pricingOnce(db, shop, [resolution.match.productKey]))[0];
     return {
       route: 'selling_price_question',
       reply: sellingPriceReply(priceAsk.product, {
@@ -656,11 +983,7 @@ async function executeRead(db: SupabaseClient, shop: Shop, said: string): Promis
     if (!stockAsk.product) {
       return { route: 'stock_question', reply: stockListReply(shop.stock, 'sw') };
     }
-    const { data, error } = await db.rpc('wa_resolve_company_product_read', {
-      p_profile_id: shop.profileId,
-      p_company_id: shop.companyId,
-      p_name: stockAsk.product,
-    });
+    const { data, error } = await resolveOnce(db, shop, stockAsk.product);
     // A lookup that FAILED is not a product the shop does not have. Letting the
     // two look alike here would have this harness report "Risip has forgotten
     // your duster" every time the network hiccupped.
@@ -735,11 +1058,7 @@ async function executeSale(db: SupabaseClient, shop: Shop, said: string): Promis
   const resolvedNames: Array<{ key: string; name: string; quantity: number; band: 'retail' | 'wholesale' | null }> = [];
   const unknown: string[] = [];
   for (const item of sale.items) {
-    const { data, error } = await db.rpc('wa_resolve_company_product_read', {
-      p_profile_id: shop.profileId,
-      p_company_id: shop.companyId,
-      p_name: item.product,
-    });
+    const { data, error } = await resolveOnce(db, shop, item.product);
     if (error) return { route: 'quantity_sale', reply: null, note: 'RPC imeshindwa: ' + error.message };
     const resolution = resolveName(shop, data, item.product);
     if (resolution.kind !== 'matched') { unknown.push(item.product); continue; }
@@ -757,12 +1076,9 @@ async function executeSale(db: SupabaseClient, shop: Shop, said: string): Promis
       note: 'haijulikani kwenye orodha: ' + unknown.join(', '),
     };
   }
-  const { data: pricingRows } = await db.rpc('wa_product_pricing', {
-    p_company_id: shop.companyId,
-    p_product_keys: resolvedNames.map((item) => item.key),
-  });
+  const pricingRows = await pricingOnce(db, shop, resolvedNames.map((item) => item.key));
   const pricing = new Map<string, { retail: number | null; wholesale: number | null; wholesaleMinQty: number | null }>();
-  for (const row of (pricingRows ?? []) as Array<Record<string, unknown>>) {
+  for (const row of pricingRows) {
     pricing.set(String(row.product_key), {
       retail: row.retail_price == null ? null : Number(row.retail_price),
       wholesale: row.wholesale_price == null ? null : Number(row.wholesale_price),
@@ -830,6 +1146,12 @@ async function judge(db: SupabaseClient, shop: Shop, ask: Ask): Promise<Result> 
 
   // A question nothing in the product computes. Not a failure of routing — a
   // missing capability, counted separately so it cannot hide among the passes.
+  // Checked before anything else. A forbidden route is not a near miss to be
+  // weighed against the rest of the answer — it is a message that should have
+  // been left alone and was not.
+  if (ask.forbid?.includes(got)) {
+    return verdict('njia', 'hii haitakiwi kurekodiwa kabisa, lakini imekwenda ' + got);
+  }
   if (ask.want.length === 0) {
     return verdict('pengo', 'hakuna chombo cha kujibu hili; kimeachiwa model');
   }
@@ -873,7 +1195,13 @@ const LABEL: Record<Verdict, string> = {
   haijulikani: 'HAIJAJUDGIWA',
 };
 
-function report(shop: Shop, results: Result[], seed: number): string {
+function report(
+  shop: Shop,
+  results: Result[],
+  seeds: number[],
+  current: RunRecord,
+  changes: Change[],
+): string {
   const byVerdict = new Map<Verdict, Result[]>();
   for (const result of results) {
     byVerdict.set(result.verdict, [...(byVerdict.get(result.verdict) ?? []), result]);
@@ -889,10 +1217,30 @@ function report(shop: Shop, results: Result[], seed: number): string {
   const out: string[] = [];
   out.push('# Risip — maswali ya kubahatisha kutoka kwenye database');
   out.push('');
+  out.push('> **Risip AI Current Capability Score: ' + displayScore(current.score) + '% '
+    + '| Grade: ' + current.grade + '**  ');
+  out.push('> ' + bandFor(current.score).label);
+  out.push('');
   out.push('Duka: **' + shop.companyName + '** · bidhaa ' + shop.products.length
-    + ' · rekodi zilizothibitishwa ' + shop.rows.length + ' · seed `' + seed + '`');
+    + ' · rekodi zilizothibitishwa ' + shop.rows.length
+    + ' · seeds `' + seeds.join(', ') + '` · ' + current.at.slice(0, 16).replace('T', ' ') + ' UTC');
   out.push('');
   out.push('Maswali ' + results.length + ', yametengenezwa kutoka kwenye majina na namba halisi za duka.');
+  out.push('');
+  out.push('## Yaliyobadilika tangu run iliyopita');
+  out.push('');
+  if (changes.length === 0) {
+    out.push('Hakuna mabadiliko.');
+  } else {
+    out.push('| Mada | Kabla | Sasa | |');
+    out.push('| --- | ---: | ---: | --- |');
+    for (const change of changes) {
+      const mark = change.direction === 'regressed' ? '🔻 imeshuka'
+        : change.direction === 'improved' ? '🔺 imepanda'
+          : change.direction === 'new' ? '🆕 mpya' : '— imeondoka';
+      out.push('| ' + change.topic + ' | ' + (change.before || '—') + ' | ' + (change.after || '—') + ' | ' + mark + ' |');
+    }
+  }
   out.push('');
   out.push('| Hukumu | Idadi |');
   out.push('| --- | ---: |');
@@ -941,38 +1289,127 @@ function report(shop: Shop, results: Result[], seed: number): string {
   return out.join('\n');
 }
 
+// -------------------------------------------------------------------- history
+
+/**
+ * Every run, kept, so the next one can say what MOVED.
+ *
+ * A score on its own is close to useless — nobody can tell 97.9 from 98.2 by
+ * feel, and both look fine. What a person can act on is "the debtor questions
+ * went from 100% to 74% overnight", and that needs yesterday's numbers to be
+ * written down somewhere. This file is committed on purpose: it is the record.
+ */
+function loadHistory(path: string): RunRecord[] {
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8'));
+    return Array.isArray(parsed) ? (parsed as RunRecord[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function shortCommit(): string | undefined {
+  const value = process.env.GITHUB_SHA ?? '';
+  return value ? value.slice(0, 7) : undefined;
+}
+
+/** "1,2,3" or a plain "10" meaning seeds one through ten. */
+function seedList(raw: string): number[] {
+  if (raw.includes(',')) {
+    return raw.split(',').map((piece) => Number(piece.trim())).filter((seed) => Number.isFinite(seed));
+  }
+  const one = Number(raw);
+  if (!Number.isFinite(one) || one < 1) return [1];
+  return Array.from({ length: one }, (_unused, at) => at + 1);
+}
+
 // ------------------------------------------------------------------------ main
 
 async function main() {
   const { url, key } = env();
   const db = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-  const seed = Number(arg('seed', '1'));
-  const count = Number(arg('count', '240'));
+  const seeds = seedList(arg('seeds', arg('seed', '10')));
+  const perSeed = Number(arg('count', '240'));
   const shop = await loadShop(db, arg('company', 'St. Ritha'));
-  const dice = rng(seed);
-  const asks = buildAsks(shop, dice, count);
 
   const results: Result[] = [];
-  for (const ask of asks) results.push(await judge(db, shop, ask));
+  for (const seed of seeds) {
+    const dice = rng(seed);
+    for (const ask of buildAsks(shop, dice, perSeed)) results.push(await judge(db, shop, ask));
+  }
 
   const tally = new Map<Verdict, number>();
   for (const result of results) tally.set(result.verdict, (tally.get(result.verdict) ?? 0) + 1);
+  const correct = tally.get('sawa') ?? 0;
+  const exact = score(correct, results.length);
+  const band = bandFor(exact);
+
+  const topics = new Map<string, TopicScore>();
+  for (const result of results) {
+    const row = topics.get(result.ask.topic) ?? { topic: result.ask.topic, ok: 0, total: 0 };
+    row.total += 1;
+    if (result.verdict === 'sawa') row.ok += 1;
+    topics.set(result.ask.topic, row);
+  }
+
+  const current: RunRecord = {
+    at: new Date().toISOString(),
+    shop: shop.companyName,
+    seeds,
+    asked: results.length,
+    correct,
+    score: exact,
+    grade: band.grade,
+    topics: [...topics.values()].sort((a, b) => a.topic.localeCompare(b.topic)),
+    ...(shortCommit() ? { commit: shortCommit() } : {}),
+  };
+
+  const historyPath = resolvePath(process.cwd(), arg('history', 'docs/interrogation-history.json'));
+  const history = loadHistory(historyPath);
+  const changes = changesSince(history[history.length - 1] ?? null, current);
+
   console.log('');
-  console.log(shop.companyName + ' — ' + results.length + ' maswali, seed ' + seed);
+  console.log(shop.companyName + ' — ' + results.length + ' maswali, seeds ' + seeds.join(','));
   console.log('');
   for (const verdict of ['sawa', 'njia', 'namba', 'model', 'pengo', 'haijulikani'] as Verdict[]) {
-    console.log('  ' + String(tally.get(verdict) ?? 0).padStart(4) + '  ' + LABEL[verdict]);
+    console.log('  ' + String(tally.get(verdict) ?? 0).padStart(5) + '  ' + LABEL[verdict]);
   }
   console.log('');
-  for (const result of results.filter((item) => item.verdict === 'namba' || item.verdict === 'njia')) {
+  const failures = results.filter((item) => item.verdict !== 'sawa');
+  // One line per DISTINCT problem. Ten seeds produce the same failure ten times
+  // over, and a log that repeats itself is a log nobody finishes reading.
+  const seen = new Set<string>();
+  for (const result of failures) {
+    const fingerprint = result.ask.topic + '|' + result.why;
+    if (seen.has(fingerprint)) continue;
+    seen.add(fingerprint);
     console.log('  ' + result.ask.said.replace(/\n/g, ' / ').padEnd(52).slice(0, 52)
-      + ' → ' + result.got.padEnd(20) + result.why);
+      + ' → ' + result.got.padEnd(22) + result.why);
+  }
+  if (failures.length > seen.size) {
+    console.log('  (' + (failures.length - seen.size) + ' more, same shapes)');
   }
 
   const path = resolvePath(process.cwd(), arg('out', 'docs/ai-interrogation.md'));
-  writeFileSync(path, report(shop, results, seed), 'utf8');
+  writeFileSync(path, report(shop, results, seeds, current, changes), 'utf8');
+
+  if (arg('history', 'docs/interrogation-history.json') !== 'none') {
+    // Kept short on purpose: this is a trend line, not an archive.
+    writeFileSync(historyPath, JSON.stringify([...history, current].slice(-60), null, 2) + '\n', 'utf8');
+  }
+
   console.log('');
+  console.log(summaryLine(current, changes));
+  console.log(band.label);
   console.log('Ripoti kamili: ' + path);
+
+  // The gate. A failing grade must stop a deploy, and the only reliable way to
+  // stop one is to fail the process.
+  if (!band.deployable) {
+    console.error('');
+    console.error('Grade F — deployment blocked. Fix the failures above, or say why the bar is wrong.');
+    process.exit(1);
+  }
 }
 
 main().catch((error) => {

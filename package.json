@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "interrogate": "vite-node scripts/interrogate.ts",
+    "interrogate:quick": "vite-node scripts/interrogate.ts --seeds 2 --count 120"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

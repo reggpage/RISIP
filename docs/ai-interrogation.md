@@ -1,12 +1,19 @@
 # Risip — maswali ya kubahatisha kutoka kwenye database
 
-Duka: **St. Ritha bookshop** · bidhaa 59 · rekodi zilizothibitishwa 21 · seed `1`
+> **Risip AI Current Capability Score: 100.0% | Grade: A**  
+> Production Ready — Highly Capable
 
-Maswali 600, yametengenezwa kutoka kwenye majina na namba halisi za duka.
+Duka: **St. Ritha bookshop** · bidhaa 59 · rekodi zilizothibitishwa 26 · seeds `1, 2, 3, 4, 5, 6, 7, 8, 9, 10` · 2026-08-23 13:33 UTC
+
+Maswali 2400, yametengenezwa kutoka kwenye majina na namba halisi za duka.
+
+## Yaliyobadilika tangu run iliyopita
+
+Hakuna mabadiliko.
 
 | Hukumu | Idadi |
 | --- | ---: |
-| SAWA | 600 |
+| SAWA | 2400 |
 | NJIA MBAYA | 0 |
 | NAMBA MBAYA | 0 |
 | IMEACHIWA MODEL | 0 |
@@ -17,30 +24,35 @@ Maswali 600, yametengenezwa kutoka kwenye majina na namba halisi za duka.
 
 | Mada | Sawa | Jumla |
 | --- | ---: | ---: |
-| faida | 38 | 38 |
-| maongezi ya kawaida | 25 | 25 |
-| bidhaa zinazouza | 33 | 33 |
-| zilizoisha | 32 | 32 |
-| matumizi | 29 | 29 |
-| bei ya bidhaa | 25 | 25 |
-| muhtasari wa siku | 33 | 33 |
-| orodha ya stoko | 23 | 23 |
-| mada mbili kwenye ujumbe mmoja | 24 | 24 |
-| madeni | 21 | 21 |
-| manunuzi | 33 | 33 |
-| malipo ya deni | 33 | 33 |
-| gharama ya kununua | 29 | 29 |
-| mauzo (bei imetajwa) | 28 | 28 |
-| mauzo ya mstari mmoja | 34 | 34 |
-| kuhesabu stoko | 36 | 36 |
-| kuuliza stoko | 30 | 30 |
-| mauzo (bei kutoka kwenye orodha) | 29 | 29 |
-| wanaodaiwa | 34 | 34 |
-| kuweka bei | 31 | 31 |
-
-## Uchafu kwenye orodha ya bidhaa (2)
-
-Haya hayakutumika kutengeneza maswali kwa sababu si bidhaa halisi:
-
-- nguvu ya sala ya biblia kwa ya kalamu ya daftari nguvu ya sala
-- jumla
+| fedha kwa maneno | 95 | 95 |
+| kuhesabu stoko | 64 | 64 |
+| bidhaa zinazouza | 82 | 82 |
+| kuuliza stoko | 65 | 65 |
+| hakuna kilichotokea | 81 | 81 |
+| mada mbili kwenye ujumbe mmoja | 77 | 77 |
+| gharama ya kununua | 88 | 88 |
+| matumizi | 84 | 84 |
+| zilizoisha | 99 | 99 |
+| lugha mbili kwenye sentensi moja | 76 | 76 |
+| swali la stoko kwa mtaa | 80 | 80 |
+| faida | 73 | 73 |
+| kuweka bei | 70 | 70 |
+| wingi (tumeuza) | 83 | 83 |
+| manunuzi | 80 | 80 |
+| alama ya shilingi | 53 | 53 |
+| kelele | 63 | 63 |
+| wanaodaiwa | 79 | 79 |
+| mauzo (bei imetajwa) | 75 | 75 |
+| mauzo (bei kutoka kwenye orodha) | 73 | 73 |
+| muhtasari wa siku | 59 | 59 |
+| mauzo ya mstari mmoja | 69 | 69 |
+| bei ya bidhaa | 64 | 64 |
+| orodha ndefu ya siku | 82 | 82 |
+| orodha ya stoko | 77 | 77 |
+| maongezi ya kawaida | 75 | 75 |
+| malipo ya deni | 74 | 74 |
+| wingi (tumenunua) | 78 | 78 |
+| idadi za mwisho kabisa | 71 | 71 |
+| mauzo kwa fedha za maneno | 61 | 61 |
+| fedha kwa mkato | 70 | 70 |
+| madeni | 80 | 80 |

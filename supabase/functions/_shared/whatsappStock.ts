@@ -196,6 +196,10 @@ export function parseStockQuestion(text: string | null | undefined): { product: 
     // "zimebaki atlasi ngapi" — the same question with the verb in front.
     ?? said.match(new RegExp(`^(?:${STOCK_VERBS})\\s+(.+?)\\s+ngapi\\b`, 'i'))
     ?? said.match(/^(?:stock|hisa)\s+(?:ya|za|of)\s+(.+?)\s*$/i)
+    // "Vestline zipo?" — no "ngapi" at all. Asking whether there are ANY is the
+    // shortest form of the same question, and it went to the model, which
+    // cannot count. The answer is the same count; only the question is briefer.
+    ?? said.match(/^(.+?)\s+(?:zipo|ziko|ipo|iko|zimebaki|imebaki|zimesalia)$/i)
     ?? said.match(/^how many\s+(.+?)\s+(?:do i have|are left|remain|in stock)/i);
   if (named) {
     const product = clean(named[1]).replace(/^(?:ya|za|wa|of)\s+/i, '');
