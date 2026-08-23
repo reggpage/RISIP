@@ -49,7 +49,12 @@ function looksLikeSellingLine(line: string): boolean {
 function flatPriceList(said: string): SellingPrice[] {
   if (/\r?\n/.test(said.trim())) return [];
   if (!/\b(?:bei|price|prices)\b/i.test(said)) return [];
-  const pieces = [...said.matchAll(/([\p{L}][\p{L}0-9'’.\- ]*?)\s+(?:iwe|ziwe|ni|kuwa)\s+([0-9][0-9,. ]*)/giu)];
+  // The trade price may ride along on the same piece: "velvet iwe 4000 jumla
+  // 3500". Without this, a shop setting both prices in one sentence got only
+  // the retail one saved and no word about the other.
+  const pieces = [...said.matchAll(
+    /([\p{L}][\p{L}0-9'’.\- ]*?)\s+(?:iwe|ziwe|ni|kuwa)\s+([0-9][0-9,. ]*?)(?:\s+(?:jumla|wholesale)\s+([0-9][0-9,. ]*?))?(?=\s*(?:,|\bna\b|\band\b|$))/giu,
+  )];
   if (pieces.length < 2) return [];
 
   const OPENING = /^(?:unaweza\s+|tafadhali\s+)?(?:kuongeza|ongeza|badilisha|badili|weka|wekea|panga|rekebisha|punguza|set|change|update|raise|make)?\s*(?:bei|prices?|selling\s*price)?\s*(?:ya|za|wa|of|for|the)?\s*/i;
@@ -59,10 +64,14 @@ function flatPriceList(said: string): SellingPrice[] {
       .replace(/\s+(?:selling\s*price|price|bei)$/i, '')
       .replace(/\s+/g, ' ').trim();
     const retail = Number(piece[2].replace(/[,\s]/g, ''));
+    const wholesale = piece[3] ? Number(piece[3].replace(/[,\s]/g, '')) : null;
     if (name.length < 2 || !/[\p{L}]/u.test(name)) return [];
     if (!Number.isFinite(retail) || retail <= 0 || retail >= 100_000_000) return [];
+    // A trade price above retail is somebody's slip, not a bargain. Refusing the
+    // whole list is right: saving two of three prices is worse than saving none.
+    if (wholesale !== null && (!Number.isFinite(wholesale) || wholesale <= 0 || wholesale > retail)) return [];
     const at = prices.findIndex((price) => price.product.toLowerCase() === name.toLowerCase());
-    const entry: SellingPrice = { product: name, retail, wholesale: null, minQty: null };
+    const entry: SellingPrice = { product: name, retail, wholesale, minQty: null };
     if (at >= 0) prices[at] = entry; else prices.push(entry);
   }
   return prices;

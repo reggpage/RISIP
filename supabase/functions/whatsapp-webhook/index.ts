@@ -258,6 +258,16 @@ import {
   sellingPriceReply,
 } from '../_shared/whatsappSellingPriceQuestion.ts';
 import {
+  normalizeVoidTarget,
+  parseVoidRequest,
+  voidCancelled,
+  voidConfirmation,
+  voidDone,
+  voidNotAllowed,
+  voidNothingFound,
+  type VoidPending,
+} from '../_shared/whatsappVoid.ts';
+import {
   ADVISOR_VOICE,
   advisorBrief,
   advisorEvidence,
@@ -3169,6 +3179,10 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<SellingPriceBatch> | null)?.kind === 'selling_price_batch'
           ? convo.options as SellingPriceBatch
           : null;
+        const voidPending = convo?.awaiting === 'product_cost'
+          && (convo.options as { kind?: string } | null)?.kind === 'void_record'
+          ? convo.options as VoidPending
+          : null;
         const invitePending = convo?.awaiting === 'product_cost'
           && (convo.options as { kind?: string } | null)?.kind === 'invite_role'
           ? true
@@ -4048,6 +4062,39 @@ Deno.serve(async (req) => {
         if (invitePending && startsAnotherTopic(body)) {
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'invite', 'abandoned', 'skipped');
+        } else if (voidPending) {
+          if (isCancel(body) || isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, voidCancelled(lang));
+            await audit(db, identity, waMessageId, 'void_record', 'cancel', 'applied');
+            await finish('skipped');
+            continue;
+          }
+          if (!isDailyRecordConfirmation(body)) {
+            await replyQuietly(phone, voidConfirmation(voidPending.target, lang));
+            await audit(db, identity, waMessageId, 'void_record', 'reask', 'skipped');
+            await finish('skipped');
+            continue;
+          }
+          await clearConversation(db, identity.id as string);
+          const { data: voided, error: voidError } = await db.rpc('wa_void_daily_record', {
+            p_phone: phone,
+            p_daily_record_id: voidPending.target.id,
+            p_reason: 'Imeondolewa na mwenye biashara kupitia WhatsApp',
+          });
+          const done = (voided ?? {}) as Record<string, unknown>;
+          if (voidError || done.voided !== true) {
+            await replyQuietly(phone, voidError
+              ? productCostErrorMessage(voidError, lang)
+              : voidNothingFound(lang));
+            await audit(db, identity, waMessageId, 'void_record', 'failed', 'failed');
+            await finish('skipped');
+            continue;
+          }
+          await replyQuietly(phone, voidDone(voidPending.target, lang));
+          await audit(db, identity, waMessageId, 'void_record', String(done.kind ?? 'record'), 'applied');
+          await finish('skipped');
+          continue;
         } else if (invitePending) {
           if (isCancel(body) || isDailyRecordRejection(body)) {
             await clearConversation(db, identity.id as string);
@@ -5380,6 +5427,42 @@ Deno.serve(async (req) => {
         // so every one of these went to the model to be talked into calling a
         // tool. This calls that same tool directly: same figures, no budget
         // spent, and no chance of a number being improvised on the way.
+
+        // "Futa ile" — taking back a record that was already confirmed. Shown
+        // before anything changes, and confirmed once, because removing money
+        // from the books is as consequential as putting it there.
+        if (!mixed && parseVoidRequest(body)) {
+          if (!canUseCompanyFinanceReads(identity.role)) {
+            await reply(phone, voidNotAllowed(lang));
+            await audit(db, identity, waMessageId, 'void_record', 'denied', 'skipped');
+            await finish('skipped');
+            continue;
+          }
+          const { data: last } = await db.rpc('wa_last_daily_record', {
+            p_company_id: identity.company_id,
+          });
+          const target = normalizeVoidTarget(last);
+          if (!target) {
+            await reply(phone, voidNothingFound(lang));
+            await audit(db, identity, waMessageId, 'void_record', 'none', 'skipped');
+            await finish('skipped');
+            continue;
+          }
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: { kind: 'void_record', target } satisfies VoidPending,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          await reply(phone, voidConfirmation(target, lang));
+          await audit(db, identity, waMessageId, 'void_record', 'pending', 'pending');
+          await finish('skipped');
+          continue;
+        }
 
         // "Kwa nini mauzo yanashuka?" This period against the one before it.
         // Answered from the ledger, because a fall is arithmetic and the model
