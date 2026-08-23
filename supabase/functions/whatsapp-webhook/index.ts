@@ -207,7 +207,9 @@ import {
 import {
   cataloguePrefixResolution,
   nearestCatalogueName,
+  cataloguePrefixResolution,
   normalizeProductReadResolution,
+  type ProductReadResolution,
   productReadClarification,
   productReadMatchNotice,
   type ProductReadResolution,
@@ -1449,6 +1451,55 @@ async function buildAdvisorPayload(
   };
 }
 
+/**
+ * The product a WRITE is about, resolved against the shop's own catalogue.
+ *
+ * MEASURED FAILURE, the owner's own thread: "Bei ya velvet badilisha iwe 4500"
+ * created a PRODUCT called "velvet badilisha" priced at 4,500, sitting beside
+ * the real Velvet napkin. They had typed one word of the name and a verb, and
+ * nothing checked the list before writing.
+ *
+ * Read paths have resolved names for months; write paths never did, which is
+ * backwards — a bad read is a wrong answer, a bad write is a wrong catalogue
+ * forever. This walks the same ladder the read path walks, and then one rung
+ * further: if the whole phrase finds nothing, it drops the trailing word and
+ * tries again, because "velvet badilisha" is "velvet" with a verb stuck to it.
+ *
+ * Returns `not_found` only when nothing in the catalogue is close, which is
+ * what registering a genuinely new product looks like.
+ */
+async function resolveProductForWrite(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  asked: string,
+): Promise<ProductReadResolution> {
+  const direct = await resolveProductForRead(db, identity, asked);
+  if (direct.error) return { kind: 'not_found', asked };
+  if (direct.resolution.kind !== 'not_found') return direct.resolution;
+
+  const { data: catalogue } = await db.rpc('company_product_names', { p_company_id: identity.company_id });
+  const names = ((catalogue ?? []) as Array<Record<string, unknown>>)
+    .map((row) => String(row.product_name ?? '').trim())
+    .filter(Boolean);
+  if (names.length === 0) return { kind: 'not_found', asked };
+
+  const words = asked.trim().split(/\s+/).filter(Boolean);
+  for (let take = words.length; take >= 1; take -= 1) {
+    const attempt = words.slice(0, take).join(' ');
+    const near = nearestCatalogueName(attempt, names);
+    if (near) {
+      return {
+        kind: 'matched',
+        asked,
+        match: { productKey: productKey(near), productName: near, matchKind: 'trigram', matchScore: 0.95 },
+      };
+    }
+    const byPrefix = cataloguePrefixResolution(attempt, names);
+    if (byPrefix) return byPrefix.kind === 'matched' ? { ...byPrefix, asked } : { ...byPrefix, asked };
+  }
+  return { kind: 'not_found', asked };
+}
+
 async function hypotheticalProfitToolReply(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
@@ -1811,14 +1862,15 @@ async function executeAssistantTool(
     }
     try {
       const payload = await buildAdvisorPayload(db, identity, lang);
-      // NO terminalReply. Setting one short-circuits the model entirely and
-      // sends the same canned brief to every shop for every question — which
-      // is exactly the "inajibu kama roboti" the owner objected to. Asked "nipe
-      // mbinu za kufika mauzo ya million kumi", Risip returned the generic
-      // three-section block and never answered the question. The model gets the
-      // figures and the voice, and writes to what was actually asked. The
-      // deterministic brief is still sent verbatim by the non-AI branch below.
-      return { content: `${advisorEvidence(payload)}\n\n${ADVISOR_VOICE}` };
+      // NO terminalReply: setting one short-circuits the model and sends the
+      // same canned brief to every shop for every question — the
+      // "inajibu kama roboti" the owner objected to.
+      //
+      // And NO instructions in the content. They used to be appended here, and
+      // when the model ran out of tool rounds the fallback sent this string
+      // straight to WhatsApp — figures, ADVISER MODE heading and all. The voice
+      // now lives in the system prompt, where the shop can never receive it.
+      return { content: advisorEvidence(payload), fallbackReply: advisorBrief(payload, lang) };
     } catch {
       const failed = lang === 'sw'
         ? 'Sikuweza kukusanya takwimu za biashara sasa.'
@@ -4811,6 +4863,22 @@ Deno.serve(async (req) => {
         // like a sale does, and reading it as a sale would invent revenue.
         const sellingPrice = parseSellingPrice(writeBody);
         if (sellingPrice) {
+          // Which product, according to the shop's own list — not according to
+          // however the name was typed. A price written against a name nobody
+          // sells creates a product nobody sells.
+          const named = await resolveProductForWrite(db, identity, sellingPrice.product);
+          if (named.kind === 'ambiguous') {
+            await reply(phone, productReadClarification(named, lang));
+            await audit(db, identity, waMessageId, 'selling_price', 'ambiguous', 'clarification');
+            await finish('skipped');
+            continue;
+          }
+          if (named.kind === 'matched') sellingPrice.product = named.match.productName;
+          const notice = named.kind === 'matched'
+            ? productReadMatchNotice(named, lang)
+            : (lang === 'sw'
+              ? `_Sijaiona "${sellingPrice.product}" kwenye orodha yako — nimeisajili kama bidhaa mpya._\n`
+              : `_I did not find "${sellingPrice.product}" in your catalogue — recorded as a new product._\n`);
           const { data: saved, error } = await db.rpc('wa_set_selling_price', {
             p_phone: phone,
             p_name: sellingPrice.product,
@@ -4823,7 +4891,7 @@ Deno.serve(async (req) => {
             await audit(db, identity, waMessageId, 'selling_price', sellingPrice.product, 'failed');
           } else {
             void saved;
-            await reply(phone, sellingPriceSaved(sellingPrice, lang));
+            await reply(phone, notice + sellingPriceSaved(sellingPrice, lang));
             await audit(db, identity, waMessageId, 'selling_price', sellingPrice.product, 'applied');
           }
           await finish('skipped');

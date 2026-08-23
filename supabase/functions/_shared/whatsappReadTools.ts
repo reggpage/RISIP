@@ -144,6 +144,20 @@ function parsePeriod(text: string): ReadPeriod {
 }
 
 /** Deterministic routing for A1. No AI is consulted to choose a read tool. */
+/**
+ * Receipts, invoices, petty cash, reimbursements and approvals.
+ *
+ * Switched off over WhatsApp for now, at the owner's request: Risip is being
+ * used by shopkeepers, and a duka has no petty-cash float, no reimbursement
+ * queue and no invoices to chase. Every one of those answers was a paragraph
+ * about a feature the person does not have.
+ *
+ * The server code stays — the contractor side of Risip still uses it, and the
+ * web app still shows it. Only the WhatsApp surface is quiet. Flip this back to
+ * true to restore it; nothing else has to change.
+ */
+export const WHATSAPP_RECEIPTS_ENABLED = false;
+
 export function parseReadRequest(input: string | null | undefined, now = new Date()): ReadRequest | null {
   // "mauoz ya leo ni ngapi", "leo nimezua kiasi gani" — one transposition, and
   // a question the ledger could answer went to the model instead.
@@ -154,7 +168,8 @@ export function parseReadRequest(input: string | null | undefined, now = new Dat
   const range = resolveDateRange(String(input ?? ''), now);
   const withRange = (request: Omit<ReadRequest, 'range'>): ReadRequest => ({ ...request, range });
 
-  if (hasAny(text, ['ninaidai risip', 'risip inanidai', 'my reimbursement', 'reimbursements yangu', 'risip owe', 'risip owes', 'owe me', 'nirudishiwe'])) {
+  if (WHATSAPP_RECEIPTS_ENABLED
+    && hasAny(text, ['ninaidai risip', 'risip inanidai', 'my reimbursement', 'reimbursements yangu', 'risip owe', 'risip owes', 'owe me', 'nirudishiwe'])) {
     return withRange({ tool: 'ai_owed_to_me', period });
   }
   // "badilisha biashara" is the imperative anybody would actually type, and the
@@ -163,13 +178,16 @@ export function parseReadRequest(input: string | null | undefined, now = new Dat
     'badilisha biashara', 'nibadilishie biashara', 'change business', 'hamia biashara'])) {
     return withRange({ tool: 'ai_my_businesses', period });
   }
-  if (hasAny(text, ['pending approval', 'awaiting approval', 'risiti za kuapprove', 'risiti zinazosubiri', 'zinazosubiri kuangaliwa'])) {
+  if (WHATSAPP_RECEIPTS_ENABLED
+    && hasAny(text, ['pending approval', 'awaiting approval', 'risiti za kuapprove', 'risiti zinazosubiri', 'zinazosubiri kuangaliwa'])) {
     return withRange({ tool: 'ai_pending_approvals', period });
   }
-  if (hasAny(text, ['petty cash', 'salio la cash', 'cash balance', 'salio langu la pesa'])) {
+  if (WHATSAPP_RECEIPTS_ENABLED
+    && hasAny(text, ['petty cash', 'salio la cash', 'cash balance', 'salio langu la pesa'])) {
     return withRange({ tool: 'ai_petty_cash_balance', period });
   }
-  if (hasAny(text, ['risiti zangu', 'my receipts', 'receipt status', 'status ya risiti', 'my confirmed receipts', 'my pending receipts', 'risiti zilizothibitishwa', 'risiti zangu za'])) {
+  if (WHATSAPP_RECEIPTS_ENABLED
+    && hasAny(text, ['risiti zangu', 'my receipts', 'receipt status', 'status ya risiti', 'my confirmed receipts', 'my pending receipts', 'risiti zilizothibitishwa', 'risiti zangu za'])) {
     const status = hasAny(text, ['confirmed', 'imethibitishwa'])
       ? 'confirmed'
       : hasAny(text, ['pending', 'inasubiri', 'submitted']) ? 'submitted' : null;

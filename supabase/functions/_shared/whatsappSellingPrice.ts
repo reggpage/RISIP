@@ -130,9 +130,17 @@ export function parseSellingPrice(text: string | null | undefined): SellingPrice
   // "badilisha bei ya Velvet napkin iwe 4000" left a product called "ya Velvet
   // napkin" — the verb was stripped after the connector, so the connector was
   // never at the front when its turn came.
-  const OPENING = /^(?:badilisha|badili|weka|wekea|panga|rekebisha|sahihisha|ongeza|punguza|set|change|update|make|ya|za|wa|kwa|of|for|ni|is|the)\s+/i;
+  const VERB = 'badilisha|badili|weka|wekea|panga|rekebisha|sahihisha|ongeza|punguza|set|change|update|make|raise|lower';
+  const OPENING = new RegExp(`^(?:${VERB}|ya|za|wa|kwa|of|for|ni|is|the)\\s+`, 'i');
   let peeled = product;
   while (OPENING.test(peeled)) peeled = peeled.replace(OPENING, '').trim();
+  // MEASURED FAILURE, the owner's own thread: "Bei ya velvet badilisha iwe
+  // 4500" saved a PRODUCT called "velvet badilisha" at 4,500, next to the real
+  // Velvet napkin. The verb can land at either end of the name — "badilisha bei
+  // ya velvet" and "bei ya velvet badilisha" are the same sentence — and only
+  // the front was being peeled.
+  const TRAILING = new RegExp(`\\s+(?:${VERB})$`, 'i');
+  while (TRAILING.test(peeled)) peeled = peeled.replace(TRAILING, '').trim();
   product = peeled;
 
   if (product.length < 2 || !/[\p{L}]/u.test(product)) return null;

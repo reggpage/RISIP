@@ -4,6 +4,7 @@ import { normalizeNumberWords } from '../../../../supabase/functions/_shared/wha
 import { parseStockCount } from '../../../../supabase/functions/_shared/whatsappStock';
 import { parseSellingPrice } from '../../../../supabase/functions/_shared/whatsappSellingPrice';
 import { parseSellingPriceBatch } from '../../../../supabase/functions/_shared/whatsappSellingPriceBatch';
+import { cataloguePrefixResolution, nearestCatalogueName } from '../../../../supabase/functions/_shared/whatsappProductResolver';
 
 // The chaos tier of scripts/interrogate.ts: money said out loud, a second
 // person behind the counter, a payment method on the end of a line, and a
@@ -161,5 +162,33 @@ describe('a price change is never a stock count', () => {
     expect(parseStockCount('daftari ziwe 400')).toEqual({ product: 'daftari', quantity: 400, unit: null });
     expect(route('daftari ziwe 400 na kalamu ziwe 200')).toBe('stock_count_batch');
     expect(route('nina daftari 90')).toBe('stock_count');
+  });
+});
+
+describe('a price written against a name nobody sells', () => {
+  // MEASURED FAILURE, the owner's own thread: "Bei ya velvet badilisha iwe
+  // 4500" created a PRODUCT called "velvet badilisha" at 4,500, sitting beside
+  // the real Velvet napkin. The verb had been welded to the name, and no write
+  // path had ever checked the catalogue before saving.
+  it('peels the verb off either end of the name', () => {
+    expect(parseSellingPrice('Bei ya velvet badilisha iwe 4500')?.product).toBe('velvet');
+    expect(parseSellingPrice('badilisha bei ya velvet iwe 4500')?.product).toBe('velvet');
+    expect(parseSellingPrice('weka bei ya velvet 4500')?.product).toBe('velvet');
+  });
+
+  // The name that survives has to reach a real product. One word of it is
+  // enough when only one product starts that way.
+  it('finds the shop’s own product from a fragment of its name', () => {
+    const catalogue = ['Velvet napkin', 'Sodaa', 'daftari', 'nguvu ya sala'];
+    expect(cataloguePrefixResolution('velvet', catalogue)).toMatchObject({
+      kind: 'matched', match: { productName: 'Velvet napkin' },
+    });
+    expect(nearestCatalogueName('velvt', catalogue)).toBeNull();
+    expect(nearestCatalogueName('sodaaa', catalogue)).toBe('Sodaa');
+  });
+
+  it('asks rather than guessing when a fragment fits two products', () => {
+    const catalogue = ['kalamu za rangi', 'kalamu za wino'];
+    expect(cataloguePrefixResolution('kalamu', catalogue)).toMatchObject({ kind: 'ambiguous' });
   });
 });

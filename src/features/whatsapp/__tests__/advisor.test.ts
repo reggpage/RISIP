@@ -172,3 +172,24 @@ describe('the adviser', () => {
     expect(evidence).toContain('no_buying_cost=Biscuit');
   });
 });
+
+describe('what a shopkeeper must never receive', () => {
+  // MEASURED FAILURE, MINE, on the owner's live number: when the model ran out
+  // of tool rounds the fallback sent the raw tool content — key=value lines
+  // followed by the whole ADVISER MODE prompt. Risip's own instructions arrived
+  // as a WhatsApp message. Nothing in a tool result is written for a person
+  // unless the tool says so.
+  it('keeps instructions out of the tool result entirely', () => {
+    const evidence = advisorEvidence(payload);
+    expect(evidence).not.toContain('ADVISER MODE');
+    expect(evidence).not.toContain('ANSWER THE QUESTION');
+    expect(evidence).not.toMatch(/^[A-Z][A-Z ]{8,}$/m);
+  });
+
+  it('has a human rendering ready for when the model cannot answer', () => {
+    const brief = advisorBrief(payload, 'sw', new Date('2026-08-24T05:00:00Z'));
+    expect(brief).toContain('📊');
+    expect(brief).not.toContain('=');
+    expect(brief).not.toContain('ADVISER MODE');
+  });
+});

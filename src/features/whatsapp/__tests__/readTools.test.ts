@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { WHATSAPP_RECEIPTS_ENABLED } from '../../../../supabase/functions/_shared/whatsappReadTools';
 import {
   buildBusinessSummaryReply,
   buildDebtorsReply,
@@ -15,9 +16,19 @@ describe('A1 deterministic read-only WhatsApp tools', () => {
     expect(parseReadRequest('faida ya mwezi huu')).toMatchObject({ tool: 'daily_profit_estimate', period: 'month' });
     expect(parseReadRequest('deni la Asha ni ngapi sasa?')).toMatchObject({ tool: 'ai_debtor_detail', partyName: 'asha' });
     expect(parseReadRequest('what happened today')).toMatchObject({ tool: 'ai_business_summary' });
-    expect(parseReadRequest('my receipts confirmed')).toMatchObject({ tool: 'ai_my_receipts', status: 'confirmed' });
-    expect(parseReadRequest('petty cash balance')).toMatchObject({ tool: 'ai_petty_cash_balance' });
-    expect(parseReadRequest('ninaidai Risip?')).toMatchObject({ tool: 'ai_owed_to_me' });
+    // Receipts, petty cash and reimbursements are switched off over WhatsApp
+    // for now — a duka has none of them. The phrasings stay asserted so that
+    // flipping WHATSAPP_RECEIPTS_ENABLED back on is a one-line change with the
+    // coverage already in place.
+    if (WHATSAPP_RECEIPTS_ENABLED) {
+      expect(parseReadRequest('my receipts confirmed')).toMatchObject({ tool: 'ai_my_receipts', status: 'confirmed' });
+      expect(parseReadRequest('petty cash balance')).toMatchObject({ tool: 'ai_petty_cash_balance' });
+      expect(parseReadRequest('ninaidai Risip?')).toMatchObject({ tool: 'ai_owed_to_me' });
+    } else {
+      expect(parseReadRequest('my receipts confirmed')).toBeNull();
+      expect(parseReadRequest('petty cash balance')).toBeNull();
+      expect(parseReadRequest('ninaidai Risip?')).toBeNull();
+    }
     expect(parseReadRequest('random hello')).toBeNull();
   });
 
@@ -75,11 +86,11 @@ describe('phrasings the eval set caught on its first run', () => {
 
   it('reads receipts asked for with an adjective in the middle', () => {
     // "my confirmed receipts" never contained the exact phrase "my receipts".
-    expect(tool('show my confirmed receipts')).toBe('ai_my_receipts');
+    expect(tool('show my confirmed receipts')).toBe(WHATSAPP_RECEIPTS_ENABLED ? 'ai_my_receipts' : null);
   });
 
   it('reads what Risip owes the person, said in English', () => {
-    expect(tool('what does Risip owe me')).toBe('ai_owed_to_me');
+    expect(tool('what does Risip owe me')).toBe(WHATSAPP_RECEIPTS_ENABLED ? 'ai_owed_to_me' : null);
   });
 
   it('reads a debt question written with typos', () => {

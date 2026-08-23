@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { WHATSAPP_RECEIPTS_ENABLED } from '../../../../supabase/functions/_shared/whatsappReadTools';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
@@ -39,7 +40,11 @@ describe('Risip conversational AI core', () => {
     expect(ASSISTANT_TOOL_NAMES).toContain('get_product_performance');
     expect(ASSISTANT_TOOL_NAMES).toContain('get_product_cost');
     expect(ASSISTANT_TOOL_NAMES).toContain('get_hypothetical_product_profit');
+    // Still defined and still executable; just not on the WhatsApp menu while
+    // WHATSAPP_RECEIPTS_ENABLED is false.
     expect(ASSISTANT_TOOL_NAMES).toContain('get_receipt_details');
+    expect(ASSISTANT_TOOLS.some((definition) => definition.name === 'get_receipt_details'))
+      .toBe(WHATSAPP_RECEIPTS_ENABLED);
     expect(ASSISTANT_TOOL_NAMES).toContain('get_invoice_details');
     expect(ASSISTANT_TOOL_NAMES).toContain('propose_daily_record');
     expect(ASSISTANT_TOOL_NAMES).not.toContain('approve_receipt');
@@ -68,10 +73,10 @@ describe('Risip conversational AI core', () => {
     expect(prompt).toContain('Treat greetings and ordinary small talk as conversation');
     expect(prompt).toContain('Never require an exact memorized phrase');
     expect(prompt).toContain('Explicit NDIYO/YES is required');
-    expect(prompt).toContain('always call get_receipt_details');
-    expect(prompt).toContain('always call get_invoice_details');
-    expect(prompt).toContain('Never reconstruct or guess it');
-    expect(prompt).toContain('A receipt is evidence of a purchase/payment; an invoice is a request or record for payment');
+    expect(prompt).toContain(WHATSAPP_RECEIPTS_ENABLED
+      ? 'always call get_receipt_details'
+      : 'not part of this WhatsApp assistant');
+    
   });
 
   it('keeps only a bounded, safe first name for assistant personalization', () => {
