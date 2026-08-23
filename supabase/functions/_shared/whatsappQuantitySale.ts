@@ -248,7 +248,16 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   // line unreadable — which, in an all-or-nothing paste, silently refused the
   // other forty-four. The quantity is still unambiguous because it has to be the
   // last number before a separator or the end of the line.
-  const pattern = /([\p{L}][\p{L}0-9\s'’.-]*?)\s+([0-9]+(?:\.[0-9]+)?)(?=\s*(?:,|;|\bna\b|\band\b|$))/giu;
+  // A separator is helpful, but people do not always type one. The real
+  // message that exposed this was "nguvu ya sala 2 sabuni 6". The old pattern
+  // could only finish a pair before a comma/na/end, so it swallowed
+  // "2 sabuni" into the first product and kept the final 6. Risip then asked
+  // about nguvu ya sala 6 and silently lost sabuni.
+  //
+  // A product word must start with a letter, while a quantity is a standalone
+  // number. That lets adjacent pairs be read safely and still preserves names
+  // such as "karatasi A4 rimu" and "t-shirt".
+  const pattern = /([\p{L}][\p{L}0-9'’.-]*(?:\s+[\p{L}][\p{L}0-9'’.-]*)*)\s+([0-9]+(?:\.[0-9]+)?)/giu;
   for (const match of payload.matchAll(pattern)) {
     const product = clean(match[1])
       .replace(/^(?:na|and|,|;)\s+/i, '')

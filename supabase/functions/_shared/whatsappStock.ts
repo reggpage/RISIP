@@ -29,12 +29,13 @@ export type StockCount = {
   product: string;
   quantity: number;
   unit: string | null;
-  /**
-   * Which words the shopkeeper used. "nina 20" is unambiguous; "naongeza 20"
-   * could mean "twenty more" and is recorded as a count like everything else —
-   * so the confirmation has to say so in those words, not in general ones.
-   */
-  stated?: 'count' | 'add';
+};
+
+export type AmbiguousStockChange = {
+  product: string;
+  quantity: number;
+  unit: string | null;
+  wording: 'add' | 'stock';
 };
 
 const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, ' ').trim();
@@ -68,12 +69,10 @@ export function parseStockCount(text: string | null | undefined): StockCount | n
   const patterns = [
     // An explicit shelf anchor, including the owner's portion example:
     // "store mafuta ndoo 2". This is a count, not a purchase movement.
-    //
-    // "naongeza sukari 20" is here because that is the phrase the welcome now
-    // teaches for adding goods, and the bulk form "naongeza bidhaa" + a list
-    // already anchors. The same words on one line must not mean something
-    // different from the same words on three.
-    new RegExp(`^(?:store|stoo|naongeza|ninaongeza|nimeongeza|ongeza|nimeweka|add)`
+    // Words meaning ADD are deliberately absent. "naongeza sukari 20" does
+    // not say whether twenty arrived on top of the old stock or whether twenty
+    // is the new physical count. Overwriting the shelf is not a clarification.
+    new RegExp(`^(?:store|stoo|nimeweka)`
       + `\\s+(?:(?:bidhaa|bidhaa\\s+mpya|stock|store|mzigo|product|products)\\s+)?`
       + `(.+?)\\s+(?:(${UNITS})\\s+)?(${NUMBER})\\s*(${UNITS})?$`, 'i'),
     // nina daftari 90 [kipimo]
@@ -101,10 +100,57 @@ export function parseStockCount(text: string | null | undefined): StockCount | n
     if (!product || product.length < 2 || !Number.isFinite(quantity) || quantity < 0) continue;
     // A name made only of digits is a parse gone wrong, not a product.
     if (!/[\p{L}]/u.test(product)) continue;
-    const adding = /^(?:naongeza|ninaongeza|nimeongeza|ongeza|add)\b/i.test(said);
-    return { product, quantity, unit, ...(adding ? { stated: 'add' as const } : {}) };
+    return { product, quantity, unit };
   }
   return null;
+}
+
+/**
+ * A stock phrase that contains a quantity but not enough meaning to move it.
+ * This parser exists only to stop and ask; it never writes.
+ */
+export function parseAmbiguousStockChange(
+  text: string | null | undefined,
+): AmbiguousStockChange | null {
+  const said = clean(correctControlWords(text));
+  if (!said) return null;
+  const pattern = new RegExp(
+    `^(naongeza|ninaongeza|nimeongeza|ongeza|add|stock|stoo)`
+      + `\\s+(?:(?:bidhaa|stock|store|stoo|mzigo|product|products)\\s+)?`
+      + `(.+?)\\s+(?:(${UNITS})\\s+)?(${NUMBER})\\s*(${UNITS})?$`,
+    'i',
+  );
+  const match = pattern.exec(said);
+  if (!match) return null;
+  const product = clean(match[2]).replace(/^(?:ya|za|wa|of)\s+/i, '');
+  const quantity = Number(match[4]);
+  const unit = (match[3] ?? match[5] ?? '').toLowerCase() || null;
+  if (!product || !/[\p{L}]/u.test(product) || !Number.isFinite(quantity) || quantity <= 0) return null;
+  return {
+    product,
+    quantity,
+    unit,
+    wording: /^(?:stock|stoo)$/i.test(match[1]) ? 'stock' : 'add',
+  };
+}
+
+export function ambiguousStockChangeReply(change: AmbiguousStockChange, lang: Lang): string {
+  const quantity = change.quantity.toLocaleString('en-US', { maximumFractionDigits: 3 });
+  const unit = change.unit ? ` ${change.unit}` : '';
+  if (lang === 'sw') {
+    return `Sijaelewa kama ${quantity}${unit} ni bidhaa ulizoongeza, au ndiyo stock yote iliyopo sasa.\n\n`
+      + `• Kuongeza ${quantity}${unit} ulizonunua, andika bei ya moja: `
+      + `“Nimenunua ${change.product} ${quantity}${unit} kila moja TSh [bei ya moja]”.\n`
+      + `• Kuweka hesabu ya stock yote kuwa ${quantity}${unit}, andika: `
+      + `“Nina ${change.product} ${quantity}${unit}”.\n\n`
+      + 'Sitaandika chochote mpaka uchague maana moja.';
+  }
+  return `I could not tell whether ${quantity}${unit} was added to the old stock, or is the full stock on hand now.\n\n`
+    + `• To add ${quantity}${unit} purchased, include the unit cost: `
+    + `“I bought ${change.product} ${quantity}${unit} each TSh [unit cost]”.\n`
+    + `• To set the full stock count to ${quantity}${unit}, send: `
+    + `“I have ${change.product} ${quantity}${unit}”.\n\n`
+    + 'I will not write anything until you choose one meaning.';
 }
 
 /**
@@ -336,22 +382,9 @@ export function stockListReply(rows: StockRow[], lang: Lang): string {
 
 export function stockCountConfirmation(count: StockCount, previous: number | null, lang: Lang): string {
   const unit = count.unit ? ` ${count.unit}` : '';
-  // "naongeza sukari 20" is recorded as twenty on the shelf, not twenty more.
-  // Somebody who meant "twenty more" has to be told in the same breath, with
-  // the number they probably meant, or they walk away believing the wrong
-  // total — and stock that is wrong today is wrong for every day after it.
-  const adding = count.stated === 'add' && previous !== null && previous > 0;
-  const drift = previous === null || previous === count.quantity ? '' : (adding
-    ? (lang === 'sw'
-      ? `\nNilikuwa nadhani zipo ${previous}, sasa nimeweka ${count.quantity}.`
-        + `\nKama ulimaanisha kuongeza ${count.quantity} juu ya ${previous},`
-        + ` andika: "nina ${count.product} ${previous + count.quantity}".`
-      : `\nI believed there were ${previous}; I have set it to ${count.quantity}.`
-        + `\nIf you meant ${count.quantity} MORE than ${previous},`
-        + ` send: "nina ${count.product} ${previous + count.quantity}".`)
-    : (lang === 'sw'
-      ? `\nNilikuwa nadhani zipo ${previous}. Hesabu yako ndiyo sahihi.`
-      : `\nI believed there were ${previous}. Your count is the one that counts.`));
+  const drift = previous === null || previous === count.quantity ? '' : (lang === 'sw'
+    ? `\nNilikuwa nadhani zipo ${previous}. Hesabu yako ndiyo sahihi.`
+    : `\nI believed there were ${previous}. Your count is the one that counts.`);
   return lang === 'sw'
     ? `✅ Nimehesabu ${count.product}: ${count.quantity}${unit}.${drift}\n\nKuanzia sasa nitafuatilia mwenyewe kadri unavyouza na kuingiza.`
     : `✅ Counted ${count.product}: ${count.quantity}${unit}.${drift}\n\nFrom here I will keep track as you sell and restock.`;

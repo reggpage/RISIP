@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ambiguousStockChangeReply,
+  parseAmbiguousStockChange,
   parseStockCount,
   parseOutOfStockQuestion,
   parseStockQuestion,
@@ -203,25 +205,26 @@ describe('the unit-mismatch message keeps the useful half', () => {
   });
 });
 
-describe('the words the welcome teaches, on one line', () => {
-  it('reads "naongeza sukari 20" as a count, like the bulk form does', () => {
-    // The welcome now teaches "naongeza bidhaa" for adding goods, and the bulk
-    // form anchors the shelf. One line of the same words used to fall through
-    // to "is this a sale or a purchase?", which nobody had asked.
-    expect(parseStockCount('naongeza sukari 20')).toEqual({
-      product: 'sukari', quantity: 20, unit: null, stated: 'add',
+describe('stock wording that does not say whether the number is added or absolute', () => {
+  it('never overwrites the shelf from "naongeza"', () => {
+    expect(parseStockCount('naongeza sukari 20')).toBeNull();
+    expect(parseStockCount('nimeongeza sukari kilo 20')).toBeNull();
+    expect(parseAmbiguousStockChange('naongeza sukari 20')).toEqual({
+      product: 'sukari', quantity: 20, unit: null, wording: 'add',
     });
-    expect(parseStockCount('nimeongeza sukari kilo 20')).toEqual({
-      product: 'sukari', quantity: 20, unit: 'kilo', stated: 'add',
+    expect(parseAmbiguousStockChange('nimeongeza sukari kilo 20')).toEqual({
+      product: 'sukari', quantity: 20, unit: 'kilo', wording: 'add',
     });
-    expect(parseStockCount('naongeza bidhaa sukari 20')).toMatchObject({ product: 'sukari', quantity: 20 });
   });
 
-  it('says plainly that twenty added is not twenty more', () => {
-    const count = parseStockCount('naongeza sukari 20')!;
-    const said = stockCountConfirmation(count, 30, 'sw');
-    expect(said).toContain('sasa nimeweka 20');
-    expect(said).toContain('nina sukari 50');
+  it('stops "stock nguvu ya sala 30" before 30 can become money', () => {
+    const change = parseAmbiguousStockChange('stock nguvu ya sala 30');
+    expect(change).toEqual({ product: 'nguvu ya sala', quantity: 30, unit: null, wording: 'stock' });
+    const reply = ambiguousStockChangeReply(change!, 'sw');
+    expect(reply).toContain('Sijaelewa');
+    expect(reply).toContain('Nimenunua nguvu ya sala 30 kila moja');
+    expect(reply).toContain('Nina nguvu ya sala 30');
+    expect(reply).toContain('Sitaandika chochote');
   });
 
   it('keeps the plain wording when the words were unambiguous', () => {

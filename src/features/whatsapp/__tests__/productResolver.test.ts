@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  cataloguePrefixResolution,
   normalizeProductReadResolution,
   productReadClarification,
   productReadMatchNotice,
@@ -41,5 +42,15 @@ describe('company-scoped product read resolver', () => {
     expect(migration).not.toContain('create or replace function public.set_product_cost');
     expect(migration).not.toContain('create or replace function public.wa_set_stock_count');
     expect(webhook).toContain("db.rpc('wa_resolve_company_product_read'");
+  });
+
+  it('expands one unique short product name and asks when the prefix is shared', () => {
+    expect(cataloguePrefixResolution('nguvu', ['Nguvu ya Sala']))
+      .toMatchObject({ kind: 'matched', match: { productName: 'Nguvu ya Sala' } });
+    expect(cataloguePrefixResolution('nguvu', ['Nguvu', 'Nguvu ya Sala']))
+      .toMatchObject({
+        kind: 'ambiguous',
+        candidates: [{ productName: 'Nguvu' }, { productName: 'Nguvu ya Sala' }],
+      });
   });
 });

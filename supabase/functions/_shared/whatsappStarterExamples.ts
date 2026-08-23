@@ -112,9 +112,9 @@ export function businessWelcome(
 ): string {
   const eg = starterExample(category, subCategory);
   const italic = (lines: string[]) => lines.map((line) => `_${line}_`).join('\n');
-  // Three words, not two. Registering a product and putting stock on the shelf
-  // are different things and the owner asked for a word for each: *nasajili
-  // bidhaa* sets the prices once, *naongeza bidhaa* is how many arrived.
+  // Registering products, sales, and a physical shelf count are different
+  // things. "Naongeza bidhaa" was removed here because it does not say whether
+  // the listed number is newly arrived stock or the full count now on hand.
   //
   // The registration example carries BOTH prices, because a shop that only ever
   // sees a retail example never tells us its wholesale price and then gets
@@ -130,8 +130,10 @@ export function businessWelcome(
       + 'Usipotaja rejareja au jumla, natumia rejareja.\n\n'
       + '2️⃣ *mauzo* — kisha orodha ya vilivyouzwa:\n'
       + `_mauzo_\n${italic(eg.sold)}\n\n`
-      + '3️⃣ *naongeza bidhaa* — kisha orodha ya vilivyoingia dukani:\n'
-      + `_naongeza bidhaa_\n${italic(eg.onShelf)}\n\n`
+      + '3️⃣ *hesabu stock* — kisha orodha ya idadi zote zilizopo sasa:\n'
+      + `_hesabu stock_\n${italic(eg.onShelf)}\n\n`
+      + 'Ukinunua stock mpya, taja idadi na gharama, mfano: '
+      + '_nimenunua sabuni 20 kila moja TSh 1,500_.\n\n'
       + 'Bei sitakuuliza tena — nitatumia zile ulizosajili mwenyewe.\n\n'
       + 'Ukitaka kuingia kwenye webapp tuma *ingia*.\n'
       + 'Ukitaka kuona dashboard tuma *dashboard*.\n'
@@ -146,8 +148,10 @@ export function businessWelcome(
       + 'If a sale names neither retail nor wholesale, I use retail.\n\n'
       + '2️⃣ *mauzo* — then the list of what sold:\n'
       + `_mauzo_\n${italic(eg.sold)}\n\n`
-      + '3️⃣ *naongeza bidhaa* — then the list of what came into the shop:\n'
-      + `_naongeza bidhaa_\n${italic(eg.onShelf)}\n\n`
+      + '3️⃣ *stock count* — then list every quantity currently on hand:\n'
+      + `_stock count_\n${italic(eg.onShelf)}\n\n`
+      + 'When you buy new stock, include the quantity and cost, for example: '
+      + '_I bought soap 20 each TSh 1,500_.\n\n'
       + 'I will not ask for prices again — I use the ones you registered.\n\n'
       + 'To log in on the web app send *ingia*.\n'
       + 'To see the dashboard send *dashboard*.\n'

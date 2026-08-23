@@ -315,6 +315,16 @@ describe('the warning actually reaching the message', () => {
     expect(webhook).toContain('newProductSaleOffer(');
     expect(webhook).toContain('priced.notCounted');
   });
+
+  it('does not drop an adjacent second product when the user omits "na"', () => {
+    // Live failure: this became one fuzzy product called
+    // "nguvu ya sala 2 sabuni" with quantity 6. Sabuni vanished from the sale.
+    expect(parseQuantityOnlySale('Nimeuza nguvu ya sala 2 sabuni 6')?.items)
+      .toEqual([
+        { product: 'nguvu ya sala', quantity: 2, band: null },
+        { product: 'sabuni', quantity: 6, band: null },
+      ]);
+  });
 });
 
 describe('the word "mauzo" standing at the top of a list', () => {

@@ -205,6 +205,7 @@ import {
   splitCombo,
 } from '../_shared/whatsappCombos.ts';
 import {
+  cataloguePrefixResolution,
   nearestCatalogueName,
   normalizeProductReadResolution,
   productReadClarification,
@@ -259,6 +260,8 @@ import {
 import { compareWithTra, fetchTraReceipt } from '../_shared/traVerify.ts';
 import { qrCorrectionReply } from '../_shared/qrFollowUp.ts';
 import {
+  ambiguousStockChangeReply,
+  parseAmbiguousStockChange,
   parseStockCount,
   parseOutOfStockQuestion,
   parseStockQuestion,
@@ -4599,6 +4602,35 @@ Deno.serve(async (req) => {
           ));
           await audit(db, identity, waMessageId, 'selling_price_batch',
             String(sellingBatch.prices.length), 'pending');
+          await finish('skipped');
+          continue;
+        }
+
+        // "Naongeza X 30" and "stock X 30" are not safe writes. The first can
+        // mean thirty MORE or thirty in total; the second used to become a
+        // stock-purchase draft worth TSh 30. Stop before both the stock-count
+        // and money parsers and ask for one explicit meaning.
+        const ambiguousStockChange = parseAmbiguousStockChange(writeBody);
+        if (ambiguousStockChange) {
+          // Short forms are resolved only against this company's catalogue.
+          // One prefix is useful ("nguvu" -> "nguvu ya sala"); two are a
+          // question, never permission to create or overwrite the shorter one.
+          const { data: catalogueRows } = await db.rpc('company_product_names', {
+            p_company_id: identity.company_id,
+          });
+          const catalogueNames = ((catalogueRows ?? []) as Array<Record<string, unknown>>)
+            .map((row) => String(row.product_name ?? '').trim())
+            .filter(Boolean);
+          const prefixResolution = cataloguePrefixResolution(ambiguousStockChange.product, catalogueNames);
+          if (prefixResolution?.kind === 'ambiguous') {
+            await reply(phone, productReadClarification(prefixResolution, lang));
+          } else {
+            const canonical = prefixResolution?.kind === 'matched'
+              ? prefixResolution.match.productName
+              : ambiguousStockChange.product;
+            await reply(phone, ambiguousStockChangeReply({ ...ambiguousStockChange, product: canonical }, lang));
+          }
+          await audit(db, identity, waMessageId, 'stock_change', ambiguousStockChange.product, 'clarification');
           await finish('skipped');
           continue;
         }

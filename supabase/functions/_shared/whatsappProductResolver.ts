@@ -71,6 +71,34 @@ export function nearestCatalogueName(asked: string, names: string[]): string | n
   return found;
 }
 
+/**
+ * Resolves a short catalogue prefix without pretending it is an exact name.
+ *
+ * "nguvu" should find "nguvu ya sala" when that is the only possibility. If
+ * the catalogue contains both "nguvu" and "nguvu ya sala", choosing either is
+ * a guess, so the caller gets an ambiguity it can show to the user.
+ */
+export function cataloguePrefixResolution(
+  asked: string,
+  names: string[],
+): ProductReadResolution | null {
+  const wanted = asked.trim().toLocaleLowerCase('sw-TZ').replace(/\s+/g, ' ');
+  if (wanted.length < 3) return null;
+  const matched = names
+    .map((name) => ({ name: name.trim(), key: name.trim().toLocaleLowerCase('sw-TZ').replace(/\s+/g, ' ') }))
+    .filter(({ name, key }) => Boolean(name) && (key === wanted || key.startsWith(`${wanted} `)));
+  if (matched.length === 0) return null;
+  const candidates: ProductReadMatch[] = matched.map(({ name, key }) => ({
+    productKey: key,
+    productName: name,
+    matchKind: key === wanted ? 'exact' : 'trigram',
+    matchScore: key === wanted ? 1 : 0.99,
+  }));
+  return candidates.length === 1
+    ? { kind: 'matched', asked, match: candidates[0] }
+    : { kind: 'ambiguous', asked, candidates };
+}
+
 export function productReadClarification(resolution: Extract<ProductReadResolution, { kind: 'ambiguous' }>, lang: Lang): string {
   const names = resolution.candidates.slice(0, 3).map((candidate) => candidate.productName);
   const choices = names.length === 2
@@ -87,4 +115,3 @@ export function productReadMatchNotice(resolution: ProductReadResolution, lang: 
     ? `Nimechukulia “${resolution.asked}” kuwa “${resolution.match.productName}”.\n`
     : `I matched “${resolution.asked}” to “${resolution.match.productName}”.\n`;
 }
-
