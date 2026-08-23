@@ -1,4 +1,5 @@
 import type { Lang } from './whatsappIntent.ts';
+import { correctControlWords } from './whatsappSpelling.ts';
 
 export type DailyRecordKind =
   | 'sale' | 'expense' | 'debt_issued' | 'customer_payment' | 'stock_purchase';
@@ -62,7 +63,12 @@ const QUANTITY_PATTERN = '[0-9]+(?:\\.[0-9]+)?';
 type MoneyToken = { raw: string; value: number; start: number; end: number };
 
 function clean(text: string): string {
-  return text.toLowerCase().replace(/\r?\n/g, ' - ').replace(/\s+/g, ' ').trim();
+  // One slip in a decision-carrying word is corrected here, at the single point
+  // every reader of this file passes through — including isDailyRecordCandidate,
+  // which decides whether a message is a record at all. "nimueza" is a sale.
+  // See whatsappSpelling.ts for what may and may not be rewritten.
+  return correctControlWords(text)
+    .toLowerCase().replace(/\r?\n/g, ' - ').replace(/\s+/g, ' ').trim();
 }
 
 function normalizeSpelling(text: string): string {
@@ -815,10 +821,12 @@ export function splitWhatsAppText(text: string, maxChars = 3200): string[] {
 }
 
 export function isDailyRecordConfirmation(text: string | null | undefined): boolean {
+  text = correctControlWords(text);
   return /^(yes|ok|okay|confirm|sawa|ndio|ndiyo|thibitisha|hakika)\b/i.test(String(text ?? '').trim());
 }
 
 export function isDailyRecordRejection(text: string | null | undefined): boolean {
+  text = correctControlWords(text);
   return /^(no|hapana|cancel|ghairi|toka|futa|acha|sitisha)\b/i.test(String(text ?? '').trim());
 }
 

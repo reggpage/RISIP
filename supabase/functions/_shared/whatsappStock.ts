@@ -76,6 +76,11 @@ export function parseStockCount(text: string | null | undefined): StockCount | n
     new RegExp(`^(?:nimehesabu|hesabu ya|nimehesabia|counted|stock ya)\\s+(.+?)\\s+(?:(${UNITS})\\s+)?(${NUMBER})\\s*(${UNITS})?$`, 'i'),
     // daftari zimebaki 90
     new RegExp(`^(.+?)\\s+(?:zimebaki|imebaki|zilizobaki|zipo|ipo|remaining|left)\\s+(?:(${UNITS})\\s+)?(${NUMBER})\\s*(${UNITS})?$`, 'i'),
+    // "Daftari ziwe 400", and "jaza birika ziwe 100" — the shelf being SET.
+    // Neither a sale nor a purchase: "ziwe" is "let them be", which is what a
+    // count says. One of these on its own belongs here; several in one message
+    // are read by parseStockCountBatch.
+    new RegExp(`^(?:jaza|weka|wekea|sahihisha)?\\s*(.+?)\\s+(?:ziwe|iwe|zibaki|ibaki)\\s+(?:(${UNITS})\\s+)?(${NUMBER})\\s*(${UNITS})?$`, 'i'),
   ];
 
   for (const pattern of patterns) {

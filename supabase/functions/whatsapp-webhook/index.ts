@@ -4966,6 +4966,16 @@ Deno.serve(async (req) => {
           }
         }
 
+        if (!mixed && outOfStockQuestion) {
+          const answered = await executeAssistantTool(
+            db, identity, waMessageId, lang, 'get_stock_on_hand', { only_out_of_stock: true },
+          );
+          await reply(phone, answered.content);
+          await audit(db, identity, waMessageId, 'stock_question', 'out_of_stock', 'applied');
+          await finish('skipped');
+          continue;
+        }
+
         const productRequest = mixed ? null : (parseProductAnalyticsFollowUp(body, productContext) ?? parseProductAnalyticsRequest(body));
         if (productRequest) {
           await answerProductAnalytics(db, identity, phone, productRequest, lang);
@@ -4995,15 +5005,6 @@ Deno.serve(async (req) => {
         // so every one of these went to the model to be talked into calling a
         // tool. This calls that same tool directly: same figures, no budget
         // spent, and no chance of a number being improvised on the way.
-        if (!mixed && outOfStockQuestion) {
-          const answered = await executeAssistantTool(
-            db, identity, waMessageId, lang, 'get_stock_on_hand', { only_out_of_stock: true },
-          );
-          await reply(phone, answered.content);
-          await audit(db, identity, waMessageId, 'stock_question', 'out_of_stock', 'applied');
-          await finish('skipped');
-          continue;
-        }
 
         const stockQuestion = mixed ? null : directStockQuestion;
         if (stockQuestion) {

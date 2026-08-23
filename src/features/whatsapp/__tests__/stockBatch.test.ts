@@ -136,3 +136,32 @@ describe('what the trader is shown before anything is saved', () => {
     expect(reply.indexOf('nyingine kadhaa')).toBeLessThan(reply.indexOf('NDIYO'));
   });
 });
+
+describe('a shelf correction that arrived without its line breaks', () => {
+  const wanted = [
+    { product: 'birika', quantity: 100, unit: null },
+    { product: 'Daftari', quantity: 400, unit: null },
+    { product: 'Dumu la maji', quantity: 100, unit: null },
+  ];
+
+  it('reads the owner’s message laid out in three lines', () => {
+    const batch = parseStockCountBatch('Jaza birika ziwe 100\nDaftari ziwe 400\nDumu la maji ziwe 100');
+    expect(batch?.counts).toEqual(wanted);
+  });
+
+  it('reads the same message flat, which is how it actually arrived', () => {
+    // MEASURED FAILURE: read as one product it became a single item called
+    // "birika ziwe 100 Daftari ziwe 400 Dumu la maji", a hundred of them.
+    const batch = parseStockCountBatch('Jaza birika ziwe 100 Daftari ziwe 400 Dumu la maji ziwe 100');
+    expect(batch?.counts).toEqual(wanted);
+  });
+
+  it('does not claim a single shelf correction, which belongs to the one-line reader', () => {
+    expect(parseStockCountBatch('Daftari ziwe 400')).toBeNull();
+  });
+
+  it('does not turn an ordinary sentence into counts', () => {
+    expect(parseStockCountBatch('nimeuza daftari 5 kwa 7500')).toBeNull();
+    expect(parseStockCountBatch('habari za asubuhi')).toBeNull();
+  });
+});

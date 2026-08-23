@@ -15,6 +15,7 @@
 // behind someone's back is worse than a sale they had to type out.
 
 import type { Lang } from './whatsappIntent.ts';
+import { correctControlWords } from './whatsappSpelling.ts';
 import { normalizeNumberWords } from './whatsappDailyRecords.ts';
 
 export type QuantitySaleItem = {
@@ -110,7 +111,11 @@ export type ProductPricing = {
   wholesaleMinQty: number | null;
 };
 
-const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, ' ').trim();
+// The verb decides which chain a message goes down, so one slip in it is
+// corrected before anything here reads it — see whatsappSpelling.ts. Product
+// names and numbers pass through untouched.
+const clean = (s: string | null | undefined) =>
+  correctControlWords(String(s ?? '')).replace(/\s+/g, ' ').trim();
 
 /**
  * The dash a person puts between a product and its number.

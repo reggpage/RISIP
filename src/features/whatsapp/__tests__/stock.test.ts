@@ -299,3 +299,17 @@ describe('a shelf cannot hold minus eight', () => {
     expect(stockShortfall(short({ onHand: 3 }))).toBe(0);
   });
 });
+
+describe('setting the shelf, however the message arrived', () => {
+  it('reads "jaza X ziwe N" as a count, not a sale or a purchase', () => {
+    // The owner sent three of these and was asked "mauzo au manunuzi ya stock?"
+    // "Ziwe" is neither: it is "let them be", which is what a count says.
+    expect(parseStockCount('Daftari ziwe 400')).toEqual({ product: 'Daftari', quantity: 400, unit: null });
+    expect(parseStockCount('jaza birika ziwe 100')).toEqual({ product: 'birika', quantity: 100, unit: null });
+    expect(parseStockCount('sukari iwe kilo 12')).toEqual({ product: 'sukari', quantity: 12, unit: 'kilo' });
+  });
+
+  it('still refuses a movement', () => {
+    expect(parseStockCount('nimeuza daftari 5')).toBeNull();
+  });
+});

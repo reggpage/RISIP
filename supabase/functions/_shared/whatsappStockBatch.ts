@@ -20,6 +20,7 @@ export type StockCountBatch = {
 };
 
 const MAX_LINES = 120;
+const UNITS_INLINE = 'kilo|lita|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni';
 const UNITS = 'kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni|pcs|vipande';
 
 /**
@@ -75,9 +76,49 @@ export function parseStockCountLine(line: string): StockCountItem | null {
   return { product, quantity, unit: unit === 'pcs' || unit === 'vipande' ? null : unit };
 }
 
+/**
+ * Every "<name> ziwe <number>" in a message, however it was laid out.
+ *
+ * MEASURED FAILURE: the owner sent "Jaza birika ziwe 100 / Daftari ziwe 400 /
+ * Dumu la maji ziwe 100" and Risip asked whether it was a sale or a purchase.
+ * The line-by-line reader above handles that shape perfectly — but only when
+ * the line breaks survive, and this message arrived flat. Read as one product
+ * it became a single item called "birika ziwe 100 Daftari ziwe 400 Dumu la
+ * maji", a hundred of them.
+ *
+ * So the shelf-setting form is read out of the whole message rather than out of
+ * its lines. "Ziwe" is the anchor and it is unambiguous: it is neither a sale
+ * nor a purchase, it is "let them be".
+ */
+function setCounts(text: string): StockCountItem[] {
+  const found: StockCountItem[] = [];
+  const pattern = new RegExp(
+    `([\\p{L}][\\p{L}'’]*(?:\\s+[\\p{L}][\\p{L}'’]*){0,3}?)`
+    + `\\s+(?:ziwe|iwe|zibaki|ibaki)\\s+(?:(${UNITS})\\s+)?([0-9]+(?:\\.[0-9]+)?)`,
+    'giu',
+  );
+  for (const match of String(text ?? '').matchAll(pattern)) {
+    const product = clean(match[1]).replace(SET_COUNT_PREFIX, '').trim();
+    const quantity = Number(match[3]);
+    if (product.length < 2 || !Number.isFinite(quantity) || quantity < 0) continue;
+    const unit = (match[2] ?? '').toLowerCase() || null;
+    const at = found.findIndex((item) => item.product.toLowerCase() === product.toLowerCase());
+    const item = { product, quantity, unit: unit === 'pcs' || unit === 'vipande' ? null : unit };
+    if (at >= 0) found[at] = item; else found.push(item);
+  }
+  return found;
+}
+
 export function parseStockCountBatch(text: string | null | undefined): StockCountBatch | null {
   const raw = String(text ?? '').split(/\r?\n/);
   const first = raw[0] ?? '';
+
+  // The flat form, before anything that depends on line breaks.
+  if (raw.length === 1 && /\b(?:ziwe|iwe|zibaki|ibaki)\b/iu.test(first)) {
+    const counts = setCounts(first);
+    if (counts.length >= 2) return { kind: 'stock_count_batch', counts, unreadable: [] };
+  }
+
   const explicitSet = SET_COUNT_HEADER.test(first)
     && /\b(?:ziwe|iwe|zibaki|ibaki)\b/iu.test(first);
   if (!explicitSet && raw.length < 2) return null;

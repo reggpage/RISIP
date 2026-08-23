@@ -1,3 +1,4 @@
+import { correctControlWords } from './whatsappSpelling.ts';
 // Deterministic decision logic for the WhatsApp assistant.
 //
 // Everything here is pure and free of Deno globals so the same code runs in the

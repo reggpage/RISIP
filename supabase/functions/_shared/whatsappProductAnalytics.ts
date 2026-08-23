@@ -44,6 +44,12 @@ const clean = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N} ]/gu,
 export function parseProductAnalyticsRequest(text: string | null | undefined, now = new Date()): ProductAnalyticsRequest | null {
   const value = clean(text ?? '');
   if (!value) return null;
+  // MEASURED FAILURE: "Bidhaa gani zimeisha" — which products have RUN OUT —
+  // was answered with a ranking of which products sold most. Both questions
+  // start "bidhaa gani", and this parser saw its own words first. What is
+  // finished is a stock question and belongs to the shelf, not to a league
+  // table of sales.
+  if (/\b(?:zimeisha|zilizoisha|zimekwisha|kimeisha|out of stock)\b/.test(value)) return null;
   const asksProduct = /(?:\b(?:bidhaa|bidha|product|products)\b.*\b(?:gani|which|zote|inauza|inauzika|imeuzwa|iliuzwa|ninazouza|ninauza|selling|sold|faida|profit|revenue|mapato)\b)|(?:\b(?:inauza zaidi|inauza sana|inauza ngapi|imeuzw\w* ngap\w*|iliuzwa ngapi|(?:ina|kina)uzika sana|nini (?:kiliuza|iliuza|kiliuzwa|iliyouzwa) (?:zaidi|sana)|best selling|(?:what |wht )?sold (?:the )?most|top)\b)/.test(value);
   const asksProfit = /\b(faida|margin|profit|earn)\b/.test(value);
   const asksRevenue = /\b(mapato|revenue|money|fedha nyingi|pesa nyingi)\b/.test(value);
