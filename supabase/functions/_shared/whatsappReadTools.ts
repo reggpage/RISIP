@@ -6,6 +6,7 @@
 // treating a model response as an accounting source.
 
 import { type ResolvedRange, resolveDateRange } from './whatsappDateRange.ts';
+import { correctControlWords } from './whatsappSpelling.ts';
 
 export type ReadToolName =
   | 'ai_business_summary'
@@ -144,7 +145,9 @@ function parsePeriod(text: string): ReadPeriod {
 
 /** Deterministic routing for A1. No AI is consulted to choose a read tool. */
 export function parseReadRequest(input: string | null | undefined, now = new Date()): ReadRequest | null {
-  const text = normalise(String(input ?? ''));
+  // "mauoz ya leo ni ngapi", "leo nimezua kiasi gani" — one transposition, and
+  // a question the ledger could answer went to the model instead.
+  const text = normalise(correctControlWords(String(input ?? '')));
   if (!text) return null;
   const period = parsePeriod(text);
   // The person's own words about time win over the four coarse buckets.
@@ -181,13 +184,27 @@ export function parseReadRequest(input: string | null | undefined, now = new Dat
   if (detailName && !['nani', 'who', 'which'].includes(detailName)) {
     return withRange({ tool: 'ai_debtor_detail', period, partyName: detailName });
   }
-  if (hasAny(text, ['nani anadaiwa', 'nani ananidai', 'nani ananidwa', 'ananidwa pesa', 'wanaonidai', 'onyesha wadeni', 'list ya madeni', 'who owes me', 'hajanilipa', 'nina madeni', 'madeni yangu', 'madeni ya'])) {
+  // MEASURED (scripts/interrogate.ts): "orodha ya wanaodaiwa" went to the
+  // model while "nani ananidai" was answered from the ledger. Same question,
+  // and the list already knew every way of asking it but that one.
+  if (hasAny(text, ['nani anadaiwa', 'nani ananidai', 'nani ananidwa', 'ananidwa pesa', 'wanaonidai',
+    'wanaodaiwa', 'orodha ya madeni', 'nionyeshe madeni', 'onyesha madeni',
+    'onyesha wadeni', 'list ya madeni', 'who owes me', 'hajanilipa', 'nina madeni', 'madeni yangu', 'madeni ya'])) {
     return withRange({ tool: 'ai_debtors', period });
   }
   if (hasAny(text, ['faida', 'profit', 'margin', 'biashara inalipa', 'gharama zimezidi', 'nimepoteza pesa', 'nimepata hasara', 'hasara', 'lost money', 'losing money'])) {
     return withRange({ tool: 'daily_profit_estimate', period });
   }
-  if (hasAny(text, ['muhtasari', 'summary', 'imekuwaje', 'what happened', 'mauzo ya leo', 'mauzo ya wiki', 'mauzo ya mwezi', 'sales today', 'business summary', 'cash movement', 'mzunguko wa pesa', 'spend trend', 'matumizi ya wiki', 'nimepata kiasi gani', 'nimeingiza kiasi gani'])) {
+  // "leo nimeuza kiasi gani?" is the plainest way there is to ask what came in
+  // today, and it went to the model — which then had to be talked into calling
+  // the tool that was sitting right here. Asking with "kiasi gani" or "ngapi"
+  // is a question; a sale always names a figure, so these cannot collide.
+  if (hasAny(text, ['muhtasari', 'summary', 'imekuwaje', 'what happened', 'mauzo ya leo', 'mauzo ya wiki',
+    'mauzo ya mwezi', 'sales today', 'business summary', 'cash movement', 'mzunguko wa pesa', 'spend trend',
+    'matumizi ya wiki', 'nimepata kiasi gani', 'nimeingiza kiasi gani',
+    'nimeuza kiasi gani', 'nimeuza ngapi', 'niliuza kiasi gani', 'tumeuza kiasi gani',
+    'nimeingiza pesa ngapi', 'nimeingiza ngapi', 'nimepata pesa ngapi', 'nimepata ngapi',
+    'pesa ngapi leo', 'mauzo yangu'])) {
     return withRange({ tool: 'ai_business_summary', period });
   }
   return null;

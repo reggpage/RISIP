@@ -58,12 +58,14 @@ export function parseLanguageCommand(text: string | null | undefined): Lang | nu
 }
 
 export function isCancel(text: string | null | undefined): boolean {
-  const t = String(text ?? '').toLowerCase().trim();
+  // A mistyped "ghairi" left the draft standing while the shopkeeper believed
+  // they had cancelled it. See whatsappSpelling.ts.
+  const t = correctControlWords(text).toLowerCase().trim();
   return /^(cancel|ghairi|toka|futa|start over|anza upya|acha|sitisha)\b/.test(t);
 }
 
 export function isConfirm(text: string | null | undefined): boolean {
-  const t = String(text ?? '').toLowerCase().trim();
+  const t = correctControlWords(text).toLowerCase().trim();
   return /^(yes|ok|okay|confirm|sawa|ndio|ndiyo|thibitisha|hakika)\b/.test(t);
 }
 

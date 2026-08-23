@@ -1,5 +1,6 @@
 import type { Lang } from './whatsappIntent.ts';
 import { resolveDateRange } from './whatsappDateRange.ts';
+import { correctControlWords } from './whatsappSpelling.ts';
 
 export type ProductRankBy = 'quantity' | 'revenue' | 'margin';
 export type ProductPeriod = 'today' | 'week' | 'month' | 'year';
@@ -42,7 +43,10 @@ export type ProductAggregate = {
 const clean = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim();
 
 export function parseProductAnalyticsRequest(text: string | null | undefined, now = new Date()): ProductAnalyticsRequest | null {
-  const value = clean(text ?? '');
+  // "ni bdhaa gani zimeuzwa wiki hii", "nini kiemuzika leo" — one slip in the
+  // question word and a table that exists went unbuilt. The leading "ni" is
+  // dropped for the same reason: it is how the question gets opened out loud.
+  const value = clean(correctControlWords(text)).replace(/^ni\s+(?=bidhaa|kitu|vitu)/, '');
   if (!value) return null;
   // MEASURED FAILURE: "Bidhaa gani zimeisha" — which products have RUN OUT —
   // was answered with a ranking of which products sold most. Both questions

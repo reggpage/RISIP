@@ -205,6 +205,7 @@ import {
   splitCombo,
 } from '../_shared/whatsappCombos.ts';
 import {
+  nearestCatalogueName,
   normalizeProductReadResolution,
   productReadClarification,
   productReadMatchNotice,
@@ -251,6 +252,10 @@ import {
   priceBandNotice,
   sellingPriceSaved,
 } from '../_shared/whatsappSellingPrice.ts';
+import {
+  parseSellingPriceQuestion,
+  sellingPriceReply,
+} from '../_shared/whatsappSellingPriceQuestion.ts';
 import { compareWithTra, fetchTraReceipt } from '../_shared/traVerify.ts';
 import { qrCorrectionReply } from '../_shared/qrFollowUp.ts';
 import {
@@ -872,9 +877,25 @@ async function resolveProductForRead(
     p_company_id: identity.company_id,
     p_name: asked,
   });
+  const resolution = normalizeProductReadResolution(data, asked);
+  if (error || resolution.kind !== 'not_found') return { resolution, error: Boolean(error) };
+
+  // The database found nothing. Before saying so, try the shop's own list for a
+  // name one keystroke away — "altasi" for atlasi, "gunid" for gundi. See
+  // nearestCatalogueName: one edit, one candidate, or nothing.
+  const { data: catalogue } = await db.rpc('company_product_names', { p_company_id: identity.company_id });
+  const names = ((catalogue ?? []) as Array<Record<string, unknown>>)
+    .map((row) => String(row.product_name ?? '').trim())
+    .filter(Boolean);
+  const near = nearestCatalogueName(asked, names);
+  if (!near) return { resolution, error: false };
   return {
-    resolution: normalizeProductReadResolution(data, asked),
-    error: Boolean(error),
+    resolution: {
+      kind: 'matched',
+      asked,
+      match: { productKey: productKey(near), productName: near, matchKind: 'trigram', matchScore: 0.99 },
+    },
+    error: false,
   };
 }
 
@@ -1673,6 +1694,50 @@ async function executeAssistantTool(
         productName: String(data.product_name), unitCost: Number(data.unit_cost),
         unit: data.unit ? String(data.unit) : null, currency: String(data.currency), effectiveFrom: String(data.effective_from),
       } : null, lang),
+    };
+  }
+  if (name === 'get_selling_price') {
+    const productName = typeof input.product_name === 'string' ? input.product_name.trim().slice(0, 100) : '';
+    if (productName.length < 2 || !/[\p{L}]/u.test(productName)) {
+      const clarification = lang === 'sw' ? 'Unataka bei ya bidhaa gani?' : 'Which product price do you want?';
+      return { content: clarification, isError: true, terminalReply: clarification };
+    }
+    const resolved = await resolveProductForRead(db, identity, productName);
+    if (resolved.error) {
+      const failed = lang === 'sw' ? 'Sikuweza kutafuta bidhaa hiyo sasa.' : 'I could not look up that product right now.';
+      return { content: failed, isError: true, terminalReply: failed };
+    }
+    if (resolved.resolution.kind === 'ambiguous') {
+      const clarification = productReadClarification(resolved.resolution, lang);
+      return { content: clarification, isError: true, terminalReply: clarification };
+    }
+    if (resolved.resolution.kind === 'not_found') {
+      return { content: sellingPriceReply(productName, null, lang) };
+    }
+    const { data, error } = await db.rpc('wa_product_pricing', {
+      p_company_id: identity.company_id,
+      p_product_keys: [resolved.resolution.match.productKey],
+    });
+    if (error) {
+      const failed = lang === 'sw' ? 'Sikuweza kupata bei hiyo sasa.' : 'I could not load that price right now.';
+      return { content: failed, isError: true, terminalReply: failed };
+    }
+    const row = ((data ?? []) as Array<Record<string, unknown>>)[0];
+    return {
+      content: productReadMatchNotice(resolved.resolution, lang) + sellingPriceReply(
+        productName,
+        {
+          productName: resolved.resolution.match.productName,
+          retail: row?.retail_price == null ? null : Number(row.retail_price),
+          wholesale: row?.wholesale_price == null ? null : Number(row.wholesale_price),
+          wholesaleMinQty: row?.wholesale_min_qty == null ? null : Number(row.wholesale_min_qty),
+          unitCost: row?.unit_cost == null ? null : Number(row.unit_cost),
+        },
+        lang,
+        // The buying cost, and therefore the margin, is commercial data. A
+        // worker at the counter needs the selling price and nothing else.
+        canUseCompanyFinanceReads(identity.role),
+      ),
     };
   }
   if (name === 'get_hypothetical_product_profit') {
@@ -5011,6 +5076,21 @@ Deno.serve(async (req) => {
         // so every one of these went to the model to be talked into calling a
         // tool. This calls that same tool directly: same figures, no budget
         // spent, and no chance of a number being improvised on the way.
+
+        // "Bei ya daftari ni ngapi?" The shop's own price list, read straight
+        // back. Until now there was no tool for this at all — Risip would take
+        // a price, keep it, price a sale with it, and then have to improvise
+        // when asked what it was.
+        const priceQuestion = mixed ? null : parseSellingPriceQuestion(body);
+        if (priceQuestion) {
+          const answered = await executeAssistantTool(
+            db, identity, waMessageId, lang, 'get_selling_price', { product_name: priceQuestion.product },
+          );
+          await reply(phone, answered.content);
+          await audit(db, identity, waMessageId, 'selling_price_question', 'product', 'applied');
+          await finish('skipped');
+          continue;
+        }
 
         const stockQuestion = mixed ? null : directStockQuestion;
         if (stockQuestion) {

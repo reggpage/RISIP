@@ -11,6 +11,7 @@
 // no number: it will be believed, and it will be wrong.
 
 import type { Lang } from './whatsappIntent.ts';
+import { correctControlWords } from './whatsappSpelling.ts';
 
 export type StockRow = {
   productName: string;
@@ -52,9 +53,14 @@ const NUMBER = '[0-9]+(?:\\.[0-9]+)?';
  * daftari 90" is a sale and would wipe the shelf if misread.
  */
 export function parseStockCount(text: string | null | undefined): StockCount | null {
+  // MEASURED FAILURE: "kikokotoo zimbeaki 17" — one transposition in "zimebaki"
+  // — was not a count at all. It fell through to the bare goods list, where
+  // "kikokotoo zimbeaki" became a PRODUCT NAME the shop was then invited to
+  // register. That is how a catalogue fills up with names nobody sells.
+  //
   // "…5 storini" names the place, not the goods, and left the whole line
   // unreadable because the pattern ends at the number.
-  const said = clean(text).replace(PLACE, '').trim();
+  const said = clean(correctControlWords(text)).replace(PLACE, '').trim();
   if (!said) return null;
   // Anything that is plainly a movement is not a count.
   if (/^(?:nimeuza|niliuza|uza|sold|nimenunua|nimelipa|nimetumia|amechukua|amelipa)\b/i.test(said)) return null;
@@ -76,6 +82,9 @@ export function parseStockCount(text: string | null | undefined): StockCount | n
     new RegExp(`^(?:nimehesabu|hesabu ya|nimehesabia|counted|stock ya)\\s+(.+?)\\s+(?:(${UNITS})\\s+)?(${NUMBER})\\s*(${UNITS})?$`, 'i'),
     // daftari zimebaki 90
     new RegExp(`^(.+?)\\s+(?:zimebaki|imebaki|zilizobaki|zipo|ipo|remaining|left)\\s+(?:(${UNITS})\\s+)?(${NUMBER})\\s*(${UNITS})?$`, 'i'),
+    // "zimebaki manila 63" — the same sentence with the verb in front, which is
+    // how it gets said when the goods are what the sentence is about.
+    new RegExp(`^(?:zimebaki|imebaki|zilizobaki|zimesalia)\\s+(.+?)\\s+(?:(${UNITS})\\s+)?(${NUMBER})\\s*(${UNITS})?$`, 'i'),
     // "Daftari ziwe 400", and "jaza birika ziwe 100" — the shelf being SET.
     // Neither a sale nor a purchase: "ziwe" is "let them be", which is what a
     // count says. One of these on its own belongs here; several in one message
@@ -116,12 +125,30 @@ const EVERYTHING = /^(?:bidhaa|bidha|vitu|vitu\s+vyangu|bidhaa\s+zangu|mzigo|sto
 /** Questions that belong to another tool entirely and must not be claimed here. */
 const NOT_STOCK = /\b(?:mauzo|faida|hasara|madeni|deni|wadeni|wateja|risiti|pesa|matumizi|gharama|wafanyakazi|invoice|sales|profit|customers?|expenses?)\b/i;
 
+/**
+ * "sotck ya jalada", "stcok yangu ikoje".
+ *
+ * The general speller cannot hold the word "stock": it is one edit from "stick"
+ * and would have rewritten a real product name (see whatsappSpelling.ts). Here
+ * it is safe, because only the FIRST word is touched and only when the word
+ * that follows is "ya" or "yangu" — a position where a product name can never
+ * stand.
+ */
+function fixLeadingStock(said: string): string {
+  return said.replace(/^([\p{L}]{4,6})(\s+(?:ya|za|yangu|zangu)\b)/iu, (whole, word: string, tail: string) =>
+    word.toLowerCase() !== 'stock' && [...word.toLowerCase()].sort().join('') === 'ckost'
+      ? 'stock' + tail
+      : whole);
+}
+
 export function parseStockQuestion(text: string | null | undefined): { product: string | null } | null {
-  const said = clean(text).replace(/\?+\s*$/, '').replace(PLACE, '').trim();
+  const said = fixLeadingStock(clean(correctControlWords(text)).replace(/\?+\s*$/, '').replace(PLACE, '').trim());
   if (!said || NOT_STOCK.test(said)) return null;
 
   const named = said.match(new RegExp(`^(.+?)\\s+(?:${STOCK_VERBS})\\s+ngapi\\b`, 'i'))
     ?? said.match(/^(?:nina|ninazo|kuna|zipo|ziko)\s+(.+?)\s+ngapi\b/i)
+    // "zimebaki atlasi ngapi" — the same question with the verb in front.
+    ?? said.match(new RegExp(`^(?:${STOCK_VERBS})\\s+(.+?)\\s+ngapi\\b`, 'i'))
     ?? said.match(/^(?:stock|hisa)\s+(?:ya|za|of)\s+(.+?)\s*$/i)
     ?? said.match(/^how many\s+(.+?)\s+(?:do i have|are left|remain|in stock)/i);
   if (named) {
@@ -133,6 +160,16 @@ export function parseStockQuestion(text: string | null | undefined): { product: 
   if (/^(?:stock|hisa)$/i.test(said) || /^(?:nionyeshe|onyesha)\s+stock\b/i.test(said)) {
     return { product: null };
   }
+  // MEASURED (scripts/interrogate.ts): "stock yangu ikoje", "nina nini dukani"
+  // and "nionyeshe zilizopo" all went to the model. Every one of them is the
+  // whole shelf, asked the way somebody standing in their own shop asks it.
+  // ("dukani" is already gone by here — PLACE strips it.)
+  if (/^(?:stock|hisa|bidhaa|vitu|mzigo)\s+(?:yangu|zangu|langu)\s*(?:ikoje|zikoje|iko\s*je|ziko\s*je|vipi)?$/i.test(said)
+    || /^(?:nina|kuna)\s+nini$/i.test(said)
+    || /^(?:zilizopo|zilizobaki|vilivyopo)$/i.test(said)
+    || /^(?:nionyeshe|onyesha|nipe|niambie)\s+(?:zilizopo|zilizobaki|vilivyopo|bidhaa zilizopo|orodha ya bidhaa|stock yangu|bidhaa zangu)$/i.test(said)) {
+    return { product: null };
+  }
   // "bidhaa ngapi ziko store", "nina bidhaa ngapi" — the shelf, counted whole.
   if (new RegExp(`^(?:nina\\s+)?(?:bidhaa|vitu|mzigo|products?|items?)\\s+ngapi(?:\\s+(?:${STOCK_VERBS}))?$`, 'i').test(said)) {
     return { product: null };
@@ -142,10 +179,13 @@ export function parseStockQuestion(text: string | null | undefined): { product: 
 
 /** “Bidhaa gani zimeisha?” asks for counted products at zero, not the whole shelf. */
 export function parseOutOfStockQuestion(text: string | null | undefined): boolean {
-  const said = clean(text).replace(/\?+\s*$/, '').trim();
+  // "nini kimeisha dukani" names the place, and the place is not part of the
+  // question — without stripping it the whole sentence went to the model.
+  const said = clean(correctControlWords(text)).replace(/\?+\s*$/, '').replace(PLACE, '').trim();
   if (!said) return false;
-  return /^(?:(?:nipe|onyesha|nionyeshe|orodha ya|list)\s+)?(?:bidhaa|vitu|products?|items?)\s+(?:gani\s+)?(?:zimeisha|zilizoisha|zimekwisha|zenye\s+stock\s+0|out\s+of\s+stock)$/iu.test(said)
-    || /^(?:nini|what)\s+(?:kimeisha|zimeisha|is\s+out\s+of\s+stock)$/iu.test(said);
+  return /^(?:(?:nipe|onyesha|nionyeshe|orodha ya|list)\s+)?(?:bidhaa|vitu|products?|items?)\s+(?:gani\s+|zipi\s+)?(?:zimeisha|zilizoisha|zimekwisha|zenye\s+stock\s+0|out\s+of\s+stock)$/iu.test(said)
+    || /^(?:nini|kitu gani|what)\s+(?:kimeisha|zimeisha|kimekwisha|zimekwisha|is\s+out\s+of\s+stock)$/iu.test(said)
+    || /^(?:zipi|vipi|ipi)\s+(?:zimeisha|zilizoisha|zimekwisha|zimekwishaisha)$/iu.test(said);
 }
 
 export function outOfStockReply(rows: StockRow[], lang: Lang): string {

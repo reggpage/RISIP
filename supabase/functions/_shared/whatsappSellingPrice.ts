@@ -13,6 +13,7 @@
 // shop intends to charge.
 
 import type { Lang } from './whatsappIntent.ts';
+import { correctControlWords } from './whatsappSpelling.ts';
 
 export type SellingPrice = {
   product: string;
@@ -47,7 +48,11 @@ const WHOLESALE = /(?:jumla|wholesale|bei\s+ya\s+mteja\s+wa\s+mara\s+kwa\s+mara|
  * mistaken for a change to the shop's prices.
  */
 export function parseSellingPrice(text: string | null | undefined): SellingPrice | null {
-  const said = clean(text);
+  // MEASURED (scripts/interrogate.ts, 2,400 questions): "bei ya rula rjareja
+  // 950" was not a price at all. One transposition in "rejareja" and the whole
+  // line fell through to the bare goods list — a price being SET, read as goods
+  // SOLD, with a figure attached.
+  const said = clean(correctControlWords(text));
   if (!said) return null;
   // MEASURED FAILURE: clean() folds newlines into spaces, so a four-line till
   // roll headed "Mauzo" arrived here as one long string full of "rejareja" and

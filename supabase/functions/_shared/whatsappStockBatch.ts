@@ -20,7 +20,6 @@ export type StockCountBatch = {
 };
 
 const MAX_LINES = 120;
-const UNITS_INLINE = 'kilo|lita|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni';
 const UNITS = 'kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni|pcs|vipande';
 
 /**

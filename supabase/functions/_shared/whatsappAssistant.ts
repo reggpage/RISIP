@@ -100,6 +100,7 @@ export const ASSISTANT_TOOL_NAMES = [
   'get_business_summary',
   'get_product_performance',
   'get_product_cost',
+  'get_selling_price',
   'get_hypothetical_product_profit',
   'get_open_debts',
   'get_my_receipts',
@@ -157,6 +158,12 @@ export const ASSISTANT_TOOLS: ToolDefinition[] = [
     'get_product_cost',
     'Read the latest saved buying cost for one named product. This is commercial finance data for owner/accountant only. Use for “gharama yake?”, “bei ya kununua”, or “what does this product cost us?”. Never interpret a selling price as a buying cost.',
     { product_name: { type: 'string', description: 'One explicit or conversation-resolved product name. The server validates and limits it.' } },
+    ['product_name'],
+  ),
+  tool(
+    'get_selling_price',
+    'Read the shop’s own saved SELLING prices for one named product — retail, wholesale and the quantity wholesale starts at. Use for “bei ya X ni ngapi?”, “X ni bei gani?”, “nauza X ngapi?”. This is the price the shop charges, never the price it pays; use get_product_cost for that.',
+    { product_name: { type: 'string', description: 'One explicit or conversation-resolved product name. The server resolves it against the active company catalogue.' } },
     ['product_name'],
   ),
   tool(

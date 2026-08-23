@@ -29,9 +29,10 @@ import { parseBareExpense, parseBareQuantityList, parseQuantityOnlySale } from '
 import { parseReadRequest } from '../../supabase/functions/_shared/whatsappReadTools.ts';
 import { parseSellingPrice } from '../../supabase/functions/_shared/whatsappSellingPrice.ts';
 import { parseSellingPriceBatch } from '../../supabase/functions/_shared/whatsappSellingPriceBatch.ts';
-import { parseStockCount, parseStockQuestion } from '../../supabase/functions/_shared/whatsappStock.ts';
+import { parseSellingPriceQuestion } from '../../supabase/functions/_shared/whatsappSellingPriceQuestion.ts';
+import { parseOutOfStockQuestion, parseStockCount, parseStockQuestion } from '../../supabase/functions/_shared/whatsappStock.ts';
 import { parseStockCountBatch } from '../../supabase/functions/_shared/whatsappStockBatch.ts';
-import { splitSecondInstruction } from '../../supabase/functions/_shared/whatsappMixedTopics.ts';
+import { splitRiderQuestion, splitSecondInstruction } from '../../supabase/functions/_shared/whatsappMixedTopics.ts';
 
 /**
  * What the deterministic parsers say this message is worth.
@@ -76,6 +77,12 @@ export function route(text: string): string {
   // half is named back to the sender, never routed.
   const split = splitSecondInstruction(text);
   if (split && claimsWrite(split.action)) return route(split.action);
+  // A question riding along on an instruction. The webhook pulls it off before
+  // any parser sees the message and answers it afterwards; leaving it out of
+  // this table made every "nimeuza punch 1 halafu niambie kamusi ziko ngapi"
+  // look like a lost sale when production never lost it.
+  const rider = splitRiderQuestion(text);
+  if (rider && claimsWrite(rider.action)) return route(rider.action);
   if (parseLanguageCommand(text)) return 'change_language';
   if (parseSellingPriceBatch(text)) return 'selling_price_batch';
   if (parseStockCountBatch(text)) return 'stock_count_batch';
@@ -101,6 +108,10 @@ export function route(text: string): string {
   // the company. Read this route as "a candidate sale", not a certainty.
   if (parseBareExpense(text)) return 'bare_expense';
   if (parseBareQuantityList(text)) return 'bare_quantity_sale';
+  // Asked before the ranking parser, exactly as the webhook asks it: "bidhaa
+  // gani zimeisha" is a question about the shelf, not a table of sales.
+  if (parseOutOfStockQuestion(text)) return 'stock_question';
+  if (parseSellingPriceQuestion(text)) return 'selling_price_question';
   if (parseProductAnalyticsRequest(text)) return 'product_analytics';
   const read = parseReadRequest(text);
   if (read) return read.tool;

@@ -9,6 +9,8 @@
 // that it is a cost before we treat it as one. "nimeuza unga 900" is a sale and
 // must never land here.
 
+import { correctControlWords } from './whatsappSpelling.ts';
+
 export type Lang = 'en' | 'sw';
 
 export type ProductCost = {
@@ -92,6 +94,17 @@ const PATTERNS: { re: RegExp; product: number; amount: number; unit: number }[] 
   // "faida", and every margin after it would be wrong.
   { re: /^(.+?)\s+(?:sasa|now)\s+(?:ni|is)\s+([\d.,]+)\s+(?:kwa|per|kila)\s+([\p{L}]+)$/iu,
     product: 1, amount: 2, unit: 3 },
+  // MEASURED (scripts/interrogate.ts): "daftari nimenunua kwa 1750 kila moja"
+  // — the plainest statement of a buying price there is — was answered with
+  // "is 1,750 the total or the price of each?", a question it had just
+  // answered. "Kila moja" is what makes this a UNIT cost and not the day's
+  // spending: "nimenunua daftari 20 kwa 35000" has no such tail and stays a
+  // purchase, as it must.
+  { re: /^(.+?)\s+(?:nime|nili|nina|na)nunua\s+kwa\s+([\d.,]+)\s+(?:kila\s+(?:moja|kimoja|kipande|one)|each|kwa\s+kila\s+([\p{L}]+))$/iu,
+    product: 1, amount: 2, unit: 3 },
+  // The same sentence with the verb in front.
+  { re: /^(?:nime|nili|nina|na)nunua\s+(.+?)\s+kwa\s+([\d.,]+)\s+(?:kila\s+(?:moja|kimoja|kipande|one)|each|kwa\s+kila\s+([\p{L}]+))$/iu,
+    product: 1, amount: 2, unit: 3 },
 ];
 
 // Words that mean the message is about selling or spending, not about a cost
@@ -100,7 +113,7 @@ const PATTERNS: { re: RegExp; product: number; amount: number; unit: number }[] 
 const NOT_A_COST = /^(?:nimeuza|niliuza|uza|sold|mauzo|nimelipa|nimetumia|paid|spent|nimenunua\s+stock|amechukua|amelipa)\b/i;
 
 export function parseProductCost(text: string | null | undefined): ProductCost | null {
-  const said = clean(text);
+  const said = clean(correctControlWords(text));
   if (!said || NOT_A_COST.test(said)) return null;
 
   for (const { re, product, amount, unit } of PATTERNS) {

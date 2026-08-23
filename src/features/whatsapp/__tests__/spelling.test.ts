@@ -7,6 +7,7 @@ import {
   parseDailyRecord,
 } from '../../../../supabase/functions/_shared/whatsappDailyRecords';
 import { parseQuantityOnlySale } from '../../../../supabase/functions/_shared/whatsappQuantitySale';
+import { parseStockCount } from '../../../../supabase/functions/_shared/whatsappStock';
 
 // Every case here was typed by the owner on a real phone and got the wrong
 // answer. A shopkeeper working one-handed behind a counter transposes letters;
@@ -119,5 +120,78 @@ describe('what a name is, without a list of names', () => {
     expect(correctWord('tatu')).toBeNull();
     expect(correctWord('tabu')).toBeNull();
     expect(correctWord('mbii')).toBe('mbili');
+  });
+});
+
+describe('a slip that changes which way the money went', () => {
+  // MEASURED, from the database-driven interrogation (scripts/interrogate.ts):
+  // "Juma amleipa deni 10000" was recorded as a DEBT ISSUED — ten thousand
+  // going OUT to Juma — when he had just walked in and paid it back.
+  it('reads a payment whose verb had two letters swapped', () => {
+    expect(correctControlWords('Juma amleipa deni 10000')).toBe('Juma amelipa deni 10000');
+    const parsed = parseDailyRecord('Juma amleipa deni 10000', 'sw');
+    expect(parsed.kind).toBe('parsed');
+    if (parsed.kind !== 'parsed') return;
+    expect(parsed.record.kind).toBe('customer_payment');
+    expect(parsed.record.amount).toBe(10000);
+  });
+
+  it('still leaves the name in front of the mistyped verb alone', () => {
+    expect(correctControlWords('Juma amechkua sukari 12000')).toBe('Juma amechukua sukari 12000');
+    expect(correctControlWords('Mama Asha amleipa 5000')).toBe('Mama Asha amelipa 5000');
+  });
+
+  // A name can look exactly like a party verb. "Amelia" is one edit from
+  // "amelipa", so the position has to decide: at the head of a message, or
+  // straight after a title, a word that shape is a person.
+  it('never turns a name into a verb', () => {
+    expect(correctControlWords('Amelia 5000')).toBe('Amelia 5000');
+    expect(correctControlWords('Mama Amelia 5000')).toBe('Mama Amelia 5000');
+    expect(correctControlWords('Amelia amechukua sukari')).toBe('Amelia amechukua sukari');
+  });
+});
+
+describe('a slip in a word that counts the shelf', () => {
+  // MEASURED: "kikokotoo zimbeaki 17" was not a count. It fell through to the
+  // bare goods list, where "kikokotoo zimbeaki" became a PRODUCT NAME the shop
+  // was then offered the chance to register — which is where a catalogue full
+  // of names nobody sells comes from.
+  it('reads a count whose verb was mistyped', () => {
+    expect(parseStockCount('kikokotoo zimbeaki 17')).toEqual({ product: 'kikokotoo', quantity: 17, unit: null });
+    expect(parseStockCount('nimehesbau manila 63')).toEqual({ product: 'manila', quantity: 63, unit: null });
+    expect(parseStockCount('nna manila 63')).toEqual({ product: 'manila', quantity: 63, unit: null });
+  });
+
+  it('reads the same sentence with the verb in front', () => {
+    expect(parseStockCount('zimebaki manila 63')).toEqual({ product: 'manila', quantity: 63, unit: null });
+  });
+
+  it('still refuses to read a sale as a count', () => {
+    expect(parseStockCount('nimeuza daftari 90')).toBeNull();
+    expect(parseStockCount('nimueza daftari 90')).toBeNull();
+  });
+});
+
+describe('the concord letter is grammar, not a typo', () => {
+  // MEASURED FAILURE, MINE: "Nini kiliuza zaidi juzi?" — which product sold
+  // most the day before yesterday — was rewritten to "Nini niliuza zaidi
+  // juzi", and a product ranking became a question about the owner. Swahili
+  // agrees its verbs with one letter at the front, so half this vocabulary
+  // sits one substitution away from a real word that means something else.
+  it('never swaps one subject prefix for another', () => {
+    expect(correctControlWords('Nini kiliuza zaidi juzi?')).toBe('Nini kiliuza zaidi juzi?');
+    expect(correctControlWords('bidhaa gani zimeisha')).toBe('bidhaa gani zimeisha');
+    expect(correctControlWords('kimeuza sana')).toBe('kimeuza sana');
+  });
+
+  // A first-letter slip is still a slip when the letter is not a prefix at all.
+  it('still takes a yes typed with the wrong first letter', () => {
+    expect(correctControlWords('mdiyo')).toBe('ndiyo');
+  });
+
+  // MEASURED FAILURE, MINE: "stock" was briefly in the vocabulary and rewrote
+  // "Glue stick" to "Glue stock". Product names are an open set.
+  it('never touches a product name that resembles a vocabulary word', () => {
+    expect(correctControlWords('nimeuza leo Glue stick 1')).toBe('nimeuza leo Glue stick 1');
   });
 });

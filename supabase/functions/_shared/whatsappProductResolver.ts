@@ -1,4 +1,5 @@
 import type { Lang } from './whatsappIntent.ts';
+import { withinOneEdit } from './whatsappSpelling.ts';
 
 export type ProductReadMatch = {
   productKey: string;
@@ -35,6 +36,39 @@ export function normalizeProductReadResolution(data: unknown, asked: string): Pr
   return ambiguous && candidates.length > 1
     ? { kind: 'ambiguous', asked, candidates }
     : { kind: 'matched', asked, match: candidates[0] };
+}
+
+/**
+ * The one catalogue name this could be, after the database has already said no.
+ *
+ * MEASURED (scripts/interrogate.ts, eight seeds): "nina altasi ngapi",
+ * "Daasn ziko ngapi", "bei ya Bibia ni ngapi", "gunid ziko ngapi", "bei ya
+ * manlia ni ngapi" — every one of them exactly one transposition or one
+ * dropped letter from a product the shop really sells, and every one answered
+ * "Sina rekodi ya…" while the shelf held twenty of them.
+ *
+ * The trigram search in `wa_resolve_company_product_read` is the right tool for
+ * a name typed differently; it is the wrong tool for a name typed WRONG, where
+ * a single swapped letter can drop similarity below any floor worth having.
+ * This is the closed-vocabulary answer to a closed-vocabulary problem: the
+ * shop's own list, one edit, and only when exactly one name matches. Two
+ * candidates is not an answer, so it gives none.
+ *
+ * Deliberately runs only after the database has returned nothing, so it can
+ * never override a real match.
+ */
+export function nearestCatalogueName(asked: string, names: string[]): string | null {
+  const want = asked.trim().toLocaleLowerCase('sw-TZ');
+  // Below four letters a single edit reaches too much to be evidence.
+  if (want.length < 4) return null;
+  let found: string | null = null;
+  for (const name of names) {
+    const candidate = name.trim().toLocaleLowerCase('sw-TZ');
+    if (!candidate || !withinOneEdit(want, candidate)) continue;
+    if (found && found !== name) return null;
+    found = name;
+  }
+  return found;
 }
 
 export function productReadClarification(resolution: Extract<ProductReadResolution, { kind: 'ambiguous' }>, lang: Lang): string {
