@@ -4,6 +4,8 @@ import {
   advisorBrief,
   advisorEvidence,
   parseAdvisorRequest,
+  partOfDay,
+  timeGreeting,
   type AdvisorPayload,
 } from '../../../../supabase/functions/_shared/whatsappAdvisor';
 import {
@@ -106,26 +108,47 @@ describe('the adviser', () => {
     }
   });
 
+  // 08:00 and 21:00 in Dar es Salaam. The server runs in Frankfurt, three
+  // hours behind, which is exactly why this has to be pinned.
+  const morning = new Date('2026-08-24T05:00:00Z');
+  const night = new Date('2026-08-24T18:00:00Z');
+
   it('uses the three sections the owner asked for', () => {
-    const brief = advisorBrief(payload, 'sw');
+    const brief = advisorBrief(payload, 'sw', morning);
     expect(brief).toContain('📊 *Tathmini ya takwimu*');
     expect(brief).toContain('💡 *Ushauri wa MD*');
-    expect(brief).toContain('🚀 *Kazi ya kesho asubuhi*');
+    expect(brief).toContain('🚀 *');
+  });
+
+  // MEASURED FAILURE: "Kazi ya kesho asubuhi" was said at seven in the
+  // morning. Tomorrow is a day away; the thing to do is today, before opening.
+  it('says WHEN by the clock in the shop, not by a fixed phrase', () => {
+    expect(advisorBrief(payload, 'sw', morning)).toContain('🚀 *Kabla hujafungua leo*');
+    expect(advisorBrief(payload, 'sw', night)).toContain('🚀 *Kesho asubuhi*');
+    expect(advisorBrief(payload, 'en', morning)).toContain('🚀 *Before you open today*');
+  });
+
+  it('greets by the clock in the shop', () => {
+    expect(timeGreeting('sw', morning)).toBe('Habari za asubuhi');
+    expect(timeGreeting('sw', new Date('2026-08-24T11:00:00Z'))).toBe('Habari za mchana');
+    expect(timeGreeting('sw', new Date('2026-08-24T15:00:00Z'))).toBe('Habari za jioni');
+    expect(timeGreeting('en', night)).toBe('Good evening');
+    expect(partOfDay(morning)).toBe('asubuhi');
   });
 
   // A record month with a leak in it is still leaking. The loss has to reach
   // the owner before the congratulations do.
   it('leads the advice with the money being lost', () => {
-    const brief = advisorBrief(payload, 'sw');
+    const brief = advisorBrief(payload, 'sw', morning);
     expect(brief).toContain('Unauza chini ya gharama');
     expect(brief.indexOf('Ziba mtaji unaovuja')).toBeLessThan(brief.indexOf('Rudisha mzigo'));
     expect(brief).toContain('Velvet napkin');
   });
 
-  it('gives at most three actions and exactly one thing for the morning', () => {
-    const brief = advisorBrief(payload, 'sw');
+  it('gives at most three actions and exactly one thing to do', () => {
+    const brief = advisorBrief(payload, 'sw', morning);
     expect(brief.match(/^\d\. /gm)?.length).toBeLessThanOrEqual(3);
-    const tomorrow = brief.split('🚀 *Kazi ya kesho asubuhi*\n')[1];
+    const tomorrow = brief.split('🚀 *Kabla hujafungua leo*\n')[1];
     expect(tomorrow.split('\n').filter(Boolean)).toHaveLength(1);
   });
 
@@ -134,7 +157,7 @@ describe('the adviser', () => {
       ...payload, belowCost: [], deadStock: [], outOfStock: [], uncosted: [],
       outstandingDebt: 0, topDebtors: [],
     };
-    const brief = advisorBrief(clean, 'sw');
+    const brief = advisorBrief(clean, 'sw', morning);
     expect(brief).toContain('Endelea hivyo hivyo');
     expect(brief).toContain('nguvu ya sala');
   });

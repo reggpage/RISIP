@@ -73,7 +73,25 @@ export function parseSellingPrice(text: string | null | undefined): SellingPrice
   const wholesaleMatch = new RegExp(`${WHOLESALE.source}\\s*(?:ni|is|:)?\\s*(${NUMBER})`, 'i').exec(said)
     ?? new RegExp(`(${NUMBER})\\s*(?:ndio\\s*)?${WHOLESALE.source}`, 'i').exec(said);
 
-  const retail = money(retailMatch?.[1]);
+  // MEASURED FAILURE, the owner's own thread: "bei ya velvet napkin iwe 4000"
+  // named no band, so nothing here claimed it, and the stock parser took the
+  // line instead — writing a COUNT of four thousand for a product it invented
+  // called "bei ya velvet napkin". A price change became phantom stock.
+  //
+  // One price with no band named is retail. That is the owner's own rule, in
+  // their words: "mtu asipoandika rejareja ujue hiyo ni rejareja."
+  //
+  // Two prices on one line — "bei ya velvet iwe 4000 na sodaa iwe 2000" — are
+  // two products, and this parser reads one. Claiming it produced a single
+  // product called "velvet napkin iwe na sodaa" priced at the SECOND figure.
+  // Refusing sends it to the batch parser or to a question, both of which are
+  // recoverable; a mangled name in the price list is not.
+  const setsMoreThanOne = (said.match(/\b(?:iwe|ziwe)\s+[0-9]/gi) ?? []).length > 1;
+  const bareMatch = retailMatch || wholesaleMatch || setsMoreThanOne ? null
+    : new RegExp(`\\bbei\\s+(?:ya|za)\\s+.+?\\s+(?:iwe|ni|kuwa|:)\\s*(${NUMBER})\\s*$`, 'i').exec(said)
+      ?? new RegExp(`\\bbei\\s+(?:ya|za)\\s+.+?\\s+(${NUMBER})\\s*$`, 'i').exec(said);
+
+  const retail = money(retailMatch?.[1]) ?? money(bareMatch?.[1]);
   const wholesale = money(wholesaleMatch?.[1]);
   if (retail === null) return null;
 
@@ -104,9 +122,18 @@ export function parseSellingPrice(text: string | null | undefined): SellingPrice
     // Trimmed first: a trailing space was stopping the end-of-string anchor from
     // ever matching, so "bei ya biblia … kwa mteja wa mara kwa mara 18000" came
     // out as the product "biblia kwa".
-    .replace(/^(?:ya|za|wa|kwa|of|for|ni|is)\s+/i, '')
+    .replace(/\s+(?:iwe|ziwe|kuwa|be)$/i, '')
     .replace(/\s+(?:na|and|ni|is|kwa|for)$/i, '')
     .trim();
+
+  // The opening verb and the connector under it, peeled until neither is there.
+  // "badilisha bei ya Velvet napkin iwe 4000" left a product called "ya Velvet
+  // napkin" — the verb was stripped after the connector, so the connector was
+  // never at the front when its turn came.
+  const OPENING = /^(?:badilisha|badili|weka|wekea|panga|rekebisha|sahihisha|ongeza|punguza|set|change|update|make|ya|za|wa|kwa|of|for|ni|is|the)\s+/i;
+  let peeled = product;
+  while (OPENING.test(peeled)) peeled = peeled.replace(OPENING, '').trim();
+  product = peeled;
 
   if (product.length < 2 || !/[\p{L}]/u.test(product)) return null;
   if (wholesale !== null && wholesale > retail) return null;

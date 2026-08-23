@@ -9,6 +9,7 @@
 // be a product and a number. Half a list is refused rather than half applied.
 
 import type { Lang } from './whatsappIntent.ts';
+import { PRICE_TALK } from './whatsappStock.ts';
 
 export type StockCountItem = { product: string; quantity: number; unit: string | null };
 
@@ -46,6 +47,15 @@ const HEADER = new RegExp(
 // mean add 100 more, so it is deliberately left for clarification.
 const SET_COUNT_HEADER = /^(?:jaza|weka|wekea|sahihisha)\b/iu;
 const SET_COUNT_PREFIX = /^(?:jaza|weka|wekea|sahihisha)\s+/iu;
+
+/**
+ * The conjunction that joined this item to the one before it.
+ *
+ * MEASURED FAILURE, the owner's own thread: "…iwe 4000 na soda iwe 2000" was
+ * recorded against a product called "na soda". The word is how the sentence
+ * joins, not part of the name, and every catalogue it reached kept it forever.
+ */
+const JOINING_WORD = /^(?:na|and|pia|kisha|halafu|au|or|ya|za|wa)\s+/iu;
 
 const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
@@ -97,7 +107,7 @@ function setCounts(text: string): StockCountItem[] {
     'giu',
   );
   for (const match of String(text ?? '').matchAll(pattern)) {
-    const product = clean(match[1]).replace(SET_COUNT_PREFIX, '').trim();
+    const product = clean(match[1]).replace(SET_COUNT_PREFIX, '').replace(JOINING_WORD, '').trim();
     const quantity = Number(match[3]);
     if (product.length < 2 || !Number.isFinite(quantity) || quantity < 0) continue;
     const unit = (match[2] ?? '').toLowerCase() || null;
@@ -111,6 +121,10 @@ function setCounts(text: string): StockCountItem[] {
 export function parseStockCountBatch(text: string | null | undefined): StockCountBatch | null {
   const raw = String(text ?? '').split(/\r?\n/);
   const first = raw[0] ?? '';
+  // A sentence about money is never a sentence about how many are on the shelf.
+  // The owner asked to raise two selling prices and it was written down as a
+  // count of four thousand napkins. See PRICE_TALK in whatsappStock.ts.
+  if (PRICE_TALK.test(String(text ?? ''))) return null;
 
   // The flat form, before anything that depends on line breaks.
   if (raw.length === 1 && /\b(?:ziwe|iwe|zibaki|ibaki)\b/iu.test(first)) {

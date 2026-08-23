@@ -37,6 +37,37 @@ function looksLikeSellingLine(line: string): boolean {
  * previous price next to the new one, and that is the better answer for one
  * product.
  */
+/**
+ * "bei ya velvet napkin iwe 4000 na sodaa iwe 2000" — several prices set in one
+ * sentence, joined by "na".
+ *
+ * Only claimed when the sentence is ABOUT price ("bei"/"price") and every piece
+ * reads cleanly. A single unreadable piece means the whole thing is left alone:
+ * writing three of somebody's four prices and silently dropping the fourth is
+ * worse than writing none.
+ */
+function flatPriceList(said: string): SellingPrice[] {
+  if (/\r?\n/.test(said.trim())) return [];
+  if (!/\b(?:bei|price|prices)\b/i.test(said)) return [];
+  const pieces = [...said.matchAll(/([\p{L}][\p{L}0-9'’.\- ]*?)\s+(?:iwe|ziwe|ni|kuwa)\s+([0-9][0-9,. ]*)/giu)];
+  if (pieces.length < 2) return [];
+
+  const OPENING = /^(?:unaweza\s+|tafadhali\s+)?(?:kuongeza|ongeza|badilisha|badili|weka|wekea|panga|rekebisha|punguza|set|change|update|raise|make)?\s*(?:bei|prices?|selling\s*price)?\s*(?:ya|za|wa|of|for|the)?\s*/i;
+  const prices: SellingPrice[] = [];
+  for (const piece of pieces) {
+    const name = piece[1].replace(/^\s*(?:na|and|pia|kisha|halafu)\s+/i, '').replace(OPENING, '')
+      .replace(/\s+(?:selling\s*price|price|bei)$/i, '')
+      .replace(/\s+/g, ' ').trim();
+    const retail = Number(piece[2].replace(/[,\s]/g, ''));
+    if (name.length < 2 || !/[\p{L}]/u.test(name)) return [];
+    if (!Number.isFinite(retail) || retail <= 0 || retail >= 100_000_000) return [];
+    const at = prices.findIndex((price) => price.product.toLowerCase() === name.toLowerCase());
+    const entry: SellingPrice = { product: name, retail, wholesale: null, minQty: null };
+    if (at >= 0) prices[at] = entry; else prices.push(entry);
+  }
+  return prices;
+}
+
 export function parseSellingPriceBatch(text: string | null | undefined): SellingPriceBatch | null {
   // MEASURED FAILURE: a till roll headed "Mauzo" whose lines ended in "rejareja"
   // or "jumla" was read as a PRICE LIST — "daftari rejareja — TSh 100" — when
@@ -44,6 +75,14 @@ export function parseSellingPriceBatch(text: string | null | undefined): Selling
   // nothing below it can turn a sale into a price change.
   const first = String(text ?? '').split(/\r?\n/)[0] ?? '';
   if (SALE_HEADER.test(first)) return null;
+
+  // MEASURED FAILURE, the owner's own thread: "bei ya velvet napkin iwe 4000 na
+  // sodaa iwe 2000" — two prices, one line, no line breaks. Nothing here read
+  // it, the single parser could only mangle it, and the stock counter took it
+  // instead and wrote four thousand napkins onto the shelf. Somebody changing
+  // two prices at once types one sentence, not two lines.
+  const flat = flatPriceList(String(text ?? ''));
+  if (flat.length >= 2) return { kind: 'selling_price_batch', prices: flat, unreadable: [] };
 
   const lines = String(text ?? '')
     .split(/\r?\n/)

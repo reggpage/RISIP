@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { computedAmount, recordKind, route } from '../../../../scripts/lib/route';
 import { normalizeNumberWords } from '../../../../supabase/functions/_shared/whatsappDailyRecords';
+import { parseStockCount } from '../../../../supabase/functions/_shared/whatsappStock';
+import { parseSellingPrice } from '../../../../supabase/functions/_shared/whatsappSellingPrice';
+import { parseSellingPriceBatch } from '../../../../supabase/functions/_shared/whatsappSellingPriceBatch';
 
 // The chaos tier of scripts/interrogate.ts: money said out loud, a second
 // person behind the counter, a payment method on the end of a line, and a
@@ -115,5 +118,48 @@ describe('messages that must never become a record', () => {
       expect(recordKind(said), said).toBeNull();
       expect(route(said), said).toBe('conversational_ai');
     }
+  });
+});
+
+describe('a price change is never a stock count', () => {
+  // MEASURED FAILURE, the owner's own thread. They asked to raise two selling
+  // prices and Risip wrote it to the ledger as a STOCK COUNT — four thousand of
+  // a product it invented called "ya velvet selling price", two thousand of one
+  // called "na soda". It even asked NDIYO/HAPANA first, so the owner confirmed
+  // damage that read like an ordinary confirmation.
+  it('refuses to count a sentence that is about money', () => {
+    for (const said of [
+      'Unaweza kuongeza prices ya velvet selling price iwe 4000 na soda iwe 2000',
+      'bei ya velvet napkin iwe 4000 na sodaa iwe 2000',
+      'badilisha bei ya Velvet napkin iwe 4000',
+    ]) {
+      expect(parseStockCount(said), said).toBeNull();
+      expect(route(said), said).not.toBe('stock_count');
+      expect(route(said), said).not.toBe('stock_count_batch');
+    }
+  });
+
+  it('reads it as the price change it is', () => {
+    expect(parseSellingPrice('badilisha bei ya Velvet napkin iwe 4000'))
+      .toEqual({ product: 'Velvet napkin', retail: 4000, wholesale: null, minQty: null });
+    expect(parseSellingPrice('weka bei ya velvet napkin 4000'))
+      .toEqual({ product: 'velvet napkin', retail: 4000, wholesale: null, minQty: null });
+  });
+
+  it('reads two prices set in one sentence', () => {
+    const batch = parseSellingPriceBatch('bei ya velvet napkin iwe 4000 na sodaa iwe 2000');
+    expect(batch?.prices).toEqual([
+      { product: 'velvet napkin', retail: 4000, wholesale: null, minQty: null },
+      { product: 'sodaa', retail: 2000, wholesale: null, minQty: null },
+    ]);
+    // The conjunction joins the sentence; it is not part of the name. "na soda"
+    // was written into this shop's catalogue and stayed there.
+    expect(batch?.prices.some((price) => /^na /i.test(price.product))).toBe(false);
+  });
+
+  it('still counts the shelf when the shelf is what was meant', () => {
+    expect(parseStockCount('daftari ziwe 400')).toEqual({ product: 'daftari', quantity: 400, unit: null });
+    expect(route('daftari ziwe 400 na kalamu ziwe 200')).toBe('stock_count_batch');
+    expect(route('nina daftari 90')).toBe('stock_count');
   });
 });

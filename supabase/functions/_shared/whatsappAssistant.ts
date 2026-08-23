@@ -6,7 +6,10 @@ declare const Deno: { env: { get(name: string): string | undefined } };
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MAX_USER_CHARS = 2000;
 const MAX_HISTORY_MESSAGES = 12;
-const MAX_TOOL_ROUNDS = 2;
+// Three, because two was not enough for a question that needs the whole
+// business: the adviser calls one tool, then wants the margin behind a figure
+// it just read, and the third call is where the answer actually is.
+const MAX_TOOL_ROUNDS = 3;
 
 export type AssistantIdentityContext = {
   identityId: string;
@@ -297,8 +300,16 @@ export function shouldDeferRecordLikeReply(
   return recordCandidate && toolNames.length === 0;
 }
 
-export function buildAssistantSystemPrompt(context: AssistantIdentityContext): string {
+export function buildAssistantSystemPrompt(context: AssistantIdentityContext, now = new Date()): string {
   const language = context.lang === 'sw' ? 'Kiswahili' : 'English';
+  // Computed here rather than passed in, because the clock is the same for
+  // every caller and a field that has to be threaded through six call sites is
+  // a field that will eventually be forgotten at one of them.
+  const nowLabel = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Dar_es_Salaam',
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(now);
   return `You are Risip AI, a capable conversational business assistant inside WhatsApp.
 
 UNDERSTANDING
@@ -317,6 +328,9 @@ The owner's words: "mtu kauliza kitu flani go straight, maneno mengi ni usenge."
 - Ask a clarifying question only when two answers are genuinely possible AND they differ. "Which period?" is worth asking; "what kind of loss do you mean?" is not, when there is exactly one kind the data can show.
 
 LIVE CONTEXT
+- Right now in the shop (Africa/Dar_es_Salaam): ${nowLabel}
+- Greet by the clock when a greeting is called for — "habari za asubuhi" before noon, "habari za mchana" until four, "habari za jioni" after that. Never greet by the clock in the middle of an answer, and never open every reply with one; a greeting answers a greeting.
+- Time words mean what they mean HERE. "Kesho" is the day after the date above. Do not tell somebody to do something "kesho asubuhi" at seven in the morning — that is today, before they open.
 - User’s first name: ${context.userName ?? 'not available'}
 - Active business: ${context.companyName}
 - Active role: ${context.role}
@@ -343,6 +357,12 @@ WRITES AND HUMAN CONTROL
 - The only ledger-related operation available here is propose_daily_record. It creates a pending draft; it does not confirm or post it. propose_product_cost only prepares a confirmation for a buying-cost setting; it does not save it immediately.
 - Never claim a record is saved or confirmed until the server says so. Explicit NDIYO/YES is required and role policy is enforced server-side.
 - Never approve, pay, reverse, correct, void, delete, invite, change settings, or move money over plain WhatsApp text. Explain that the user must open Risip for those protected actions.
+- A SELLING PRICE IS NOT A PROTECTED SETTING, and neither is a buying cost or a stock count. The server reads all three straight from a WhatsApp message and asks the owner to confirm before saving. Never tell somebody to open the app for these — tell them the words to send:
+    price:  "bei ya Velvet napkin rejareja 4000"     (add "jumla 3500 kuanzia 10" for a trade price)
+    two at once: "bei ya velvet napkin iwe 4000 na sodaa iwe 2000"
+    cost:   "Velvet napkin nimenunua kwa 500 kila moja"
+    count:  "nina Velvet napkin 20"
+  Saying "I can't change prices from here" when the owner has just been told to raise a price is the assistant refusing the one action its own advice asked for.
 - Sending a link is not a protected action. When a tool result contains a Risip link, pass it on — it opens the ordinary signed-in page and only works for someone already entitled to see it. Never say you cannot send a link when the tool gave you one.
 - Ask a targeted question when product, party, quantity, unit, price, whether a price is total/per-item, or intended action is uncertain. Do not guess.
 
@@ -617,8 +637,15 @@ export async function runConversationalAssistant(args: {
     }
 
     if (round >= MAX_TOOL_ROUNDS) {
+      // MEASURED FAILURE, the owner's own thread: "Can i get advice on my
+      // business" and "Nini kinanipa hasara?" both came back "Sorry, I could
+      // not complete that answer right now" — while the tools had ALREADY
+      // returned the figures. Running out of rounds threw verified data away
+      // and sent an apology in its place. The figures are worth more than the
+      // sentence that would have wrapped them.
+      const gathered = evidence.slice(1).filter(Boolean).join('\n\n');
       return {
-        reply: unavailable(args.context.lang),
+        reply: gathered || unavailable(args.context.lang),
         memory: inferAssistantMemory(executed),
         toolNames: executed.map((call) => call.name),
         model,

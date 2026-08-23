@@ -1811,12 +1811,14 @@ async function executeAssistantTool(
     }
     try {
       const payload = await buildAdvisorPayload(db, identity, lang);
-      return {
-        content: `${advisorEvidence(payload)}\n\n${ADVISOR_VOICE}`,
-        // The deterministic brief, ready to send verbatim if the model cannot
-        // be reached. Every figure in it is the same figure it was given.
-        terminalReply: advisorBrief(payload, lang),
-      };
+      // NO terminalReply. Setting one short-circuits the model entirely and
+      // sends the same canned brief to every shop for every question — which
+      // is exactly the "inajibu kama roboti" the owner objected to. Asked "nipe
+      // mbinu za kufika mauzo ya million kumi", Risip returned the generic
+      // three-section block and never answered the question. The model gets the
+      // figures and the voice, and writes to what was actually asked. The
+      // deterministic brief is still sent verbatim by the non-AI branch below.
+      return { content: `${advisorEvidence(payload)}\n\n${ADVISOR_VOICE}` };
     } catch {
       const failed = lang === 'sw'
         ? 'Sikuweza kukusanya takwimu za biashara sasa.'

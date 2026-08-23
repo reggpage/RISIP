@@ -44,6 +44,15 @@ const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, 
 // tray and nothing else, and without the word the tray became part of the
 // product name.
 const UNITS = 'kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni|robo|nusu|theluthi|kipande|mche|chupa|mfuko|kifurushi|treya|trei|tray|katoni|carton|kreti|crate';
+
+/**
+ * Words that make a sentence about money rather than about the shelf.
+ *
+ * Exported because the batch counter has to refuse the same sentences the
+ * single counter does — the owner's message that caused this was a two-item
+ * list, and a guard on only one of the two parsers is no guard at all.
+ */
+export const PRICE_TALK = /\b(?:bei|bay|price|prices|pricing|gharama|selling\s*price|cost)\b/i;
 const NUMBER = '[0-9]+(?:\\.[0-9]+)?';
 
 /**
@@ -65,6 +74,11 @@ export function parseStockCount(text: string | null | undefined): StockCount | n
   if (!said) return null;
   // Anything that is plainly a movement is not a count.
   if (/^(?:nimeuza|niliuza|uza|sold|nimenunua|nimelipa|nimetumia|amechukua|amelipa)\b/i.test(said)) return null;
+  // MEASURED FAILURE, the owner's own thread: "Unaweza kuongeza prices ya
+  // velvet selling price iwe 4000 na soda iwe 2000" was written to the ledger
+  // as a STOCK COUNT of 4,000 of a product called "ya velvet selling price".
+  // A sentence about money is never a sentence about how many are on the shelf.
+  if (PRICE_TALK.test(said)) return null;
 
   const patterns = [
     // An explicit shelf anchor, including the owner's portion example:

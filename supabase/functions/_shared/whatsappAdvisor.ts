@@ -57,6 +57,58 @@ export type AdvisorPayload = {
 const money = (value: number) =>
   `${value < 0 ? '−' : ''}TSh ${Math.abs(Math.round(value)).toLocaleString('en-US')}`;
 
+export type PartOfDay = 'asubuhi' | 'mchana' | 'jioni' | 'usiku';
+
+/**
+ * What time it is where the shop is, not where the server is.
+ *
+ * Risip runs in Frankfurt and the shop is in Dar es Salaam, three hours ahead.
+ * Nothing in the product knew that, so "kazi ya kesho asubuhi" was said at
+ * seven in the morning — when tomorrow is a day away and the thing to do is
+ * today, before opening. A greeting has the same problem in reverse: "habari
+ * za jioni" at breakfast is the tell that nobody is really there.
+ */
+export function partOfDay(now = new Date()): PartOfDay {
+  const hour = Number(new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Dar_es_Salaam', hour: '2-digit', hour12: false,
+  }).format(now));
+  if (hour < 12) return 'asubuhi';
+  if (hour < 16) return 'mchana';
+  if (hour < 19) return 'jioni';
+  return 'usiku';
+}
+
+/** The greeting a Tanzanian would actually open with at this hour. */
+export function timeGreeting(lang: Lang, now = new Date()): string {
+  const part = partOfDay(now);
+  if (lang !== 'sw') {
+    return { asubuhi: 'Good morning', mchana: 'Good afternoon', jioni: 'Good evening', usiku: 'Good evening' }[part];
+  }
+  return {
+    asubuhi: 'Habari za asubuhi', mchana: 'Habari za mchana',
+    jioni: 'Habari za jioni', usiku: 'Habari za usiku',
+  }[part];
+}
+
+/**
+ * When the one focused action should happen.
+ *
+ * Asked at seven in the morning, "kesho asubuhi" is a day late — the shop has
+ * not opened yet and the thing can be done now. Asked at nine at night, it is
+ * exactly right.
+ */
+export function actionWhen(lang: Lang, now = new Date()): string {
+  const part = partOfDay(now);
+  if (lang !== 'sw') {
+    return part === 'asubuhi' ? 'Before you open today'
+      : part === 'mchana' ? 'This afternoon'
+        : part === 'jioni' ? 'Before you close today' : 'Tomorrow morning';
+  }
+  return part === 'asubuhi' ? 'Kabla hujafungua leo'
+    : part === 'mchana' ? 'Mchana huu'
+      : part === 'jioni' ? 'Kabla hujafunga leo' : 'Kesho asubuhi';
+}
+
 const list = (names: string[], limit = 4) => {
   const shown = names.slice(0, limit).join(', ');
   return names.length > limit ? `${shown} (+${names.length - limit})` : shown;
@@ -83,8 +135,9 @@ export function parseAdvisorRequest(text: string | null | undefined): boolean {
  * tomorrow. Nothing is padded: a section with nothing to say is left out
  * entirely rather than filled with "hakuna mabadiliko".
  */
-export function advisorBrief(payload: AdvisorPayload, lang: Lang): string {
+export function advisorBrief(payload: AdvisorPayload, lang: Lang, now = new Date()): string {
   const sw = lang === 'sw';
+  const when = actionWhen(lang, now);
   const out: string[] = [];
 
   // 📊 What the numbers say.
@@ -167,16 +220,16 @@ export function advisorBrief(payload: AdvisorPayload, lang: Lang): string {
   // 🚀 One thing, tomorrow morning.
   const tomorrow = payload.belowCost.length > 0
     ? (sw
-      ? `Kabla hujafungua, panga bei mpya ya *${payload.belowCost[0].name}*. Ndiyo inayokula faida yako kimya kimya.`
-      : `Before you open, set a new price for *${payload.belowCost[0].name}*. It is the one quietly eating your profit.`)
+      ? `Panga bei mpya ya *${payload.belowCost[0].name}*. Ndiyo inayokula faida yako kimya kimya.`
+      : `Set a new price for *${payload.belowCost[0].name}*. It is the one quietly eating your profit.`)
     : payload.outOfStock.length > 0
       ? (sw
-        ? `Asubuhi nunua *${payload.outOfStock[0]}* kwanza — imeisha kabisa na wateja wanaiuliza.`
-        : `First thing, buy *${payload.outOfStock[0]}* — it is at zero and customers are asking.`)
+        ? `Nunua *${payload.outOfStock[0]}* kwanza — imeisha kabisa na wateja wanaiuliza.`
+        : `Buy *${payload.outOfStock[0]}* first — it is at zero and customers are asking.`)
       : payload.topDebtors.length > 0
         ? (sw
-          ? `Mpigie *${payload.topDebtors[0].name}* asubuhi kuhusu ${money(payload.topDebtors[0].amount)}.`
-          : `Call *${payload.topDebtors[0].name}* in the morning about ${money(payload.topDebtors[0].amount)}.`)
+          ? `Mpigie *${payload.topDebtors[0].name}* kuhusu ${money(payload.topDebtors[0].amount)}.`
+          : `Call *${payload.topDebtors[0].name}* about ${money(payload.topDebtors[0].amount)}.`)
         : payload.topMovers.length > 0
           ? (sw
             ? `Hakikisha *${payload.topMovers[0].name}* haiishi — ndiyo inayokuingizia zaidi.`
@@ -184,7 +237,9 @@ export function advisorBrief(payload: AdvisorPayload, lang: Lang): string {
           : (sw
             ? 'Hesabu stoko ya bidhaa tano unazouza zaidi, ili nikuambie faida halisi.'
             : 'Count the stock of your five best sellers, so I can show you the real margin.');
-  out.push((sw ? '🚀 *Kazi ya kesho asubuhi*\n' : '🚀 *Tomorrow morning*\n') + tomorrow);
+  // The heading says WHEN, worked out from the clock in Dar es Salaam. Asked
+  // at seven in the morning, "kesho asubuhi" is a day late.
+  out.push(`🚀 *${when}*\n${tomorrow}`);
 
   return out.join('\n\n');
 }
@@ -230,11 +285,20 @@ export function advisorEvidence(payload: AdvisorPayload): string {
  * invents a number is worse than a dull one who does not.
  */
 export const ADVISOR_VOICE = `ADVISER MODE (get_business_advice)
+- ANSWER THE QUESTION THAT WAS ASKED. These figures are the evidence, not the
+  answer. "Nipe ushauri" wants the whole review; "nipe mbinu za kufika mauzo ya
+  million kumi" wants the arithmetic of the gap between today's figure and ten
+  million and what would close it; "kwa nini mauzo yanashuka?" wants the reason.
+  Returning the same three-section block whatever was asked is what makes an
+  assistant feel like a machine, and the owner has said so.
 - Speak as a trusted MD who talks like a Tanzanian trader: warm, direct, respectful. "Bosi wangu", "mtaji", "stoko", "mzunguko wa mzigo", "faida halisi". Never academic.
 - Use exactly these three sections, in this order, with these headers:
   📊 *Tathmini ya takwimu* — what the figures show, as bullets, boldest fact first.
   💡 *Ushauri wa MD* — two or three numbered actions, each tied to a figure above.
-  🚀 *Kazi ya kesho asubuhi* — ONE thing to do before opening tomorrow.
+  🚀 *<the time window you are given>* — ONE thing to do in it. The tool result
+     names the window (e.g. "Kabla hujafungua leo", "Mchana huu", "Kesho
+     asubuhi"); use that heading exactly and never substitute your own, because
+     you do not know what time it is in the shop and it does.
 - A LOSS OUTRANKS A RECORD MONTH. If any product is below cost, it leads, whatever the sales figure says.
 - Every number must come from the tool result. Do not add, subtract, project, or estimate beyond it. If a figure is absent, say it is not recorded yet and say what to send to record it.
 - Emojis mark the sections and nothing else. Never put one on a loss.
