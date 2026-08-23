@@ -4,7 +4,7 @@
 export default function RisipLogo({ className = 'h-6' }: { className?: string }) {
   return (
     <svg
-      viewBox="0 0 396.9 311.8"
+      viewBox="70 100 260 115"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
       fill="currentColor"
