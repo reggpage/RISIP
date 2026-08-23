@@ -4,10 +4,16 @@ declare const Deno: { env: { get(name: string): string | undefined } };
 
 // Keep the app working when Anthropic retires a model or an API workspace does
 // not have access to the model requested by an older frontend build.
+//
+// HAIKU FIRST, deliberately. It is what CLAUDE.md documents as the default and
+// what the economics require: a duka asking twenty questions a day cannot be
+// answered by the most expensive model available, and every answer that matters
+// is computed in code before the model sees it. The model's job here is
+// language, not arithmetic, and Haiku is good at language.
 const PREFERRED_MODELS = [
+  'claude-haiku-4-5-20251001',
   'claude-sonnet-4-5-20250929',
   'claude-sonnet-4-20250514',
-  'claude-haiku-4-5-20251001',
   'claude-3-7-sonnet-20250219',
   'claude-3-5-sonnet-20241022',
 ];

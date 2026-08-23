@@ -284,6 +284,58 @@ export function advisorEvidence(payload: AdvisorPayload): string {
  * a bank. The constraints are the important half — a charming adviser who
  * invents a number is worse than a dull one who does not.
  */
+/**
+ * The rules that decide what a good answer looks like, per category.
+ *
+ * The owner's own idea, and the right one: Haiku is a language model, so give
+ * it the RULES and let it work out the answer, instead of handing it sentences
+ * to recite. Code owns the arithmetic; these own the judgement.
+ */
+export const BUSINESS_RULES = `BUSINESS RULES
+
+WHY SALES MOVED
+- "Kwa nini mauzo yanashuka?" is a comparison, never an impression. Call
+  get_sales_trend, which puts this period against the same length before it and
+  names the products that account for the gap.
+- Report the direction, then the size, then the products. No adjectives: a drop
+  of nine per cent is nine per cent, not "slight" or "worrying".
+- A product that sold before and has stopped is a different fact from one that
+  fell. Say which.
+- Never explain a fall with a reason the data cannot show. Weather, holidays and
+  competitors are guesses; the products that moved are not.
+
+A TARGET, AND THE GAP TO IT
+- "Nipe mbinu za kufika mauzo ya milioni kumi" is arithmetic before it is
+  advice. Work from the figures you were given: what has come in, how much of
+  the period is gone, what the daily pace has been, and therefore what pace the
+  rest of the period needs. State the gap as a number.
+- Then say which products could close it — the ones already selling, by revenue,
+  and what raising a below-cost price would add. Never invent a growth rate.
+- If the target is out of reach at the current pace, say so plainly and say what
+  pace would reach it. A shopkeeper can act on "you need 400,000 a day"; they
+  cannot act on encouragement.
+
+WHEN TO REORDER
+- Stock is a question of DAYS, not units. A product selling six a day with
+  twelve left has two days, and two days is the number worth saying.
+- Anything already at zero outranks anything running low, and both outrank
+  anything selling well.
+- Never tell somebody to restock a product that has not moved this period. That
+  is where their capital is already sleeping.
+
+MIXED MEASURES
+- A duka sells sugar by the kilo, oil by the litre and books one at a time.
+  Never convert between weight, liquid and count, and never convert inside one
+  without a figure the trader gave you: a gunia of rice is not a gunia of
+  charcoal, and a debe is a different size in every trade.
+- The unit belongs to the product beside it, not to the whole line.
+- Fractions are ordinary: "kilo moja na nusu" is 1.5, "robo" is 0.25.
+- Each selling portion carries its own price. Never derive one from another by
+  dividing — a robo is almost never a quarter of the litre price, and that gap
+  is the shop's living.
+- If a line names a measure the product was never registered in, ask. Do not
+  translate it yourself.`;
+
 export const ADVISOR_VOICE = `ADVISER MODE (get_business_advice)
 - ANSWER THE QUESTION THAT WAS ASKED. These figures are the evidence, not the
   answer. "Nipe ushauri" wants the whole review; "nipe mbinu za kufika mauzo ya
@@ -303,3 +355,90 @@ export const ADVISOR_VOICE = `ADVISER MODE (get_business_advice)
 - Every number must come from the tool result. Do not add, subtract, project, or estimate beyond it. If a figure is absent, say it is not recorded yet and say what to send to record it.
 - Emojis mark the sections and nothing else. Never put one on a loss.
 - Short lines. This is read one-handed behind a counter.`;
+
+// ------------------------------------------------------------ why it moved
+
+export type TrendProduct = { name: string; before: number; after: number; delta: number };
+
+export type SalesTrend = {
+  periodLabel: string;
+  previousLabel: string;
+  revenue: number;
+  previousRevenue: number;
+  /** Products whose revenue fell the most, biggest drop first. */
+  fell: TrendProduct[];
+  /** Products whose revenue rose the most, biggest rise first. */
+  rose: TrendProduct[];
+  /** Sold in the previous period and not once in this one. */
+  stopped: string[];
+};
+
+/**
+ * "Kwa nini mauzo yanashuka?"
+ *
+ * The most useful question a shopkeeper asks and the one Risip could not touch:
+ * every read tool answered about ONE window, so "are sales falling" had nothing
+ * to compare against and the model was left to say something reassuring.
+ *
+ * A fall is not a feeling. It is this period against the one before it, and the
+ * products that account for the difference.
+ */
+export function parseSalesTrendRequest(text: string | null | undefined): boolean {
+  const said = String(text ?? '').toLowerCase().replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim();
+  if (!said || said.length > 140) return false;
+  return /\b(?:kwa\s*nini|mbona|why)\b.*\b(?:mauzo|sales|biashara|inashuka|yanashuka|imeshuka)\b/.test(said)
+    || /\bmauzo\b.*\b(?:yanashuka|yameshuka|yanapungua|yamepungua|yanapanda|yameongezeka)\b/.test(said)
+    || /\bsales\b.*\b(?:down|dropping|falling|up|rising)\b/.test(said)
+    || /\b(?:linganisha|compare)\b.*\b(?:wiki|mwezi|week|month)\b/.test(said);
+}
+
+/**
+ * The comparison, in the order a trader reads it: the direction first, the size
+ * of it second, and the products that caused it third. No adjectives — a drop
+ * of nine per cent is not "worrying" or "slight", it is nine per cent.
+ */
+export function salesTrendReply(trend: SalesTrend, lang: Lang): string {
+  const sw = lang === 'sw';
+  const change = trend.revenue - trend.previousRevenue;
+  const percent = trend.previousRevenue > 0
+    ? Math.round((change / trend.previousRevenue) * 100)
+    : null;
+
+  if (trend.previousRevenue <= 0 && trend.revenue <= 0) {
+    return sw
+      ? `Sina mauzo yaliyothibitishwa ${trend.periodLabel} wala ${trend.previousLabel}, kwa hiyo sina cha kulinganisha.`
+      : `I have no confirmed sales for ${trend.periodLabel} or ${trend.previousLabel}, so there is nothing to compare.`;
+  }
+  if (trend.previousRevenue <= 0) {
+    return sw
+      ? `${trend.periodLabel}: ${money(trend.revenue)}. ${trend.previousLabel} hakukuwa na mauzo yaliyothibitishwa, kwa hiyo bado siwezi kusema yanapanda au yanashuka.`
+      : `${trend.periodLabel}: ${money(trend.revenue)}. There were no confirmed sales ${trend.previousLabel}, so I cannot yet say whether this is up or down.`;
+  }
+
+  const direction = change < 0
+    ? (sw ? 'yameshuka' : 'are down')
+    : change > 0 ? (sw ? 'yamepanda' : 'are up') : (sw ? 'hayajabadilika' : 'are flat');
+  const size = percent === null ? '' : ` (${Math.abs(percent)}%)`;
+  const head = sw
+    ? `Mauzo ${direction}${size}: ${trend.periodLabel} ${money(trend.revenue)}, ${trend.previousLabel} ${money(trend.previousRevenue)}.`
+    : `Sales ${direction}${size}: ${trend.periodLabel} ${money(trend.revenue)}, ${trend.previousLabel} ${money(trend.previousRevenue)}.`;
+
+  const lines: string[] = [head];
+  const movers = change < 0 ? trend.fell : trend.rose;
+  if (movers.length > 0) {
+    lines.push('');
+    lines.push(sw
+      ? (change < 0 ? 'Zilizoshusha zaidi:' : 'Zilizopandisha zaidi:')
+      : (change < 0 ? 'Biggest falls:' : 'Biggest rises:'));
+    for (const item of movers.slice(0, 4)) {
+      lines.push(`• ${item.name}: ${money(item.before)} → ${money(item.after)}`);
+    }
+  }
+  if (trend.stopped.length > 0) {
+    lines.push('');
+    lines.push(sw
+      ? `Hazikuuzwa kabisa ${trend.periodLabel}: ${list(trend.stopped)}.`
+      : `Did not sell at all ${trend.periodLabel}: ${list(trend.stopped)}.`);
+  }
+  return lines.join('\n');
+}

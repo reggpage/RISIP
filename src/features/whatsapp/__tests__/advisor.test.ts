@@ -4,7 +4,9 @@ import {
   advisorBrief,
   advisorEvidence,
   parseAdvisorRequest,
+  parseSalesTrendRequest,
   partOfDay,
+  salesTrendReply,
   timeGreeting,
   type AdvisorPayload,
 } from '../../../../supabase/functions/_shared/whatsappAdvisor';
@@ -191,5 +193,67 @@ describe('what a shopkeeper must never receive', () => {
     expect(brief).toContain('📊');
     expect(brief).not.toContain('=');
     expect(brief).not.toContain('ADVISER MODE');
+  });
+});
+
+describe('why sales moved', () => {
+  // The most useful question a shopkeeper asks, and the one Risip could not
+  // touch: every read tool answered about ONE window, so "are sales falling"
+  // had nothing to compare against and the model was left to reassure.
+  it('recognises the question in the ways it gets asked', () => {
+    for (const said of [
+      'kwa nini mauzo yanashuka',
+      'mbona mauzo yameshuka',
+      'mauzo yanapungua',
+      'why are sales down',
+      'linganisha na wiki iliyopita',
+    ]) {
+      expect(parseSalesTrendRequest(said), said).toBe(true);
+    }
+    for (const said of ['nipe ushauri', 'daftari ziko ngapi', 'nimeuza daftari 5', 'faida ya leo']) {
+      expect(parseSalesTrendRequest(said), said).toBe(false);
+    }
+  });
+
+  const trend = {
+    periodLabel: 'wiki hii',
+    previousLabel: 'wiki iliyopita',
+    revenue: 400_000,
+    previousRevenue: 500_000,
+    fell: [
+      { name: 'daftari', before: 200_000, after: 90_000, delta: -110_000 },
+      { name: 'kalamu', before: 40_000, after: 0, delta: -40_000 },
+    ],
+    rose: [{ name: 'Biblia', before: 0, after: 50_000, delta: 50_000 }],
+    stopped: ['kalamu'],
+  };
+
+  it('gives the direction, the size and the products behind it', () => {
+    const said = salesTrendReply(trend, 'sw');
+    expect(said).toContain('yameshuka');
+    expect(said).toContain('20%');
+    expect(said).toContain('TSh 400,000');
+    expect(said).toContain('TSh 500,000');
+    expect(said).toContain('daftari');
+    // A product that STOPPED is a different fact from one that fell.
+    expect(said).toContain('Hazikuuzwa kabisa');
+  });
+
+  it('shows the risers when the move was upward', () => {
+    const up = { ...trend, revenue: 600_000, fell: [], rose: trend.rose };
+    const said = salesTrendReply(up, 'sw');
+    expect(said).toContain('yamepanda');
+    expect(said).toContain('Biblia');
+  });
+
+  // Dividing by a period that had no sales is not a percentage, it is an error
+  // with a number printed on it.
+  it('refuses to invent a percentage out of nothing', () => {
+    const fresh = { ...trend, previousRevenue: 0, fell: [], rose: [] };
+    const said = salesTrendReply(fresh, 'sw');
+    expect(said).not.toContain('%');
+    expect(said).toContain('siwezi kusema');
+    const empty = { ...fresh, revenue: 0 };
+    expect(salesTrendReply(empty, 'sw')).toContain('sina cha kulinganisha');
   });
 });

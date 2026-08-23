@@ -1,6 +1,6 @@
 import { resolveAnthropicModel } from './anthropicModel.ts';
 import type { Lang } from './whatsappIntent.ts';
-import { ADVISOR_VOICE } from './whatsappAdvisor.ts';
+import { ADVISOR_VOICE, BUSINESS_RULES } from './whatsappAdvisor.ts';
 import { WHATSAPP_RECEIPTS_ENABLED } from './whatsappReadTools.ts';
 
 declare const Deno: { env: { get(name: string): string | undefined } };
@@ -123,6 +123,7 @@ export const ASSISTANT_TOOL_NAMES = [
   'get_product_cost',
   'get_selling_price',
   'get_business_advice',
+  'get_sales_trend',
   'get_hypothetical_product_profit',
   'get_open_debts',
   'get_my_receipts',
@@ -207,6 +208,12 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
     'Gather the whole business in one verified payload — period sales and expenses, top movers, every product sold BELOW COST, dead stock, what has run out, what is running low, products with no buying cost, and outstanding debts — and write it back as an adviser. Use for “nipe ushauri”, “biashara yangu ikoje”, “nifanye nini”, “how is my business doing”. The result carries the voice and format to answer in; follow it exactly and never add a figure it does not contain.',
     {},
     [],
+  ),
+  tool(
+    'get_sales_trend',
+    'Compare confirmed sales in this period against the SAME LENGTH of time immediately before it, and name the products that account for the difference — the biggest falls, the biggest rises, and anything that sold before and has stopped. Use for “kwa nini mauzo yanashuka?”, “mbona biashara imepungua”, “why are sales down”, “linganisha na wiki iliyopita”. A fall is arithmetic between two windows; never answer this from one window or from impression.',
+    { period: { type: 'string', enum: ['week', 'month'] } },
+    ['period'],
   ),
   tool(
     'get_selling_price',
@@ -396,7 +403,45 @@ WRITES AND HUMAN CONTROL
 - Sending a link is not a protected action. When a tool result contains a Risip link, pass it on — it opens the ordinary signed-in page and only works for someone already entitled to see it. Never say you cannot send a link when the tool gave you one.
 - Ask a targeted question when product, party, quantity, unit, price, whether a price is total/per-item, or intended action is uncertain. Do not guess.
 
+${BUSINESS_RULES}
+
 ${ADVISOR_VOICE}
+
+WHAT THIS SHOP CAN ASK YOU
+Everything below already works. Never tell somebody to open the app for one of
+these, and when a question is close to one of them, answer it rather than asking
+what they mean.
+
+  RECORDING (all confirmed before saving)
+  · a sale, priced from the shop's own list — "nimeuza daftari 5"
+  · a sale that names its money — "nimeuza daftari 5 kwa 7500"
+  · a till roll, one product per line, thirty lines if they like
+  · a purchase — "nimenunua daftari 20 kwa 35000"
+  · spending — "nimelipa umeme 20000", "nauli 3000"
+  · a debt — "Juma amechukua sukari 12000"; a repayment — "Juma amelipa 5000"
+  · a stock count — "nina daftari 90", "daftari zimebaki 90", "daftari ziwe 400"
+  · a selling price — "bei ya daftari rejareja 1500 jumla 1300 kuanzia 12"
+  · two prices at once — "bei ya velvet iwe 4000 na sodaa iwe 2000"
+  · a buying cost — "daftari nimenunua kwa 1000 kila moja"
+  · a new product, by pricing something the catalogue does not have yet
+  · a photo of a receipt, sent straight to this chat
+
+  ASKING
+  · what is on the shelf, whole or one product — "daftari ziko ngapi", "stock yangu ikoje"
+  · what has run out — "nini kimeisha"
+  · a price — "bei ya daftari ni ngapi", "daftari ni bei gani"
+  · a buying cost, and the margin between them
+  · the day, week, month or year's takings — "leo nimeuza kiasi gani"
+  · profit, and which products carry it
+  · which products sell most, by quantity, revenue or margin
+  · WHICH PRODUCTS LOSE MONEY — "je kuna hasara", never answered from cash
+  · why sales moved — get_sales_trend
+  · who owes money, and how much, and for how long
+  · what the whole business needs today — get_business_advice
+  · "if I sold every one on the shelf, what would I make?"
+  · how Risip itself works
+  · a login link to the web app — "login"
+  · which businesses they belong to, and switching between them
 
 SCOPE
 - You can explain Risip and offer ordinary small-business guidance. Do not give tax, legal, investment or regulated financial advice; suggest a qualified professional where appropriate.
@@ -614,7 +659,10 @@ export async function runConversationalAssistant(args: {
 
   const model = await resolveAnthropicModel(
     apiKey,
-    Deno.env.get('ANTHROPIC_ASSISTANT_MODEL') || 'claude-sonnet-5',
+    // Haiku unless the environment says otherwise. The assistant used to ask
+    // for Sonnet, which contradicted CLAUDE.md and quietly tripled the cost of
+    // every WhatsApp reply.
+    Deno.env.get('ANTHROPIC_ASSISTANT_MODEL') || 'claude-haiku-4-5-20251001',
     true,
   );
   const messages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [

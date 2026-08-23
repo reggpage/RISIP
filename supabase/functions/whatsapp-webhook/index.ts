@@ -264,7 +264,10 @@ import {
   advisorBrief,
   advisorEvidence,
   parseAdvisorRequest,
+  parseSalesTrendRequest,
+  salesTrendReply,
   type AdvisorPayload,
+  type TrendProduct,
 } from '../_shared/whatsappAdvisor.ts';
 import { compareWithTra, fetchTraReceipt } from '../_shared/traVerify.ts';
 import { qrCorrectionReply } from '../_shared/qrFollowUp.ts';
@@ -1500,6 +1503,78 @@ async function resolveProductForWrite(
   return { kind: 'not_found', asked };
 }
 
+/**
+ * This period against the one before it, and the products that explain the gap.
+ *
+ * Both windows are the same length and both come from the same confirmed
+ * ledger, so the comparison is arithmetic rather than impression. A product that
+ * sold last week and not this one is named separately, because "it stopped" is a
+ * different fact from "it fell".
+ */
+async function salesTrendToolReply(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  period: 'week' | 'month',
+  lang: Lang,
+): Promise<string> {
+  if (!canUseCompanyFinanceReads(identity.role)) {
+    return lang === 'sw'
+      ? 'Ulinganisho wa mauzo ya biashara nzima unaonekana kwa owner au accountant tu.'
+      : 'A whole-business sales comparison is available only to an owner or accountant.';
+  }
+  const now = new Date();
+  const start = periodStart(period, now);
+  const span = now.getTime() - start.getTime();
+  const previousStart = new Date(start.getTime() - span);
+
+  const windowFor = (from: Date, to: Date) => ({
+    from: from.toISOString(), to: to.toISOString(), sw: '', en: '',
+  });
+  const [current, previous] = await Promise.all([
+    productAnalytics(db, identity.company_id, {
+      rankBy: 'revenue', direction: 'best', period, compareNames: [], range: windowFor(start, now),
+    }),
+    productAnalytics(db, identity.company_id, {
+      rankBy: 'revenue', direction: 'best', period, compareNames: [], range: windowFor(previousStart, start),
+    }),
+  ]);
+
+  const after = new Map(aggregateProducts(current.replyData, current.costs)
+    .map((item) => [productKey(item.product), item]));
+  const before = new Map(aggregateProducts(previous.replyData, previous.costs)
+    .map((item) => [productKey(item.product), item]));
+
+  const moved: TrendProduct[] = [];
+  for (const key of new Set([...before.keys(), ...after.keys()])) {
+    const was = before.get(key)?.revenue ?? 0;
+    const is = after.get(key)?.revenue ?? 0;
+    if (was === is) continue;
+    moved.push({
+      name: after.get(key)?.product ?? before.get(key)?.product ?? key,
+      before: was,
+      after: is,
+      delta: is - was,
+    });
+  }
+
+  const label = period === 'week'
+    ? (lang === 'sw' ? 'wiki hii' : 'this week')
+    : (lang === 'sw' ? 'mwezi huu' : 'this month');
+  const previousLabel = period === 'week'
+    ? (lang === 'sw' ? 'wiki iliyopita' : 'last week')
+    : (lang === 'sw' ? 'mwezi uliopita' : 'last month');
+
+  return salesTrendReply({
+    periodLabel: label,
+    previousLabel,
+    revenue: [...after.values()].reduce((sum, item) => sum + item.revenue, 0),
+    previousRevenue: [...before.values()].reduce((sum, item) => sum + item.revenue, 0),
+    fell: moved.filter((item) => item.delta < 0).sort((a, b) => a.delta - b.delta),
+    rose: moved.filter((item) => item.delta > 0).sort((a, b) => b.delta - a.delta),
+    stopped: moved.filter((item) => item.after === 0 && item.before > 0).map((item) => item.name),
+  }, lang);
+}
+
 async function hypotheticalProfitToolReply(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
@@ -1852,6 +1927,10 @@ async function executeAssistantTool(
         unit: data.unit ? String(data.unit) : null, currency: String(data.currency), effectiveFrom: String(data.effective_from),
       } : null, lang),
     };
+  }
+  if (name === 'get_sales_trend') {
+    const period = input.period === 'month' ? 'month' as const : 'week' as const;
+    return { content: await salesTrendToolReply(db, identity, period, lang) };
   }
   if (name === 'get_business_advice') {
     if (!canUseCompanyFinanceReads(identity.role)) {
@@ -5303,6 +5382,17 @@ Deno.serve(async (req) => {
         // so every one of these went to the model to be talked into calling a
         // tool. This calls that same tool directly: same figures, no budget
         // spent, and no chance of a number being improvised on the way.
+
+        // "Kwa nini mauzo yanashuka?" This period against the one before it.
+        // Answered from the ledger, because a fall is arithmetic and the model
+        // would otherwise be left to say something reassuring.
+        if (!mixed && parseSalesTrendRequest(body)) {
+          const period = /\bmwezi|month\b/i.test(body ?? '') ? 'month' as const : 'week' as const;
+          await reply(phone, await salesTrendToolReply(db, identity, period, lang));
+          await audit(db, identity, waMessageId, 'sales_trend', period, 'applied');
+          await finish('skipped');
+          continue;
+        }
 
         // "Nipe ushauri." Answered from verified figures whether or not the
         // model is reachable — a shopkeeper who asks for advice and is told the
