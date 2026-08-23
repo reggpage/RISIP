@@ -207,9 +207,7 @@ import {
 import {
   cataloguePrefixResolution,
   nearestCatalogueName,
-  cataloguePrefixResolution,
   normalizeProductReadResolution,
-  type ProductReadResolution,
   productReadClarification,
   productReadMatchNotice,
   type ProductReadResolution,

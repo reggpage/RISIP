@@ -22,7 +22,7 @@
 //   npx vite-node scripts/check-edge-functions.ts
 
 import { execFileSync } from 'node:child_process';
-import { readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(process.cwd(), 'supabase', 'functions');
@@ -52,11 +52,51 @@ const undefinedNames = output
   // Deno is a runtime global and is expected to be unknown to the Node compiler.
   .filter((line) => !/Cannot find name 'Deno'/.test(line));
 
-if (undefinedNames.length > 0) {
-  console.error(`\n${undefinedNames.length} name(s) used but never defined:\n`);
-  for (const line of undefinedNames) console.error(`  ${line.trim()}`);
-  console.error('\nAlmost always a missing import. This is what returns 500 to Meta.\n');
+/**
+ * A name imported twice.
+ *
+ * MEASURED FAILURE, the second time this file has been extended by an outage.
+ * Two sessions added `cataloguePrefixResolution` to the same import block, and
+ * Deno refused to boot the worker: "Identifier has already been declared".
+ * Every WhatsApp message returned 503 for seven minutes until somebody said
+ * Risip had gone quiet.
+ *
+ * TypeScript does NOT report this — a duplicate import specifier is legal
+ * enough for tsc when the module resolves, so the check above stayed green all
+ * the way to production. Deno is stricter, and Deno is what runs.
+ *
+ * Read straight out of the source rather than from the compiler, because the
+ * compiler is exactly what missed it.
+ */
+const duplicateImports: string[] = [];
+for (const path of entrypoints) {
+  const source = readFileSync(path, 'utf8');
+  const seen = new Map<string, number>();
+  for (const block of source.matchAll(/import\s*(?:type\s+)?\{([^}]*)\}\s*from\s*['"][^'"]+['"]/g)) {
+    for (const raw of block[1].split(',')) {
+      // "type Foo", "Foo as Bar" — the binding is what must be unique.
+      const name = raw.trim().replace(/^type\s+/, '').split(/\s+as\s+/).pop()?.trim();
+      if (!name) continue;
+      seen.set(name, (seen.get(name) ?? 0) + 1);
+    }
+  }
+  for (const [name, count] of seen) {
+    if (count > 1) duplicateImports.push(`${path.split(/[\\/]/).slice(-2).join('/')}: ${name} imported ${count} times`);
+  }
+}
+
+if (undefinedNames.length > 0 || duplicateImports.length > 0) {
+  if (undefinedNames.length > 0) {
+    console.error(`\n${undefinedNames.length} name(s) used but never defined:\n`);
+    for (const line of undefinedNames) console.error(`  ${line.trim()}`);
+    console.error('\nAlmost always a missing import. This is what returns 500 to Meta.\n');
+  }
+  if (duplicateImports.length > 0) {
+    console.error(`\n${duplicateImports.length} duplicate import(s):\n`);
+    for (const line of duplicateImports) console.error(`  ${line}`);
+    console.error('\nDeno refuses to boot on these. This is what returns 503 to Meta.\n');
+  }
   process.exit(1);
 }
 
-console.log(`\n${entrypoints.length} edge functions checked. No undefined names.\n`);
+console.log(`\n${entrypoints.length} edge functions checked. No undefined names, no duplicate imports.\n`);
