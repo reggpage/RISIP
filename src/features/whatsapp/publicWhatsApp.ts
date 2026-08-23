@@ -1,6 +1,6 @@
 import { getLang, type LangCode } from '@/lib/lang';
 
-const RISIP_PUBLIC_WHATSAPP_NUMBER = '255624107354';
+const RISIP_PUBLIC_WHATSAPP_NUMBER = '255750513538';
 
 /** Digits only: wa.me rejects a leading plus sign. */
 export function risipWhatsAppNumber(): string {
