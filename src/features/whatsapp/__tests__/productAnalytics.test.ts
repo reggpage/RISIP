@@ -31,8 +31,10 @@ describe('WhatsApp product analytics', () => {
       request: { rankBy: 'quantity' as const, period: 'today' as const, compareNames: ['nguvu ya sala'] },
       focusNames: ['nguvu ya sala'],
     };
-    expect(parseProductAnalyticsFollowUp('Jumla yake?', context)).toEqual({ rankBy: 'revenue', period: 'today', compareNames: ['nguvu ya sala'] });
-    expect(parseProductAnalyticsFollowUp('Faida yake?', context)).toEqual({ rankBy: 'margin', period: 'today', compareNames: ['nguvu ya sala'] });
+    expect(parseProductAnalyticsFollowUp('Jumla yake?', context))
+      .toEqual({ rankBy: 'revenue', direction: 'best', period: 'today', compareNames: ['nguvu ya sala'] });
+    expect(parseProductAnalyticsFollowUp('Faida yake?', context))
+      .toEqual({ rankBy: 'margin', direction: 'best', period: 'today', compareNames: ['nguvu ya sala'] });
     expect(parseProductAnalyticsFollowUp('Wiki hii je?', context)).toMatchObject({
       rankBy: 'quantity', period: 'week', compareNames: ['nguvu ya sala'],
       range: { sw: 'wiki hii' },

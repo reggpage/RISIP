@@ -279,7 +279,7 @@ describe('a shelf cannot hold minus eight', () => {
     const said = stockReply(short(), 'daftari', 'sw');
     expect(said).toContain('zimebaki 0');
     expect(said).not.toContain('-8');
-    expect(said).toContain('Mauzo yamezidi kwa 8');
+    expect(said).toContain('Mauzo yamezidi hesabu kwa 8');
     expect(said).toContain('nina daftari 20');
   });
 

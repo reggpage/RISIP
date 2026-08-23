@@ -257,6 +257,13 @@ import {
   parseSellingPriceQuestion,
   sellingPriceReply,
 } from '../_shared/whatsappSellingPriceQuestion.ts';
+import {
+  ADVISOR_VOICE,
+  advisorBrief,
+  advisorEvidence,
+  parseAdvisorRequest,
+  type AdvisorPayload,
+} from '../_shared/whatsappAdvisor.ts';
 import { compareWithTra, fetchTraReceipt } from '../_shared/traVerify.ts';
 import { qrCorrectionReply } from '../_shared/qrFollowUp.ts';
 import {
@@ -1285,7 +1292,7 @@ async function rememberProductAnalytics(
   request: ProductAnalyticsRequest,
   items: ProductAggregate[],
 ): Promise<void> {
-  const firstRanked = rankProducts(items, request.rankBy, request.compareNames)[0]?.product;
+  const firstRanked = rankProducts(items, request.rankBy, request.compareNames, request.direction)[0]?.product;
   const focusNames = (request.compareNames.length > 0 ? request.compareNames : firstRanked ? [firstRanked] : []).slice(0, 2);
   if (focusNames.length === 0) return;
   const context: ProductAnalyticsContext = { kind: 'product_analytics_context', request, focusNames };
@@ -1349,6 +1356,97 @@ async function productAnalyticsToolReply(
   const items = aggregateProducts(replyData, costs);
   await rememberProductAnalytics(db, identity, resolvedRequest, items);
   return [...notices, productAnalyticsReply(resolvedRequest, items, lang)].filter(Boolean).join('\n');
+}
+
+/**
+ * Everything the adviser is allowed to know, gathered once.
+ *
+ * All of it comes back from queries that already exist and are already trusted
+ * elsewhere in this file — the same product aggregation the ranking uses, the
+ * same shelf RPC the stock questions use, the same confirmed ledger rows the
+ * summary uses. Nothing new is computed about money here; the adviser's job is
+ * to put verified facts in the order that changes a decision.
+ */
+async function buildAdvisorPayload(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  lang: Lang,
+): Promise<AdvisorPayload> {
+  const request: ProductAnalyticsRequest = {
+    rankBy: 'revenue', direction: 'best', period: 'month', compareNames: [], range: null,
+  };
+  const periodLabel = lang === 'sw' ? 'mwezi huu' : 'this month';
+  const from = periodStart('month').toISOString();
+
+  const [{ replyData, costs }, { data: shelfRows }, { data: ledger }] = await Promise.all([
+    productAnalytics(db, identity.company_id, request),
+    db.rpc('wa_stock_on_hand', { p_company_id: identity.company_id, p_product: null }),
+    db.from('daily_records').select('kind, amount, party_name, occurred_at')
+      .eq('company_id', identity.company_id).eq('status', 'confirmed').limit(10000),
+  ]);
+
+  const items = aggregateProducts(replyData, costs);
+  const sold = new Set(items.map((item) => productKey(item.product)));
+  const byRevenue = rankProducts(items, 'revenue', [], 'best');
+  const belowCost = rankProducts(items, 'margin', [], 'worst').filter((item) => (item.margin ?? 0) < 0);
+
+  const shelf = ((shelfRows ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    name: String(row.product_name ?? ''),
+    onHand: Number(row.on_hand ?? 0),
+    unit: row.unit ? String(row.unit) : null,
+    hasCount: Boolean(row.has_count),
+  })).filter((row) => row.name);
+
+  // Confirmed rows only, and the debt figure is all-time: a debt does not stop
+  // being owed because the month turned over.
+  const rows = (ledger ?? []) as Array<{ kind: string; amount: number; party_name: string | null; occurred_at: string }>;
+  const inPeriod = rows.filter((row) => row.occurred_at >= from);
+  const total = (kind: string) => inPeriod
+    .filter((row) => row.kind === kind)
+    .reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+  const owed = new Map<string, number>();
+  for (const row of rows) {
+    const party = (row.party_name ?? '').trim();
+    if (!party) continue;
+    const amount = Number(row.amount ?? 0);
+    if (row.kind === 'debt_issued') owed.set(party, (owed.get(party) ?? 0) + amount);
+    if (row.kind === 'customer_payment') owed.set(party, (owed.get(party) ?? 0) - amount);
+  }
+  const debtors = [...owed.entries()]
+    .filter(([, amount]) => amount > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, amount]) => ({ name, amount }));
+
+  return {
+    businessName: identity.company_name,
+    periodLabel,
+    revenue: total('sale'),
+    expenses: total('expense'),
+    debtIssued: total('debt_issued'),
+    customerPayments: total('customer_payment'),
+    topMovers: byRevenue.slice(0, 3).map((item) => ({
+      name: item.product, quantity: item.quantity, revenue: item.revenue, margin: item.margin,
+    })),
+    belowCost: belowCost.map((item) => ({
+      name: item.product, quantity: item.quantity, revenue: item.revenue, margin: item.margin,
+    })),
+    // Counted, still on the shelf, and not sold once this period. That is
+    // capital lying down, and it is invisible in every other answer.
+    deadStock: shelf
+      .filter((row) => row.hasCount && row.onHand > 0 && !sold.has(productKey(row.name)))
+      .sort((a, b) => b.onHand - a.onHand)
+      .slice(0, 4)
+      .map((row) => ({ name: row.name, onHand: row.onHand, unit: row.unit })),
+    outOfStock: shelf.filter((row) => row.hasCount && row.onHand <= 0).map((row) => row.name),
+    runningLow: shelf
+      .filter((row) => row.hasCount && row.onHand > 0 && row.onHand <= 5)
+      .sort((a, b) => a.onHand - b.onHand)
+      .slice(0, 4)
+      .map((row) => ({ name: row.name, onHand: row.onHand, unit: row.unit })),
+    uncosted: items.filter((item) => !item.costed).map((item) => item.product).slice(0, 6),
+    outstandingDebt: debtors.reduce((sum, debtor) => sum + debtor.amount, 0),
+    topDebtors: debtors.slice(0, 3),
+  };
 }
 
 async function hypotheticalProfitToolReply(
@@ -1640,9 +1738,14 @@ async function executeAssistantTool(
   }
   if (name === 'get_product_performance') {
     const metric = input.metric === 'revenue' || input.metric === 'margin' ? input.metric : 'quantity';
+    // "Worst" is a separate question, not a smaller number. Asked which
+    // products LOSE money, every ranking used to hand back the five that make
+    // the most, and the answer came out as "hakuna hasara".
+    const direction = input.direction === 'worst' ? 'worst' as const : 'best' as const;
     return {
       content: await productAnalyticsToolReply(db, identity, {
         rankBy: metric,
+        direction,
         period: assistantPeriod(input.period),
         compareNames: assistantProductNames(input.product_names),
         range: (() => {
@@ -1698,6 +1801,28 @@ async function executeAssistantTool(
         unit: data.unit ? String(data.unit) : null, currency: String(data.currency), effectiveFrom: String(data.effective_from),
       } : null, lang),
     };
+  }
+  if (name === 'get_business_advice') {
+    if (!canUseCompanyFinanceReads(identity.role)) {
+      const denied = lang === 'sw'
+        ? 'Mchanganuo wa biashara nzima unaonekana kwa owner au accountant tu.'
+        : 'A whole-business review is available only to an owner or accountant.';
+      return { content: denied, isError: true, terminalReply: denied };
+    }
+    try {
+      const payload = await buildAdvisorPayload(db, identity, lang);
+      return {
+        content: `${advisorEvidence(payload)}\n\n${ADVISOR_VOICE}`,
+        // The deterministic brief, ready to send verbatim if the model cannot
+        // be reached. Every figure in it is the same figure it was given.
+        terminalReply: advisorBrief(payload, lang),
+      };
+    } catch {
+      const failed = lang === 'sw'
+        ? 'Sikuweza kukusanya takwimu za biashara sasa.'
+        : 'I could not gather the business figures right now.';
+      return { content: failed, isError: true, terminalReply: failed };
+    }
   }
   if (name === 'get_selling_price') {
     const productName = typeof input.product_name === 'string' ? input.product_name.trim().slice(0, 100) : '';
@@ -5108,6 +5233,19 @@ Deno.serve(async (req) => {
         // so every one of these went to the model to be talked into calling a
         // tool. This calls that same tool directly: same figures, no budget
         // spent, and no chance of a number being improvised on the way.
+
+        // "Nipe ushauri." Answered from verified figures whether or not the
+        // model is reachable — a shopkeeper who asks for advice and is told the
+        // budget is finished has been told nothing.
+        if (!mixed && parseAdvisorRequest(body)) {
+          const answered = await executeAssistantTool(
+            db, identity, waMessageId, lang, 'get_business_advice', {},
+          );
+          await reply(phone, answered.terminalReply ?? answered.content);
+          await audit(db, identity, waMessageId, 'business_advice', 'brief', 'applied');
+          await finish('skipped');
+          continue;
+        }
 
         // "Bei ya daftari ni ngapi?" The shop's own price list, read straight
         // back. Until now there was no tool for this at all — Risip would take

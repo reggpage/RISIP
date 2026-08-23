@@ -287,11 +287,12 @@ function shortfallNotice(row: StockRow, lang: Lang): string {
   const short = stockShortfall(row);
   if (short === 0) return '';
   const shown = short.toLocaleString('en-US', { maximumFractionDigits: row.measured ? 2 : 0 });
+  // One line. The owner's complaint, in their words: "maneno mengi ni usenge."
+  // The old version spent three sentences on two possible causes and an example
+  // before getting to the thing to do about it.
   return lang === 'sw'
-    ? `\n\n⚠️ Mauzo yamezidi kwa ${shown}. Ama umeingiza stock bila kuirekodi, ama mauzo yamerudiwa mara mbili.`
-      + `\nHesabu upya ili kurekebisha: "nina ${row.productName} 20".`
-    : `\n\n⚠️ Sales exceed the count by ${shown}. Either a restock was never recorded, or a sale was recorded twice.`
-      + `\nCount it again to fix it: "nina ${row.productName} 20".`;
+    ? `\n⚠️ Mauzo yamezidi hesabu kwa ${shown} — hesabu upya: "nina ${row.productName} 20".`
+    : `\n⚠️ Sales exceed the count by ${shown} — recount: "nina ${row.productName} 20".`;
 }
 
 const countedOn = (iso: string | null) =>
@@ -374,10 +375,8 @@ export function stockListReply(rows: StockRow[], lang: Lang): string {
   // the only person who can tell which of the two it is.
   const short = counted.filter((row) => stockShortfall(row) > 0);
   const shortText = short.length === 0 ? '' : (lang === 'sw'
-    ? `\n\n⚠️ Hizi mauzo yamezidi hesabu, kwa hiyo nimeonyesha 0: ${short.map((row) => row.productName).join(', ')}.`
-      + '\nHesabu upya, mfano: "nina daftari 20".'
-    : `\n\n⚠️ For these, sales exceed the count, so I show 0: ${short.map((row) => row.productName).join(', ')}.`
-      + '\nCount them again, e.g. "nina daftari 20".');
+    ? `\n\n⚠️ Hesabu upya (mauzo yamezidi hesabu): ${short.map((row) => row.productName).join(', ')}.`
+    : `\n\n⚠️ Recount (sales exceed the count): ${short.map((row) => row.productName).join(', ')}.`);
   const lines = shown.join('\n');
   return lang === 'sw'
     ? `Zilizopo (${counted.length} zilizohesabiwa):\n${lines}${omittedText}${uncountedText}${shortText}`

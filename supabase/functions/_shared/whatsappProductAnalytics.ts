@@ -5,8 +5,24 @@ import { correctControlWords } from './whatsappSpelling.ts';
 export type ProductRankBy = 'quantity' | 'revenue' | 'margin';
 export type ProductPeriod = 'today' | 'week' | 'month' | 'year';
 
+/**
+ * Which end of the ranking the question is about.
+ *
+ * MEASURED FAILURE, the owner's own thread: the web app showed Velvet napkin
+ * at a margin of −1,200 and Sodaa at −100, both flagged "Below cost". Asked
+ * "bidhaa gani inaleta hasara", Risip replied "hakuna bidhaa yenye hasara
+ * kwenye orodha hii" — true of the list it was looking at, and the opposite of
+ * the truth. Every ranking sorted DESCENDING and took the top five, so a
+ * question about losses was answered with the five biggest winners.
+ *
+ * A loss is not a small profit. It is the one number a shopkeeper most needs
+ * to be told without being asked twice.
+ */
+export type RankDirection = 'best' | 'worst';
+
 export type ProductAnalyticsRequest = {
   rankBy: ProductRankBy;
+  direction: RankDirection;
   period: ProductPeriod;
   compareNames: string[];
   /** Exact server-resolved window for jana/juzi/specific dates. */
@@ -42,6 +58,10 @@ export type ProductAggregate = {
 
 const clean = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim();
 
+/** Negatives keep their sign: "−1,200" is the whole point of a loss line. */
+const money = (value: number) =>
+  `${value < 0 ? '−' : ''}TSh ${Math.abs(Math.round(value)).toLocaleString('en-US')}`;
+
 export function parseProductAnalyticsRequest(text: string | null | undefined, now = new Date()): ProductAnalyticsRequest | null {
   // "ni bdhaa gani zimeuzwa wiki hii", "nini kiemuzika leo" — one slip in the
   // question word and a table that exists went unbuilt. The leading "ni" is
@@ -60,12 +80,18 @@ export function parseProductAnalyticsRequest(text: string | null | undefined, no
   // question when it carried the word "bidhaa". A shopkeeper asking what moved
   // says "nini", not "bidhaa gani".
   const asksWhatSold = /^(?:nini|vitu gani|what)(?:\s+na\s+nini)?\s+(?:ki|zi|vi)?(?:me|li)uz\w*/i.test(value);
+  // "Je kuna hasara?", "bidhaa gani inaleta hasara", "nini kinauzwa chini ya
+  // gharama". This is claimed even without the word "bidhaa", because a loss
+  // only exists per product — the ledger's sales-minus-expenses cannot see one,
+  // and answering from it is how "hakuna hasara" got said about a shop selling
+  // napkins at four hundred shillings below cost.
+  const asksLoss = /\b(hasara|inapoteza|napoteza|zinapoteza|chini ya gharama|below cost|losing money|loss)\b/.test(value);
   const asksProfit = /\b(faida|margin|profit|earn)\b/.test(value);
   const asksRevenue = /\b(mapato|revenue|money|fedha nyingi|pesa nyingi)\b/.test(value);
   // A bare "faida ya leo" is a period profit question, not a product ranking.
   // Product analytics only claims messages that explicitly mention products or
   // selling; this prevents it from stealing the future profit-intent route.
-  if (!asksProduct && !asksWhatSold) return null;
+  if (!asksProduct && !asksWhatSold && !asksLoss) return null;
 
   const period: ProductPeriod = /\b(leo|today)\b/.test(value)
     ? 'today'
@@ -74,7 +100,8 @@ export function parseProductAnalyticsRequest(text: string | null | undefined, no
       : /\b(mwezi|month)\b/.test(value)
         ? 'month'
         : /\b(mwaka|year)\b/.test(value) ? 'year' : 'month';
-  const rankBy: ProductRankBy = asksProfit ? 'margin' : asksRevenue ? 'revenue' : 'quantity';
+  const rankBy: ProductRankBy = asksLoss || asksProfit ? 'margin' : asksRevenue ? 'revenue' : 'quantity';
+  const direction: RankDirection = asksLoss ? 'worst' : 'best';
   const compareMatch = value.match(/^(.+?)\s+(?:au|or)\s+(.+?)(?:\s+(?:ipi|which|inauza|sells|inauzika)\b|\s*$)/u);
   const namedProductMatch = value.match(/^(.+?)\s+(?:inauza|inauzika|imeuzwa|iliuzwa|sold)\s+(?:ngapi|sana|zaidi|vipi|most)\b/u);
   const namedProduct = namedProductMatch?.[1].trim();
@@ -86,7 +113,7 @@ export function parseProductAnalyticsRequest(text: string | null | undefined, no
   const range = resolved ? {
     from: resolved.from.toISOString(), to: resolved.to.toISOString(), sw: resolved.sw, en: resolved.en,
   } : null;
-  return { rankBy, period, compareNames, ...(range ? { range } : {}) };
+  return { rankBy, direction, period, compareNames, ...(range ? { range } : {}) };
 }
 
 export function parseProductAnalyticsFollowUp(
@@ -115,6 +142,7 @@ export function parseProductAnalyticsFollowUp(
   } : context.request.range ?? null;
   return {
     rankBy: asksRevenue ? 'revenue' : asksMargin ? 'margin' : asksQuantity ? 'quantity' : context.request.rankBy,
+    direction: context.request.direction ?? 'best',
     period,
     compareNames: context.focusNames.slice(0, 2),
     ...(range ? { range } : {}),
@@ -183,16 +211,26 @@ export function aggregateProducts(lines: ProductSaleLine[], costs: ProductCostPo
   return Array.from(byProduct.values());
 }
 
-export function rankProducts(items: ProductAggregate[], rankBy: ProductRankBy, compareNames: string[] = []): ProductAggregate[] {
+export function rankProducts(
+  items: ProductAggregate[],
+  rankBy: ProductRankBy,
+  compareNames: string[] = [],
+  direction: RankDirection = 'best',
+): ProductAggregate[] {
   const filtered = compareNames.length > 0
     ? items.filter((item) => compareNames.some((name) => clean(item.product) === clean(name) || clean(item.product).includes(clean(name))))
     : items;
+  const worst = direction === 'worst';
   return filtered
     .filter((item) => rankBy !== 'margin' || item.costed)
     .sort((a, b) => {
-      const aValue = rankBy === 'quantity' ? a.quantity : rankBy === 'revenue' ? a.revenue : (a.margin ?? -Infinity);
-      const bValue = rankBy === 'quantity' ? b.quantity : rankBy === 'revenue' ? b.revenue : (b.margin ?? -Infinity);
-      return bValue - aValue || b.revenue - a.revenue || a.product.localeCompare(b.product);
+      const value = (item: ProductAggregate) => rankBy === 'quantity'
+        ? item.quantity
+        : rankBy === 'revenue' ? item.revenue : (item.margin ?? (worst ? Infinity : -Infinity));
+      const [first, second] = worst ? [a, b] : [b, a];
+      return value(first) - value(second)
+        || (worst ? a.revenue - b.revenue : b.revenue - a.revenue)
+        || a.product.localeCompare(b.product);
     });
 }
 
@@ -211,7 +249,7 @@ export function productAnalyticsReply(
       ? 'Bado hujaandika mauzo yenye majina ya bidhaa katika kipindi hiki. Taja bidhaa na kiasi ili Risip iweze kuonyesha kinachouza zaidi.'
       : 'I do not have itemised product sales for this period yet. Include product names and quantities so Risip can rank what sells most.';
   }
-  const ranked = rankProducts(items, request.rankBy, request.compareNames);
+  const ranked = rankProducts(items, request.rankBy, request.compareNames, request.direction);
   // Products with no buying cost cannot be ranked by margin. They used to be
   // dropped out of the ranking without a word, and when EVERY product lacked one
   // the whole question was refused — "bidhaa gani inafaida kubwa?" answered with
@@ -234,6 +272,27 @@ export function productAnalyticsReply(
   }
   if (ranked.length === 0) {
     return lang === 'sw' ? 'Sikupata bidhaa ulizotaja katika kipindi hiki.' : 'I could not find the named products in this period.';
+  }
+
+  // A loss question gets a loss answer: the products actually sold below what
+  // they cost, and nothing else. Padding this with the rest of the ranking is
+  // how "hakuna hasara" ended up being said about a shop losing money on two
+  // lines every day.
+  if (request.direction === 'worst') {
+    const losing = ranked.filter((item) => (item.margin ?? 0) < 0);
+    if (losing.length === 0) {
+      return (lang === 'sw'
+        ? `Hakuna bidhaa inayouzwa chini ya gharama ${periodLabel}.`
+        : `No product sold below cost ${periodLabel}.`) + uncostedNote;
+    }
+    const total = losing.reduce((sum, item) => sum + (item.margin ?? 0), 0);
+    const rows = losing.slice(0, 8).map((item) =>
+      `• ${item.product} — ${money(item.margin ?? 0)}`);
+    return (lang === 'sw'
+      ? `Ndiyo. Bidhaa ${losing.length} zinauzwa chini ya gharama ${periodLabel} — jumla ${money(total)}:\n`
+        + `${rows.join('\n')}\n\nPandisha bei au punguza gharama ya kununua.`
+      : `Yes. ${losing.length} product(s) sold below cost ${periodLabel} — ${money(total)} in total:\n`
+        + `${rows.join('\n')}\n\nRaise the price or bring the buying cost down.`) + uncostedNote;
   }
   const basis = request.rankBy === 'quantity'
     ? (lang === 'sw' ? 'idadi ya bidhaa' : 'quantity sold')

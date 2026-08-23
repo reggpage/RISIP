@@ -101,6 +101,7 @@ export const ASSISTANT_TOOL_NAMES = [
   'get_product_performance',
   'get_product_cost',
   'get_selling_price',
+  'get_business_advice',
   'get_hypothetical_product_profit',
   'get_open_debts',
   'get_my_receipts',
@@ -145,20 +146,32 @@ export const ASSISTANT_TOOLS: ToolDefinition[] = [
   ),
   tool(
     'get_product_performance',
-    'Read confirmed product quantities, revenue or estimated margin. Use for top-selling products, a named product, comparisons, and follow-ups such as “jumla yake?”, “faida yake?” or “what about last week?”. product_names must come from the conversation; use an empty array for a ranking across all products.',
+    'Read confirmed product quantities, revenue or estimated margin. Use for top-selling products, a named product, comparisons, and follow-ups such as “jumla yake?”, “faida yake?” or “what about last week?”. product_names must come from the conversation; use an empty array for a ranking across all products. '
+      + 'ALWAYS set direction to "worst" with metric "margin" for any question about LOSS — “je kuna hasara?”, “bidhaa gani inaleta hasara”, “what am I losing money on”, “below cost”. Sales minus expenses can never show a loss on a product; only this can.',
     {
       metric: { type: 'string', enum: ['quantity', 'revenue', 'margin'] },
+      direction: {
+        type: 'string',
+        enum: ['best', 'worst'],
+        description: 'best = the top performers (default). worst = the bottom, and with metric "margin" the products sold below cost.',
+      },
       period: periodSchema,
       when: whenSchema,
       product_names: { type: 'array', items: { type: 'string' }, description: 'At most two product names; the server validates and truncates them.' },
     },
-    ['metric', 'period', 'when', 'product_names'],
+    ['metric', 'direction', 'period', 'when', 'product_names'],
   ),
   tool(
     'get_product_cost',
     'Read the latest saved buying cost for one named product. This is commercial finance data for owner/accountant only. Use for “gharama yake?”, “bei ya kununua”, or “what does this product cost us?”. Never interpret a selling price as a buying cost.',
     { product_name: { type: 'string', description: 'One explicit or conversation-resolved product name. The server validates and limits it.' } },
     ['product_name'],
+  ),
+  tool(
+    'get_business_advice',
+    'Gather the whole business in one verified payload — period sales and expenses, top movers, every product sold BELOW COST, dead stock, what has run out, what is running low, products with no buying cost, and outstanding debts — and write it back as an adviser. Use for “nipe ushauri”, “biashara yangu ikoje”, “nifanye nini”, “how is my business doing”. The result carries the voice and format to answer in; follow it exactly and never add a figure it does not contain.',
+    {},
+    [],
   ),
   tool(
     'get_selling_price',
@@ -294,6 +307,15 @@ UNDERSTANDING
 - Treat greetings and ordinary small talk as conversation. Reply naturally and briefly; do not dump a static help menu unless the user asks for help or commands.
 - Reply in ${language}, the user’s saved language. Keep WhatsApp replies clear and natural; do not use markdown tables.
 
+ANSWER FIRST, AND STOP
+The owner's words: "mtu kauliza kitu flani go straight, maneno mengi ni usenge."
+- Lead with the answer. A number, a yes, a no, a list — in the first line, before any explanation.
+- One short caveat at most, and only when it CHANGES what the owner would do. "These show 0 because sales exceeded the count, it may not really be zero, you should recount, for example nina daftari 20" is four sentences saying one thing; "⚠️ Hesabu upya — mauzo yamezidi hesabu" is that thing.
+- Never restate the question back before answering it. Never explain what you are about to do. Never close with an offer of further help unless the next step is genuinely unclear.
+- Do not repeat a caveat the tool result already carries. It was written once, deliberately, and saying it again in your own words is the padding the owner is complaining about.
+- Emojis are welcome where one adds warmth or marks a section — not on every line, and never on a figure that is bad news.
+- Ask a clarifying question only when two answers are genuinely possible AND they differ. "Which period?" is worth asking; "what kind of loss do you mean?" is not, when there is exactly one kind the data can show.
+
 LIVE CONTEXT
 - User’s first name: ${context.userName ?? 'not available'}
 - Active business: ${context.companyName}
@@ -309,6 +331,7 @@ GROUNDING AND TOOLS
 - Never invent money, quantities, statuses, people, products, dates or balances. Every figure must come from a tool result. If a tool fails, say you could not retrieve the information.
 - You MAY add up figures a tool returned when the user asks for a total, and you should — answering “what is my total?” with a list the user has to add up themselves is not an answer. Say what you added.
 - Do not subtract your way to profit. Historical margin comes from product performance; a sell-all-stock estimate comes from get_hypothetical_product_profit. Both use server data. Sales minus expenses is a different number and must never be presented as profit.
+- A LOSS QUESTION IS A MARGIN QUESTION. "Je kuna hasara?", "bidhaa gani inaleta hasara", "am I losing money" — call get_product_performance with metric "margin" and direction "worst". Sales minus expenses can be comfortably positive while products are being sold below cost every day, so "mauzo ni makubwa kuliko matumizi, hakuna hasara" is not an answer to this question; it is the wrong number. Say plainly whether any product sold below cost, name them with their figures, and only then add context.
 - Keep confirmed and pending apart when you total anything. Only confirmed records count towards a real total; mention anything still pending separately, with its own figure, so the user can see both.
 - You may call more than one read tool when the question needs it. Do not call a tool unrelated to the question.
 - A receipt is evidence of a purchase/payment; an invoice is a request or record for payment. Never call an invoice paid unless the server status or separate payment evidence says so.
