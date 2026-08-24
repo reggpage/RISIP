@@ -4,7 +4,17 @@ import { withinOneEdit } from './whatsappSpelling.ts';
 export type ProductReadMatch = {
   productKey: string;
   productName: string;
-  matchKind: 'exact' | 'trailing_vowel' | 'noun_class' | 'trigram';
+  /**
+   * How the catalogue was reached.
+   *
+   * MEASURED FAILURE, mine, from phase 3: the alias RPC returned match_kind
+   * 'alias' and this list did not contain it, so rowToMatch rejected every
+   * alias row and the resolution came back "not_found". The migration was
+   * right, the SQL test passed, and no alias worked through the edge function
+   * at all. A union that a database can return values outside of is a union
+   * that will be wrong eventually.
+   */
+  matchKind: 'exact' | 'alias' | 'trailing_vowel' | 'noun_class' | 'trigram';
   matchScore: number;
 };
 
@@ -20,10 +30,11 @@ function rowToMatch(row: RpcRow): ProductReadMatch | null {
   const productName = typeof row.product_name === 'string' ? row.product_name.trim() : '';
   const matchKind = row.match_kind;
   const matchScore = Number(row.match_score);
+  const KINDS = ['exact', 'alias', 'trailing_vowel', 'noun_class', 'trigram'] as const;
   if (!productKey || !productName
-      || (matchKind !== 'exact' && matchKind !== 'trailing_vowel' && matchKind !== 'noun_class' && matchKind !== 'trigram')
+      || !KINDS.includes(matchKind as typeof KINDS[number])
       || !Number.isFinite(matchScore)) return null;
-  return { productKey, productName, matchKind, matchScore };
+  return { productKey, productName, matchKind: matchKind as ProductReadMatch['matchKind'], matchScore };
 }
 
 export function normalizeProductReadResolution(data: unknown, asked: string): ProductReadResolution {

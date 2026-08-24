@@ -1218,6 +1218,51 @@ async function performLogout(
   return { reply: logoutDone(identity.company_name, lang), outcome: 'applied' };
 }
 
+/**
+ * Turns a shop's own word into the catalogue's name, once, on the way in.
+ *
+ * Aliases resolve inside wa_resolve_company_product_read, so every READ already
+ * found them. A drafted record was different: a fully-priced sale writes the
+ * words the trader typed straight onto its lines, which meant "za mbwa kilo 3
+ * kwa 6000" would have created a second product literally called "za mbwa",
+ * sitting beside the real one and splitting its history in half.
+ *
+ * ONLY exact alias matches are rewritten. A trigram near-miss is deliberately
+ * left exactly as typed, because that is what every existing vertical relies on
+ * today — a chips shop writing "chipsi" still records "chipsi" and still gets
+ * the near-name warning it has always had. Nothing here changes for a shop that
+ * has taught no words.
+ *
+ * One place, not one per parser: sales, credit sales, purchases, losses and
+ * owner use all draft through here.
+ */
+async function canonicaliseAliasLines(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  record: ParsedDailyRecord,
+): Promise<ParsedDailyRecord> {
+  if (record.lines.length === 0) return record;
+  let changed = false;
+  const lines = [];
+  for (const line of record.lines) {
+    try {
+      const resolved = await resolveProductForRead(db, identity, line.description);
+      if (!resolved.error
+          && resolved.resolution.kind === 'matched'
+          && resolved.resolution.match.matchKind === 'alias') {
+        lines.push({ ...line, description: resolved.resolution.match.productName });
+        changed = true;
+        continue;
+      }
+    } catch {
+      // Best effort. A resolver that is briefly unavailable must not stop a
+      // shop recording its day.
+    }
+    lines.push(line);
+  }
+  return changed ? { ...record, lines } : record;
+}
+
 async function createDailyRecordDraft(
   db: Admin,
   identity: any,
@@ -1225,21 +1270,22 @@ async function createDailyRecordDraft(
   record: import('../_shared/whatsappDailyRecords.ts').ParsedDailyRecord,
   lang: Lang,
 ): Promise<{ id: string | null; error: any }> {
+  const canonical = await canonicaliseAliasLines(db, identity, record);
   const { data, error } = await db.rpc('wa_create_daily_record_draft', {
     p_profile_id: identity.profile_id,
     p_company_id: identity.company_id,
-    p_kind: record.kind,
-    p_amount: record.amount,
-    p_party_name: record.partyName,
-    p_description: dailyRecordStorageDescription(record, lang),
+    p_kind: canonical.kind,
+    p_amount: canonical.amount,
+    p_party_name: canonical.partyName,
+    p_description: dailyRecordStorageDescription(canonical, lang),
     p_occurred_at: new Date().toISOString(),
     p_source_message_id: messageId,
-    p_lines: record.lines,
+    p_lines: canonical.lines,
     // Phase 1 gave the ledger these two. A record that states neither sends
     // null, and null keeps meaning "the trader did not say" rather than being
     // filled in with a plausible guess.
-    p_payment_method: record.paymentMethod ?? null,
-    p_loss_reason: record.lossReason ?? null,
+    p_payment_method: canonical.paymentMethod ?? null,
+    p_loss_reason: canonical.lossReason ?? null,
   });
   return { id: data ? String(data) : null, error };
 }
