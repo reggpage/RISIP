@@ -745,6 +745,29 @@ export type Database = {
       create_whatsapp_link_token: { Args: Record<string, never>; Returns: string };
       /** Revokes the caller's WhatsApp connection. Returns rows changed. */
       revoke_whatsapp_identity: { Args: Record<string, never>; Returns: number };
+      my_whatsapp_notification_preferences: {
+        Args: Record<string, never>;
+        Returns: {
+          connected: boolean;
+          daily_summary_enabled: boolean;
+          debt_reminders_enabled: boolean;
+          closing_time: string | null;
+          timezone: string;
+        };
+      };
+      set_whatsapp_notification_preferences: {
+        Args: {
+          p_daily_summary: boolean;
+          p_debt_reminders: boolean;
+          p_closing_time?: string | null;
+        };
+        Returns: {
+          connected: boolean;
+          daily_summary_enabled: boolean;
+          debt_reminders_enabled: boolean;
+          closing_time: string | null;
+        };
+      };
       auth_company_id: { Args: Record<string, never>; Returns: string };
       auth_role: { Args: Record<string, never>; Returns: UserRole };
       auth_can_see_project: { Args: { pid: string }; Returns: boolean };

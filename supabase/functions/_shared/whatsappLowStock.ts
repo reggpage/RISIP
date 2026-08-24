@@ -40,7 +40,7 @@ export function lowStock(levels: StockLevel[]): StockLevel[] {
   });
 }
 
-const amount = (level: StockLevel) =>
+const amount = (level: Pick<StockLevel, 'onHand' | 'unit'>) =>
   `${level.onHand.toLocaleString('en-US', { maximumFractionDigits: 3 })}${level.unit ? ` ${level.unit}` : ''}`;
 
 /**

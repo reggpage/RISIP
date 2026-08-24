@@ -30,6 +30,10 @@ import {
 import { sendWhatsAppText, showTyping, whatsAppDisplayNumber } from '../_shared/whatsappApi.ts';
 import { looksLikeMachineText } from '../_shared/whatsappMachineText.ts';
 import {
+  isProactiveNotificationStop,
+  notificationStoppedReply,
+} from '../_shared/whatsappNotifications.ts';
+import {
   detectLanguage,
   isHelp,
   isCancel,
@@ -3165,6 +3169,19 @@ Deno.serve(async (req) => {
         if (!identity) {
           await replyQuietly(phone, await handleOnboarding(db, phone, body, false));
           await finish('skipped', 'onboarding');
+          continue;
+        }
+
+        // STOP/SITISHA applies only to proactive summaries and debt reminders.
+        // It must run before the generic cancel router, which also recognises
+        // "sitisha", and it must not revoke the identity or block normal chats.
+        if (isProactiveNotificationStop(body)) {
+          const { error } = await db.rpc('wa_stop_proactive_notifications', { p_phone: phone });
+          await replyQuietly(phone, error
+            ? (lang === 'sw' ? 'Sikuweza kuzima taarifa sasa. Jaribu tena.' : 'I could not turn off notifications right now. Try again.')
+            : notificationStoppedReply(lang));
+          await audit(db, identity, waMessageId, 'notification_preferences', 'stop_all', error ? 'failed' : 'applied');
+          await finish('skipped', error ? 'notification_stop_failed' : undefined);
           continue;
         }
 

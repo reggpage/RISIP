@@ -11,6 +11,7 @@ import { useToast } from '@/components/ui/Toast';
 import LogoCropModal from '@/components/settings/LogoCropModal';
 import WhatsAppConnectCard from '@/components/whatsapp/WhatsAppConnectCard';
 import WhatsAppCompanyInviteCard from '@/components/whatsapp/WhatsAppCompanyInviteCard';
+import WhatsAppNotificationPreferences from '@/components/whatsapp/WhatsAppNotificationPreferences';
 import { createNotifications } from '@/features/notifications/notifications';
 import { useAuth, signOut } from '@/lib/auth';
 import { roleLabel } from '@/lib/roles';
@@ -525,6 +526,9 @@ export default function SettingsPage() {
         >
           <div className="space-y-4">
             <WhatsAppConnectCard />
+            {(profile?.role === 'owner' || profile?.role === 'accountant') && (
+              <WhatsAppNotificationPreferences />
+            )}
             <WhatsAppCompanyInviteCard companyName={company?.name ?? companyName} />
           </div>
         </SettingsSection>
