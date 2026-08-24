@@ -156,8 +156,8 @@ function inlineSaleList(
       kind: 'unreadable',
       unreadable,
       message: lang === 'sw'
-        ? `Sijaweza kusoma sehemu hizi za mauzo kwa uhakika:\n${listed}\n\nHakuna rekodi mpya iliyohifadhiwa. Tuma orodha tena ukitaja bidhaa, idadi na jumla ya kila bidhaa.`
-        : `I could not read these sale items with confidence:\n${listed}\n\nNo new record was saved. Send the list again with each product, quantity and item total.`,
+        ? `Sijaweza kusoma sehemu hizi za ${direction.kind === 'sale' ? 'mauzo' : 'bidhaa zilizoingia'} kwa uhakika:\n${listed}\n\nHakuna rekodi mpya iliyohifadhiwa. Tuma orodha tena ukitaja bidhaa, idadi na jumla ya kila bidhaa.`
+        : `I could not read these ${direction.kind === 'sale' ? 'sale' : 'purchase'} items with confidence:\n${listed}\n\nNo new record was saved. Send the list again with each product, quantity and item total.`,
     };
   }
 
@@ -217,7 +217,7 @@ function summarizeKnown(records: ParsedDailyRecord[], lang: Lang): string[] {
       ? record.kind === 'sale' ? 'Mauzo'
         : record.kind === 'expense' ? 'Matumizi'
           : record.kind === 'debt_issued' ? 'Deni lililotolewa'
-            : record.kind === 'customer_payment' ? 'Malipo ya mteja' : 'Ununuzi wa stock'
+            : record.kind === 'customer_payment' ? 'Malipo ya mteja' : 'Ununuzi wa bidhaa'
       : record.kind === 'sale' ? 'Sales'
         : record.kind === 'expense' ? 'Expenses'
           : record.kind === 'debt_issued' ? 'Debt issued'

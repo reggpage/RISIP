@@ -38,7 +38,11 @@ const HEADER = new RegExp(
   + '|nimeongeza(?:\\s+(?:bidhaa|stock|store|mzigo))?'
   + '|ongeza\\s+(?:bidhaa|stock|store|mzigo)'
   + '|add\\s+(?:product|products|stock|items?)'
-  + '|hesabu(?:\\s+ya)?\\s+stock|stock\\s+(?:ya\\s+)?leo'
+  // "bidhaa" is what the replies now call these, so it has to be a word the
+  // counter answers to. "stock" stays accepted forever — it is what half the
+  // traders already type, and the vocabulary a shop has learned is not ours to
+  // withdraw.
+  + '|hesabu(?:\\s+ya)?\\s+(?:stock|bidhaa)|(?:stock|bidhaa)\\s+(?:ya\\s+)?leo'
   + '|nilizonazo|ninazo|zilizopo|store|stock\\s*count|counted'
   + ')\\b', 'i');
 

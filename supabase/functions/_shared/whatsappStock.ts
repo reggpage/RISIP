@@ -162,10 +162,10 @@ export function ambiguousStockChangeReply(change: AmbiguousStockChange, lang: La
   const quantity = change.quantity.toLocaleString('en-US', { maximumFractionDigits: 3 });
   const unit = change.unit ? ` ${change.unit}` : '';
   if (lang === 'sw') {
-    return `Sijaelewa kama ${quantity}${unit} ni bidhaa ulizoongeza, au ndiyo stock yote iliyopo sasa.\n\n`
+    return `Sijaelewa kama ${quantity}${unit} ni bidhaa ulizoongeza, au ndiyo bidhaa zote zilizopo sasa.\n\n`
       + `• Kuongeza ${quantity}${unit} ulizonunua, andika bei ya moja: `
       + `“Nimenunua ${change.product} ${quantity}${unit} kila moja TSh [bei ya moja]”.\n`
-      + `• Kuweka hesabu ya stock yote kuwa ${quantity}${unit}, andika: `
+      + `• Kuweka hesabu ya bidhaa zote kuwa ${quantity}${unit}, andika: `
       + `“Nina ${change.product} ${quantity}${unit}”.\n\n`
       + 'Sitaandika chochote mpaka uchague maana moja.';
   }
@@ -350,7 +350,7 @@ export function stockReply(row: StockRow | null, asked: string, lang: Lang): str
     : `Since your count on ${countedOn(row.countedAt)}: ${row.boughtSince} in, ${row.soldSince} out.`;
   const caveat = row.incompletePurchases
     ? (lang === 'sw'
-      ? '\n\n⚠️ Baadhi ya manunuzi ya stock hayakutaja idadi, kwa hiyo hayakuhesabika.'
+      ? '\n\n⚠️ Baadhi ya manunuzi ya bidhaa hayakutaja idadi, kwa hiyo hayakuhesabika.'
       : '\n\n⚠️ Some stock purchases named no quantity, so they are not in this count.')
     : '';
 

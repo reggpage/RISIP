@@ -39,7 +39,7 @@ describe('the welcome message teaches what actually works', () => {
   it('teaches three words, one for each thing a shop does', () => {
     expect(welcome).toContain('*nasajili bidhaa*');
     expect(welcome).toContain('*mauzo*');
-    expect(welcome).toContain('*hesabu stock*');
+    expect(welcome).toContain('*hesabu bidhaa*');
     expect(welcome).not.toContain('*naongeza bidhaa*');
     expect(welcome).toContain('nimenunua sabuni 20 kila moja TSh 1,500');
   });

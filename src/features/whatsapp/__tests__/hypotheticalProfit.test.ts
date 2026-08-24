@@ -31,7 +31,7 @@ describe('deterministic hypothetical product profit', () => {
       productName: 'Atlasi', onHand: null, hasCount: false, unit: null,
       unitCost: null, retailPrice: null, wholesalePrice: null,
     }, 'sw');
-    expect(reply).toContain('stock count ya kuanzia');
+    expect(reply).toContain('hesabu ya bidhaa ya kuanzia');
     expect(reply).toContain('bei ya kununua');
     expect(reply).toContain('bei ya kuuza');
     expect(reply).not.toContain('jaribu tena');

@@ -2173,7 +2173,7 @@ async function executeAssistantTool(
         : db.rpc('company_product_names', { p_company_id: identity.company_id }),
     ]);
     if (error) {
-      return { content: lang === 'sw' ? 'Sikuweza kupata hesabu ya stock sasa.' : 'I could not load stock right now.' };
+      return { content: lang === 'sw' ? 'Sikuweza kupata hesabu ya bidhaa sasa.' : 'I could not load stock right now.' };
     }
     const rows = ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
       productName: String(row.product_name ?? ''),

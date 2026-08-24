@@ -100,13 +100,13 @@ export function buildHypotheticalProfitReply(input: HypotheticalProfitInput, lan
   const estimated = input.retailPrice === null && average !== null;
 
   const missing: string[] = [];
-  if (!input.hasCount || input.onHand === null) missing.push(lang === 'sw' ? 'stock count ya kuanzia' : 'a starting stock count');
+  if (!input.hasCount || input.onHand === null) missing.push(lang === 'sw' ? 'hesabu ya bidhaa ya kuanzia' : 'a starting stock count');
   if (input.unitCost === null) missing.push(lang === 'sw' ? 'bei ya kununua' : 'the buying cost');
   if (sellingPrice === null) missing.push(lang === 'sw' ? 'bei ya kuuza' : 'the selling price');
   if (missing.length > 0) {
     const list = missing.map((item) => `- ${item}`).join('\n');
     return lang === 'sw'
-      ? `Siwezi kukadiria faida ya ${input.productName} bado. Kinachokosekana:\n${list}\n\nNikipata vipande hivyo nitahesabu: stock × (bei ya kuuza − bei ya kununua).`
+      ? `Siwezi kukadiria faida ya ${input.productName} bado. Kinachokosekana:\n${list}\n\nNikipata vipande hivyo nitahesabu: bidhaa zilizopo × (bei ya kuuza − bei ya kununua).`
       : `I cannot estimate the profit for ${input.productName} yet. Missing:\n${list}\n\nOnce those are available I will calculate: stock × (selling price − buying cost).`;
   }
 
@@ -129,7 +129,7 @@ export function buildHypotheticalProfitReply(input: HypotheticalProfitInput, lan
           + ` Count it again: "nina ${input.productName} 20".`)
       : '';
     return (lang === 'sw'
-      ? `${input.productName} haina stock inayoweza kuuzwa kwa sasa (${shown}${unitText}).`
+      ? `${input.productName} haina bidhaa inayoweza kuuzwa kwa sasa (${shown}${unitText}).`
       : `${input.productName} has no sellable stock right now (${shown}${unitText}).`) + short;
   }
 
@@ -139,7 +139,7 @@ export function buildHypotheticalProfitReply(input: HypotheticalProfitInput, lan
     ? (lang === 'sw' ? 'Kwa wastani' : 'At your average')
     : (lang === 'sw' ? 'Retail' : 'Retail');
   const scope = asked === null
-    ? (lang === 'sw' ? 'ukiuza stock yote' : 'selling all stock')
+    ? (lang === 'sw' ? 'ukiuza bidhaa zote' : 'selling all stock')
     : (lang === 'sw' ? `ukiuza ${quantity.toLocaleString('en-US')}${unitText}` : `selling ${quantity.toLocaleString('en-US')}${unitText}`);
   const capNote = cappedByStock
     ? (lang === 'sw' ? `
@@ -179,7 +179,7 @@ export function buildPortionHypotheticalProfitReply(
 ): string {
   const missing: string[] = [];
   if (!input.hasCount || input.onHandBase === null) {
-    missing.push(lang === 'sw' ? 'stock count ya kuanzia' : 'a starting stock count');
+    missing.push(lang === 'sw' ? 'hesabu ya bidhaa ya kuanzia' : 'a starting stock count');
   }
   if (input.baseUnitCost === null) missing.push(lang === 'sw' ? 'bei ya kununua' : 'the buying cost');
   if (input.retailPrice === null) missing.push(lang === 'sw' ? `bei ya kuuza kwa ${input.saleUnit}` : `the ${input.saleUnit} selling price`);
@@ -198,7 +198,7 @@ export function buildPortionHypotheticalProfitReply(
   const stock = input.onHandBase!;
   if (stock <= 0) {
     return lang === 'sw'
-      ? `${input.productName} haina stock inayoweza kuuzwa kwa sasa (${stock.toLocaleString('en-US')} ${input.baseUnit}).`
+      ? `${input.productName} haina bidhaa inayoweza kuuzwa kwa sasa (${stock.toLocaleString('en-US')} ${input.baseUnit}).`
       : `${input.productName} has no sellable stock right now (${stock.toLocaleString('en-US')} ${input.baseUnit}).`;
   }
   const portions = Math.floor((stock + 1e-9) / input.unitBaseQuantity);
@@ -206,7 +206,7 @@ export function buildPortionHypotheticalProfitReply(
   const remainder = Math.max(0, stock - usedBase);
   if (portions <= 0) {
     return lang === 'sw'
-      ? `Stock ya ${input.productName} (${stock.toLocaleString('en-US')} ${input.baseUnit}) haitoshi hata ${input.saleUnit} moja.`
+      ? `Bidhaa ya ${input.productName} (${stock.toLocaleString('en-US')} ${input.baseUnit}) haitoshi hata ${input.saleUnit} moja.`
       : `${input.productName} stock (${stock.toLocaleString('en-US')} ${input.baseUnit}) is not enough for one ${input.saleUnit}.`;
   }
 
@@ -215,7 +215,7 @@ export function buildPortionHypotheticalProfitReply(
   const formula = `${portions.toLocaleString('en-US')} ${input.saleUnit} × (${money(input.retailPrice!)} − ${money(portionCost)}) = *${money(retailProfit)}*`;
   const lines = lang === 'sw'
     ? [
-      `Makisio ya ${input.productName} ukiuza stock yote kwa ${input.saleUnit}:`,
+      `Makisio ya ${input.productName} ukiuza bidhaa zote kwa ${input.saleUnit}:`,
       `- Stock: ${stock.toLocaleString('en-US')} ${input.baseUnit}`,
       `- Inayouzwa: ${portions.toLocaleString('en-US')} ${input.saleUnit}`,
       `- Retail: ${formula}`,

@@ -22,7 +22,9 @@ export function parseQuantityMeaningAnswer(
   const said = clean(text).replace(/[^\p{L}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
   if (/^(?:ni\s+)?(?:mauzo|sale|sales|sold)$/.test(said)) return 'sale';
   if (/^(?:ni\s+)?(?:manunuzi|stock purchase|purchase|bought|stock niliyonunua)$/.test(said)) return 'stock_purchase';
-  if (/^(?:ni\s+)?(?:stock|stock iliyopo|hesabu ya stock|idadi zilizopo|count|stock count|on hand)$/.test(said)) {
+  // The question now asks about "bidhaa zilizopo sasa", so that is an answer a
+  // trader will echo back. "stock" stays accepted alongside it.
+  if (/^(?:ni\s+)?(?:stock|bidhaa|stock iliyopo|bidhaa zilizopo|hesabu ya (?:stock|bidhaa)|idadi zilizopo|count|stock count|on hand)$/.test(said)) {
     return 'stock_count';
   }
   return null;
@@ -30,7 +32,7 @@ export function parseQuantityMeaningAnswer(
 
 export function quantityMeaningQuestion(lang: Lang): string {
   const items = lang === 'sw'
-    ? 'Idadi hizi ni *mauzo*, *manunuzi*, au *stock iliyopo sasa*?'
+    ? 'Idadi hizi ni *mauzo*, *manunuzi*, au *bidhaa zilizopo sasa*?'
     : 'Are these quantities *sales*, a *stock purchase*, or *stock on hand now*?';
   return lang === 'sw'
     ? `${items}\nJibu MAUZO, MANUNUZI, au STOCK.`

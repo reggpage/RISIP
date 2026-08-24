@@ -275,7 +275,7 @@ export function portionSetupConfirmation(setup: PortionSetupReady, lang: Lang): 
         + `• Cost per ${setup.baseUnit}: ${amount(baseCost)}\n`);
   return lang === 'sw'
     ? `Nimeelewa ${setup.product}:\n`
-      + `• Unit ya stock: ${setup.baseUnit}\n${purchase}`
+      + `• Kipimo cha bidhaa: ${setup.baseUnit}\n${purchase}`
       + `\nVipimo vya kuuza:\n${rows}\n\n`
       + 'Nihifadhi mpangilio huu? *NDIYO* / *HAPANA*'
     : `I understood ${setup.product}:\n`

@@ -130,9 +130,9 @@ export function businessWelcome(
       + 'Usipotaja rejareja au jumla, natumia rejareja.\n\n'
       + '2️⃣ *mauzo* — kisha orodha ya vilivyouzwa:\n'
       + `_mauzo_\n${italic(eg.sold)}\n\n`
-      + '3️⃣ *hesabu stock* — kisha orodha ya idadi zote zilizopo sasa:\n'
-      + `_hesabu stock_\n${italic(eg.onShelf)}\n\n`
-      + 'Ukinunua stock mpya, taja idadi na gharama, mfano: '
+      + '3️⃣ *hesabu bidhaa* — kisha orodha ya idadi zote zilizopo sasa:\n'
+      + `_hesabu bidhaa_\n${italic(eg.onShelf)}\n\n`
+      + 'Ukinunua bidhaa mpya, taja idadi na gharama, mfano: '
       + '_nimenunua sabuni 20 kila moja TSh 1,500_.\n\n'
       + 'Bei sitakuuliza tena — nitatumia zile ulizosajili mwenyewe.\n\n'
       + 'Ukitaka kuingia kwenye webapp tuma *ingia*.\n'

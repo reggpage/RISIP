@@ -893,7 +893,7 @@ export function detectDailyRecordPriceAnomalies(
 function kindLabel(kind: DailyRecordKind, lang: Lang): string {
   if (lang === 'sw') {
     return ({
-      sale: 'Mauzo', expense: 'Matumizi', stock_purchase: 'Ununuzi wa stock',
+      sale: 'Mauzo', expense: 'Matumizi', stock_purchase: 'Ununuzi wa bidhaa',
       debt_issued: 'Mkopo uliotolewa', customer_payment: 'Malipo ya mteja',
     })[kind];
   }
