@@ -743,7 +743,13 @@ async function readCombo(
       name: String(row.name ?? ''),
       pieces: (Array.isArray(row.pieces) ? row.pieces : []) as SavedCombo['pieces'],
     }))
-    .filter((combo) => combo.name && combo.pieces.length >= 2);
+    // A one-piece recipe is a PORTION, not a nickname: "mshikaki = nyama ya
+    // ngombe, kilo 0.055". 0114 required two pieces because a nickname for a
+    // single product is just that product renamed — but a portion is a
+    // different thing, and forty skewers must take 2.2 kilos off the shelf.
+    // splitCombo returns a saved nickname before its own two-piece rule, so
+    // this filter was the last gate standing in the way (see 0119).
+    .filter((combo) => combo.name && combo.pieces.length >= 1);
 
   return splitCombo(phrase, catalogue, nicknames);
 }
