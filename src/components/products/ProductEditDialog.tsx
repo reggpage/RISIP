@@ -51,8 +51,10 @@ const ui = lang === 'sw' ? {
   // Price
   priceIntro: 'Kiasi unacholipa wewe kununua kimoja. Ndicho kinachotumika kupima faida.',
   cost: 'Ninanunua kwa', current: 'Bei ya sasa', since: 'Tangu',
-  selling: 'Umekuwa ukiuza kwa wastani wa', margin: 'Faida kwa kimoja itakuwa',
-  aboveSelling: 'Bei hii ya kununua ni kubwa kuliko unavyouza — kila mauzo yatakuwa hasara. Hakiki tena.',
+  selling: 'Umekuwa ukiuza kwa wastani wa', sellingNow: 'Unaiuza sasa kwa',
+  margin: 'Faida kwa kimoja itakuwa',
+  aboveSelling: 'Bei hii ya kununua ni kubwa kuliko bei yako ya kuuza — kila mauzo yatakuwa hasara. Hakiki tena.',
+  abovePast: 'Uliuza chini ya bei hii huko nyuma. Bado hujaweka bei ya kuuza — ukiiweka juu ya hii, hakutakuwa na hasara.',
   savePrice: 'Hifadhi bei',
   priceSaved: 'Bei ya kununua imehifadhiwa.',
   priceInvalid: 'Andika bei zaidi ya 0.',
@@ -93,8 +95,10 @@ const ui = lang === 'sw' ? {
   supersedes: 'This count replaces the previous one. Older counts are kept, and no sales record changes.',
   priceIntro: 'What you pay for one of these. It is what makes a profit estimate possible.',
   cost: 'I buy it for', current: 'Current price', since: 'Since',
-  selling: 'You sell it for, on average', margin: 'Margin per unit would be',
-  aboveSelling: 'This buying price is higher than what you sell for. Check that it is right.',
+  selling: 'You sold it for, on average', sellingNow: 'You sell it for',
+  margin: 'Margin per unit would be',
+  aboveSelling: 'This buying price is higher than your selling price — every sale would lose money. Check it.',
+  abovePast: 'Past sales came in under this. No selling price is set yet — set one above this and there is no loss.',
   savePrice: 'Save price',
   priceSaved: 'Buying price saved.',
   priceInvalid: 'Enter a price greater than zero.',
@@ -170,10 +174,9 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
   const [cost, setCost] = useState(product.unitCost === null ? '' : String(product.unitCost));
   const parsedCost = Number(cost.replace(/,/g, ''));
   const priceValid = Number.isFinite(parsedCost) && parsedCost > 0;
-  const margin = declaredUnits.length === 0 && priceValid && product.avgUnitPrice !== null
-    ? product.avgUnitPrice - parsedCost
-    : null;
-  const aboveSelling = margin !== null && margin < 0;
+  // The buying-price margin is worked out further down, once the selling price
+  // has been loaded — see comparedAgainst. It cannot be done here: the state it
+  // depends on is declared below.
 
   // Selling price. Loaded on open rather than carried on the catalogue row: the
   // row is built from what happened, and this is a decision that lives apart
@@ -236,6 +239,23 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
   const parsedWholesale = wholesale.trim() === '' ? null : Number(wholesale.replace(/,/g, ''));
   const parsedMinQty = minQty.trim() === '' ? null : Number(minQty.replace(/,/g, ''));
   const retailValid = Number.isFinite(parsedRetail) && parsedRetail > 0;
+
+  // MEASURED FAILURE, the owner's own screen: Velvet napkin's price was raised
+  // from 200 to 4,000 and this dialog still said "This buying price is higher
+  // than what you sell for". It compared the cost against the AVERAGE ACHIEVED
+  // price — what past sales actually fetched — rather than against the price
+  // the shop charges now. Correct arithmetic about yesterday, presented as a
+  // warning about today.
+  //
+  // The current selling price decides it whenever there is one. The achieved
+  // average is only a fallback, for a product that has never been priced.
+  const currentRetail = sellingLoaded && hasSelling && retailValid ? parsedRetail : null;
+  const comparedAgainst = currentRetail ?? product.avgUnitPrice;
+  const margin = declaredUnits.length === 0 && priceValid && comparedAgainst !== null
+    ? comparedAgainst - parsedCost
+    : null;
+  const aboveSelling = margin !== null && margin < 0;
+  const marginBasis: 'retail' | 'achieved' = currentRetail !== null ? 'retail' : 'achieved';
   const selectedSellingRow = sellingRows.find((item) => (item.saleUnitKey ?? '') === selectedSaleUnit) ?? null;
   const retailMargin = retailValid && product.unitCost !== null
     ? parsedRetail - product.unitCost * (selectedSellingRow?.unitBaseQuantity ?? 1)
@@ -385,9 +405,10 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
                   : ''}
               </div>
             ) : null}
-            {product.avgUnitPrice !== null ? (
+            {comparedAgainst !== null ? (
               <div className="mt-2 text-xs text-ink-muted">
-                {ui.selling}: <span className="font-medium text-ink">{formatMoney(product.avgUnitPrice)}</span>
+                {marginBasis === 'retail' ? ui.sellingNow : ui.selling}:{' '}
+                <span className="font-medium text-ink">{formatMoney(comparedAgainst)}</span>
               </div>
             ) : null}
             <div className="mt-3 space-y-3">
@@ -403,7 +424,9 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
             </div>
             {margin !== null ? (
               <p className={`mt-3 text-sm ${aboveSelling ? 'text-red-600' : 'text-emerald-600'}`}>
-                {aboveSelling ? ui.aboveSelling : `${ui.margin} ${formatMoney(margin)}.`}
+                {aboveSelling
+                  ? (marginBasis === 'retail' ? ui.aboveSelling : ui.abovePast)
+                  : `${ui.margin} ${formatMoney(margin)}.`}
               </p>
             ) : null}
             <p className="mt-3 text-[11px] leading-snug text-ink-muted">{ui.history}</p>

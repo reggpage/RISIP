@@ -258,8 +258,10 @@ import {
   sellingPriceReply,
 } from '../_shared/whatsappSellingPriceQuestion.ts';
 import {
+  findUnregisteredMeasure,
   normalizeVoidTarget,
   parseVoidRequest,
+  unregisteredMeasureQuestion,
   voidCancelled,
   voidConfirmation,
   voidDone,
@@ -1391,12 +1393,32 @@ async function buildAdvisorPayload(
   const periodLabel = lang === 'sw' ? 'mwezi huu' : 'this month';
   const from = periodStart('month').toISOString();
 
-  const [{ replyData, costs }, { data: shelfRows }, { data: ledger }] = await Promise.all([
+  const [{ replyData, costs }, { data: shelfRows }, { data: ledger }, { data: catalogue }] = await Promise.all([
     productAnalytics(db, identity.company_id, request),
     db.rpc('wa_stock_on_hand', { p_company_id: identity.company_id, p_product: null }),
     db.from('daily_records').select('kind, amount, party_name, occurred_at')
       .eq('company_id', identity.company_id).eq('status', 'confirmed').limit(10000),
+    db.rpc('company_product_names', { p_company_id: identity.company_id }),
   ]);
+
+  // What the shop charges TODAY against what it pays today. Nothing to do with
+  // what past sales achieved: a price raised this morning fixes the future and
+  // cannot fix yesterday, and the adviser has to be able to tell the two apart.
+  const { data: pricingRows } = await db.rpc('wa_product_pricing', {
+    p_company_id: identity.company_id,
+    p_product_keys: ((catalogue ?? []) as Array<Record<string, unknown>>)
+      .map((row) => String(row.product_name ?? '').trim()).filter(Boolean),
+  });
+  const priceBelowCost = ((pricingRows ?? []) as Array<Record<string, unknown>>)
+    .map((row) => ({
+      name: String(row.product_key ?? ''),
+      retail: row.retail_price == null ? null : Number(row.retail_price),
+      cost: row.unit_cost == null ? null : Number(row.unit_cost),
+    }))
+    .filter((row): row is { name: string; retail: number; cost: number } =>
+      Boolean(row.name) && row.retail !== null && row.cost !== null
+      && row.retail > 0 && row.cost > 0 && row.retail < row.cost)
+    .sort((a, b) => (a.retail - a.cost) - (b.retail - b.cost));
 
   const items = aggregateProducts(replyData, costs);
   const sold = new Set(items.map((item) => productKey(item.product)));
@@ -1443,6 +1465,7 @@ async function buildAdvisorPayload(
     belowCost: belowCost.map((item) => ({
       name: item.product, quantity: item.quantity, revenue: item.revenue, margin: item.margin,
     })),
+    priceBelowCost,
     // Counted, still on the shelf, and not sold once this period. That is
     // capital lying down, and it is invisible in every other answer.
     deadStock: shelf
@@ -4861,6 +4884,21 @@ Deno.serve(async (req) => {
 
         const sellingBatch = parseSellingPriceBatch(writeBody);
         if (sellingBatch) {
+          // MEASURED FAILURE, the owner's own thread: they set two prices in one
+          // sentence and typed "velvet" for Velvet napkin. Risip asked about
+          // velvet — reasonably — but answering HAPANA threw BOTH prices away,
+          // including sodaa, which had never been in doubt. One uncertain name
+          // must not cost the certain ones.
+          //
+          // So names are resolved here, before anything is asked. A name that
+          // reaches a real product is rewritten to that product's own spelling
+          // and is no longer a question. Only a name nothing in the catalogue
+          // matches is still worth asking about, and by then it is a genuinely
+          // new product rather than a typo.
+          for (const price of sellingBatch.prices) {
+            const named = await resolveProductForWrite(db, identity, price.product);
+            if (named.kind === 'matched') price.product = named.match.productName;
+          }
           const { data: costRows } = await db.rpc('wa_product_pricing', {
             p_company_id: identity.company_id,
             p_product_keys: sellingBatch.prices.map((price) => price.product),
@@ -5427,6 +5465,28 @@ Deno.serve(async (req) => {
         // so every one of these went to the model to be talked into calling a
         // tool. This calls that same tool directly: same figures, no budget
         // spent, and no chance of a number being improvised on the way.
+
+        // Unga, sukari, mafuta — a thing the shop WEIGHS, arriving before
+        // anybody has said how it is measured. "Nimeuza unga 3" is three of
+        // something, and three of something is a number no report can use.
+        // Asked once, before the sale parsers see it; a product already in the
+        // catalogue has been measured before and is never asked about again.
+        if (!mixed && isDailyRecordCandidate(writeBody)) {
+          const { data: catalogueRows } = await db.rpc('company_product_names', {
+            p_company_id: identity.company_id,
+          });
+          const measured = findUnregisteredMeasure(
+            writeBody,
+            ((catalogueRows ?? []) as Array<Record<string, unknown>>)
+              .map((row) => String(row.product_name ?? '').trim()).filter(Boolean),
+          );
+          if (measured) {
+            await reply(phone, unregisteredMeasureQuestion(measured.product, lang));
+            await audit(db, identity, waMessageId, 'measure_setup', measured.product, 'clarification');
+            await finish('skipped');
+            continue;
+          }
+        }
 
         // "Futa ile" — taking back a record that was already confirmed. Shown
         // before anything changes, and confirmed once, because removing money

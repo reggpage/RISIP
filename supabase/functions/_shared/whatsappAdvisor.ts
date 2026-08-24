@@ -40,8 +40,26 @@ export type AdvisorPayload = {
   customerPayments: number;
   /** Ranked by revenue, best first. */
   topMovers: AdvisorProduct[];
-  /** Every product sold below its buying cost. Never truncated. */
+  /**
+   * Products whose PAST SALES came in below what they cost to buy.
+   *
+   * History, and true whatever happens next: those shillings are gone. It is
+   * not a reason to act if the price has since been raised.
+   */
   belowCost: AdvisorProduct[];
+  /**
+   * Products whose PRICE RIGHT NOW is below what they cost to buy.
+   *
+   * MEASURED FAILURE, the owner's own thread: they raised Velvet napkin from
+   * 200 to 4,000 and Sodaa from 200 to 2,000, and the next brief still said
+   * "Unauza chini ya gharama: Velvet napkin, Sodaa" and told them to go and set
+   * a new price. The figure came from past sale lines — correct arithmetic,
+   * wrong tense, and advice for a job already done.
+   *
+   * This is the one that means DO SOMETHING. The other is a fact about
+   * yesterday.
+   */
+  priceBelowCost: Array<{ name: string; retail: number; cost: number }>;
   /** Counted, on the shelf, and not sold once in this period. */
   deadStock: AdvisorShelfItem[];
   /** Counted and at or below zero. */
@@ -154,11 +172,22 @@ export function advisorBrief(payload: AdvisorPayload, lang: Lang, now = new Date
       ? `• Mfalme wa mauzo: *${king.name}* — ${money(king.revenue)}`
       : `• Top seller: *${king.name}* — ${money(king.revenue)}`);
   }
+  // The price that is wrong NOW. This is the one to act on.
+  if (payload.priceBelowCost.length > 0) {
+    stats.push(sw
+      ? `• ⚠️ Bei ya sasa iko chini ya gharama: *${list(payload.priceBelowCost.map((item) => item.name))}*`
+      : `• ⚠️ Price is below cost right now: *${list(payload.priceBelowCost.map((item) => item.name))}*`);
+  }
+  // What already happened. Past tense, deliberately: if the price has since
+  // been raised there is nothing left to do about these.
   if (payload.belowCost.length > 0) {
     const total = payload.belowCost.reduce((sum, item) => sum + (item.margin ?? 0), 0);
+    const fixed = payload.priceBelowCost.length === 0;
     stats.push(sw
-      ? `• ⚠️ Unauza chini ya gharama: *${list(payload.belowCost.map((item) => item.name))}* — ${money(total)}`
-      : `• ⚠️ Selling below cost: *${list(payload.belowCost.map((item) => item.name))}* — ${money(total)}`);
+      ? `• ${fixed ? '' : '⚠️ '}Uliuza chini ya gharama ${payload.periodLabel}: *${list(payload.belowCost.map((item) => item.name))}* — ${money(total)}`
+        + (fixed ? ' _(bei imeshapandishwa)_' : '')
+      : `• ${fixed ? '' : '⚠️ '}Sold below cost ${payload.periodLabel}: *${list(payload.belowCost.map((item) => item.name))}* — ${money(total)}`
+        + (fixed ? ' _(price has since been raised)_' : ''));
   }
   if (payload.outOfStock.length > 0) {
     stats.push(sw
@@ -174,12 +203,14 @@ export function advisorBrief(payload: AdvisorPayload, lang: Lang, now = new Date
 
   // 💡 What to do about it. Two or three, never a lecture.
   const advice: string[] = [];
-  if (payload.belowCost.length > 0) {
-    const worst = payload.belowCost[0];
+  // Only when the price is STILL wrong. Telling somebody to raise a price they
+  // raised an hour ago is how an adviser stops being read.
+  if (payload.priceBelowCost.length > 0) {
+    const worst = payload.priceBelowCost[0];
     advice.push(sw
-      ? `*Ziba mtaji unaovuja.* ${worst.name} inakuletea ${money(worst.margin ?? 0)}. `
+      ? `*Ziba mtaji unaovuja.* ${worst.name} unaiuza ${money(worst.retail)} na unainunua ${money(worst.cost)}. `
         + `Pandisha bei au tafuta muuzaji mwingine — kila unayouza unapoteza.`
-      : `*Stop the leak.* ${worst.name} is running at ${money(worst.margin ?? 0)}. `
+      : `*Stop the leak.* ${worst.name} sells at ${money(worst.retail)} and costs ${money(worst.cost)}. `
         + `Raise the price or find another supplier — every one you sell loses money.`);
   }
   if (payload.outOfStock.length > 0) {
@@ -218,10 +249,10 @@ export function advisorBrief(payload: AdvisorPayload, lang: Lang, now = new Date
     + advice.slice(0, 3).map((line, at) => `${at + 1}. ${line}`).join('\n'));
 
   // 🚀 One thing, tomorrow morning.
-  const tomorrow = payload.belowCost.length > 0
+  const tomorrow = payload.priceBelowCost.length > 0
     ? (sw
-      ? `Panga bei mpya ya *${payload.belowCost[0].name}*. Ndiyo inayokula faida yako kimya kimya.`
-      : `Set a new price for *${payload.belowCost[0].name}*. It is the one quietly eating your profit.`)
+      ? `Panga bei mpya ya *${payload.priceBelowCost[0].name}*. Ndiyo inayokula faida yako kimya kimya.`
+      : `Set a new price for *${payload.priceBelowCost[0].name}*. It is the one quietly eating your profit.`)
     : payload.outOfStock.length > 0
       ? (sw
         ? `Nunua *${payload.outOfStock[0]}* kwanza — imeisha kabisa na wateja wanaiuliza.`
@@ -266,8 +297,14 @@ export function advisorEvidence(payload: AdvisorPayload): string {
       + `|margin=${item.margin === null ? 'unknown' : Math.round(item.margin)}`);
   }
   for (const item of payload.belowCost) {
-    rows.push(`below_cost=${item.name}|qty=${item.quantity}|revenue=${Math.round(item.revenue)}`
+    rows.push(`sold_below_cost_in_period=${item.name}|qty=${item.quantity}|revenue=${Math.round(item.revenue)}`
       + `|margin=${Math.round(item.margin ?? 0)}`);
+  }
+  for (const item of payload.priceBelowCost) {
+    rows.push(`price_below_cost_now=${item.name}|retail=${Math.round(item.retail)}|cost=${Math.round(item.cost)}`);
+  }
+  if (payload.priceBelowCost.length === 0 && payload.belowCost.length > 0) {
+    rows.push('note=every below-cost sale above is HISTORY; the current price is now above cost');
   }
   for (const item of payload.deadStock) rows.push(`dead_stock=${item.name}|on_hand=${item.onHand}`);
   for (const name of payload.outOfStock) rows.push(`out_of_stock=${name}`);
@@ -351,7 +388,8 @@ export const ADVISOR_VOICE = `ADVISER MODE (get_business_advice)
      names the window (e.g. "Kabla hujafungua leo", "Mchana huu", "Kesho
      asubuhi"); use that heading exactly and never substitute your own, because
      you do not know what time it is in the shop and it does.
-- A LOSS OUTRANKS A RECORD MONTH. If any product is below cost, it leads, whatever the sales figure says.
+- A LOSS OUTRANKS A RECORD MONTH. If any product's CURRENT PRICE is below cost (price_below_cost_now), it leads, whatever the sales figure says.
+- TWO DIFFERENT FACTS, TWO DIFFERENT TENSES. "sold_below_cost_in_period" is history — those shillings are gone and nothing can be done about them. "price_below_cost_now" is a price that is still wrong and still costing money on every sale. Never tell somebody to raise a price they have already raised: if the second list is empty, say the loss was made before the price was fixed and move on.
 - Every number must come from the tool result. Do not add, subtract, project, or estimate beyond it. If a figure is absent, say it is not recorded yet and say what to send to record it.
 - Emojis mark the sections and nothing else. Never put one on a loss.
 - Short lines. This is read one-handed behind a counter.`;

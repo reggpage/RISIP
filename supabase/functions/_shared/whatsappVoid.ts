@@ -141,3 +141,79 @@ export function normalizeVoidTarget(data: unknown): VoidTarget | null {
     lines,
   };
 }
+
+// ------------------------------------------------- goods sold by a measure
+
+/**
+ * Unga, sukari, mafuta, viazi — things a shop weighs or pours rather than
+ * counts, arriving before anybody has said how they are measured.
+ *
+ * The owner's own words: "kama mtu akiandika bidhaa za kupima kama unga, chips,
+ * au mafuta na store yake hakuna usajili wa hizi bidhaa, mwambie kwanza."
+ *
+ * A sack is not a kilo and a kilo is not a piece. Recording "nimeuza unga 3"
+ * against a product nobody has measured means three of something, and three of
+ * something is not a number anybody can use later. Better to stop once and ask
+ * than to record a unit that will be wrong in every report after it.
+ *
+ * This list is deliberately of GOODS, not of units: the message that needs
+ * catching is the one with no unit in it at all.
+ */
+const MEASURED_GOODS = [
+  'unga', 'sukari', 'mchele', 'maharage', 'mahindi', 'ulezi', 'dengu', 'choroko',
+  'mafuta', 'maziwa', 'asali', 'siki', 'mafuta ya kula', 'mafuta ya taa',
+  'viazi', 'nyanya', 'vitunguu', 'karoti', 'mboga', 'matunda',
+  'nyama', 'samaki', 'kuku', 'dagaa', 'mayai',
+  'chumvi', 'mchanga', 'saruji', 'kokoto', 'mkaa', 'chips',
+];
+
+export type UnregisteredMeasure = { product: string };
+
+const MEASURE_WORDS =
+  /\b(?:kilo|kilos|kg|gramu|lita|litre|liter|ml|gunia|debe|ndoo|dumu|robo|nusu|theluthi|pakiti|mfuko|kopo|chupa|sado|kiroba)\b/i;
+
+/**
+ * Is this a measured good, named with no measure and no registration?
+ *
+ * `known` is the shop's own catalogue: a product it already sells has been
+ * measured once and never needs asking again.
+ */
+export function findUnregisteredMeasure(
+  text: string | null | undefined,
+  known: string[],
+): UnregisteredMeasure | null {
+  const said = clean(text);
+  if (!said) return null;
+  // A measure was named, so nothing is missing.
+  if (MEASURE_WORDS.test(said)) return null;
+  const catalogue = new Set(known.map((name) => clean(name)));
+  for (const good of MEASURED_GOODS) {
+    if (!new RegExp(`\\b${good}\\b`).test(said)) continue;
+    // Already in the catalogue — it has been dealt with before.
+    if ([...catalogue].some((name) => name === good || name.startsWith(`${good} `))) continue;
+    return { product: good };
+  }
+  return null;
+}
+
+/** Asked once, and it explains what to send back rather than just refusing. */
+export function unregisteredMeasureQuestion(product: string, lang: Lang): string {
+  const sw = lang === 'sw';
+  const name = product.charAt(0).toUpperCase() + product.slice(1);
+  if (sw) {
+    return `Sina rekodi ya *${product}* bado, na hii ni bidhaa ya kupima — `
+      + 'siwezi kujua "3" ni kilo tatu, gunia tatu au vipande vitatu.\n\n'
+      + `Niambie kwanza unavyoiuza, mfano:\n`
+      + `• "${name} nauza kwa kilo, bei ya kilo 2800"\n`
+      + `• "${name} nauza kwa gunia, gunia moja ni kilo 100"\n`
+      + `• "${name} nauza kwa kipande, bei 500"\n\n`
+      + 'Nikishajua kipimo, nitarekodi kila mauzo bila kuuliza tena.';
+  }
+  return `I have no record of *${product}* yet, and it is sold by measure — `
+    + 'I cannot tell whether "3" is three kilos, three sacks or three pieces.\n\n'
+    + `Tell me how you sell it first, for example:\n`
+    + `• "${name} nauza kwa kilo, bei ya kilo 2800"\n`
+    + `• "${name} nauza kwa gunia, gunia moja ni kilo 100"\n`
+    + `• "${name} nauza kwa kipande, bei 500"\n\n`
+    + 'Once I know the measure I will record every sale without asking again.';
+}

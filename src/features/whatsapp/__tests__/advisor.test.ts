@@ -91,6 +91,7 @@ const payload: AdvisorPayload = {
     { name: 'Velvet napkin', quantity: 4, revenue: 800, margin: -1_200 },
     { name: 'Sodaa', quantity: 1, revenue: 200, margin: -100 },
   ],
+  priceBelowCost: [{ name: 'Velvet napkin', retail: 200, cost: 500 }],
   deadStock: [{ name: 'rosali ya maria', onHand: 12, unit: null }],
   outOfStock: ['Birika', 'daftari', 'punch'],
   runningLow: [{ name: 'kamusi', onHand: 2, unit: null }],
@@ -141,9 +142,32 @@ describe('the adviser', () => {
   // the owner before the congratulations do.
   it('leads the advice with the money being lost', () => {
     const brief = advisorBrief(payload, 'sw', morning);
-    expect(brief).toContain('Unauza chini ya gharama');
+    expect(brief).toContain('Bei ya sasa iko chini ya gharama');
     expect(brief.indexOf('Ziba mtaji unaovuja')).toBeLessThan(brief.indexOf('Rudisha mzigo'));
     expect(brief).toContain('Velvet napkin');
+  });
+
+  // MEASURED FAILURE, the owner's own thread: they raised Velvet napkin from
+  // 200 to 4,000 and the next brief still said "Unauza chini ya gharama" and
+  // told them to go and set a new price. The figure came from past sale lines —
+  // correct arithmetic, wrong tense, advice for a job already done.
+  it('stops telling you to raise a price you have already raised', () => {
+    const fixed: AdvisorPayload = { ...payload, priceBelowCost: [] };
+    const brief = advisorBrief(fixed, 'sw', morning);
+    // The history is still stated, in the past, and marked as dealt with.
+    expect(brief).toContain('Uliuza chini ya gharama');
+    expect(brief).toContain('bei imeshapandishwa');
+    // But the instruction is gone, and so is the warning sign.
+    expect(brief).not.toContain('Ziba mtaji unaovuja');
+    expect(brief).not.toContain('Panga bei mpya');
+  });
+
+  it('keeps the two facts apart for the model as well', () => {
+    const fixed: AdvisorPayload = { ...payload, priceBelowCost: [] };
+    const evidence = advisorEvidence(fixed);
+    expect(evidence).toContain('sold_below_cost_in_period=Velvet napkin');
+    expect(evidence).not.toContain('price_below_cost_now=');
+    expect(evidence).toContain('the current price is now above cost');
   });
 
   it('gives at most three actions and exactly one thing to do', () => {
@@ -155,7 +179,7 @@ describe('the adviser', () => {
 
   it('has something honest to say about a shop with nothing wrong', () => {
     const clean: AdvisorPayload = {
-      ...payload, belowCost: [], deadStock: [], outOfStock: [], uncosted: [],
+      ...payload, belowCost: [], priceBelowCost: [], deadStock: [], outOfStock: [], uncosted: [],
       outstandingDebt: 0, topDebtors: [],
     };
     const brief = advisorBrief(clean, 'sw', morning);
@@ -167,7 +191,8 @@ describe('the adviser', () => {
   it('hands the model figures rather than prose', () => {
     const evidence = advisorEvidence(payload);
     expect(evidence).toContain('revenue=2393250');
-    expect(evidence).toContain('below_cost=Velvet napkin|qty=4|revenue=800|margin=-1200');
+    expect(evidence).toContain('sold_below_cost_in_period=Velvet napkin|qty=4|revenue=800|margin=-1200');
+    expect(evidence).toContain('price_below_cost_now=Velvet napkin|retail=200|cost=500');
     expect(evidence).toContain('out_of_stock=punch');
     expect(evidence).toContain('debtor=Juma|amount=25000');
     expect(evidence).toContain('no_buying_cost=Biscuit');

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  findUnregisteredMeasure,
   normalizeVoidTarget,
   parseVoidRequest,
   voidConfirmation,
+  unregisteredMeasureQuestion,
   voidDone,
   type VoidTarget,
 } from '../../../../supabase/functions/_shared/whatsappVoid';
@@ -101,5 +103,47 @@ describe('both prices in one short sentence', () => {
   // none: the shop would never know which one did not take.
   it('refuses the whole list when a trade price is above retail', () => {
     expect(parseSellingPriceBatch('bei ya velvet iwe 4000 jumla 5000 na sodaa iwe 2000')).toBeNull();
+  });
+});
+
+describe('goods the shop weighs, before anybody said how', () => {
+  const catalogue = ['daftari', 'kalamu', 'Velvet napkin', 'Sodaa'];
+
+  // The owner's words: "kama mtu akiandika bidhaa za kupima kama unga, chips au
+  // mafuta na store yake hakuna usajili wa hizi bidhaa, mwambie kwanza."
+  // "Nimeuza unga 3" is three of something, and three of something is a number
+  // no report can use afterwards.
+  it('stops on a measured good with no measure and no registration', () => {
+    for (const said of ['nimeuza unga 3', 'nimeuza sukari 5', 'nimeuza mafuta 2', 'nimeuza viazi 10']) {
+      expect(findUnregisteredMeasure(said, catalogue), said).not.toBeNull();
+    }
+  });
+
+  it('says nothing when the measure is right there in the message', () => {
+    for (const said of ['nimeuza unga kilo 3', 'nimeuza mafuta lita 2', 'nimeuza sukari robo']) {
+      expect(findUnregisteredMeasure(said, catalogue), said).toBeNull();
+    }
+  });
+
+  // A product already in the catalogue has been measured once. Asking again
+  // every time it is sold would be worse than never asking.
+  it('never asks twice about a product the shop already sells', () => {
+    expect(findUnregisteredMeasure('nimeuza unga 3', [...catalogue, 'unga'])).toBeNull();
+    expect(findUnregisteredMeasure('nimeuza unga 3', [...catalogue, 'unga wa ngano'])).toBeNull();
+  });
+
+  it('leaves counted goods entirely alone', () => {
+    for (const said of ['nimeuza daftari 5', 'nimeuza kalamu 3', 'nimeuza Velvet napkin 2']) {
+      expect(findUnregisteredMeasure(said, catalogue), said).toBeNull();
+    }
+  });
+
+  it('asks in a way that can be answered', () => {
+    const said = unregisteredMeasureQuestion('unga', 'sw');
+    expect(said).toContain('unga');
+    expect(said).toContain('kilo');
+    expect(said).toContain('gunia');
+    // It has to show the shape of the reply, not just refuse.
+    expect(said).toContain('nauza kwa kilo');
   });
 });

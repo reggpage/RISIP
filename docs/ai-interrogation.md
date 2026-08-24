@@ -3,7 +3,7 @@
 > **Risip AI Current Capability Score: 100.0% | Grade: A**  
 > Production Ready — Highly Capable
 
-Duka: **St. Ritha bookshop** · bidhaa 59 · rekodi zilizothibitishwa 26 · seeds `1, 2, 3, 4, 5, 6` · 2026-08-23 19:08 UTC
+Duka: **St. Ritha bookshop** · bidhaa 59 · rekodi zilizothibitishwa 26 · seeds `1, 2, 3, 4, 5, 6` · 2026-08-24 03:39 UTC
 
 Maswali 1440, yametengenezwa kutoka kwenye majina na namba halisi za duka.
 
@@ -27,18 +27,18 @@ Hakuna mabadiliko.
 | fedha kwa maneno | 58 | 58 |
 | kuhesabu stoko | 35 | 35 |
 | bidhaa zinazouza | 51 | 51 |
-| kuuliza stoko | 36 | 36 |
+| kuuliza stoko | 37 | 37 |
 | hakuna kilichotokea | 49 | 49 |
 | mada mbili kwenye ujumbe mmoja | 48 | 48 |
 | gharama ya kununua | 62 | 62 |
 | matumizi | 49 | 49 |
 | zilizoisha | 60 | 60 |
-| lugha mbili kwenye sentensi moja | 43 | 43 |
+| lugha mbili kwenye sentensi moja | 44 | 44 |
 | swali la stoko kwa mtaa | 47 | 47 |
 | faida | 51 | 51 |
 | kuweka bei | 36 | 36 |
-| wingi (tumeuza) | 49 | 49 |
-| manunuzi | 49 | 49 |
+| wingi (tumeuza) | 48 | 48 |
+| manunuzi | 48 | 48 |
 | alama ya shilingi | 31 | 31 |
 | kelele | 47 | 47 |
 | wanaodaiwa | 47 | 47 |
