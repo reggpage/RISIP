@@ -63,7 +63,7 @@ describe('a drafted line carries the catalogue name, not the shop’s word', () 
   it('canonicalises alias lines in the one drafting helper', () => {
     expect(webhook).toContain('async function canonicaliseAliasLines(');
     expect(webhook).toContain('const canonical = await canonicaliseAliasLines(db, identity, record);');
-    expect(webhook).toContain('p_lines: canonical.lines,');
+    expect(webhook).toContain('p_lines: withPayment.lines,');
   });
 
   it('rewrites ONLY exact aliases, leaving every other vertical alone', () => {

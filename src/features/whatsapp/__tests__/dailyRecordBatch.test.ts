@@ -147,7 +147,10 @@ describe('WhatsApp mixed daily-record batches', () => {
     expect(webhook).toContain(': parseDailyRecordBatch(writeBody, lang);');
     expect(webhook).toContain("if (batch.kind === 'unreadable')");
     expect(webhook).toContain('if (batch.records.length === 1)');
-    expect(webhook).toContain('createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang)');
+    // Phase 5 added a trailing argument: the message itself, so a payment method
+    // the trader stated is not lost between the parser that ignored it and the
+    // ledger column that exists for it.
+    expect(webhook).toContain('createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang, body ?? undefined)');
     expect(webhook).toContain("db.rpc('wa_create_daily_record_batch_drafts'");
     expect(webhook).toContain("db.rpc('wa_confirm_daily_record_batch'");
     expect(webhook).toContain("db.rpc('wa_cancel_daily_record_batch'");

@@ -196,6 +196,7 @@ import {
   setupSaleUnits,
   type ProductSetupPending,
 } from '../_shared/whatsappProductSetup.ts';
+import { extractPaymentMethod } from '../_shared/whatsappPaymentMethod.ts';
 import { lowStockNotice, type StockLevel } from '../_shared/whatsappLowStock.ts';
 import {
   formatBarcode, isScanRequest, isSellScanRequest, parseBarcodeMessage,
@@ -1278,23 +1279,39 @@ async function createDailyRecordDraft(
   messageId: string,
   record: import('../_shared/whatsappDailyRecords.ts').ParsedDailyRecord,
   lang: Lang,
+  /**
+   * What the trader typed, so a payment method they stated is not lost between
+   * the parser that ignored it and the ledger that has a column for it.
+   *
+   * Applied here, once, rather than in each of the seven parsers that build a
+   * record — and only when the record does not already carry one, so a flow
+   * that asked "ulilipwaje?" and got an answer always wins.
+   */
+  said?: string,
 ): Promise<{ id: string | null; error: any }> {
   const canonical = await canonicaliseAliasLines(db, identity, record);
+  const withPayment = canonical.paymentMethod === undefined || canonical.paymentMethod === null
+    ? (() => {
+      // Credit is never a payment method: a sale on deni was not paid at all.
+      const stated = extractPaymentMethod(said);
+      return stated ? { ...canonical, paymentMethod: stated.method } : canonical;
+    })()
+    : canonical;
   const { data, error } = await db.rpc('wa_create_daily_record_draft', {
     p_profile_id: identity.profile_id,
     p_company_id: identity.company_id,
-    p_kind: canonical.kind,
-    p_amount: canonical.amount,
-    p_party_name: canonical.partyName,
-    p_description: dailyRecordStorageDescription(canonical, lang),
+    p_kind: withPayment.kind,
+    p_amount: withPayment.amount,
+    p_party_name: withPayment.partyName,
+    p_description: dailyRecordStorageDescription(withPayment, lang),
     p_occurred_at: new Date().toISOString(),
     p_source_message_id: messageId,
-    p_lines: canonical.lines,
+    p_lines: withPayment.lines,
     // Phase 1 gave the ledger these two. A record that states neither sends
     // null, and null keeps meaning "the trader did not say" rather than being
     // filled in with a plausible guess.
-    p_payment_method: canonical.paymentMethod ?? null,
-    p_loss_reason: canonical.lossReason ?? null,
+    p_payment_method: withPayment.paymentMethod ?? null,
+    p_loss_reason: withPayment.lossReason ?? null,
   });
   return { id: data ? String(data) : null, error };
 }
@@ -2380,7 +2397,7 @@ async function executeAssistantTool(
       return { content: clarification, isError: true, terminalReply: clarification };
     }
     const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, parsed);
-    const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang);
+    const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang, said);
     if (created.error || !created.id) {
       const failed = lang === 'sw'
         ? 'Sikuweza kuhifadhi draft hii. Hakuna rekodi iliyothibitishwa; tafadhali jaribu tena.'
@@ -5258,7 +5275,7 @@ Deno.serve(async (req) => {
             ...(lossReading.kind === 'stock_loss' ? { lossReason: lossReading.reason || null } : {}),
           };
 
-          const created = await createDailyRecordDraft(db, identity, waMessageId, record, lang);
+          const created = await createDailyRecordDraft(db, identity, waMessageId, record, lang, body ?? undefined);
           if (created.error || !created.id) {
             await reply(phone, lang === 'sw'
               ? 'Sikuweza kuhifadhi draft hii. Hakuna rekodi iliyothibitishwa; tafadhali jaribu tena.'
@@ -5785,7 +5802,7 @@ Deno.serve(async (req) => {
             }
             if (priced.kind === 'priced' && priced.notCounted.length === 0) {
               const guarded = await addHistoricalPriceWarnings(db, identity.company_id, priced.record);
-              const created = await createDailyRecordDraft(db, identity, waMessageId, guarded, lang);
+              const created = await createDailyRecordDraft(db, identity, waMessageId, guarded, lang, body ?? undefined);
               if (!created.error && created.id) {
                 await db.from('whatsapp_conversations').upsert({
                   identity_id: identity.id,
@@ -6247,7 +6264,7 @@ Deno.serve(async (req) => {
           if (batch.kind === 'parsed') {
             if (batch.records.length === 1) {
               const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, batch.records[0]);
-              const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang);
+              const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang, body ?? undefined);
               if (created.error || !created.id) {
                 await reply(phone, lang === 'sw'
                   ? 'Sikuweza kuhifadhi draft hii. Tafadhali jaribu tena.'
@@ -6415,7 +6432,7 @@ Deno.serve(async (req) => {
                   continue;
                 }
               }
-              const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang);
+              const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang, body ?? undefined);
               if (!created.error && created.id) {
                 const state: DailyRecordConversation = {
                   kind: 'daily_record_confirmation',
@@ -6480,7 +6497,7 @@ Deno.serve(async (req) => {
               const aiRecord = await interpretDailyRecordWithAi(body, lang);
               if (aiRecord) {
                 const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, aiRecord);
-                const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang);
+                const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang, body ?? undefined);
                 if (!created.error && created.id) {
                   const state: DailyRecordConversation = {
                     kind: 'daily_record_confirmation', dailyRecordId: created.id, sourceMessageId: waMessageId, record: guardedRecord,
@@ -6504,7 +6521,7 @@ Deno.serve(async (req) => {
           }
           if (parsed.kind === 'parsed') {
             const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, parsed.record);
-            const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang);
+            const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang, body ?? undefined);
             if (created.error || !created.id) {
               await reply(phone, lang === 'sw'
                 ? 'Sikuweza kuhifadhi draft hii. Tafadhali jaribu tena.'

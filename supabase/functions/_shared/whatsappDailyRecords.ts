@@ -2,6 +2,13 @@ import type { Lang } from './whatsappIntent.ts';
 import { correctControlWords } from './whatsappSpelling.ts';
 import { UNITS } from './whatsappStock.ts';
 
+
+/**
+ * Manually recorded by the trader, never verified against any provider — Risip
+ * integrates with no payment gateway. Null means they did not say, and null is
+ * never guessed. "Deni" is deliberately absent: credit is debt_issued.
+ */
+export type DailyRecordPaymentMethod = 'cash' | 'mobile_money' | 'bank' | 'other';
 export type DailyRecordKind =
   | 'sale' | 'expense' | 'debt_issued' | 'customer_payment' | 'stock_purchase'
   // Bucha, phase 1. Each is a distinct accounting fact that must never be
@@ -37,7 +44,7 @@ export type ParsedDailyRecord = {
    * unstated is never filled in with a guess. "Deni" is not a value here:
    * credit is a kind of its own.
    */
-  paymentMethod?: 'cash' | 'mobile_money' | 'bank' | 'other' | null;
+  paymentMethod?: DailyRecordPaymentMethod | null;
   /** The trader's own word for why stock was lost. Only for kind 'stock_loss'. */
   lossReason?: string | null;
 };
