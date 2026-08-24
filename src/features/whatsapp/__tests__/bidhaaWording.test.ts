@@ -53,6 +53,40 @@ describe('Swahili replies call them bidhaa', () => {
   });
 });
 
+// MEASURED FAILURE: the WhatsApp reply already said "Ununuzi wa bidhaa" while
+// the same record was still headed "Stock purchase" on the web page the reply
+// linked to. One record, two names, and the one on screen was the old one.
+describe('the web app calls them products too', () => {
+  const page = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
+
+  it('labels a purchase without the word stock, in both languages', () => {
+    const source = page('src/routes/dailyRecords/DailyRecordsPage.tsx');
+    expect(source).toContain("stockPurchase: 'Ununuzi wa bidhaa'");
+    expect(source).toContain("stockPurchase: 'Product purchase'");
+    expect(source).not.toContain("'Stock purchase'");
+    expect(source).not.toContain("'Ununuzi wa stock'");
+  });
+
+  it('no longer claims the products list is built from sales alone', () => {
+    // It is built from purchases as well now, and saying otherwise is what sent
+    // a shopkeeper looking for goods he had just bought.
+    const source = page('src/routes/products/ProductsPage.tsx');
+    expect(source).not.toContain('Everything you sell, built from confirmed sales.');
+    expect(source).toContain('confirmed sales and purchases');
+    expect(source).toContain('mauzo na manunuzi yaliyothibitishwa');
+  });
+
+  it('keeps the word out of the landing copy', () => {
+    const source = page('src/routes/marketing/Landing.tsx');
+    for (const gone of [
+      'hesabu stock', 'stock iliyobaki', 'kufuatilia stock', 'mauzo, stock',
+      'count stock', 'left in stock', 'remaining stock', 'track stock', 'sales, stock',
+    ]) {
+      expect(source, gone).not.toContain(gone);
+    }
+  });
+});
+
 describe('what a trader may type is not narrowed', () => {
   const lines = 'viazi 4\nmayai 12';
 

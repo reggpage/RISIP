@@ -37,7 +37,7 @@ import AddProductDialog from '@/components/products/AddProductDialog';
 const lang = getLang();
 const ui = lang === 'sw' ? {
   title: 'Bidhaa',
-  description: 'Kila kitu unachouza, kilichojengwa kutoka mauzo yaliyothibitishwa.',
+  description: 'Bidhaa zako zote, kutoka mauzo na manunuzi yaliyothibitishwa.',
   refresh: 'Onyesha upya',
   search: 'Tafuta bidhaa',
   all: 'Zote', month: 'Mwezi huu', week: 'Wiki hii',
@@ -65,7 +65,7 @@ const ui = lang === 'sw' ? {
   noDelete: 'Hakuna kufuta. Bidhaa yenye mauzo halisi ikifutwa, mapato ya miezi iliyopita yangebadilika kimya.',
 } : {
   title: 'Products',
-  description: 'Everything you sell, built from confirmed sales.',
+  description: 'Every product you trade, built from confirmed sales and purchases.',
   refresh: 'Refresh',
   search: 'Search products',
   all: 'All time', month: 'This month', week: 'This week',
