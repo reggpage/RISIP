@@ -28,7 +28,12 @@ describe('WhatsApp product analytics', () => {
   it('continues the previous product question when a pronoun is used', () => {
     const context = {
       kind: 'product_analytics_context' as const,
-      request: { rankBy: 'quantity' as const, period: 'today' as const, compareNames: ['nguvu ya sala'] },
+      request: {
+        rankBy: 'quantity' as const,
+        direction: 'best' as const,
+        period: 'today' as const,
+        compareNames: ['nguvu ya sala'],
+      },
       focusNames: ['nguvu ya sala'],
     };
     expect(parseProductAnalyticsFollowUp('Jumla yake?', context))

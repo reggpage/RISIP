@@ -38,13 +38,23 @@ export function validateSemanticReadIntent(candidate: unknown): SemanticReadInte
   const raw = candidate as Record<string, unknown>;
   if (raw.kind === 'product_analytics') {
     const rankBy = raw.rank_by;
+    const direction = raw.direction;
     const period = raw.period;
     const names = Array.isArray(raw.product_names)
       ? raw.product_names.filter((name): name is string => typeof name === 'string').map((name) => name.trim().slice(0, 100)).filter(Boolean).slice(0, 2)
       : [];
     if (!['quantity', 'revenue', 'margin'].includes(String(rankBy))) return null;
+    if (direction != null && !['best', 'worst'].includes(String(direction))) return null;
     if (!['today', 'week', 'month', 'year'].includes(String(period))) return null;
-    return { kind: 'product_analytics', request: { rankBy: rankBy as ProductAnalyticsRequest['rankBy'], period: period as ProductAnalyticsRequest['period'], compareNames: names } };
+    return {
+      kind: 'product_analytics',
+      request: {
+        rankBy: rankBy as ProductAnalyticsRequest['rankBy'],
+        direction: (direction ?? 'best') as ProductAnalyticsRequest['direction'],
+        period: period as ProductAnalyticsRequest['period'],
+        compareNames: names,
+      },
+    };
   }
   if (raw.kind === 'read_tool' && READ_TOOLS.has(raw.tool as ReadToolName)) {
     const period = ['today', 'week', 'month', 'year'].includes(String(raw.period)) ? String(raw.period) : 'today';
@@ -62,7 +72,7 @@ export async function interpretReadIntentWithAi(text: string, lang: Lang): Promi
   const model = await resolveAnthropicModel(apiKey, Deno.env.get('ANTHROPIC_MODEL'));
   const prompt = `Classify one Risip READ-ONLY business question. Return JSON only.
 Language: ${lang}
-Allowed output 1: {"kind":"product_analytics","rank_by":"quantity|revenue|margin","period":"today|week|month|year","product_names":[string]}
+Allowed output 1: {"kind":"product_analytics","rank_by":"quantity|revenue|margin","direction":"best|worst","period":"today|week|month|year","product_names":[string]}
 Allowed output 2: {"kind":"read_tool","tool":"ai_business_summary|ai_debtors|ai_debtor_detail|daily_profit_estimate|ai_my_receipts|ai_petty_cash_balance|ai_owed_to_me|ai_my_businesses|ai_pending_approvals","period":"today|week|month|year","party_name":string|null,"status":string|null}
 If this is an instruction to create, change, approve, pay, reverse, delete, invite, or configure anything, return {"kind":"unknown"}.
 Never calculate an amount. Never invent a product, person, status, company, or period. Message: ${input}`;

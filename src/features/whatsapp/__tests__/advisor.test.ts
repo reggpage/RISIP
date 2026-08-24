@@ -11,7 +11,6 @@ import {
   type AdvisorPayload,
 } from '../../../../supabase/functions/_shared/whatsappAdvisor';
 import {
-  aggregateProducts,
   parseProductAnalyticsRequest,
   productAnalyticsReply,
   rankProducts,

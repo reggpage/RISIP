@@ -9,7 +9,10 @@ describe('semantic read-intent fallback', () => {
   });
 
   it('accepts only allow-listed read tools', () => {
-    expect(validateSemanticReadIntent({ kind: 'product_analytics', rank_by: 'quantity', period: 'today', product_names: ['nguvu ya sala'] })).toMatchObject({ kind: 'product_analytics' });
+    expect(validateSemanticReadIntent({ kind: 'product_analytics', rank_by: 'quantity', period: 'today', product_names: ['nguvu ya sala'] }))
+      .toMatchObject({ kind: 'product_analytics', request: { direction: 'best' } });
+    expect(validateSemanticReadIntent({ kind: 'product_analytics', rank_by: 'margin', direction: 'worst', period: 'today', product_names: [] }))
+      .toMatchObject({ kind: 'product_analytics', request: { direction: 'worst' } });
     expect(validateSemanticReadIntent({ kind: 'read_tool', tool: 'ai_debtors', period: 'today' })).toMatchObject({ kind: 'read_tool' });
     expect(validateSemanticReadIntent({ kind: 'read_tool', tool: 'approve_receipt', period: 'today' })).toBeNull();
     expect(validateSemanticReadIntent({ kind: 'write_tool', tool: 'delete_all' })).toBeNull();
