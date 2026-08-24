@@ -85,7 +85,13 @@ export function parseProductAnalyticsRequest(text: string | null | undefined, no
   // only exists per product — the ledger's sales-minus-expenses cannot see one,
   // and answering from it is how "hakuna hasara" got said about a shop selling
   // napkins at four hundred shillings below cost.
-  const asksLoss = /\b(hasara|inapoteza|napoteza|zinapoteza|chini ya gharama|below cost|losing money|loss)\b/.test(value);
+  // MEASURED FAILURE, the owner's own thread: "biashara yangu inahasara?" was
+  // not read as a loss question, while "je kuna hasara?" was. Swahili glues its
+  // prefixes onto the word — "ina" + "hasara" — so a leading `\b` before
+  // "hasara" never matches "inahasara". The word is distinctive enough that its
+  // root, however it is prefixed, is a loss signal; only the END needs a
+  // boundary, so "hasarani" (a place) is not swept in.
+  const asksLoss = /hasara\b|\b(?:inapoteza|napoteza|zinapoteza|chini ya gharama|below cost|losing money|loss)\b/.test(value);
   const asksProfit = /\b(faida|margin|profit|earn)\b/.test(value);
   const asksRevenue = /\b(mapato|revenue|money|fedha nyingi|pesa nyingi)\b/.test(value);
   // A bare "faida ya leo" is a period profit question, not a product ranking.

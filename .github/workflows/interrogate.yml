@@ -1,88 +1,99 @@
-# Ask Risip 2,400 questions every morning, and say plainly how it did.
+# Two separate signals, deliberately.
 #
-# WHY A GITHUB ACTION AND NOT A SUPABASE CRON
+#   test         — the gate. Unit suite + edge-function check. No secrets, no
+#                  network, no production. Runs on every push and PR. A green
+#                  check here means the code is sound. This is what must pass.
 #
-# The interrogation is not a database job. It imports the same TypeScript the
-# edge functions import — the routing chain, the parsers, the reply builders —
-# and asserts against arithmetic done separately in the same process. A Supabase
-# scheduled function would have to reimplement all of that inside Deno, and a
-# second implementation is exactly the thing that drifts and stops meaning
-# anything. Here it runs against the checked-out repo, so it is always testing
-# the code that is actually committed.
+#   interrogate  — the monitor. Asks Risip thousands of questions built from the
+#                  LIVE database and grades the answers. It needs production and
+#                  the service-role key, so it runs on a schedule (and on
+#                  demand), never on a pull request from a fork, and it is
+#                  allowed to no-op when the secrets are absent rather than
+#                  failing loudly.
 #
-# It reads production and writes nothing: selects and read-only RPCs only.
+# WHY THEY ARE SPLIT. The interrogation was gating every push against
+# production. A brief network hiccup or a missing secret then turned into "All
+# jobs have failed", which is noise, not signal — the code was fine. The gate
+# must depend only on the repo; the monitor may depend on the world.
 #
-# SECRETS (Settings → Secrets and variables → Actions):
+# SECRETS for the monitor (Settings → Secrets and variables → Actions):
 #   SUPABASE_URL                 https://<ref>.supabase.co
 #   SUPABASE_SERVICE_ROLE_KEY    service_role key — never in the repo, never in
-#                                a VITE_ variable, never printed by this job
-#
-# The service-role key bypasses RLS. It is here because the harness has to read
-# every company's shape the way the webhook does; it is passed as an env var to
-# one step and appears in no log line.
+#                                a VITE_ variable, never printed by this job.
 
-name: Interrogate
+name: CI
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   schedule:
-    # 04:00 UTC = 07:00 in Dar es Salaam, before the shops open, so a regression
-    # is found before anybody is relying on the answer.
+    # 04:00 UTC = 07:00 in Dar es Salaam, before the shops open.
     - cron: '0 4 * * *'
   workflow_dispatch:
     inputs:
       seeds:
-        description: 'How many seeds (each asks --count questions)'
+        description: 'Interrogation seeds (each asks --count questions)'
         default: '10'
       count:
         description: 'Questions per seed'
         default: '240'
-  pull_request:
-    # A change to the language pipeline is exactly when this matters most.
-    paths:
-      - 'supabase/functions/_shared/**'
-      - 'supabase/functions/whatsapp-webhook/**'
-      - 'scripts/interrogate.ts'
-      - 'scripts/lib/**'
 
 concurrency:
-  group: interrogate-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  interrogate:
+  # ── The gate. Everything the repo can prove about itself, and nothing else. ──
+  test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: write
-      pull-requests: write
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
-
       - run: npm ci
-
-      # The unit suite first. If the parsers are broken here, the interrogation
-      # score would only be measuring the breakage twice.
       - name: Unit tests
         run: npm test
+      - name: Edge functions boot-safe
+        run: npx vite-node scripts/check-edge-functions.ts
 
-      - name: Interrogate
+  # ── The monitor. Needs production; never gates a push; skips without secrets. ─
+  interrogate:
+    # Not on pull_request: a fork PR has no secrets, and this must not appear to
+    # fail there. Scheduled, manual, or a push to main only.
+    if: github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+
+      - name: Interrogate the live shop
         id: run
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::notice::SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set — skipping the interrogation."
+            echo "summary=skipped (no secrets)" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           npx vite-node scripts/interrogate.ts \
             --seeds "${{ inputs.seeds || '10' }}" \
             --count "${{ inputs.count || '240' }}" \
             | tee interrogation.log
-          # The one line worth carrying forward. `set -o pipefail` is on by
-          # default in this shell, so a Grade F has already failed the step.
-          echo "summary=$(grep -m1 'Current Capability Score' interrogation.log)" >> "$GITHUB_OUTPUT"
+          echo "summary=$(grep -m1 'Current Capability Score' interrogation.log || echo 'no score line')" >> "$GITHUB_OUTPUT"
 
       - name: Job summary
         if: always()
@@ -91,16 +102,16 @@ jobs:
             echo "## ${{ steps.run.outputs.summary || 'Interrogation did not finish' }}"
             echo
             echo '```'
-            tail -n 60 interrogation.log 2>/dev/null || echo 'no log'
+            tail -n 60 interrogation.log 2>/dev/null || echo 'no log (skipped or failed before output)'
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the report and the trend line
-        if: github.event_name == 'schedule' && success()
+        if: github.event_name == 'schedule' && steps.run.outputs.summary != 'skipped (no secrets)'
         run: |
           git config user.name 'risip-interrogator'
           git config user.email 'noreply@risip.online'
-          git add docs/ai-interrogation.md docs/interrogation-history.json
+          git add docs/ai-interrogation.md docs/interrogation-history.json 2>/dev/null || true
           if git diff --cached --quiet; then
             echo 'Nothing changed.'
           else
@@ -116,3 +127,4 @@ jobs:
             interrogation.log
             docs/ai-interrogation.md
           retention-days: 30
+          if-no-files-found: ignore

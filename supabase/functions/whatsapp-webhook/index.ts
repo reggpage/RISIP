@@ -28,6 +28,7 @@ import {
   verifyMetaSignature,
 } from '../_shared/whatsapp.ts';
 import { sendWhatsAppText, showTyping, whatsAppDisplayNumber } from '../_shared/whatsappApi.ts';
+import { looksLikeMachineText } from '../_shared/whatsappMachineText.ts';
 import {
   detectLanguage,
   isHelp,
@@ -2491,6 +2492,17 @@ function maskDigits(text: string): string {
 
 /** Best-effort reply. A send failure must never turn into a non-200 for Meta. */
 async function sendReplyText(to: string, body: string): Promise<void> {
+  if (looksLikeMachineText(body)) {
+    // Loud on purpose: this is a bug in whichever branch built `body`, and the
+    // only way to find it is to see it in the logs. The shop gets a clean line
+    // rather than a wall of internal data.
+    console.error('BLOCKED machine text to', maskPhone(to), '·', body.slice(0, 80).replace(/\n/g, ' '));
+    try {
+      await sendWhatsAppText(to,
+        'Samahani, kuna hitilafu ndogo kwa jibu hilo. Jaribu tena, au niulize kwa njia nyingine.');
+    } catch { /* swallow — see below */ }
+    return;
+  }
   try {
     await sendWhatsAppText(to, body);
   } catch (err) {
@@ -5547,7 +5559,13 @@ Deno.serve(async (req) => {
           const answered = await executeAssistantTool(
             db, identity, waMessageId, lang, 'get_business_advice', {},
           );
-          await reply(phone, answered.terminalReply ?? answered.content);
+          // MEASURED FAILURE, MINE: this read `terminalReply ?? content`, but
+          // the advice tool's `content` is machine text for the MODEL — the
+          // `business=… revenue=…` evidence dump — and its human rendering is
+          // in `fallbackReply`. When I moved the tool off `terminalReply` I
+          // left this branch reading the wrong field, and the shop received the
+          // raw evidence twice. The human brief comes first, always.
+          await reply(phone, answered.fallbackReply ?? answered.terminalReply ?? answered.content);
           await audit(db, identity, waMessageId, 'business_advice', 'brief', 'applied');
           await finish('skipped');
           continue;

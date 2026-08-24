@@ -39,11 +39,26 @@ describe('a question about loss', () => {
       'Je kuna hasara ya biashara?',
       'bidhaa gani inaleta hasara',
       'nini kinauzwa chini ya gharama',
+      // MEASURED FAILURE: Swahili glues its prefixes, so "inahasara" is one
+      // word and a leading word-boundary before "hasara" never matched it.
+      // "biashara yangu inahasara?" fell through to a today-profit answer and
+      // said "no sales today"; "je kuna hasara?" worked. Same question.
+      'biashara yangu inahasara?',
+      'inahasara?',
+      'biashara inahasara kwa mwezi huu',
     ]) {
       const request = parseProductAnalyticsRequest(said);
       expect(request?.rankBy, said).toBe('margin');
       expect(request?.direction, said).toBe('worst');
       expect(route(said), said).toBe('product_analytics');
+    }
+  });
+
+  it('does not mistake a place or an unrelated question for a loss', () => {
+    // "hasarani" is a place; ordinary business questions are not loss questions.
+    for (const said of ['tuko hasarani', 'biashara inaendeleaje', 'mauzo ya leo']) {
+      const request = parseProductAnalyticsRequest(said);
+      expect(request?.direction === 'worst', said).toBe(false);
     }
   });
 
