@@ -237,7 +237,24 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   // whole line was handed to the parser that asks whether five is the price.
   // How it was paid is not part of what was sold — see TRAILING_CHATTER, which
   // keeps "mkopo" and "deni" precisely because those are not payment methods.
-  const said = stripTrailingChatter(clean(dashToSpace(text)));
+  // MEASURED GAP, found while building the bulk-stock module: "nimeuza mayai
+  // mbili" — an entirely ordinary sentence, no typo in it — matched nothing
+  // here. The quantity pattern further down needs a digit, and "mbili" is a
+  // word; the sibling parsers in this file (parseBareQuantityList,
+  // parseBareExpense) already call normalizeNumberWords for exactly this
+  // reason, but this one never did, and fell through to a daily-record
+  // clarifying question about a sale that had nothing unclear in it.
+  //
+  // Normalized HERE, before STATES_MONEY runs, not only where the quantities
+  // are matched — a first attempt normalized further down and let "nimeuza
+  // daftari 5 kwa elfu saba" (a stated TOTAL of seven thousand, spelled out)
+  // slip past STATES_MONEY, which only recognises "kwa" in front of a digit.
+  // Once normalized too late, "kwa elfu saba" became "kwa 7000" and was read
+  // as a second product literally named "kwa" — a price mistaken for a
+  // product, the one failure mode this file has fought hardest against.
+  // Normalizing before the guard means it sees "kwa 7000" exactly as it
+  // already sees "kwa 7500", and refuses both alike.
+  const said = normalizeNumberWords(stripTrailingChatter(clean(dashToSpace(text))));
   if (!said || !OPENER.test(said)) return null;
   if (STATES_MONEY.test(said)) return null;
 

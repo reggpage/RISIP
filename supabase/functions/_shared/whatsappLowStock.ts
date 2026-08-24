@@ -68,3 +68,42 @@ export function lowStockNotice(levels: StockLevel[], lang: Lang): string {
   }
   return `\n\n⚠️ ${parts.join('\n⚠️ ')}`;
 }
+
+/**
+ * A threshold expressed the way a shopkeeper actually thinks about it — not
+ * "≤15" but "half a tray, enough for seven plates of zege."
+ *
+ * VERIFIED GAP: the blunt LOW_PIECES/LOW_MEASURE constants above are a
+ * platform-wide guess and stay exactly as they are for every product that has
+ * not said otherwise — this is additive, not a replacement. What was missing
+ * is a way for ONE product's threshold to be the shop's own number: an egg
+ * seller cares about eggs at fifteen because that is half a tray, and nothing
+ * about that fifteen is true for a shop selling pens.
+ *
+ * `perSale` is optional and purely descriptive — "enough for N more sales of
+ * X" — computed from whatever the caller already knows about consumption per
+ * sale (a combo's declared piece quantity, a portion's base quantity). This
+ * function does no arithmetic about what a zege or a chips plate costs in
+ * eggs; it only turns a count and a threshold into a sentence.
+ */
+export function customStockWarning(
+  level: { productName: string; onHand: number; unit: string | null },
+  threshold: number,
+  lang: Lang,
+  perSale?: { label: string; remaining: number },
+): string | null {
+  if (level.onHand > threshold) return null;
+  const sw = lang === 'sw';
+  const amountText = amount(level);
+  if (level.onHand <= 0) {
+    return sw ? `⚠️ ${level.productName} zimeisha.` : `⚠️ ${level.productName} is out of stock.`;
+  }
+  const coverage = perSale
+    ? (sw
+      ? ` — inatosha ${perSale.remaining} za ${perSale.label} tu`
+      : ` — enough for only ${perSale.remaining} more ${perSale.label}`)
+    : '';
+  return sw
+    ? `⚠️ ${level.productName} zinakaribia kuisha: ${amountText}${coverage}.`
+    : `⚠️ ${level.productName} is running low: ${amountText}${coverage}.`;
+}
