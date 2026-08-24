@@ -773,8 +773,8 @@ function question(reason: 'amount' | 'message' | 'ambiguity' | 'limit', lang: La
       : 'I found a business record, but the amount is unclear. Send a positive amount, for example: *sold goods for TZS 15000*.';
   }
   return lang === 'sw'
-    ? 'Sijaelewa vizuri. Andika mauzo, matumizi, mkopo, au malipo pamoja na kiasi, kisha nitakuuliza uthibitisho.'
-    : 'I did not understand that clearly. Say sale, expense, debt, or customer payment with an amount, then I will ask you to confirm.';
+    ? 'Sijaelewa vizuri. Andika mauzo, matumizi, mkopo, deni, malipo, bidhaa mpya pamoja na kiasi, kisha nitakuuliza uthibitisho.'
+    : 'I did not understand that clearly. Say sale, expense, credit, debt, payment or new stock with an amount, then I will ask you to confirm.';
 }
 
 function enforceLimit(parsed: ParsedDailyRecord, lang: Lang): DailyRecordParse {
