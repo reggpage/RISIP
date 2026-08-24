@@ -5401,7 +5401,12 @@ Deno.serve(async (req) => {
             // existing deterministic validator/clarifier below take over.
             const unsafeRecordProse = assistant
               && shouldDeferRecordLikeReply(isDailyRecordCandidate(body), assistant.toolNames);
-            if (assistant && !unsafeRecordProse) {
+            // An apology is not an answer. When the model comes back with
+            // nothing, say nothing here and let the deterministic branches
+            // below have their turn — one of them almost always knows.
+            if (assistant && assistant.unavailable) {
+              await audit(db, identity, waMessageId, 'conversational_ai', 'empty', 'fallback');
+            } else if (assistant && !unsafeRecordProse) {
               await reply(phone, assistant.reply);
               const remembered = await storeAssistantExchange(
                 db, identity, waMessageId, body!, assistant.reply, assistant.memory,

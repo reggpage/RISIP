@@ -1434,5 +1434,182 @@
         "total": 60
       }
     ]
+  },
+  {
+    "at": "2026-08-24T04:40:06.120Z",
+    "shop": "St. Ritha bookshop",
+    "seeds": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "asked": 1000,
+    "correct": 1000,
+    "score": 100,
+    "grade": "A",
+    "topics": [
+      {
+        "topic": "alama ya shilingi",
+        "ok": 18,
+        "total": 18
+      },
+      {
+        "topic": "bei ya bidhaa",
+        "ok": 27,
+        "total": 27
+      },
+      {
+        "topic": "bidhaa zinazouza",
+        "ok": 37,
+        "total": 37
+      },
+      {
+        "topic": "faida",
+        "ok": 38,
+        "total": 38
+      },
+      {
+        "topic": "fedha kwa maneno",
+        "ok": 40,
+        "total": 40
+      },
+      {
+        "topic": "fedha kwa mkato",
+        "ok": 27,
+        "total": 27
+      },
+      {
+        "topic": "gharama ya kununua",
+        "ok": 47,
+        "total": 47
+      },
+      {
+        "topic": "hakuna kilichotokea",
+        "ok": 35,
+        "total": 35
+      },
+      {
+        "topic": "idadi za mwisho kabisa",
+        "ok": 24,
+        "total": 24
+      },
+      {
+        "topic": "kelele",
+        "ok": 29,
+        "total": 29
+      },
+      {
+        "topic": "kuhesabu stoko",
+        "ok": 27,
+        "total": 27
+      },
+      {
+        "topic": "kuuliza stoko",
+        "ok": 28,
+        "total": 28
+      },
+      {
+        "topic": "kuweka bei",
+        "ok": 27,
+        "total": 27
+      },
+      {
+        "topic": "lugha mbili kwenye sentensi moja",
+        "ok": 36,
+        "total": 36
+      },
+      {
+        "topic": "mada mbili kwenye ujumbe mmoja",
+        "ok": 31,
+        "total": 31
+      },
+      {
+        "topic": "madeni",
+        "ok": 30,
+        "total": 30
+      },
+      {
+        "topic": "malipo ya deni",
+        "ok": 29,
+        "total": 29
+      },
+      {
+        "topic": "manunuzi",
+        "ok": 36,
+        "total": 36
+      },
+      {
+        "topic": "maongezi ya kawaida",
+        "ok": 32,
+        "total": 32
+      },
+      {
+        "topic": "matumizi",
+        "ok": 34,
+        "total": 34
+      },
+      {
+        "topic": "mauzo (bei imetajwa)",
+        "ok": 31,
+        "total": 31
+      },
+      {
+        "topic": "mauzo (bei kutoka kwenye orodha)",
+        "ok": 28,
+        "total": 28
+      },
+      {
+        "topic": "mauzo kwa fedha za maneno",
+        "ok": 35,
+        "total": 35
+      },
+      {
+        "topic": "mauzo ya mstari mmoja",
+        "ok": 30,
+        "total": 30
+      },
+      {
+        "topic": "muhtasari wa siku",
+        "ok": 21,
+        "total": 21
+      },
+      {
+        "topic": "orodha ndefu ya siku",
+        "ok": 28,
+        "total": 28
+      },
+      {
+        "topic": "orodha ya stoko",
+        "ok": 28,
+        "total": 28
+      },
+      {
+        "topic": "swali la stoko kwa mtaa",
+        "ok": 30,
+        "total": 30
+      },
+      {
+        "topic": "wanaodaiwa",
+        "ok": 27,
+        "total": 27
+      },
+      {
+        "topic": "wingi (tumenunua)",
+        "ok": 33,
+        "total": 33
+      },
+      {
+        "topic": "wingi (tumeuza)",
+        "ok": 35,
+        "total": 35
+      },
+      {
+        "topic": "zilizoisha",
+        "ok": 42,
+        "total": 42
+      }
+    ]
   }
 ]

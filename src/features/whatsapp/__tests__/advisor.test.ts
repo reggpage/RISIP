@@ -122,12 +122,16 @@ describe('the adviser', () => {
     expect(brief).toContain('🚀 *');
   });
 
-  // MEASURED FAILURE: "Kazi ya kesho asubuhi" was said at seven in the
-  // morning. Tomorrow is a day away; the thing to do is today, before opening.
-  it('says WHEN by the clock in the shop, not by a fixed phrase', () => {
-    expect(advisorBrief(payload, 'sw', morning)).toContain('🚀 *Kabla hujafungua leo*');
-    expect(advisorBrief(payload, 'sw', night)).toContain('🚀 *Kesho asubuhi*');
-    expect(advisorBrief(payload, 'en', morning)).toContain('🚀 *Before you open today*');
+  // The owner asked for this to stop naming a time window: "toa hilo neno
+  // kabla ya kufungua leo, sema kivingine na sio kabla ya muda flani."
+  // Guessing when somebody opens their shop was never the point.
+  it('names the one thing that matters, without guessing the hour', () => {
+    for (const at of [morning, night]) {
+      expect(advisorBrief(payload, 'sw', at)).toContain('🚀 *Anza na hili*');
+      expect(advisorBrief(payload, 'sw', at)).not.toContain('kesho');
+      expect(advisorBrief(payload, 'sw', at)).not.toContain('hujafungua');
+    }
+    expect(advisorBrief(payload, 'en', morning)).toContain('🚀 *Start with this*');
   });
 
   it('greets by the clock in the shop', () => {
@@ -173,7 +177,7 @@ describe('the adviser', () => {
   it('gives at most three actions and exactly one thing to do', () => {
     const brief = advisorBrief(payload, 'sw', morning);
     expect(brief.match(/^\d\. /gm)?.length).toBeLessThanOrEqual(3);
-    const tomorrow = brief.split('🚀 *Kabla hujafungua leo*\n')[1];
+    const tomorrow = brief.split('🚀 *Anza na hili*\n')[1];
     expect(tomorrow.split('\n').filter(Boolean)).toHaveLength(1);
   });
 

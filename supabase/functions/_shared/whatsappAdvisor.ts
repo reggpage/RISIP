@@ -116,15 +116,15 @@ export function timeGreeting(lang: Lang, now = new Date()): string {
  * exactly right.
  */
 export function actionWhen(lang: Lang, now = new Date()): string {
-  const part = partOfDay(now);
-  if (lang !== 'sw') {
-    return part === 'asubuhi' ? 'Before you open today'
-      : part === 'mchana' ? 'This afternoon'
-        : part === 'jioni' ? 'Before you close today' : 'Tomorrow morning';
-  }
-  return part === 'asubuhi' ? 'Kabla hujafungua leo'
-    : part === 'mchana' ? 'Mchana huu'
-      : part === 'jioni' ? 'Kabla hujafunga leo' : 'Kesho asubuhi';
+  // The owner asked for this to stop naming a time window at all: "toa hilo
+  // neno kabla ya kufungua leo, sema kivingine na sio kabla ya muda flani."
+  // They are right. Guessing when somebody opens their shop was never the
+  // point — the point is that ONE thing matters more than the rest. So the
+  // heading says that instead, and says it the same way whatever the hour.
+  //
+  // partOfDay stays, because greetings still need it.
+  void partOfDay(now);
+  return lang === 'sw' ? 'Anza na hili' : 'Start with this';
 }
 
 const list = (names: string[], limit = 4) => {
@@ -384,10 +384,10 @@ export const ADVISOR_VOICE = `ADVISER MODE (get_business_advice)
 - Use exactly these three sections, in this order, with these headers:
   📊 *Tathmini ya takwimu* — what the figures show, as bullets, boldest fact first.
   💡 *Ushauri wa MD* — two or three numbered actions, each tied to a figure above.
-  🚀 *<the time window you are given>* — ONE thing to do in it. The tool result
-     names the window (e.g. "Kabla hujafungua leo", "Mchana huu", "Kesho
-     asubuhi"); use that heading exactly and never substitute your own, because
-     you do not know what time it is in the shop and it does.
+  🚀 *Anza na hili* — ONE thing, the single most valuable move available. Use
+     that heading exactly. Do NOT name a time of day: you do not know when this
+     shop opens, and "before you open tomorrow" said at seven in the morning is
+     both wrong and slightly insulting.
 - A LOSS OUTRANKS A RECORD MONTH. If any product's CURRENT PRICE is below cost (price_below_cost_now), it leads, whatever the sales figure says.
 - TWO DIFFERENT FACTS, TWO DIFFERENT TENSES. "sold_below_cost_in_period" is history — those shillings are gone and nothing can be done about them. "price_below_cost_now" is a price that is still wrong and still costing money on every sale. Never tell somebody to raise a price they have already raised: if the second list is empty, say the loss was made before the price was fixed and move on.
 - Every number must come from the tool result. Do not add, subtract, project, or estimate beyond it. If a figure is absent, say it is not recorded yet and say what to send to record it.

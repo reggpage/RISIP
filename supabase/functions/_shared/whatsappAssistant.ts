@@ -76,6 +76,20 @@ export type AssistantToolExecutor = (
 
 export type AssistantRunResult = {
   reply: string;
+  /**
+   * True when `reply` is the "I could not answer" text rather than an answer.
+   *
+   * MEASURED FAILURE, the owner's own thread: "Naomba ushauri wa biashara" got
+   * an apology and "Naomba ushauri wa biashara yangu" — the same question —
+   * got the full brief a minute later. The first went to the model, the model
+   * came back empty, and the apology was SENT. The deterministic adviser sits
+   * further down the same function and would have answered instantly, but the
+   * apology had already been treated as a real reply, so it never ran.
+   *
+   * A failure is not an answer. The caller checks this and falls through to the
+   * deterministic branches instead of speaking.
+   */
+  unavailable?: boolean;
   memory: AssistantMemoryPatch;
   toolNames: string[];
   model: string;
@@ -725,16 +739,18 @@ export async function runConversationalAssistant(args: {
         args.onFailure?.('missing_required_tool_call');
         return null;
       }
-      const reply = textFrom(payload.content) || unavailable(args.context.lang);
+      const modelText = textFrom(payload.content);
+      const reply = modelText || unavailable(args.context.lang);
       const ungrounded = findUngroundedNumbers(reply, evidence);
       if (ungrounded.length > 0) {
-        const safe = humanFallback(executedResults) || unavailable(args.context.lang);
+        const gathered = humanFallback(executedResults);
         return {
-          reply: safe,
+          reply: gathered || unavailable(args.context.lang),
           memory: inferAssistantMemory(executed),
           toolNames: executed.map((call) => call.name),
           model,
           usedSafeFallback: true,
+          unavailable: !gathered,
         };
       }
       return {
@@ -743,6 +759,7 @@ export async function runConversationalAssistant(args: {
         toolNames: executed.map((call) => call.name),
         model,
         usedSafeFallback: false,
+        unavailable: !modelText,
       };
     }
 
@@ -753,13 +770,14 @@ export async function runConversationalAssistant(args: {
       // returned the figures. Running out of rounds threw verified data away
       // and sent an apology in its place. The figures are worth more than the
       // sentence that would have wrapped them.
-      const gathered = humanFallback(executedResults) || unavailable(args.context.lang);
+      const gathered = humanFallback(executedResults);
       return {
-        reply: gathered,
+        reply: gathered || unavailable(args.context.lang),
         memory: inferAssistantMemory(executed),
         toolNames: executed.map((call) => call.name),
         model,
         usedSafeFallback: true,
+        unavailable: !gathered,
       };
     }
 
