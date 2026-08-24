@@ -46,7 +46,14 @@ const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, 
 // Exported for the same reason PRICE_TALK is: whatsappDailyRecords.ts needs
 // the identical vocabulary to tell a QUANTITY from a MONEY amount, and a
 // second copy of this list is a second copy that drifts.
-export const UNITS = 'kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni|robo|nusu|theluthi|kipande|mche|chupa|mfuko|kifurushi|treya|trei|tray|katoni|carton|kreti|crate';
+//
+// MEASURED FAILURE, and the THIRD time this exact drift has bitten: a private
+// copy of this list in whatsappVoid.ts was missing "trei", so
+// "nimeingiza trei 3 na mayai 15" was treated as naming no measure at all and
+// the shop was asked whether "3" meant three kilos of eggs. dumu/kopo/sado/
+// kiroba came back the other way, from that copy into this one — each list
+// knew words the other did not. There is now one list.
+export const UNITS = 'kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|dumu|pakiti|boksi|rimu|dazeni|robo|nusu|theluthi|kipande|mche|chupa|kopo|sado|kiroba|mfuko|kifurushi|treya|trei|tray|katoni|carton|kreti|crate';
 
 /**
  * Words that make a sentence about money rather than about the shelf.

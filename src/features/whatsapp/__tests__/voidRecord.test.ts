@@ -141,9 +141,53 @@ describe('goods the shop weighs, before anybody said how', () => {
   it('asks in a way that can be answered', () => {
     const said = unregisteredMeasureQuestion('unga', 'sw');
     expect(said).toContain('unga');
-    expect(said).toContain('kilo');
-    expect(said).toContain('gunia');
-    // It has to show the shape of the reply, not just refuse.
-    expect(said).toContain('nauza kwa kilo');
+    // It has to show the SHAPE of the reply, not just refuse.
+    expect(said).toContain('[kipimo chako]');
+    expect(said).toContain('[shilingi]');
+  });
+
+  // MEASURED FAILURE, from the owner's own screenshot: this question printed
+  // the same three examples for every product on the list, so a shop that had
+  // just mentioned eggs was told to answer "Mayai nauza kwa kilo" or "gunia
+  // moja ni kilo 100". Nobody sells eggs by the kilo or by the sack. Two
+  // impossible suggestions and one usable one reads as a machine that does not
+  // know what an egg is — and the shop is the authority on its own measures
+  // anyway, so suggesting any unit was the mistake.
+  it('never suggests a measure that makes no sense for the product', () => {
+    const eggs = unregisteredMeasureQuestion('mayai', 'sw');
+    expect(eggs).not.toContain('kilo');
+    expect(eggs).not.toContain('gunia');
+    // And the same question, for flour, must not have picked up an egg unit.
+    expect(unregisteredMeasureQuestion('unga', 'sw')).not.toContain('trei');
+  });
+});
+
+describe('a measure the shop already named', () => {
+  const catalogue = ['daftari', 'kalamu'];
+
+  // MEASURED FAILURE, from the owner's own screenshot:
+  //   "nimeingiza trei 3 na mayai 15 leo"
+  // was answered "siwezi kujua '3' ni kilo tatu, gunia tatu au vipande
+  // vitatu" — about a sentence whose SECOND WORD is the measure. The cause
+  // was a third private copy of the measure vocabulary in whatsappVoid.ts
+  // that was missing "trei" (and mita, futi, boksi, rimu, dazeni, kipande,
+  // katoni, kreti...). It now reads the one shared UNITS list.
+  it('says nothing when the measure is right there in the message', () => {
+    for (const said of [
+      'nimeingiza trei 3 na mayai 15 leo',
+      'nimeuza mayai trei 3',
+      'nimeuza mayai dazeni 2',
+      'nimeuza mafuta dumu 1',
+      'nimeuza sukari kiroba 2',
+    ]) {
+      expect(findUnregisteredMeasure(said, catalogue), said).toBeNull();
+    }
+  });
+
+  // The guard must still fire when NO measure is named at all — that is the
+  // whole reason it exists.
+  it('still asks when the sentence names no measure anywhere', () => {
+    expect(findUnregisteredMeasure('nimeuza mayai 3', catalogue)).not.toBeNull();
+    expect(findUnregisteredMeasure('nimeuza unga 5', catalogue)).not.toBeNull();
   });
 });

@@ -16,6 +16,7 @@
 
 import type { Lang } from './whatsappIntent.ts';
 import { correctControlWords } from './whatsappSpelling.ts';
+import { UNITS } from './whatsappStock.ts';
 
 export type VoidTarget = {
   id: string;
@@ -169,8 +170,11 @@ const MEASURED_GOODS = [
 
 export type UnregisteredMeasure = { product: string };
 
-const MEASURE_WORDS =
-  /\b(?:kilo|kilos|kg|gramu|lita|litre|liter|ml|gunia|debe|ndoo|dumu|robo|nusu|theluthi|pakiti|mfuko|kopo|chupa|sado|kiroba)\b/i;
+// The one shared list, not a fourth copy. See UNITS in whatsappStock.ts: the
+// private copy that used to live here was missing "trei", which is why
+// "nimeingiza trei 3 na mayai 15" — a sentence that names its measure in its
+// second word — was answered by asking whether "3" meant three kilos of eggs.
+const MEASURE_WORDS = new RegExp(`\\b(?:${UNITS})\\b`, 'i');
 
 /**
  * Is this a measured good, named with no measure and no registration?
@@ -196,24 +200,39 @@ export function findUnregisteredMeasure(
   return null;
 }
 
-/** Asked once, and it explains what to send back rather than just refusing. */
+/**
+ * Asked once, and it explains what to send back rather than just refusing.
+ *
+ * MEASURED FAILURE: this used to print the SAME three examples for every
+ * product on the list — "Mayai nauza kwa kilo", "Mayai nauza kwa gunia, gunia
+ * moja ni kilo 100". Nobody in Tanzania sells eggs by the kilo or by the sack,
+ * and being handed two impossible suggestions and one usable one reads as a
+ * machine that does not know what an egg is. Suggesting a measure at all was
+ * the mistake: the shop is the authority on how it measures its own goods, and
+ * an example that is wrong for the product costs more trust than no example.
+ *
+ * So the shape of the answer is shown WITHOUT asserting a unit, and the
+ * trader's own words fill the gap. One example, using their own product name,
+ * with the measure left as the thing being asked for.
+ */
 export function unregisteredMeasureQuestion(product: string, lang: Lang): string {
   const sw = lang === 'sw';
   const name = product.charAt(0).toUpperCase() + product.slice(1);
   if (sw) {
-    return `Sina rekodi ya *${product}* bado, na hii ni bidhaa ya kupima — `
-      + 'siwezi kujua "3" ni kilo tatu, gunia tatu au vipande vitatu.\n\n'
-      + `Niambie kwanza unavyoiuza, mfano:\n`
-      + `• "${name} nauza kwa kilo, bei ya kilo 2800"\n`
-      + `• "${name} nauza kwa gunia, gunia moja ni kilo 100"\n`
-      + `• "${name} nauza kwa kipande, bei 500"\n\n`
-      + 'Nikishajua kipimo, nitarekodi kila mauzo bila kuuliza tena.';
+    // "Kipimo chake" rather than an object prefix: Swahili agreement differs
+    // by noun class ("unayapima" for mayai, "unaipima" for unga) and getting
+    // it wrong on the shop's own product is its own small insult.
+    return `Sina rekodi ya *${product}* bado, wala sijui kipimo chake.\n\n`
+      + `Niambie kipimo unachotumia na bei yake, mfano:\n`
+      + `• ${product} kwa [kipimo chako], bei [shilingi]\n\n`
+      + `Kama unanunua kwa wingi, niambie kikubwa kina kiasi gani:\n`
+      + `• [kipimo kikubwa] moja ni ${product} [idadi]\n\n`
+      + 'Nikishajua, nitarekodi bila kuuliza tena.';
   }
-  return `I have no record of *${product}* yet, and it is sold by measure — `
-    + 'I cannot tell whether "3" is three kilos, three sacks or three pieces.\n\n'
-    + `Tell me how you sell it first, for example:\n`
-    + `• "${name} nauza kwa kilo, bei ya kilo 2800"\n`
-    + `• "${name} nauza kwa gunia, gunia moja ni kilo 100"\n`
-    + `• "${name} nauza kwa kipande, bei 500"\n\n`
-    + 'Once I know the measure I will record every sale without asking again.';
+  return `I have no record of *${product}* yet, and I do not know its measure.\n\n`
+    + `Tell me the measure you use and its price, for example:\n`
+    + `• ${name} by [your measure], price [shillings]\n\n`
+    + `If you buy it in bulk, tell me what the big one holds:\n`
+    + `• one [big measure] is [how many] ${product}\n\n`
+    + 'Once I know, I will record it without asking again.';
 }
