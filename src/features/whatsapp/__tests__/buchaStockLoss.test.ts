@@ -140,7 +140,7 @@ describe('where the arithmetic lives', () => {
     resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
 
   it('takes the cost from the existing pricing RPC, never from the model', () => {
-    expect(webhook).toContain("const lossReading = parseStockLoss(writeBody);");
+    expect(webhook).toContain("const parsedLoss = parseStockLoss(writeBody);");
     expect(webhook).toContain("await db.rpc('wa_product_pricing'");
     expect(webhook).toContain('Math.round(unitCost * lossReading.quantity * 100) / 100');
   });

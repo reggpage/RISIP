@@ -24,6 +24,13 @@ export type AssistantIdentityContext = {
   approvalFlowEnabled: boolean;
   reversalEnabled: boolean;
   payoutsEnabled: boolean;
+  /**
+   * The words THIS shop uses, and nothing else. Aliases and taught meanings
+   * only — never prices, stock or customers, which are read through tools that
+   * can be checked. A price in a prompt is a price the model can restate
+   * wrongly; a word cannot be misquoted into a ledger.
+   */
+  vocabulary?: string;
 };
 
 export function sanitizeAssistantFirstName(value: unknown): string | null {
@@ -419,6 +426,7 @@ LIVE CONTEXT
 - Approval flow enabled: ${context.approvalFlowEnabled}
 - Reversal enabled: ${context.reversalEnabled}
 - Payouts enabled: ${context.payoutsEnabled}
+${context.vocabulary ? `\n${context.vocabulary}\n` : ''}
 - You may use the user’s first name occasionally when it makes a greeting, confirmation or explanation warmer. Do not use it in every reply, do not invent a name, and never treat another person mentioned in the conversation as the user.
 
 GROUNDING AND TOOLS

@@ -175,6 +175,18 @@ import {
   spoilageClarification,
   stockLossConfirmation,
 } from '../_shared/whatsappStockLoss.ts';
+import {
+  aliasConfirmation,
+  forgetConfirmation,
+  parseVocabularyTeaching,
+  semanticConfirmation,
+  vocabularyConflict,
+  vocabularyContext,
+  vocabularyForgotten,
+  vocabularyNotAllowed,
+  vocabularySaved,
+  type VocabularyPending,
+} from '../_shared/whatsappVocabulary.ts';
 import { lowStockNotice, type StockLevel } from '../_shared/whatsappLowStock.ts';
 import {
   formatBarcode, isScanRequest, isSellScanRequest, parseBarcodeMessage,
@@ -978,7 +990,25 @@ async function resolveWhatsAppContext(
   };
 }
 
-function assistantIdentityContext(identity: ResolvedWhatsAppIdentity): AssistantIdentityContext {
+/**
+ * The shop's own words, fetched once per assistant turn and capped.
+ *
+ * Bounded on purpose: aliases are cheap and are the whole point, but a
+ * catalogue dump would grow every request for every company for ever. Words
+ * only — the financial values stay behind tools.
+ */
+async function loadVocabularyContext(db: Admin, identity: ResolvedWhatsAppIdentity): Promise<string> {
+  const { data, error } = await db.rpc('wa_company_vocabulary', { p_company_id: identity.company_id });
+  if (error) return '';
+  return vocabularyContext(((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    kind: String(row.kind ?? ''),
+    term: String(row.term ?? ''),
+    productName: row.product_name ? String(row.product_name) : null,
+    meaning: row.meaning ? String(row.meaning) : null,
+  })));
+}
+
+function assistantIdentityContext(identity: ResolvedWhatsAppIdentity, vocabulary?: string): AssistantIdentityContext {
   return {
     identityId: identity.id,
     profileId: identity.profile_id,
@@ -990,6 +1020,7 @@ function assistantIdentityContext(identity: ResolvedWhatsAppIdentity): Assistant
     approvalFlowEnabled: identity.approval_flow_enabled,
     reversalEnabled: identity.reversal_enabled,
     payoutsEnabled: identity.payouts_enabled,
+    ...(vocabulary ? { vocabulary } : {}),
   };
 }
 
@@ -3308,6 +3339,13 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<ComboSavePending> | null)?.kind === 'combo_save'
           ? convo.options as ComboSavePending
           : null;
+        // Vocabulary is a permanent setting, so it waits for an explicit yes
+        // exactly as a price does. A word remapped by accident would misread
+        // every future message that contains it.
+        const vocabularyPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<VocabularyPending> | null)?.kind === 'vocabulary_teaching'
+          ? convo.options as VocabularyPending
+          : null;
         const bandPending = convo?.awaiting === 'product_cost'
           && (convo.options as Partial<PriceBandPending> | null)?.kind === 'price_band_choice'
           ? convo.options as PriceBandPending
@@ -3656,6 +3694,61 @@ Deno.serve(async (req) => {
           settledCombos = [...comboPending.known, settled];
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'combo', 'answered', 'applied');
+        }
+
+        if (vocabularyPending) {
+          await clearConversation(db, identity.id as string);
+          if (!isDailyRecordConfirmation(body ?? '')) {
+            await replyQuietly(phone, lang === 'sw'
+              ? 'Sawa, sijabadilisha neno lolote.'
+              : 'Fine, I changed no words.');
+            await audit(db, identity, waMessageId, 'vocabulary', 'declined', 'applied');
+            await finish('skipped');
+            continue;
+          }
+          const teaching = vocabularyPending.teaching;
+          if (teaching.kind === 'forget') {
+            const { data: gone } = await db.rpc('wa_forget_business_term', {
+              p_phone: phone, p_term: teaching.term,
+            });
+            const removed = Boolean((gone as Record<string, unknown> | null)?.removed);
+            await reply(phone, vocabularyForgotten(teaching.term, removed, lang));
+            await audit(db, identity, waMessageId, 'vocabulary', 'forgotten', 'applied');
+            await finish('applied');
+            continue;
+          }
+          const { data: saved, error: saveError } = await db.rpc('wa_save_business_term', {
+            p_phone: phone,
+            p_kind: teaching.kind,
+            p_term: teaching.term,
+            p_product: vocabularyPending.productName,
+            p_meaning: teaching.kind === 'semantic_term' ? teaching.meaning : null,
+          });
+          const result = (saved ?? null) as Record<string, unknown> | null;
+          if (saveError || !result) {
+            await reply(phone, lang === 'sw'
+              ? 'Sikuweza kuhifadhi neno hilo sasa.'
+              : 'I could not save that word just now.');
+            await audit(db, identity, waMessageId, 'vocabulary', 'failed', 'failed');
+            await finish('skipped');
+            continue;
+          }
+          // The database refuses a silent remap and hands back what the word
+          // already means, so the shop is told rather than surprised.
+          if (result.conflict === true) {
+            await reply(phone, vocabularyConflict(teaching.term, {
+              kind: String(result.existing_kind ?? ''),
+              productName: result.existing_product ? String(result.existing_product) : null,
+              meaning: result.existing_meaning ? String(result.existing_meaning) : null,
+            }, lang));
+            await audit(db, identity, waMessageId, 'vocabulary', 'conflict', 'skipped');
+            await finish('skipped');
+            continue;
+          }
+          await reply(phone, vocabularySaved(teaching.term, lang));
+          await audit(db, identity, waMessageId, 'vocabulary', teaching.kind, 'applied');
+          await finish('applied');
+          continue;
         }
 
         // "Nihifadhi chips yai = chips kavu + yai?" — asked after the sale is
@@ -4847,19 +4940,100 @@ Deno.serve(async (req) => {
         // and the multiplication happens here, in code. Nothing about the
         // money is asked of the model, and when no cost exists nothing is
         // guessed — the quantity is recorded and the preview says plainly that
+        // ── Bucha phase 3: teaching Risip how this shop talks ──────────────
+        //
+        // Nothing is saved from this message. Vocabulary changes how every
+        // future message is read, so it is previewed and confirmed like a
+        // price — and the product named is resolved against THIS company's
+        // catalogue first, so a word can never be taught to mean something the
+        // shop does not sell.
+        const teaching = parseVocabularyTeaching(writeBody);
+        if (teaching) {
+          if (!['owner', 'accountant'].includes(identity.role)) {
+            // A worker may USE the shop's words. Only an owner or accountant
+            // may change what they mean.
+            await reply(phone, vocabularyNotAllowed(lang));
+            await audit(db, identity, waMessageId, 'vocabulary', 'role', 'blocked');
+            await finish('skipped');
+            continue;
+          }
+
+          let productName: string | null = null;
+          const wanted = teaching.kind === 'forget' ? null : teaching.product;
+          if (wanted) {
+            const found = await resolveProductForRead(db, identity, wanted);
+            if (!found.error && found.resolution.kind === 'matched') {
+              productName = found.resolution.match.productName;
+            } else if (teaching.kind === 'product_alias') {
+              await reply(phone, lang === 'sw'
+                ? `Sina *${wanted}* kwenye bidhaa zako, kwa hiyo siwezi kuifanya *${teaching.term}* iwe jina lake.`
+                : `I do not have *${wanted}* among your products, so I cannot make *${teaching.term}* a name for it.`);
+              await audit(db, identity, waMessageId, 'vocabulary', 'unknown_product', 'skipped');
+              await finish('skipped');
+              continue;
+            }
+          }
+
+          const pending: VocabularyPending = { kind: 'vocabulary_teaching', teaching, productName };
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: pending,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+
+          await reply(phone, teaching.kind === 'forget'
+            ? forgetConfirmation(teaching.term, lang)
+            : teaching.kind === 'product_alias'
+              ? aliasConfirmation(teaching.term, productName ?? teaching.product, lang)
+              : semanticConfirmation(teaching.term, productName, lang));
+          await audit(db, identity, waMessageId, 'vocabulary', teaching.kind, 'pending');
+          await finish('applied');
+          continue;
+        }
+
         // the value is unknown.
-        const lossReading = parseStockLoss(writeBody);
+        const parsedLoss = parseStockLoss(writeBody);
+        // A word the shop has TAUGHT us stops being ambiguous. "Mzoga" is not
+        // in any shipped dictionary and never will be, but if this company has
+        // said what it means here, that is a fact about this company and the
+        // question no longer needs asking.
+        let lossReading = parsedLoss;
+        if (parsedLoss?.kind === 'clarify_spoilage') {
+          const { data: vocabRows } = await db.rpc('wa_company_vocabulary', {
+            p_company_id: identity.company_id,
+          });
+          const taught = ((vocabRows ?? []) as Array<Record<string, unknown>>).find((row) =>
+            String(row.meaning ?? '') === 'stock_loss'
+            && productKey(String(row.term ?? '')) === productKey(parsedLoss.word));
+          const taughtProduct = taught ? String(taught.product_name ?? '').trim() : '';
+          // Only when the shop also said WHICH product. Knowing that a word
+          // means spoilage is not knowing what spoiled, and subtracting the
+          // wrong meat is the failure this whole path exists to avoid.
+          if (taughtProduct) {
+            lossReading = {
+              kind: 'stock_loss',
+              product: taughtProduct,
+              quantity: parsedLoss.quantity,
+              unit: parsedLoss.unit,
+              reason: parsedLoss.word,
+            };
+          }
+        }
         if (lossReading) {
           if (lossReading.kind === 'clarify_spoilage') {
             // A word that means spoilage in one yard and a fresh carcass in the
-            // next. No draft is created, because either guess destroys or
-            // invents stock.
+            // next, and this shop has not said which. No draft is created,
+            // because either guess destroys or invents stock.
             await reply(phone, spoilageClarification(lossReading, lang));
             await audit(db, identity, waMessageId, 'stock_loss', lossReading.word, 'pending');
             await finish('skipped');
             continue;
           }
-
           const found = await resolveProductForRead(db, identity, lossReading.product);
           if (found.error || found.resolution.kind !== 'matched') {
             // Ambiguity is answered with a question, never with the closest
@@ -5626,7 +5800,7 @@ Deno.serve(async (req) => {
             // time it answers. Raised again so the wait is visible.
             await showTyping(waMessageId);
             const assistant = await runConversationalAssistant({
-              context: assistantIdentityContext(identity),
+              context: assistantIdentityContext(identity, await loadVocabularyContext(db, identity)),
               history,
               userText: body!,
               executeTool: (name, input) => executeAssistantTool(db, identity, waMessageId, lang, name, input, body!),
