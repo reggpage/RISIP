@@ -72,6 +72,31 @@ function stripSalePrefix(value: string): string {
   return value.replace(/^(?:leo\s+|today\s+)?(?:nimeuza|uza|mauzo|(?:i\s+)?sold)\s+/iu, '').trim();
 }
 
+const SALE_OPENING = /^(?:leo\s+|today\s+)?(?:nimeuza|uza|mauzo|(?:i\s+)?sold)\s+/iu;
+const ARRIVAL_OPENING = new RegExp(`^(?:leo\\s+|today\\s+)?(?:${STOCK_ARRIVAL_VERBS})\\s+`, 'iu');
+
+/**
+ * MEASURED FAILURE, from a shopkeeper's own screen:
+ *
+ *   "nimeingiza trei 3 28500 na mayai 15 leo 4500"
+ *   -> "Aina: MAUZO ... Jumla: TSh 153,000"  -- confirmed, and posted.
+ *
+ * Stock coming IN was booked as 153,000 of revenue going OUT. This list only
+ * ever recognised sale verbs, so an arrival fell through to the model, which
+ * picked the direction by guess. The trader's own verb decides it now.
+ */
+function openingDirection(text: string): { kind: 'sale' | 'stock_purchase'; payload: string } | null {
+  const value = text.trim();
+  const sale = value.match(SALE_OPENING);
+  if (sale) return { kind: 'sale', payload: value.slice(sale[0].length).trim() };
+  const arrival = value.match(ARRIVAL_OPENING);
+  if (arrival) return { kind: 'stock_purchase', payload: value.slice(arrival[0].length).trim() };
+  return null;
+}
+
+/** "leo", "jana" — a day, never a product and never a price. */
+const DAY_WORD = /\b(?:leo|jana|today|yesterday)\b/giu;
+
 /**
  * A single-line list such as:
  *
@@ -83,9 +108,14 @@ function stripSalePrefix(value: string): string {
  * generic single-record parser to treat the final amount as the whole sale.
  */
 function inlineSaleTotalLine(raw: string): DailyRecordLine | null {
-  const value = stripSalePrefix(raw);
+  // "mayai 15 leo 15000" — the day sits between the count and the money, and
+  // without removing it the segment reads as three numbers and parses as none.
+  const value = stripSalePrefix(raw).replace(DAY_WORD, ' ').replace(/\s+/g, ' ').trim();
   const match = value.match(new RegExp(
-    '^(.+?)\\s+(' + QUANTITY + ')\\s+(?:kwa|for)\\s+(' + MONEY.source + ')$',
+    // "kwa" is how it is usually written and stays optional: a trader typing in
+    // a hurry writes "trei 3 60000", and the shape is unambiguous without it —
+    // both a count and a total must be present for this to match at all.
+    '^(.+?)\\s+(' + QUANTITY + ')\\s+(?:(?:kwa|for)\\s+)?(' + MONEY.source + ')$',
     'iu',
   ));
   if (!match) return null;
@@ -104,9 +134,10 @@ function inlineSaleList(
   lang: Lang,
 ): Exclude<DailyRecordBatchParse, { kind: 'clarify' | 'none' }> | null {
   if (/\r?\n/u.test(text)) return null;
-  if (!/^(?:leo\s+|today\s+)?(?:nimeuza|uza|mauzo|(?:i\s+)?sold)\b/iu.test(text.trim())) return null;
+  const direction = openingDirection(text);
+  if (!direction) return null;
 
-  const payload = stripSalePrefix(text.trim());
+  const payload = direction.payload;
   // A comma inside 7,500 is not a separator because the lookahead requires a
   // letter. "na/and" is considered only in a message containing at least two
   // quantity/amount pairs; this avoids splitting a single product name.
@@ -143,7 +174,7 @@ function inlineSaleList(
   }
   return {
     kind: 'parsed',
-    records: [{ kind: 'sale', amount, partyName: null, description: null, lines: parsedLines, confidence: 0.99 }],
+    records: [{ kind: direction.kind, amount, partyName: null, description: null, lines: parsedLines, confidence: 0.99 }],
   };
 }
 

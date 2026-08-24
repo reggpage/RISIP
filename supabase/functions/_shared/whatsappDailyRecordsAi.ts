@@ -1,6 +1,7 @@
 import type { Lang } from './whatsappIntent.ts';
 import {
   MAX_DAILY_RECORD_AMOUNT,
+  STOCK_ARRIVAL_VERBS,
   type DailyRecordKind,
   type DailyRecordLine,
   type ParsedDailyRecord,
@@ -62,7 +63,30 @@ function buildLines(value: unknown): DailyRecordLine[] | null {
  * is ignored whenever line arithmetic can determine a total. For no-line records,
  * the caller still has to compare the returned amount with a deterministic source.
  */
-export function validateAiCandidate(candidate: unknown): ParsedDailyRecord | null {
+/**
+ * MEASURED FAILURE, from a shopkeeper's own screen:
+ *
+ *   "nimeingiza trei 3 28500 na mayai 15 leo 4500"
+ *   -> "Aina: MAUZO ... Jumla: TSh 153,000"   -- confirmed, and posted.
+ *
+ * The model chose the direction and nothing here ever compared that choice with
+ * what the trader actually wrote. Goods arriving were booked as 153,000 of
+ * revenue: profit invented, stock never added, and the shop's day overstated by
+ * the full amount.
+ *
+ * "Nimeingiza" and "nimeuza" are not a judgement call, so the model does not get
+ * one. Expense-versus-purchase IS a judgement call — "nimenunua chakula" may be
+ * lunch or goods — and the prompt deliberately delegates it, so this guard
+ * touches only the axis that decides which way the money moved.
+ */
+export function directionFromWording(said: string): 'sale' | 'stock_purchase' | null {
+  const value = String(said ?? '').trim();
+  if (/^(?:leo\s+|today\s+)?(?:ni(?:me|li)uza|tu(?:me|li)uza|uza|mauzo|(?:i\s+)?sold)\b/iu.test(value)) return 'sale';
+  if (new RegExp(`^(?:leo\\s+|today\\s+)?(?:${STOCK_ARRIVAL_VERBS})\\b`, 'iu').test(value)) return 'stock_purchase';
+  return null;
+}
+
+export function validateAiCandidate(candidate: unknown, said?: string): ParsedDailyRecord | null {
   if (!candidate || typeof candidate !== 'object') return null;
   const value = candidate as AiCandidate;
   const kind = value.kind;
@@ -79,8 +103,15 @@ export function validateAiCandidate(candidate: unknown): ParsedDailyRecord | nul
   }
   const finalAmount = lines.length > 0 ? lineTotal : suppliedAmount;
   if (!validMoney(finalAmount)) return null;
+
+  // The trader's verb outranks the model on which way the goods moved.
+  const stated = said === undefined ? null : directionFromWording(said);
+  const contradicted = stated !== null
+    && (kind === 'sale' || kind === 'stock_purchase')
+    && kind !== stated;
+
   return {
-    kind: kind as DailyRecordKind,
+    kind: (contradicted ? stated : kind) as DailyRecordKind,
     amount: finalAmount,
     partyName: typeof value.party_name === 'string' ? value.party_name.trim().slice(0, 200) || null : null,
     description: typeof value.description === 'string' ? value.description.trim().slice(0, 2000) || null : null,

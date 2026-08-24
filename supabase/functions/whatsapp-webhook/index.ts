@@ -1894,6 +1894,9 @@ async function executeAssistantTool(
   lang: Lang,
   name: string,
   input: Record<string, unknown>,
+  // What the trader actually typed. propose_daily_record is held to the verb in
+  // it, so the model cannot book an arrival as a sale.
+  said?: string,
 ): Promise<AssistantToolExecution> {
   if (name === 'get_business_summary') {
     return { content: await readOnlyToolReply(db, identity, { tool: 'ai_business_summary', period: assistantPeriod(input.period), range: assistantRange(input.when) }, lang) };
@@ -2261,7 +2264,7 @@ async function executeAssistantTool(
     return { content: confirmation, terminalReply: confirmation };
   }
   if (name === 'propose_daily_record') {
-    const parsed = validateAiCandidate(input);
+    const parsed = validateAiCandidate(input, said);
     if (!parsed) {
       const clarification = lang === 'sw'
         ? 'Sijaweza kuthibitisha kiasi na hesabu zake. Taja aina ya rekodi, bidhaa au matumizi, quantity na bei—na useme kama bei ni jumla au ya kila moja.'
@@ -3006,7 +3009,7 @@ Deno.serve(async (req) => {
               context: assistantIdentityContext(identity),
               history: [],
               userText: mixed.question,
-              executeTool: (name, input) => executeAssistantTool(db, identity, waMessageId, lang, name, input),
+              executeTool: (name, input) => executeAssistantTool(db, identity, waMessageId, lang, name, input, mixed.question),
               onFailure: () => {},
             })
             : null;
@@ -5456,7 +5459,7 @@ Deno.serve(async (req) => {
               context: assistantIdentityContext(identity),
               history,
               userText: body!,
-              executeTool: (name, input) => executeAssistantTool(db, identity, waMessageId, lang, name, input),
+              executeTool: (name, input) => executeAssistantTool(db, identity, waMessageId, lang, name, input, body!),
               onFailure: (code) => { assistantFailure = code; },
             });
             // A record-looking sentence may never be acknowledged as saved by
