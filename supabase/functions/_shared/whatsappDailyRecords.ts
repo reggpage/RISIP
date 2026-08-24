@@ -1,5 +1,6 @@
 import type { Lang } from './whatsappIntent.ts';
 import { correctControlWords } from './whatsappSpelling.ts';
+import { UNITS } from './whatsappStock.ts';
 
 export type DailyRecordKind =
   | 'sale' | 'expense' | 'debt_issued' | 'customer_payment' | 'stock_purchase';
@@ -509,6 +510,18 @@ function stockPurchaseRecord(text: string): ParsedDailyRecord | null {
       };
     }
   }
+
+  // MEASURED FAILURE: "nimeingiza mzigo mpya wa mayai trei 3" — three TRAYS
+  // arriving — was recorded as a stock purchase of TSh 3. parseSaleLines could
+  // not read "mayai trei 3" as a quantity line (the unit word sits between the
+  // product and its number), so control fell all the way through to here,
+  // where moneyTokens has no concept of a unit at all and simply grabbed the
+  // last bare number in the sentence. Same failure family as a quantity read
+  // as a debt: a number that plainly belongs to a UNIT WORD — trei, gunia,
+  // debe, kilo — is a count of goods, never a price, and manufacturing a
+  // three-shilling purchase that will sit in the ledger looking legitimate is
+  // worse than asking again. Refuse; let the caller ask what it cost.
+  if (new RegExp(`\\b(?:${UNITS})\\s+[0-9]`, 'i').test(payload)) return null;
 
   const tokens = moneyTokens(payload);
   if (tokens.length === 0) return null;

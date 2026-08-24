@@ -359,7 +359,13 @@ export function parseBareQuantityList(text: string | null | undefined): Quantity
   if (!said || OPENER.test(said) || STATES_MONEY.test(said)) return null;
   // Do not ban a word wherever it appears: "kitabu cha hesabu" is a real
   // product. Only an unmistakable opener makes this a stock/purchase message.
-  if (/^(?:hesabu\s+ya\s+stock|stock\b|store\b|nina\b|ninazo\b|nilizonazo\b|zilizopo\b|nimehesabu\b|nimenunua\b|nilinunua\b|purchase\b|bought\b)/iu.test(said)
+  //
+  // MEASURED FAILURE: "mzigo mpya trei 3" — a DELIVERY arriving — was read as a
+  // sale of three of something called "mzigo mpya trei". "mzigo"/"bidhaa"/
+  // "stoo" already tell stockPurchaseRecord (whatsappDailyRecords.ts) this is
+  // stock language; this list had "stock" and "store" but not their Swahili
+  // equivalents, so the two files disagreed about the exact same word.
+  if (/^(?:hesabu\s+ya\s+stock|stock\b|store\b|stoo\b|mzigo\b|bidhaa\b|nina\b|ninazo\b|nilizonazo\b|zilizopo\b|nimehesabu\b|nimenunua\b|nilinunua\b|purchase\b|bought\b)/iu.test(said)
     || /\bzimebaki\b/iu.test(said)) return null;
   // A command is not a sale. "approve receipt 123" was read as selling 123 of
   // something called "approve receipt" — found by the eval set the moment a

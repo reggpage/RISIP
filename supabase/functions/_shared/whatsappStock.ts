@@ -43,7 +43,10 @@ const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, 
 // "treya" and "katoni" come from the street corpus: a genge counts eggs by the
 // tray and nothing else, and without the word the tray became part of the
 // product name.
-const UNITS = 'kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni|robo|nusu|theluthi|kipande|mche|chupa|mfuko|kifurushi|treya|trei|tray|katoni|carton|kreti|crate';
+// Exported for the same reason PRICE_TALK is: whatsappDailyRecords.ts needs
+// the identical vocabulary to tell a QUANTITY from a MONEY amount, and a
+// second copy of this list is a second copy that drifts.
+export const UNITS = 'kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni|robo|nusu|theluthi|kipande|mche|chupa|mfuko|kifurushi|treya|trei|tray|katoni|carton|kreti|crate';
 
 /**
  * Words that make a sentence about money rather than about the shelf.
