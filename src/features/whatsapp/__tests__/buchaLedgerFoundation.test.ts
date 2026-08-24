@@ -152,3 +152,20 @@ describe('what must not have changed', () => {
     expect(confirmation).toContain('36,000');
   });
 });
+
+// MEASURED FAILURE, and only a real write found it: 0121 taught the RPC that a
+// spoilage may be valueless, but the TABLE still insisted every record be worth
+// more than nothing. The function said yes and the row said no.
+describe('a loss may have no price', () => {
+  const amount = sql('0122_a_loss_may_have_no_price.sql');
+
+  it('lets stock leave the shelf with no value attached', () => {
+    expect(amount).toContain("when kind in ('stock_loss', 'owner_use') then amount >= 0");
+  });
+
+  it('keeps zero impossible for everything else', () => {
+    // A sale of nothing, an expense of nothing or a payment of nothing are all
+    // mistakes, and they must keep failing.
+    expect(amount).toContain('else amount > 0');
+  });
+});
