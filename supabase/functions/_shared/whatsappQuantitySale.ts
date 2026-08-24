@@ -16,11 +16,22 @@
 
 import type { Lang } from './whatsappIntent.ts';
 import { correctControlWords } from './whatsappSpelling.ts';
+import { canonicalUnitWord, isUnitWord } from './whatsappStock.ts';
 import { normalizeNumberWords, STOCK_ARRIVAL_VERBS } from './whatsappDailyRecords.ts';
 
 export type QuantitySaleItem = {
   product: string;
   quantity: number;
+  /**
+   * The measure the trader actually said, folded to its canonical spelling —
+   * "vifuko" arrives here as "kifuko". Language only: it is never a new unit.
+   */
+  spokenUnit?: string | null;
+  /**
+   * The wording with that measure removed. `product` above is untouched, so
+   * resolution tries the whole phrase first and falls back to this.
+   */
+  productWithoutUnit?: string | null;
   /** Present only after an exact declared portion has been resolved. */
   unit?: string | null;
   /**
@@ -265,6 +276,27 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   const { rest: payload, band: statedBand } = readBand(withoutOpener);
   if (!payload) return null;
 
+  // "vifuko 4 vya mbwa" — the measure leads and the goods follow, which is how
+  // a person says it out loud. Rewritten into the ordinary "<goods> <count>"
+  // shape so ONE pattern still reads every line, with the measure remembered
+  // rather than discarded. The words are only moved when the leading word
+  // really is a measure this system knows; anything else is left alone.
+  // The joiner is optional. "nusu kilo nyama" normalises to "kilo 0.5 nyama",
+  // which says the same thing with no "vya" in it.
+  //
+  // Two guards, and the second was MEASURED: the leading word must itself be a
+  // measure this system knows, so no product name can fire it; and what follows
+  // must carry NO further digits. Without that, "trei 3 na mayai 15" — an
+  // ordinary bare list a genge sends — was read as three treys of "na mayai 15"
+  // and refused outright.
+  let leadingUnit: string | null = null;
+  let body = payload;
+  const unitFirst = /^([\p{L}]+)\s+([0-9]+(?:\.[0-9]+)?)\s+(?:(?:vya|za|ya|wa|la|of)\s+)?([\p{L}][^0-9]*)$/iu.exec(payload);
+  if (unitFirst && isUnitWord(unitFirst[1])) {
+    leadingUnit = canonicalUnitWord(unitFirst[1]);
+    body = clean(unitFirst[3]) + ' ' + unitFirst[2];
+  }
+
   const items: QuantitySaleItem[] = [];
   // A name runs until the number that follows it. Names here are routinely three
   // words long — "nguvu ya sala", "st rita wa kashia" — so the separator cannot
@@ -284,7 +316,7 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   // number. That lets adjacent pairs be read safely and still preserves names
   // such as "karatasi A4 rimu" and "t-shirt".
   const pattern = /([\p{L}][\p{L}0-9'’.-]*(?:\s+[\p{L}][\p{L}0-9'’.-]*)*)\s+([0-9]+(?:\.[0-9]+)?)/giu;
-  for (const match of payload.matchAll(pattern)) {
+  for (const match of body.matchAll(pattern)) {
     const product = clean(match[1])
       .replace(/^(?:na|and|,|;)\s+/i, '')
       .replace(/[.,;]+$/, '')
@@ -296,11 +328,44 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   }
   if (items.length === 0) return null;
 
+  // ── separating the goods from the measure ────────────────────────────────
+  //
+  // MEASURED: "nimeuza nyama kilo 2" produced a product called "nyama kilo",
+  // so the measure never reached the pricing engine and a configured unit sale
+  // could not be priced at all.
+  //
+  // `product` is left EXACTLY as written. Every existing vertical resolves from
+  // it and one of them depends on the whole phrase: an oil shop's declared
+  // portion is matched as "mafuta robo", and splitting that away would turn a
+  // clean match into a question. The split is offered ALONGSIDE, for the
+  // resolver to fall back to.
+  //
+  // Conservative on purpose: a lone word is never split, so a shop whose
+  // product IS "mifuko" or "chupa" keeps it.
+  const measured = items.map((item) => {
+    const words = item.product.split(' ');
+    const last = words[words.length - 1];
+    if (words.length >= 2 && isUnitWord(last)) {
+      const name = words.slice(0, -1).join(' ').trim();
+      if (name.length >= 2 && /[\p{L}]/u.test(name)) {
+        return { ...item, spokenUnit: canonicalUnitWord(last), productWithoutUnit: name };
+      }
+    }
+    return leadingUnit ? { ...item, spokenUnit: leadingUnit, productWithoutUnit: item.product } : item;
+  });
+  items.length = 0;
+  items.push(...measured);
+
   // Every word of the message has to be accounted for. If something was left
   // over, the message said more than a list of goods and this parser is the
   // wrong one to be reading it.
+  //
+  // Measured against `body`, not `payload`: where the measure led the sentence
+  // ("vifuko 4 vya mbwa") the words were reordered above, and counting the
+  // original would find the joiner and the measure unaccounted for and refuse a
+  // line it had in fact read perfectly.
   const consumed = items.reduce((sum, item) => sum + item.product.length + String(item.quantity).length, 0);
-  const letters = payload.replace(/[^\p{L}0-9]/gu, '').length;
+  const letters = body.replace(/[^\p{L}0-9]/gu, '').length;
   if (consumed < letters * 0.8) return null;
 
   return { kind: 'quantity_sale', items, expenses: [] };

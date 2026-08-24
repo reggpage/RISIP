@@ -424,3 +424,48 @@ export function stockCountConfirmation(count: StockCount, previous: number | nul
     ? `✅ Nimehesabu ${count.product}: ${count.quantity}${unit}.${drift}\n\nKuanzia sasa nitafuatilia mwenyewe kadri unavyouza na kuingiza.`
     : `✅ Counted ${count.product}: ${count.quantity}${unit}.${drift}\n\nFrom here I will keep track as you sell and restock.`;
 }
+
+/**
+ * Plural and spelling forms of a measure, folded to the one a shop configured.
+ *
+ * LANGUAGE ONLY. "Vifuko" is how a person says three of a kifuko; it is not a
+ * second measure and must never become a second product_units row, or a shop
+ * would carry two live conversions for one word.
+ *
+ * Deliberately a small explicit map rather than a stemming rule: Swahili noun
+ * classes are regular enough to tempt one and irregular enough to punish it,
+ * and a wrong fold here silently reprices a sale.
+ *
+ * "mifuko" is absent on purpose. For a chips vendor those ARE the product —
+ * bags bought by the packet — and folding them to a measure would stop
+ * "nimenunua mifuko pakiti 2" recording at all.
+ */
+const UNIT_FORMS: Record<string, string> = {
+  vifuko: 'kifuko', vipande: 'kipande', pieces: 'kipande', piece: 'kipande',
+  packets: 'packet', boxes: 'box', crates: 'kreti', trays: 'trei', treya: 'trei', tray: 'trei',
+  magunia: 'gunia', madebe: 'debe', madumu: 'dumu', matenga: 'tenga', kilos: 'kilo',
+  kgs: 'kg', litres: 'lita', liters: 'lita', litre: 'lita', liter: 'lita',
+};
+
+/**
+ * The canonical spelling of a measure word, or the word unchanged.
+ *
+ * Never invents a measure: a word that is not one comes back exactly as it went
+ * in, so a product named "mifuko" is untouched unless a caller has already
+ * decided it is reading a measure.
+ */
+export function canonicalUnitWord(word: string | null | undefined): string {
+  const value = String(word ?? '').trim().toLocaleLowerCase('sw-TZ');
+  return UNIT_FORMS[value] ?? value;
+}
+
+/** Is this word, on its own, a measure this system recognises? */
+export function isUnitWord(word: string | null | undefined): boolean {
+  const value = canonicalUnitWord(word);
+  if (!value) return false;
+  // The English measures a shop configures for packaged goods. Kept here rather
+  // than in the shared UNITS string, which a dozen regexes interpolate and
+  // whose exact contents every vertical already depends on.
+  if (/^(?:packet|box|piece)$/i.test(value)) return true;
+  return new RegExp('^(?:' + UNITS + ')$', 'iu').test(value);
+}

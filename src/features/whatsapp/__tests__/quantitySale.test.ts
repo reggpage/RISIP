@@ -255,13 +255,18 @@ describe('names that contain a digit', () => {
     // "karatasi A4 rimu" is a real product on this shelf. Excluding digits from
     // names made that ONE line unreadable, and in an all-or-nothing paste that
     // silently refused the other forty-four.
+    //
+    // toMatchObject, not toEqual: the parser now also reports the measure it
+    // saw. `product` is unchanged and every resolver still reads it, so this
+    // line means exactly what it always did — a ream is genuinely the measure
+    // here, and saying so out loud costs the old behaviour nothing.
     expect(parseQuantityOnlySale('nimeuza karatasi A4 rimu 2')?.items)
-      .toEqual([{ product: 'karatasi A4 rimu', quantity: 2, band: null }]);
+      .toMatchObject([{ product: 'karatasi A4 rimu', quantity: 2, band: null }]);
   });
 
   it('still takes the last number as the quantity', () => {
     expect(parseQuantityOnlySale('nimeuza karatasi A4 rimu 1 na bahasha 20')?.items)
-      .toEqual([
+      .toMatchObject([
         { product: 'karatasi A4 rimu', quantity: 1, band: null },
         { product: 'bahasha', quantity: 20, band: null },
       ]);
