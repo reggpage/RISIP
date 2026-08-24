@@ -1,4 +1,5 @@
 import type { Lang } from './whatsappIntent.ts';
+import { UNITS } from './whatsappStock.ts';
 import {
   MAX_DAILY_RECORD_AMOUNT,
   STOCK_ARRIVAL_VERBS,
@@ -97,6 +98,39 @@ function openingDirection(text: string): { kind: 'sale' | 'stock_purchase'; payl
 /** "leo", "jana" — a day, never a product and never a price. */
 const DAY_WORD = /\b(?:leo|jana|today|yesterday)\b/giu;
 
+/** A segment whose whole name is a measure: "trei 3", "gunia 2", "kreti 1". */
+const BARE_MEASURE = new RegExp(`^(?:${UNITS})$`, 'iu');
+
+/**
+ * MEASURED FAILURE: "nimeingiza trei 3 60000 na mayai 15 leo 15000" registered
+ * TWO products, "Trei" and "Mayai". A trei is not a thing a shop sells. It is
+ * how the eggs arrived, and the shopkeeper said so in the same breath:
+ *
+ *   "trei na mayai si kitu kimoja ... kwani ai haelewi hata trei ni kitu gani?"
+ *
+ * The list parser reads each segment as <name> <count> <total>, and with nothing
+ * before "trei" the measure itself became the name.
+ *
+ * What a trei HOLDS is not decided here and never will be — how many eggs fit a
+ * tray is the shop's own declaration, not a constant in our code. This only
+ * refuses to invent a product out of a measure, and where the message names
+ * exactly one real product, files the measure against that product as its unit.
+ */
+function attachBareMeasures(lines: DailyRecordLine[]): DailyRecordLine[] | null {
+  const bare = lines.filter((line) => BARE_MEASURE.test(line.description.trim()));
+  if (bare.length === 0) return lines;
+
+  const named = lines.filter((line) => !BARE_MEASURE.test(line.description.trim()));
+  // Two products and a loose measure: which one arrived in the crate? Only the
+  // shopkeeper knows, so nothing is guessed and nothing is saved.
+  if (named.length !== 1) return null;
+
+  const product = named[0].description.trim();
+  return lines.map((line) => (BARE_MEASURE.test(line.description.trim())
+    ? { ...line, description: product, unit: line.description.trim() }
+    : line));
+}
+
 /**
  * A single-line list such as:
  *
@@ -161,7 +195,19 @@ function inlineSaleList(
     };
   }
 
-  const parsedLines = lines as DailyRecordLine[];
+  const parsedLines = attachBareMeasures(lines as DailyRecordLine[]);
+  if (!parsedLines) {
+    const measures = (lines as DailyRecordLine[])
+      .filter((line) => BARE_MEASURE.test(line.description.trim()))
+      .map((line) => line.description.trim());
+    return {
+      kind: 'unreadable',
+      unreadable: measures,
+      message: lang === 'sw'
+        ? `${measures.map((m) => `*${m}*`).join(' na ')} ni kipimo, si bidhaa. Niambie ni ${measures.length > 1 ? 'vipimo vya bidhaa gani' : 'kipimo cha bidhaa gani'}, mfano: _mayai trei 3 kwa 60000_.\n\nHakuna rekodi iliyohifadhiwa.`
+        : `${measures.map((m) => `*${m}*`).join(' and ')} ${measures.length > 1 ? 'are measures' : 'is a measure'}, not a product. Tell me what ${measures.length > 1 ? 'they measure' : 'it measures'}, for example: _mayai trei 3 kwa 60000_.\n\nNothing was saved.`,
+    };
+  }
   const amount = Math.round(parsedLines.reduce((sum, line) => sum + line.quantity * line.unit_amount, 0) * 100) / 100;
   if (amount <= 0 || amount > MAX_DAILY_RECORD_AMOUNT) {
     return {

@@ -37,8 +37,11 @@ describe('the deterministic path owns a priced arrival', () => {
     const parse = parseDailyRecordBatch('nimeingiza trei 3 60000 na mayai 15 leo 15000', 'sw');
     expect(parse.kind).toBe('parsed');
     if (parse.kind !== 'parsed') return;
+    // "trei" is the measure the eggs arrived in, not a second product — see
+    // measureIsNotAProduct.test.ts. This assertion originally read
+    // `description: 'trei'`, which pinned that mistake in place.
     expect(parse.records[0].lines).toEqual([
-      { description: 'trei', quantity: 3, unit_amount: 20000 },
+      { description: 'mayai', quantity: 3, unit_amount: 20000, unit: 'trei' },
       { description: 'mayai', quantity: 15, unit_amount: 1000 },
     ]);
   });
