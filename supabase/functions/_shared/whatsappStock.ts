@@ -53,7 +53,15 @@ const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, 
 // the shop was asked whether "3" meant three kilos of eggs. dumu/kopo/sado/
 // kiroba came back the other way, from that copy into this one — each list
 // knew words the other did not. There is now one list.
-export const UNITS = 'kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|dumu|pakiti|boksi|rimu|dazeni|robo|nusu|theluthi|kipande|mche|chupa|kopo|sado|kiroba|mfuko|kifurushi|treya|trei|tray|katoni|carton|kreti|crate';
+// "kifuko" is an ordinary Swahili measure — a small bag — and sits with mfuko
+// and kiroba, which have always been here. Recognising the WORD assigns it no
+// size: how much a bag holds is the shop's own declaration, and one butcher's
+// kifuko of a kilo is not another's.
+//
+// Its plural "mifuko" is deliberately absent. For a chips vendor mifuko are the
+// bags themselves — a product they buy by the packet — and making that a
+// measure would stop "nimenunua mifuko pakiti 2 kwa 6000" recording at all.
+export const UNITS = 'kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|dumu|pakiti|boksi|rimu|dazeni|robo|nusu|theluthi|kipande|mche|chupa|kopo|sado|kiroba|mfuko|kifuko|vifuko|kifurushi|treya|trei|tray|katoni|carton|kreti|crate';
 
 /**
  * Words that make a sentence about money rather than about the shelf.

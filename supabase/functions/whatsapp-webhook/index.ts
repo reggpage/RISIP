@@ -187,6 +187,15 @@ import {
   vocabularySaved,
   type VocabularyPending,
 } from '../_shared/whatsappVocabulary.ts';
+import {
+  derivedUnitCost,
+  packagingConfirmation,
+  parseProductSetup,
+  productSetupConfirmation,
+  productSetupSaved,
+  setupSaleUnits,
+  type ProductSetupPending,
+} from '../_shared/whatsappProductSetup.ts';
 import { lowStockNotice, type StockLevel } from '../_shared/whatsappLowStock.ts';
 import {
   formatBarcode, isScanRequest, isSellScanRequest, parseBarcodeMessage,
@@ -3392,6 +3401,10 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<VocabularyPending> | null)?.kind === 'vocabulary_teaching'
           ? convo.options as VocabularyPending
           : null;
+        const productSetupPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<ProductSetupPending> | null)?.kind === 'product_setup_pending'
+          ? convo.options as ProductSetupPending
+          : null;
         const bandPending = convo?.awaiting === 'product_cost'
           && (convo.options as Partial<PriceBandPending> | null)?.kind === 'price_band_choice'
           ? convo.options as PriceBandPending
@@ -3740,6 +3753,60 @@ Deno.serve(async (req) => {
           settledCombos = [...comboPending.known, settled];
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'combo', 'answered', 'applied');
+        }
+
+        if (productSetupPending) {
+          await clearConversation(db, identity.id as string);
+          if (!isDailyRecordConfirmation(body ?? '')) {
+            await replyQuietly(phone, lang === 'sw'
+              ? 'Sawa, sijabadilisha mpangilio wa bidhaa.'
+              : 'Fine, I changed no product setup.');
+            await audit(db, identity, waMessageId, 'product_setup', 'declined', 'applied');
+            await finish('skipped');
+            continue;
+          }
+          const setup = productSetupPending.setup;
+          const named = productSetupPending.productName ?? setup.product;
+          // Three shapes, three existing doors. MEASURED, by calling the real
+          // RPC rather than reading its signature: configure_product_units
+          // demands a base unit, a purchase unit, a size, a cost AND a priced
+          // selling unit, and refuses a product it has already configured. It
+          // is the right door for a full setup and the wrong one for the other
+          // two, so those go where they belong instead of being forced.
+          const saved = setup.kind === 'packaging_setup'
+            // One more measure for a product that already has one (0125).
+            ? await db.rpc('wa_add_product_unit', {
+              p_phone: phone, p_name: named,
+              p_unit: setup.packageUnit, p_base_quantity: setup.size, p_retail: null,
+            })
+            : setup.purchaseCost === null
+              // A price with no cost behind it. Nothing is invented: the buying
+              // cost stays unknown until the shop says what it paid.
+              ? await db.rpc('wa_set_selling_price', {
+                p_phone: phone, p_name: named, p_retail: setup.salePrice,
+              })
+              : await db.rpc('wa_configure_product_units', {
+                p_phone: phone,
+                p_name: named,
+                p_base_unit: setup.baseUnit,
+                p_purchase_unit: setup.purchaseUnit,
+                p_purchase_size: setup.purchaseSize,
+                p_purchase_cost: setup.purchaseCost,
+                p_sale_units: setupSaleUnits(setup),
+              });
+          const setupError = saved.error;
+          if (setupError) {
+            await reply(phone, lang === 'sw'
+              ? 'Sikuweza kuhifadhi mpangilio huu sasa.'
+              : 'I could not save this setup just now.');
+            await audit(db, identity, waMessageId, 'product_setup', 'failed', 'failed');
+            await finish('skipped');
+            continue;
+          }
+          await reply(phone, productSetupSaved(named, lang));
+          await audit(db, identity, waMessageId, 'product_setup', setup.kind, 'applied');
+          await finish('applied');
+          continue;
         }
 
         if (vocabularyPending) {
@@ -4987,6 +5054,63 @@ Deno.serve(async (req) => {
         // money is asked of the model, and when no cost exists nothing is
         // guessed — the quantity is recorded and the preview says plainly that
         // ── Bucha phase 3: teaching Risip how this shop talks ──────────────
+        // ── Bucha phase 4: setting a product up in the shop's own words ────
+        //
+        // No new engine. Every sentence here is read into the arguments
+        // wa_configure_product_units already takes, and the conversion
+        // arithmetic — 18,000 a box of twelve makes a packet cost 1,500 —
+        // stays in SQL where it has always been. The preview shows that
+        // division so the shop can disagree with it now rather than in a
+        // margin report next month.
+        const productSetup = parseProductSetup(writeBody);
+        if (productSetup) {
+          if (!['owner', 'accountant'].includes(identity.role)) {
+            await reply(phone, lang === 'sw'
+              ? 'Ni owner au accountant pekee anayeweza kuweka vipimo na bei za bidhaa.'
+              : 'Only an owner or accountant can configure product units and prices.');
+            await audit(db, identity, waMessageId, 'product_setup', 'role', 'blocked');
+            await finish('skipped');
+            continue;
+          }
+
+          let knownName: string | null = null;
+          const existing = await resolveProductForRead(db, identity, productSetup.product);
+          if (!existing.error && existing.resolution.kind === 'matched') {
+            knownName = existing.resolution.match.productName;
+          }
+          // A package can only hold something the shop already has. Declaring
+          // "one kifuko is a kilo" of a product nobody sells describes nothing.
+          if (productSetup.kind === 'packaging_setup' && !knownName) {
+            await reply(phone, lang === 'sw'
+              ? `Sina *${productSetup.product}* kwenye bidhaa zako bado. Isajili kwanza, kisha niambie kipimo cha kifungashio.`
+              : `I do not have *${productSetup.product}* among your products yet. Register it first, then tell me the package size.`);
+            await audit(db, identity, waMessageId, 'product_setup', 'unknown_product', 'skipped');
+            await finish('skipped');
+            continue;
+          }
+
+          const setupPending: ProductSetupPending = {
+            kind: 'product_setup_pending', setup: productSetup, productName: knownName,
+          };
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: setupPending,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+
+          await reply(phone, productSetup.kind === 'packaging_setup'
+            ? packagingConfirmation(productSetup, lang)
+            : productSetupConfirmation(productSetup, derivedUnitCost(productSetup), lang));
+          await audit(db, identity, waMessageId, 'product_setup', productSetup.kind, 'pending');
+          await finish('applied');
+          continue;
+        }
+
         //
         // Nothing is saved from this message. Vocabulary changes how every
         // future message is read, so it is previewed and confirmed like a
