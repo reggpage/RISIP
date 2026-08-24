@@ -164,6 +164,11 @@ import {
   type PortionSetupReady,
   type PortionQuantityPrompt,
 } from '../_shared/whatsappPortions.ts';
+import {
+  parsePortionYield,
+  portionYieldPieces,
+  portionYieldSaved,
+} from '../_shared/whatsappPortionYield.ts';
 import { lowStockNotice, type StockLevel } from '../_shared/whatsappLowStock.ts';
 import {
   formatBarcode, isScanRequest, isSellScanRequest, parseBarcodeMessage,
@@ -4825,6 +4830,46 @@ Deno.serve(async (req) => {
 
         // Buying in one unit and selling in declared smaller portions. Nothing
         // is written yet: the compact first message has prices but not the
+        // What a portion is cut from. "kilo 1 ya nyama ya ngombe inatoa
+        // mishikaki 18" — the one fact that lets a skewer sale come off the
+        // beef, and a fact only this shop can supply: one kijiwe cuts big and
+        // gets twelve from a kilo, the one next door gets twenty.
+        //
+        // Stored as a one-piece recipe (0119), so the sale path that already
+        // prices and counts combinations does the rest with no new machinery.
+        const portionYield = parsePortionYield(writeBody);
+        if (portionYield) {
+          if (!['owner', 'accountant'].includes(identity.role)) {
+            await reply(phone, lang === 'sw'
+              ? 'Ni owner au accountant pekee anayeweza kuweka vipimo vya bidhaa.'
+              : 'Only an owner or accountant can configure product measures.');
+            await audit(db, identity, waMessageId, 'portion_yield', 'role', 'blocked');
+            await finish('skipped');
+            continue;
+          }
+          const { error: yieldError } = await db.rpc('wa_save_combo', {
+            p_phone: phone,
+            p_name: portionYield.portionName,
+            p_pieces: portionYieldPieces(portionYield),
+          });
+          if (yieldError) {
+            // wa_save_combo refuses a piece that is not a product of this
+            // business, which is the common case here: the meat has to exist
+            // before a skewer can be cut from it. Say which, rather than
+            // "could not save".
+            await reply(phone, lang === 'sw'
+              ? `Sina *${portionYield.productName}* kwenye bidhaa zako bado, kwa hiyo siwezi kuunganisha ${portionYield.portionName} nayo.\n\nSajili ${portionYield.productName} kwanza, kisha rudia.`
+              : `I do not have *${portionYield.productName}* among your products yet, so I cannot tie ${portionYield.portionName} to it.\n\nRegister ${portionYield.productName} first, then send this again.`);
+            await audit(db, identity, waMessageId, 'portion_yield', 'unknown_product', 'failed');
+            await finish('skipped');
+            continue;
+          }
+          await reply(phone, portionYieldSaved(portionYield, lang));
+          await audit(db, identity, waMessageId, 'portion_yield', String(portionYield.perBaseUnit), 'applied');
+          await finish('applied');
+          continue;
+        }
+
         // conversion sizes, and those must never be inferred from words.
         const portionOffer = parsePortionSetupOffer(writeBody);
         if (portionOffer) {
