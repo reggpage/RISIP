@@ -465,10 +465,21 @@ function expenseRecord(text: string): ParsedDailyRecord | null {
  * here. Guessing wrong in either direction moves money between two lines of the
  * report that a trader reads very differently.
  */
+/**
+ * The verbs that open a message about goods COMING IN.
+ *
+ * Exported for the same reason UNITS and PRICE_TALK are: the bare-quantity
+ * sale parser has to refuse exactly the sentences this one claims, and every
+ * time the two lists were maintained separately they drifted and a stock
+ * arrival was recorded as a sale. Twice now, with two different words —
+ * "mzigo" last time, "nimeingiza" this time. One list, imported.
+ */
+export const STOCK_ARRIVAL_VERBS = 'nimenunua|nilinunua|tumenunua|nimeongeza|naongeza|nimeingiza|nimeweka|bought|purchased|added';
+
 function stockPurchaseRecord(text: string): ParsedDailyRecord | null {
   const payload = stripPrefix(
     text,
-    /^(?:nimenunua|nimeongeza|nimeingiza|bought|purchased|added)\s+/i,
+    new RegExp(`^(?:${STOCK_ARRIVAL_VERBS})\\s+`, 'i'),
   );
   if (!payload) return null;
   // The explicit signal — "nimenunua STOCK ya sukari" — or an unmistakable one:

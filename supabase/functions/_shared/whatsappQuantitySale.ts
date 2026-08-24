@@ -16,7 +16,7 @@
 
 import type { Lang } from './whatsappIntent.ts';
 import { correctControlWords } from './whatsappSpelling.ts';
-import { normalizeNumberWords } from './whatsappDailyRecords.ts';
+import { normalizeNumberWords, STOCK_ARRIVAL_VERBS } from './whatsappDailyRecords.ts';
 
 export type QuantitySaleItem = {
   product: string;
@@ -360,12 +360,18 @@ export function parseBareQuantityList(text: string | null | undefined): Quantity
   // Do not ban a word wherever it appears: "kitabu cha hesabu" is a real
   // product. Only an unmistakable opener makes this a stock/purchase message.
   //
-  // MEASURED FAILURE: "mzigo mpya trei 3" — a DELIVERY arriving — was read as a
-  // sale of three of something called "mzigo mpya trei". "mzigo"/"bidhaa"/
-  // "stoo" already tell stockPurchaseRecord (whatsappDailyRecords.ts) this is
-  // stock language; this list had "stock" and "store" but not their Swahili
-  // equivalents, so the two files disagreed about the exact same word.
-  if (/^(?:hesabu\s+ya\s+stock|stock\b|store\b|stoo\b|mzigo\b|bidhaa\b|nina\b|ninazo\b|nilizonazo\b|zilizopo\b|nimehesabu\b|nimenunua\b|nilinunua\b|purchase\b|bought\b)/iu.test(said)
+  // MEASURED FAILURE, twice, one word apart each time:
+  //   "mzigo mpya trei 3"                -> sale of "mzigo mpya trei"
+  //   "nimeingiza trei 3 na mayai 15"    -> product named "nimeingiza trei"
+  // Both are goods ARRIVING. stockPurchaseRecord (whatsappDailyRecords.ts)
+  // already recognised every one of these words; this list was a hand-kept
+  // copy that had "nimenunua" but not "nimeingiza", "stock" but not "stoo".
+  // Two lists of the same vocabulary drift, and each drift silently turns a
+  // delivery into a sale. The verbs are now imported from the one file that
+  // owns them; only the nouns, which that file matches mid-sentence rather
+  // than as an opener, are still listed here.
+  if (new RegExp(`^(?:${STOCK_ARRIVAL_VERBS})\\b`, 'iu').test(said)) return null;
+  if (/^(?:hesabu\s+ya\s+stock|stock\b|store\b|stoo\b|mzigo\b|bidhaa\b|nina\b|ninazo\b|nilizonazo\b|zilizopo\b|nimehesabu\b|purchase\b)/iu.test(said)
     || /\bzimebaki\b/iu.test(said)) return null;
   // A command is not a sale. "approve receipt 123" was read as selling 123 of
   // something called "approve receipt" — found by the eval set the moment a

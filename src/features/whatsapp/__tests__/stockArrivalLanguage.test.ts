@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { route } from '../../../../scripts/lib/route';
 import { parseDailyRecord } from '../../../../supabase/functions/_shared/whatsappDailyRecords';
+import { parseBareQuantityList } from '../../../../supabase/functions/_shared/whatsappQuantitySale';
 
 // Asked to invert the whole architecture — send every message to Claude
 // first, let the model decide sale/purchase/stock, hand a "normalized"
@@ -43,6 +44,47 @@ describe('stock arriving, misread as a sale', () => {
   it('still reads an ordinary bare sale with no stock word in it', () => {
     expect(route('daftari 5')).toBe('bare_quantity_sale');
     expect(route('nimeuza daftari 5')).toBe('quantity_sale');
+  });
+});
+
+describe('a verb welded onto a product name', () => {
+  // MEASURED FAILURE, from the owner's own screenshot:
+  //   "nimeingiza trei 3 na mayai 15 leo"
+  // was read as a list containing a product literally named "nimeingiza trei",
+  // and the shop was then asked to give it a buying price. Same failure family
+  // as "velvet badilisha" and "ya velvet selling price" — a verb absorbed into
+  // a product name and about to be written into the catalogue for good.
+  //
+  // Root cause was the SAME shape as the "mzigo" bug fixed one commit earlier:
+  // stockPurchaseRecord already knew "nimeingiza"; the bare-list refusal was a
+  // hand-kept copy of that vocabulary that had "nimenunua" but not
+  // "nimeingiza". Both now read from STOCK_ARRIVAL_VERBS, one list.
+  it('never invents a product out of the verb that opened the sentence', () => {
+    const listed = parseBareQuantityList('nimeingiza trei 3 na mayai 15 leo');
+    expect(listed?.items.some((item) => /nimeingiza/i.test(item.product))).not.toBe(true);
+    expect(listed).toBeNull();
+  });
+
+  it('refuses every stock-arrival verb the purchase parser claims', () => {
+    for (const said of [
+      'nimeingiza trei 3 na mayai 15',
+      'nimeongeza trei 3 na mayai 15',
+      'naongeza trei 3 na mayai 15',
+      'nimeweka trei 3 na mayai 15',
+      'nimenunua trei 3 na mayai 15',
+    ]) {
+      expect(parseBareQuantityList(said), said).toBeNull();
+    }
+  });
+
+  // The same words WITHOUT an arrival verb are still an ordinary bare list —
+  // the fix must not swallow a genuine sale that merely mentions a tray.
+  it('still reads the same goods with no arrival verb in front', () => {
+    const listed = parseBareQuantityList('trei 3 na mayai 15');
+    expect(listed?.items).toEqual([
+      { product: 'trei', quantity: 3, band: null },
+      { product: 'mayai', quantity: 15, band: null },
+    ]);
   });
 });
 
