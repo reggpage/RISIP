@@ -169,6 +169,12 @@ import {
   portionYieldPieces,
   portionYieldSaved,
 } from '../_shared/whatsappPortionYield.ts';
+import {
+  parseStockLoss,
+  ownerUseConfirmation,
+  spoilageClarification,
+  stockLossConfirmation,
+} from '../_shared/whatsappStockLoss.ts';
 import { lowStockNotice, type StockLevel } from '../_shared/whatsappLowStock.ts';
 import {
   formatBarcode, isScanRequest, isSellScanRequest, parseBarcodeMessage,
@@ -1198,6 +1204,11 @@ async function createDailyRecordDraft(
     p_occurred_at: new Date().toISOString(),
     p_source_message_id: messageId,
     p_lines: record.lines,
+    // Phase 1 gave the ledger these two. A record that states neither sends
+    // null, and null keeps meaning "the trader did not say" rather than being
+    // filled in with a plausible guess.
+    p_payment_method: record.paymentMethod ?? null,
+    p_loss_reason: record.lossReason ?? null,
   });
   return { id: data ? String(data) : null, error };
 }
@@ -4825,6 +4836,114 @@ Deno.serve(async (req) => {
           await reply(phone, inviteRoleQuestion(lang));
           await audit(db, identity, waMessageId, 'invite', 'ask_role', 'pending');
           await finish('skipped');
+          continue;
+        }
+
+        // ── Bucha phase 2: goods that left the shelf without being sold ────
+        //
+        // Deterministic from end to end. The parser identifies the intent and
+        // the words; the product comes from THIS company's catalogue through
+        // the existing resolver; the cost comes from the existing pricing RPC;
+        // and the multiplication happens here, in code. Nothing about the
+        // money is asked of the model, and when no cost exists nothing is
+        // guessed — the quantity is recorded and the preview says plainly that
+        // the value is unknown.
+        const lossReading = parseStockLoss(writeBody);
+        if (lossReading) {
+          if (lossReading.kind === 'clarify_spoilage') {
+            // A word that means spoilage in one yard and a fresh carcass in the
+            // next. No draft is created, because either guess destroys or
+            // invents stock.
+            await reply(phone, spoilageClarification(lossReading, lang));
+            await audit(db, identity, waMessageId, 'stock_loss', lossReading.word, 'pending');
+            await finish('skipped');
+            continue;
+          }
+
+          const found = await resolveProductForRead(db, identity, lossReading.product);
+          if (found.error || found.resolution.kind !== 'matched') {
+            // Ambiguity is answered with a question, never with the closest
+            // guess: subtracting the wrong product is worse than subtracting
+            // nothing at all.
+            await reply(phone, found.resolution.kind === 'ambiguous'
+              ? (lang === 'sw'
+                ? `Sina uhakika ni bidhaa ipi kati ya hizi: ${found.resolution.candidates.map((c) => `*${c.productName}*`).join(', ')}. Itaje kwa jina kamili.`
+                : `I am not sure which product this is: ${found.resolution.candidates.map((c) => `*${c.productName}*`).join(', ')}. Name it in full.`)
+              : (lang === 'sw'
+                ? `Sina *${lossReading.product}* kwenye bidhaa zako, kwa hiyo siwezi kuipunguza kwenye stock.`
+                : `I do not have *${lossReading.product}* among your products, so I cannot take it off your stock.`));
+            await audit(db, identity, waMessageId, lossReading.kind, found.resolution.kind, 'skipped');
+            await finish('skipped');
+            continue;
+          }
+
+          const match = found.resolution.match;
+          const { data: costRows } = await db.rpc('wa_product_pricing', {
+            p_company_id: identity.company_id,
+            p_product_keys: [match.productKey],
+          });
+          const costRow = ((costRows ?? []) as Array<Record<string, unknown>>)[0];
+          const rawCost = Number(costRow?.unit_cost ?? 0);
+          // product_costs enforces unit_cost > 0, so anything else means the
+          // shop has never told us what this product costs.
+          const unitCost = Number.isFinite(rawCost) && rawCost > 0 ? rawCost : null;
+          const value = unitCost === null
+            ? null
+            : Math.round(unitCost * lossReading.quantity * 100) / 100;
+
+          const record: import('../_shared/whatsappDailyRecords.ts').ParsedDailyRecord = {
+            kind: lossReading.kind,
+            // Zero here means "not valued", and it is only ever reachable when
+            // the cost engine returned nothing. daily_profit_estimate counts
+            // these separately so no report can call an unvalued loss free.
+            amount: value ?? 0,
+            partyName: null,
+            description: null,
+            lines: [{
+              description: match.productName,
+              quantity: lossReading.quantity,
+              unit_amount: unitCost ?? 0,
+              ...(lossReading.unit ? { unit: lossReading.unit } : {}),
+            }],
+            confidence: 0.99,
+            ...(lossReading.kind === 'stock_loss' ? { lossReason: lossReading.reason || null } : {}),
+          };
+
+          const created = await createDailyRecordDraft(db, identity, waMessageId, record, lang);
+          if (created.error || !created.id) {
+            await reply(phone, lang === 'sw'
+              ? 'Sikuweza kuhifadhi draft hii. Hakuna rekodi iliyothibitishwa; tafadhali jaribu tena.'
+              : 'I could not save this draft. Nothing was confirmed; please try again.');
+            await audit(db, identity, waMessageId, lossReading.kind, 'draft', 'failed');
+            await finish('skipped');
+            continue;
+          }
+
+          // The same pending-confirmation state every financial mutation uses.
+          // Nothing has left the shelf until NDIYO.
+          const lossState: DailyRecordConversation = {
+            kind: 'daily_record_confirmation',
+            dailyRecordId: created.id,
+            sourceMessageId: waMessageId,
+            record,
+          };
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'payment_source',
+            receipt_id: null,
+            options: lossState,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+
+          await reply(phone, lossReading.kind === 'stock_loss'
+            ? stockLossConfirmation(lossReading, match.productName, value, lang)
+            : ownerUseConfirmation(lossReading, match.productName, value, lang));
+          await audit(db, identity, waMessageId, lossReading.kind,
+            value === null ? 'unvalued' : String(value), 'pending');
+          await finish('applied');
           continue;
         }
 

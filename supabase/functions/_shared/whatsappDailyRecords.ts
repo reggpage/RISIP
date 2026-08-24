@@ -31,6 +31,15 @@ export type ParsedDailyRecord = {
   /** Parser confidence is advisory; server-side arithmetic remains authoritative. */
   confidence?: number;
   warnings?: string[];
+  /**
+   * How the trader said they were paid. Manually recorded metadata, never
+   * verified against any provider. Undefined and null both mean unstated, and
+   * unstated is never filled in with a guess. "Deni" is not a value here:
+   * credit is a kind of its own.
+   */
+  paymentMethod?: 'cash' | 'mobile_money' | 'bank' | 'other' | null;
+  /** The trader's own word for why stock was lost. Only for kind 'stock_loss'. */
+  lossReason?: string | null;
 };
 
 export type DailyRecordParse =
