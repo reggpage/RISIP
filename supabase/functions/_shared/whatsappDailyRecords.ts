@@ -87,6 +87,9 @@ function normalizeSpelling(text: string): string {
     .replace(/[：]/g, ':');
 }
 
+/** A fraction of whatever measure it qualifies. Shop-independent arithmetic. */
+const FRACTIONS: Record<string, number> = { nusu: 0.5, robo: 0.25, theluthi: 0.333333 };
+
 const NUMBER_WORDS: Record<string, string> = {
   sifuri: '0', zero: '0', moja: '1', mmoja: '1', mbili: '2', tatu: '3', nne: '4', tano: '5',
   sita: '6', saba: '7', nane: '8', tisa: '9', kumi: '10', kuminamoja: '11', kuminambili: '12',
@@ -182,6 +185,41 @@ export function normalizeNumberWords(text: string): string {
     .replace(/\b([0-9]+)\s+na\s+nusu\b/gi, (_all, whole: string) => `${Number(whole) + 0.5}`)
     .replace(/\b([0-9]+)\s+na\s+robo\b/gi, (_all, whole: string) => `${Number(whole) + 0.25}`)
     .replace(/\b([0-9]+)\s+na\s+theluthi\b/gi, (_all, whole: string) => `${Number(whole) + 0.33}`);
+
+  // MEASURED FAILURE, on the butcher's most ordinary sentence:
+  //
+  //   "nimeuza nyama nusu kilo kwa 12000"  -> 12,000 recorded, NO product line
+  //   "nimeuza nyama robo kwa 6000"        ->  6,000 recorded, NO product line
+  //
+  // The money went in and the meat never left the shelf. A shop cannot be
+  // robbed of something its own records say it never sold, so every fraction
+  // sale was invisible to the very count meant to catch theft.
+  //
+  // "kilo moja na nusu" already worked, because a fraction AFTER a digit was
+  // handled. A fraction standing IN a digit's place was not.
+  //
+  // The note above still holds: for an oil shop "robo" and "nusu" are the names
+  // of its measures. That is precisely why a bare one becomes a COUNT OF THAT
+  // MEASURE ("robo 1") — the same shape "robo 2" already produces — instead of
+  // 0.25 of something unnamed. Only when a real unit follows does the fraction
+  // resolve into it, where its meaning is beyond doubt.
+  normalized = normalized
+    // "nusu na robo kilo" -> kilo 0.75, before the list splitter can read that
+    // "na" as a separator between two different goods.
+    .replace(new RegExp(String.raw`\bnusu\s+na\s+robo\s+(${UNITS})\b`, 'gi'), (_all, unit: string) => `${unit} 0.75`)
+    .replace(/\bnusu\s+na\s+robo\b/gi, 'robo 3')
+    // "nusu kilo" -> kilo 0.5   |   "kilo nusu" -> kilo 0.5
+    .replace(
+      new RegExp(String.raw`\b(nusu|robo|theluthi)\s+(${UNITS})\b`, 'gi'),
+      (_all, fraction: string, unit: string) => `${unit} ${FRACTIONS[fraction.toLowerCase()]}`,
+    )
+    .replace(
+      new RegExp(String.raw`\b(${UNITS})\s+(nusu|robo|theluthi)\b`, 'gi'),
+      (_all, unit: string, fraction: string) => `${unit} ${FRACTIONS[fraction.toLowerCase()]}`,
+    )
+    // A bare fraction closing the phrase — "nyama robo kwa 6000" — is one of
+    // that measure. Guarded so "robo 700" in a price list is never touched.
+    .replace(/\b(nusu|robo|theluthi)(?=\s+(?:kwa|@)\b|\s*$)/gi, '$1 1');
   // Last, so "elfu moja na nusu" is one and a half thousand and not one
   // thousand plus a half of something.
   normalized = collapseMultipliers(normalized);

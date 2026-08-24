@@ -504,7 +504,27 @@ describe('a kilo and a half', () => {
     // A shop selling oil sells "robo" and "nusu" — those are its units, not
     // halves of anything, and turning them into 0.25 would wreck every sale.
     expect(normalizeNumberWords('nimeuza mafuta robo 3')).toBe('nimeuza mafuta robo 3');
-    expect(normalizeNumberWords('nusu kilo')).toBe('nusu kilo');
+    // The whole price list of such a shop, untouched.
+    expect(normalizeNumberWords('mafuta ndoo @20000 nauza robo 700 nusu 1200 lita 3000'))
+      .toBe('mafuta ndoo @20000 nauza robo 700 nusu 1200 lita 3000');
+  });
+
+  // MEASURED FAILURE: this case used to assert that "nusu kilo" stayed as it
+  // was, and that assertion WAS the bug. "nimeuza nyama nusu kilo kwa 12000"
+  // recorded 12,000 with no product line at all — the money went in and the
+  // meat never left the shelf, so a fraction sale was invisible to the very
+  // count meant to catch theft.
+  //
+  // A fraction qualifying a real unit is not a portion name: "nusu kilo" is
+  // half a kilo in any shop in the country. The oil shop is protected by the
+  // case above, where the fraction stands alone.
+  it('resolves a fraction that qualifies a real measure', () => {
+    expect(normalizeNumberWords('nusu kilo')).toBe('kilo 0.5');
+    expect(normalizeNumberWords('nyama nusu kilo')).toBe('nyama kilo 0.5');
+    expect(normalizeNumberWords('nyama nusu na robo kilo kwa 18000')).toBe('nyama kilo 0.75 kwa 18000');
+    // A bare fraction closing the phrase is one of that measure — the same
+    // shape "robo 2" already produced.
+    expect(normalizeNumberWords('nyama robo kwa 6000')).toBe('nyama robo 1 kwa 6000');
   });
 
   it('does not eat an ordinary "na" between two products', () => {
