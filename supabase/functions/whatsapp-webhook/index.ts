@@ -3780,10 +3780,15 @@ Deno.serve(async (req) => {
               p_unit: setup.packageUnit, p_base_quantity: setup.size, p_retail: null,
             })
             : setup.purchaseCost === null
-              // A price with no cost behind it. Nothing is invented: the buying
-              // cost stays unknown until the shop says what it paid.
-              ? await db.rpc('wa_set_selling_price', {
-                p_phone: phone, p_name: named, p_retail: setup.salePrice,
+              // A price with no cost behind it. MEASURED: wa_set_selling_price
+              // writes a bare product price and never touches product_units, so
+              // the "kilo" the shop just said was thrown away and the product
+              // had no sellable unit at all. It goes through the unit door
+              // instead, which stores the measure AND the price against it.
+              // Nothing is invented: the buying cost stays unknown.
+              ? await db.rpc('wa_add_product_unit', {
+                p_phone: phone, p_name: named,
+                p_unit: setup.saleUnit, p_base_quantity: 1, p_retail: setup.salePrice,
               })
               : await db.rpc('wa_configure_product_units', {
                 p_phone: phone,

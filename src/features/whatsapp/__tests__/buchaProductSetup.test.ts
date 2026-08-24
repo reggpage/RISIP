@@ -135,9 +135,12 @@ describe('the three shapes go through three existing doors', () => {
     expect(webhook).toContain('p_sale_units: setupSaleUnits(setup),');
   });
 
-  it('sends a price with no cost to wa_set_selling_price', () => {
+  // Originally this asserted wa_set_selling_price, and the hardening pass
+  // proved that door throws the unit away. See "a price needs a unit to belong
+  // to" below.
+  it('sends a price with no cost through the unit door', () => {
     expect(webhook).toContain('setup.purchaseCost === null');
-    expect(webhook).toContain("await db.rpc('wa_set_selling_price'");
+    expect(webhook).toContain("await db.rpc('wa_add_product_unit'");
   });
 
   it('sends a package to wa_add_product_unit', () => {
@@ -188,5 +191,77 @@ describe('the chips vendor still buys bags by the packet', () => {
     if (parse.kind !== 'parsed') return;
     expect(parse.records[0].lines[0]).toEqual(
       { description: 'mifuko', quantity: 2, unit_amount: 3000, unit: 'pakiti' });
+  });
+});
+
+// PHASE 4 HARDENING.
+//
+// MEASURED against production: after phase 4 routed the sell-only sentence
+// through wa_set_selling_price, sale_unit was NULL, product_units had no rows
+// at all, and wa_company_product_sale_units could not see the product. The
+// shop had said "kilo" and the word was thrown away, so phase 5 would have had
+// nothing whatsoever to say about "kifuko 4".
+describe('a price needs a unit to belong to', () => {
+  const migration = src('supabase/migrations/0126_a_price_needs_a_unit_to_belong_to.sql');
+
+  it('sends a sell-only setup through the unit door, not the bare price one', () => {
+    const handler = webhook.slice(webhook.indexOf('setup.purchaseCost === null'));
+    const branch = handler.slice(0, handler.indexOf('wa_configure_product_units'));
+    expect(branch).toContain("db.rpc('wa_add_product_unit'");
+    expect(branch).toContain('p_retail: setup.salePrice,');
+    // The bare-price RPC still serves the older price-change flows, and is
+    // named in the comment here explaining why setup no longer uses it — so
+    // this asserts the CALL that is made, not the absence of a word.
+    expect(branch).not.toContain("db.rpc('wa_set_selling_price'");
+  });
+
+  it('lets the first unit of a product be its base', () => {
+    expect(migration).toContain('v_is_base := true;');
+    // A base unit is by definition one of itself.
+    expect(migration).toContain('the first unit of a product must be its base, with a conversion of one');
+  });
+
+  it('prices any unit with ONE formula, not one per package type', () => {
+    expect(migration).toContain('create or replace function public.wa_price_sale_unit(');
+    // Its own price when it has one; otherwise derived from the base.
+    expect(migration).toContain("case when (select retail_price from own_price) is not null then 'unit' else 'derived' end");
+    expect(migration).toContain('* m.base_quantity');
+  });
+
+  it('stores no duplicate price for a derived unit', () => {
+    // A kifuko that holds a kilo needs no price of its own, because the kilo
+    // has one.
+    const kifuko = webhook.slice(webhook.indexOf("db.rpc('wa_add_product_unit'"));
+    expect(kifuko.slice(0, 300)).toContain('p_retail: null,');
+  });
+});
+
+describe('adding kifuko to the shared measures broke nobody', () => {
+  // The word joined the list; its plural deliberately did not.
+  it('keeps mifuko a product a chips vendor buys by the packet', () => {
+    const parse = parseDailyRecordBatch(
+      'nimenunua mifuko pakiti 2 kwa 6000\nnimenunua viazi gunia 2 kwa 90000', 'sw');
+    expect(parse.kind).toBe('parsed');
+    if (parse.kind !== 'parsed') return;
+    expect(parse.records[0].lines[0].description).toBe('mifuko');
+    expect(parse.records[1].lines[0].description).toBe('viazi');
+  });
+
+  it('still reads a sale of a product whose name contains a measure word', () => {
+    // "mfuko" has always been a measure; a shop selling something called
+    // "mfuko wa saruji" is unaffected because the whole phrase is the name.
+    const parse = parseDailyRecordBatch(
+      'nimeuza mfuko wa saruji 2 kwa 30000, kalamu 3 kwa 1500', 'sw');
+    expect(parse.kind).toBe('parsed');
+    if (parse.kind !== 'parsed') return;
+    expect(parse.records[0].lines.map((line) => line.description))
+      .toEqual(['mfuko wa saruji', 'kalamu']);
+  });
+
+  it('leaves a bare kifuko with no product to attach to unresolved', () => {
+    // A measure standing alone is still not a product, which is the rule the
+    // arrival parser learned from "trei".
+    const parse = parseDailyRecordBatch('nimenunua kifuko 3 kwa 6000 na kreti 2 kwa 24000', 'sw');
+    expect(parse.kind).toBe('unreadable');
   });
 });
