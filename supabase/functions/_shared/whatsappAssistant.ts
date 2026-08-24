@@ -346,11 +346,40 @@ export function requiresCurrentBusinessDataTool(text: string): boolean {
   return /\b(leo|jana|wiki|mwezi|mwaka|jumla|mauzo|imeuzwa|imeuza|nimeuza|bidhaa|gharama|matumizi|faida|deni|madeni|anadaiwa|ananidai|amelipa|malipo|risiti|ankara|invoice|tin|vrn|vat|kodi|verification|muuzaji|vendor|salio|petty|reimbursement|today|yesterday|week|month|year|total|sales?|sold|product|expense|spend|profit|margin|debt|owes?|paid|payments?|receipts?|balance|reimbursements?|most|least|top)\b/.test(normalized);
 }
 
+/**
+ * Words that CLAIM a record was written.
+ *
+ * The danger this guards is narrow and specific: the model saying "nimehifadhi
+ * mzigo wako" when nothing was saved. A shopkeeper who reads that stops
+ * worrying about a sale that does not exist.
+ *
+ * A QUESTION is not that claim. Deferring every tool-less reply — which is what
+ * used to happen — threw away the model's clarifying questions too, and the
+ * deterministic clarifier then printed "Sijaelewa vizuri" at somebody who had
+ * just been asked something useful. Closed list, same discipline as the
+ * machine-text guard: only an actual claim of saving defers.
+ */
+const CLAIMS_SAVED =
+  /\b(?:nimehifadhi|imehifadhiwa|nimeandika|imeandikwa|nimerekodi|imerekodiwa|nimeweka|imewekwa|nimeongeza|imeingizwa|saved|recorded|logged|added it)\b/i;
+
+export function claimsRecordSaved(reply: string | null | undefined): boolean {
+  return CLAIMS_SAVED.test(String(reply ?? ''));
+}
+
 export function shouldDeferRecordLikeReply(
   recordCandidate: boolean,
   toolNames: string[],
+  /**
+   * The model's own words. Omitted by older callers, in which case the
+   * original rule applies unchanged: no tool call on a record-shaped message
+   * means defer.
+   */
+  replyText?: string,
 ): boolean {
-  return recordCandidate && toolNames.length === 0;
+  if (!recordCandidate || toolNames.length > 0) return false;
+  // With no reply to inspect, keep the strict original behaviour.
+  if (replyText === undefined) return true;
+  return claimsRecordSaved(replyText);
 }
 
 export function buildAssistantSystemPrompt(context: AssistantIdentityContext, now = new Date()): string {

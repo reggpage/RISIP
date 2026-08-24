@@ -18,7 +18,15 @@ describe('A2 AI fallback budget boundary', () => {
     expect(webhook).toContain('const budget = await consumeAiBudget(db, identity, body.length);');
     expect(webhook).toContain('if (!budget.allowed)');
     expect(webhook).toContain('const aiRecord = await interpretDailyRecordWithAi(body, lang);');
-    expect(webhook).toContain('&& !isDailyRecordCandidate(body)');
+    // The guard used to be `!isDailyRecordCandidate(body)` — any message that
+    // merely LOOKED like a record was excluded, including the ones the record
+    // parser then failed to read, which is how "Sijaelewa vizuri" ended up
+    // being the final word on a sentence nobody had understood. The rule is now
+    // narrower and stronger: deterministic only when it can actually produce a
+    // record; the unreadable ones are exactly the uncertain path this test is
+    // about, and they go to the model.
+    expect(webhook).toContain('&& !deterministicRecord');
+    expect(webhook).toContain("recordReading.reason === 'message'");
   });
 
   it('normalizes the server reset timestamp and has an exact UTC-day fallback', () => {

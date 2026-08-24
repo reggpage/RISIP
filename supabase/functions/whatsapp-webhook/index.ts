@@ -5385,6 +5385,40 @@ Deno.serve(async (req) => {
         let conversationalAiBudgetBlock: AiBudgetDecision | null = null;
         const outOfStockQuestion = parseOutOfStockQuestion(body);
         const directStockQuestion = parseStockQuestion(body);
+
+        // MEASURED FAILURE, three replies in the owner's own screenshot:
+        //
+        //   "nimeingiza trei 3 na mayai 15 leo"
+        //   -> "Sijaelewa vizuri. Andika mauzo, matumizi, mkopo, au malipo..."
+        //   "Mzigo mpya nimeingiza trei 3 na mayai 15 leo"
+        //   -> the same sentence again, word for word.
+        //
+        // The model was never asked. isDailyRecordCandidate is true for any
+        // record-SHAPED message, and it excluded all of them from the
+        // assistant — including the ones the record parser then FAILS to read.
+        // So a parser that could not understand the sentence still owned the
+        // reply, and the only thing it had to say was that it did not
+        // understand. Repeating that at somebody who has just rephrased for us
+        // is the rudest thing this product does.
+        //
+        // The distinction that matters is not "does this look like a record"
+        // but "can the deterministic path actually produce one":
+        //
+        //   parsed             -> code owns it. Exact, free, instant.
+        //   clarify: amount    -> understood the record, needs the figure. A
+        //                         targeted question is a real answer.
+        //   clarify: ambiguity -> a draft exists and a specific choice is
+        //                         being offered. Also a real answer.
+        //   clarify: message   -> "I do not understand." That is a confession,
+        //                         not an answer, and it is exactly the case
+        //                         the model should have.
+        //
+        // Only the last one is handed over. Ordinary sales — the highest
+        // volume messages in the product — still never touch the network.
+        const recordReading = isDailyRecordCandidate(body) ? parseDailyRecord(body, lang) : null;
+        const recordUnreadable = recordReading?.kind === 'clarify' && recordReading.reason === 'message';
+        const deterministicRecord = Boolean(recordReading) && !recordUnreadable;
+
         const aiEligible = Boolean(body?.trim())
           && (!convo || convo.awaiting === 'product_analytics')
           && !isSwitchRequest(body)
@@ -5392,9 +5426,9 @@ Deno.serve(async (req) => {
           && !parseLanguageCommand(body)
           && intent !== 'cancel_action'
           && intent !== 'change_language'
-          // Daily-record arithmetic is deterministic first. Its dedicated
-          // branch below owns the bounded structured-AI fallback.
-          && !isDailyRecordCandidate(body)
+          // Daily-record arithmetic is deterministic first — but only when the
+          // deterministic path can actually read it. See recordUnreadable.
+          && !deterministicRecord
           // Stock reads and physical counts are exact server arithmetic. Let
           // the deterministic path answer in its own concise words instead of
           // letting the model paraphrase zero as a guess or turn “ziwe” into a
@@ -5428,8 +5462,14 @@ Deno.serve(async (req) => {
             // A record-looking sentence may never be acknowledged as saved by
             // prose alone. If the model did not call the proposal tool, let the
             // existing deterministic validator/clarifier below take over.
+            // The model's own words are passed in now: a CLAIM of saving is
+            // still refused, but a clarifying QUESTION gets through. Deferring
+            // both is what put "Sijaelewa vizuri" in front of somebody who had
+            // just rephrased their message for us.
             const unsafeRecordProse = assistant
-              && shouldDeferRecordLikeReply(isDailyRecordCandidate(body), assistant.toolNames);
+              && shouldDeferRecordLikeReply(
+                isDailyRecordCandidate(body), assistant.toolNames, assistant.reply,
+              );
             // An apology is not an answer. When the model comes back with
             // nothing, say nothing here and let the deterministic branches
             // below have their turn — one of them almost always knows.
