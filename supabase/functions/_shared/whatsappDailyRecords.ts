@@ -251,15 +251,32 @@ function lineTotal(line: DailyRecordLine): number {
  * that is how goods are sold here and nothing converts between them anyway —
  * the word is carried through exactly as the trader said it.
  */
+/*
+ * MEASURED FAILURE, and the fourth time this same vocabulary has drifted in a
+ * private copy. This list had no trei, dumu, kreti or tenga, so of twelve real
+ * restock lines from a chips vendor —
+ *
+ *   nimenunua viazi gunia 2 kwa 90000   -> viazi, 2 gunia at 45,000   ✓
+ *   nimenunua mayai trei 5 kwa 60000    -> 60,000, product unknown    ✗
+ *
+ * — the shillings were right every time but eggs, cooking oil, soda and water
+ * recorded no product and no quantity. The money balanced, so nothing looked
+ * broken; the shop simply could not tell you what it had bought.
+ *
+ * So it is now derived from the one shared list rather than restated. Adding a
+ * unit in whatsappStock.ts reaches this parser by construction.
+ */
 const MEASURE_UNITS = [
-  'kilo', 'kilos', 'kg', 'kgs', 'gramu', 'gram', 'grams',
-  'lita', 'litre', 'litres', 'liter', 'liters', 'ml',
-  'mita', 'metre', 'metres', 'meter', 'meters', 'futi',
-  'gunia', 'magunia', 'sack', 'sacks', 'debe', 'madebe',
-  'ndoo', 'pakiti', 'packet', 'packets', 'boksi', 'box',
-  'rimu', 'reams', 'ream', 'bando', 'dazeni', 'dozen',
+  ...UNITS.split('|'),
+  // Plurals and English forms the shared list has no reason to carry, since it
+  // exists to RECOGNISE a measure the trader typed, not to inflect one.
+  'kgs', 'gram', 'grams', 'litres', 'liters', 'metre', 'metres', 'meter', 'meters',
+  'magunia', 'sack', 'sacks', 'madebe', 'packet', 'packets', 'box', 'boxes',
+  'reams', 'bando', 'dozen', 'matenga', 'tenga', 'madumu', 'ream',
 ];
-const UNIT_PATTERN = `(?:${MEASURE_UNITS.join('|')})`;
+// Longest first: alternation is first-match, so "kilo" ahead of "kilos" would
+// claim the stem and leave a stray "s" for the product name to inherit.
+const UNIT_PATTERN = `(?:${[...new Set(MEASURE_UNITS)].sort((a, b) => b.length - a.length).join('|')})`;
 
 /**
  * A price per unit is exact; a total divided by a quantity is not. 7,500 for 2.5
@@ -522,22 +539,44 @@ function stockPurchaseRecord(text: string): ParsedDailyRecord | null {
     }
   }
 
+  const tokens = moneyTokens(payload);
+  if (tokens.length === 0) return null;
+  const chosen = tokens[tokens.length - 1];
+  const amount = chosen.value;
+  if (!validAmount(amount)) return null;
+
   // MEASURED FAILURE: "nimeingiza mzigo mpya wa mayai trei 3" — three TRAYS
   // arriving — was recorded as a stock purchase of TSh 3. parseSaleLines could
   // not read "mayai trei 3" as a quantity line (the unit word sits between the
-  // product and its number), so control fell all the way through to here,
-  // where moneyTokens has no concept of a unit at all and simply grabbed the
-  // last bare number in the sentence. Same failure family as a quantity read
-  // as a debt: a number that plainly belongs to a UNIT WORD — trei, gunia,
-  // debe, kilo — is a count of goods, never a price, and manufacturing a
-  // three-shilling purchase that will sit in the ledger looking legitimate is
-  // worse than asking again. Refuse; let the caller ask what it cost.
-  if (new RegExp(`\\b(?:${UNITS})\\s+[0-9]`, 'i').test(payload)) return null;
-
-  const tokens = moneyTokens(payload);
-  if (tokens.length === 0) return null;
-  const amount = tokens[tokens.length - 1].value;
-  if (!validAmount(amount)) return null;
+  // product and its number), so control fell to here, where moneyTokens has no
+  // concept of a unit and simply took the last bare number in the sentence.
+  //
+  // MEASURED FAILURE, MINE, from the first attempt at this guard: it refused
+  // any payload containing a unit word followed by a digit ANYWHERE, which also
+  // threw away "nimenunua mayai trei 5 kwa 60000" — a fully priced restock
+  // whose amount is plainly the 60,000 after "kwa". Four of a chips vendor's
+  // main goods (mayai, mafuta, soda, maji) stopped recording entirely.
+  //
+  // The question was never "does a unit word appear" but "is the number I am
+  // about to call money actually a COUNT".
+  //
+  // Two facts together settle it. A sentence that attaches a number to a MEASURE
+  // ("trei 3", "gunia 2") is enumerating quantities. In such a sentence, a final
+  // number carrying no money marker is one more quantity, not the price:
+  //
+  //   "mayai trei 5 kwa 60000"      -> enumerates, but 60,000 follows "kwa". Money.
+  //   "trei 3 na mayai 15 leo"      -> enumerates, 15 follows a PRODUCT. A count.
+  //   "stock ya sukari 130000"      -> enumerates nothing. Untouched, still money.
+  //
+  // Checking only the token before the amount was not enough: in the bug the
+  // amount followed "mayai", a product, so a unit-word test right there saw
+  // nothing wrong.
+  const enumeratesQuantities = new RegExp(`\\b(?:${UNITS})\\s+[0-9]`, 'i').test(payload);
+  const amountLooksLikeMoney =
+    /(?:\b(?:kwa|bei|jumla|total|for|at|each)\b|\bkila\s+moja\b|@)\s*(?:tshs?|tzs|sh)?\s*$/i
+      .test(payload.slice(0, chosen.start))
+    || /(?:tshs?|tzs|sh)\s*[0-9]|[0-9]\s*(?:\/=|\/-|k\b)/i.test(chosen.raw);
+  if (enumeratesQuantities && !amountLooksLikeMoney) return null;
 
   // No quantity anywhere in the message. The purchase is still recorded — the
   // money is real — but it cannot contribute to stock counts, and the reply

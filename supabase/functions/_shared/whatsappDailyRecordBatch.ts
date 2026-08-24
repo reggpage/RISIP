@@ -1,6 +1,7 @@
 import type { Lang } from './whatsappIntent.ts';
 import {
   MAX_DAILY_RECORD_AMOUNT,
+  STOCK_ARRIVAL_VERBS,
   buildDailyRecordConfirmation,
   parseDailyRecord,
   type DailyRecordLine,
@@ -227,6 +228,7 @@ export function parseDailyRecordBatch(text: string | null | undefined, lang: Lan
   if (rawLines.length < 2) return { kind: 'none' };
 
   const saleLines: string[] = [];
+  const purchaseLines: string[] = [];
   const expenseLines: DailyRecordLine[] = [];
   let section: 'expense' | null = null;
   let debt: DailyRecordBatchClarification['debt'] | null = null;
@@ -241,8 +243,18 @@ export function parseDailyRecordBatch(text: string | null | undefined, lang: Lan
       section = null;
       continue;
     }
+    // A bare heading over a restock list. Anchored at both ends so a real
+    // sentence that merely opens with "mzigo" is never swallowed as a heading.
+    if (/^(?:mzigo|manunuzi|stock|purchases?)(?:\s+(?:wa|ya|za|of)\s+leo|\s+leo|\s+today)?\s*:?$/i.test(line)) {
+      section = null;
+      continue;
+    }
     if (/^(?:leo\s+)?nimeuza\b|^(?:today\s+)?(?:i\s+)?sold\b/i.test(line)) {
       saleLines.push(line);
+      continue;
+    }
+    if (new RegExp(`^(?:leo\\s+)?(?:${STOCK_ARRIVAL_VERBS})\\b`, 'i').test(line)) {
+      purchaseLines.push(line);
       continue;
     }
     if (/\bnimemkopa\b/i.test(line)) {
@@ -259,13 +271,57 @@ export function parseDailyRecordBatch(text: string | null | undefined, lang: Lan
     unknown.push(line);
   }
 
-  if (saleLines.length === 0 || (expenseLines.length === 0 && !debt)) return { kind: 'none' };
-  if (unknown.length > 0) return { kind: 'none' };
+  // MEASURED FAILURE. A three-line restock —
+  //
+  //   Mzigo wa leo:
+  //   nimenunua viazi gunia 2 kwa 90000
+  //   nimenunua mayai trei 5 kwa 60000
+  //   nimenunua mafuta dumu 1 kwa 78000
+  //
+  // matched no branch here, so the batch declined, the single-record parser ran
+  // on the whole blob, and 228,000 of stock was written as ONE purchase of
+  // 78,000 — the last figure — under a description stitched out of the wreckage
+  // of all three lines. Silent, and wrong in the shop's favour by 150,000.
+  const hasSaleGroup = saleLines.length > 0 && (expenseLines.length > 0 || Boolean(debt));
+  const otherSections = saleLines.length > 0 || expenseLines.length > 0 || Boolean(debt);
+  const hasPurchaseGroup = purchaseLines.length > 0 && (purchaseLines.length > 1 || otherSections);
+  if (!hasSaleGroup && !hasPurchaseGroup) return { kind: 'none' };
+
+  // Declining on an unreadable line is safe for a sale list, whose fallback is
+  // the single-record parser. For purchases that same fallback is the mangling
+  // above, so name the line instead and save nothing.
+  if (unknown.length > 0) {
+    if (!hasPurchaseGroup) return { kind: 'none' };
+    const listed = unknown.map((line) => `• ${line}`).join('\n');
+    return {
+      kind: 'unreadable',
+      unreadable: unknown,
+      message: lang === 'sw'
+        ? `Sijaweza kusoma mistari hii kwa uhakika:\n${listed}\n\nHakuna rekodi iliyohifadhiwa. Andika kila bidhaa na jumla yake, mfano: nimenunua viazi gunia 2 kwa 90000.`
+        : `I could not read these lines with confidence:\n${listed}\n\nNothing was saved. Write each item with its total, for example: nimenunua viazi gunia 2 kwa 90000.`,
+    };
+  }
 
   const records: ParsedDailyRecord[] = [];
-  const sale = parseDailyRecord(saleLines.join('\n'), lang);
-  if (sale.kind !== 'parsed') return { kind: 'none' };
-  records.push(sale.record);
+  if (saleLines.length > 0) {
+    const sale = parseDailyRecord(saleLines.join('\n'), lang);
+    if (sale.kind !== 'parsed') return { kind: 'none' };
+    records.push(sale.record);
+  }
+  for (const line of purchaseLines) {
+    const purchase = parseDailyRecord(line, lang);
+    if (purchase.kind !== 'parsed' || purchase.record.kind !== 'stock_purchase') {
+      const listed = `• ${line}`;
+      return {
+        kind: 'unreadable',
+        unreadable: [line],
+        message: lang === 'sw'
+          ? `Sijaweza kusoma mstari huu kwa uhakika:\n${listed}\n\nHakuna rekodi iliyohifadhiwa. Andika bidhaa, kipimo na jumla, mfano: nimenunua viazi gunia 2 kwa 90000.`
+          : `I could not read this line with confidence:\n${listed}\n\nNothing was saved. Write the item, its measure and the total, for example: nimenunua viazi gunia 2 kwa 90000.`,
+      };
+    }
+    records.push(purchase.record);
+  }
   if (expenseLines.length > 0) {
     const amount = expenseLines.reduce((sum, line) => sum + line.quantity * line.unit_amount, 0);
     if (amount <= 0 || amount > MAX_DAILY_RECORD_AMOUNT) return { kind: 'none' };
