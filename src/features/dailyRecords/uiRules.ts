@@ -9,6 +9,13 @@ export const DAILY_RECORD_CHART_COLORS = {
   stockPurchase: '#b45309',
   debt: '#7c3aed',
   customerPayment: '#171717',
+  // Loss is the only red on this chart. Nothing else on a shop's day is a
+  // number that simply disappeared, and it should not have to compete for
+  // attention with money that merely moved.
+  stockLoss: '#dc2626',
+  ownerUse: '#0d9488',
+  supplierPayable: '#a16207',
+  supplierPayment: '#4d7c0f',
   cashMovement: '#0891b2',
 } as const;
 

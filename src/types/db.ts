@@ -337,9 +337,21 @@ export type AppNotification = {
 // an investment in goods to sell, not a running cost, and mixing them made every
 // restocking day read as a loss.
 export type DailyRecordKind =
-  | 'sale' | 'expense' | 'debt_issued' | 'customer_payment' | 'stock_purchase';
+  | 'sale' | 'expense' | 'debt_issued' | 'customer_payment' | 'stock_purchase'
+  // Bucha, phase 1. Each is a distinct accounting fact that must never be
+  // folded into one above it: a spoiled kilo is not an expense, goods taken
+  // home are not a sale, and money owed TO a supplier is not money owed BY a
+  // customer.
+  | 'stock_loss' | 'owner_use' | 'supplier_payable' | 'supplier_payment';
 export type DailyRecordStatus = 'pending_confirmation' | 'confirmed' | 'voided';
 export type DailyRecordSource = 'app' | 'whatsapp' | 'other';
+
+/**
+ * Manually recorded by the trader, never verified against any provider — Risip
+ * integrates with no payment gateway. Null means they did not say, and null is
+ * never guessed. "Deni" is deliberately absent: credit is debt_issued.
+ */
+export type DailyRecordPaymentMethod = 'cash' | 'mobile_money' | 'bank' | 'other';
 
 export type DailyRecord = {
   id: string;
@@ -360,6 +372,10 @@ export type DailyRecord = {
   voided_by: string | null;
   voided_at: string | null;
   void_reason: string | null;
+  /** Manually recorded, never verified. Null means the trader did not say. */
+  payment_method: DailyRecordPaymentMethod | null;
+  /** Only meaningful for kind = 'stock_loss'. */
+  loss_reason: string | null;
   created_at: string;
   updated_at: string;
 };

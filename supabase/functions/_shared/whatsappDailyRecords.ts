@@ -3,7 +3,12 @@ import { correctControlWords } from './whatsappSpelling.ts';
 import { UNITS } from './whatsappStock.ts';
 
 export type DailyRecordKind =
-  | 'sale' | 'expense' | 'debt_issued' | 'customer_payment' | 'stock_purchase';
+  | 'sale' | 'expense' | 'debt_issued' | 'customer_payment' | 'stock_purchase'
+  // Bucha, phase 1. Each is a distinct accounting fact that must never be
+  // folded into one above it: a spoiled kilo is not an expense, goods taken
+  // home are not a sale, and money owed TO a supplier is not money owed BY a
+  // customer.
+  | 'stock_loss' | 'owner_use' | 'supplier_payable' | 'supplier_payment';
 
 export type DailyRecordLine = {
   description: string;
@@ -933,11 +938,15 @@ function kindLabel(kind: DailyRecordKind, lang: Lang): string {
     return ({
       sale: 'Mauzo', expense: 'Matumizi', stock_purchase: 'Ununuzi wa bidhaa',
       debt_issued: 'Mkopo uliotolewa', customer_payment: 'Malipo ya mteja',
+      stock_loss: 'Upotevu wa bidhaa', owner_use: 'Bidhaa zilizochukuliwa nyumbani',
+      supplier_payable: 'Deni la muuzaji', supplier_payment: 'Malipo kwa muuzaji',
     })[kind];
   }
   return ({
     sale: 'Sale', expense: 'Expense', stock_purchase: 'Stock purchase',
     debt_issued: 'Debt issued', customer_payment: 'Customer payment',
+    stock_loss: 'Stock loss', owner_use: 'Taken by owner',
+    supplier_payable: 'Owed to supplier', supplier_payment: 'Paid to supplier',
   })[kind];
 }
 
