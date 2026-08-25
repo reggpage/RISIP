@@ -564,6 +564,32 @@ async function priceQuantitySale(
   /** Phrases read as several products, shown back before anything is saved. */
   const combos: ComboSplit[] = [];
   for (const [at, item] of sale.items.entries()) {
+    // ── a measure the trader said out loud ────────────────────────────────
+    //
+    // "vifuko 4 vya mbwa" arrives here as goods "mbwa" with the measure
+    // "kifuko" beside it. The alias resolver turns the wording into the
+    // catalogue's own name, and then the SAME declared-unit matcher that has
+    // always handled "nyama ya ngombe mishikaki" finds the configured measure.
+    // No second lookup, no Bucha branch.
+    if (item.spokenUnit && item.productWithoutUnit) {
+      const named = await resolveProductForRead(db, identity, item.productWithoutUnit);
+      if (!named.error && named.resolution.kind === 'matched') {
+        const canonical = named.resolution.match;
+        const viaUnit = matchDeclaredSaleUnit(
+          `${canonical.productName} ${item.spokenUnit}`, declaredUnits);
+        if (viaUnit.kind === 'matched') {
+          resolvedItems.push({
+            key: viaUnit.unit.productKey,
+            name: viaUnit.unit.productName,
+            quantity: item.quantity,
+            band: item.band,
+            declared: viaUnit.unit,
+            at,
+          });
+          continue;
+        }
+      }
+    }
     const portion = matchDeclaredSaleUnit(item.product, declaredUnits);
     if (portion.kind === 'unit_required') {
       return {
@@ -626,6 +652,36 @@ async function priceQuantitySale(
       unknown.push(item.product);
       continue;
     }
+    // ── no measure stated, and the shop configured some ───────────────────
+    //
+    // "za mbwa 3" says how many and not of what measure. Where the shop has
+    // declared exactly ONE way of selling this product there is nothing to
+    // guess — that is the only answer it could be. Where it declared several,
+    // the difference between a kilo and a piece is the difference between two
+    // thousand shillings and two hundred, so it is asked.
+    //
+    // Nothing here is inferred from the KIND of business. It is inferred from
+    // what this shop configured, or not at all.
+    const forProduct = declaredUnits.filter(
+      (unit) => unit.productKey === resolved.resolution.match.productKey);
+    if (!item.spokenUnit && forProduct.length > 1) {
+      return {
+        kind: 'blocked',
+        message: portionUnitRequired(
+          resolved.resolution.match.productName, forProduct.map((unit) => unit.unitName), lang),
+      };
+    }
+    if (!item.spokenUnit && forProduct.length === 1) {
+      resolvedItems.push({
+        key: forProduct[0].productKey,
+        name: forProduct[0].productName,
+        quantity: item.quantity,
+        band: item.band,
+        declared: forProduct[0],
+        at,
+      });
+      continue;
+    }
     resolvedItems.push({
       key: resolved.resolution.match.productKey,
       name: resolved.resolution.match.productName,
@@ -652,6 +708,30 @@ async function priceQuantitySale(
       units.set(unit.productKey, [...(units.get(unit.productKey) ?? []), unit.unitName]);
     }
     return { kind: 'combo_question', splits: openCombos, sale, units: [...units.entries()] };
+  }
+
+  // ── a declared measure with no price of its own ──────────────────────────
+  //
+  // A kifuko that holds a kilo carries no price, because the kilo has one.
+  // wa_price_sale_unit (0126) derives it — quantity x conversion x the base
+  // unit's price — with ONE formula that serves boxes, packets and bags alike.
+  //
+  // Called here rather than computed here. The webhook never divides or
+  // multiplies money: it asks the database what a measure is worth and puts
+  // the answer on the line.
+  for (const item of resolvedItems) {
+    if (!item.declared || item.declared.retail !== null) continue;
+    const { data: derived } = await db.rpc('wa_price_sale_unit', {
+      p_company_id: identity.company_id,
+      p_product: item.declared.productName,
+      p_unit: item.declared.unitName,
+      p_quantity: item.quantity,
+    });
+    const row = ((derived ?? []) as Array<Record<string, unknown>>)[0];
+    const unitPrice = row?.unit_price == null ? null : Number(row.unit_price);
+    if (unitPrice !== null && Number.isFinite(unitPrice) && unitPrice > 0) {
+      item.declared = { ...item.declared, retail: unitPrice };
+    }
   }
 
   const { data, error } = await db.rpc('wa_product_pricing', {
