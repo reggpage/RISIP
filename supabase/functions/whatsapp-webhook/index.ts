@@ -197,6 +197,7 @@ import {
   type ProductSetupPending,
 } from '../_shared/whatsappProductSetup.ts';
 import { extractPaymentMethod } from '../_shared/whatsappPaymentMethod.ts';
+import { parseCreditQuantitySale } from '../_shared/whatsappCreditSale.ts';
 import { lowStockNotice, type StockLevel } from '../_shared/whatsappLowStock.ts';
 import {
   formatBarcode, isScanRequest, isSellScanRequest, parseBarcodeMessage,
@@ -514,6 +515,16 @@ async function priceQuantitySale(
    * "chips kuku" from scratch and ask which measure all over again.
    */
   known: ComboSplit[] = [],
+  /**
+   * Set when the goods left on credit.
+   *
+   * The ONLY thing it changes is how the record is classified and whose name
+   * goes on it. Which product, which measure and what it is worth are worked
+   * out identically either way — a sale on deni is a sale of the same goods at
+   * the same price, and pricing it down a second path would be how the two
+   * quietly drift apart.
+   */
+  credit: { party: string } | null = null,
 ): Promise<
   | { kind: 'priced'; record: ParsedDailyRecord; lines: PricedLine[]; notCounted: string[]; combos: ComboSplit[] }
   | { kind: 'blocked'; message: string }
@@ -803,9 +814,10 @@ async function priceQuantitySale(
     notCounted: [],
     combos,
     record: {
-      kind: 'sale',
+      // A credit sale differs here and nowhere else in this function.
+      kind: credit ? 'debt_issued' : 'sale',
       amount,
-      partyName: null,
+      partyName: credit?.party ?? null,
       description: null,
       lines: lines.map((line) => ({
         description: line.product,
@@ -6409,9 +6421,16 @@ Deno.serve(async (req) => {
           // A sale that states quantities and no money is priced from the shop's
           // own list before anything asks the trader to retype a price they
           // already gave. Only reached when no parser above claimed the message.
-          const quantitySale = resumedQuantitySale ?? parseQuantityOnlySale(writeBody);
+          // Goods that walked out unpaid. The wrapper is read here and the
+          // GOODS go through the ordinary quantity parser, so an alias and a
+          // measure said out loud behave exactly as they do in a paid sale.
+          const creditSale = resumedQuantitySale ? null : parseCreditQuantitySale(writeBody);
+          const quantitySale = resumedQuantitySale ?? creditSale?.sale ?? parseQuantityOnlySale(writeBody);
           if (quantitySale) {
-            const priced = await priceQuantitySale(db, identity, quantitySale, lang, settledCombos);
+            const priced = await priceQuantitySale(
+              db, identity, quantitySale, lang, settledCombos,
+              creditSale ? { party: creditSale.party } : null,
+            );
             if (priced.kind === 'unknown') {
               if (!canUseCompanyFinanceReads(identity.role)) {
                 await replyQuietly(phone, newProductSaleWorkerBlocked(priced.products, lang));
