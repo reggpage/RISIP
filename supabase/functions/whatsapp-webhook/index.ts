@@ -198,6 +198,14 @@ import {
 } from '../_shared/whatsappProductSetup.ts';
 import { extractPaymentMethod, parsePaymentMethodAnswer } from '../_shared/whatsappPaymentMethod.ts';
 import { parseCreditQuantitySale } from '../_shared/whatsappCreditSale.ts';
+import {
+  parseQuantityAnswer,
+  parseSaleMissingQuantity,
+  quantityNotUnderstood,
+  quantityQuestion,
+  quantityUnitQuestion,
+  type QuantityWanted,
+} from '../_shared/whatsappMissingQuantity.ts';
 import { lowStockNotice, type StockLevel } from '../_shared/whatsappLowStock.ts';
 import {
   formatBarcode, isScanRequest, isSellScanRequest, parseBarcodeMessage,
@@ -3514,6 +3522,13 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<ProductSetupPending> | null)?.kind === 'product_setup_pending'
           ? convo.options as ProductSetupPending
           : null;
+        // "Soseji ngapi?" is out and this is the reply. Identity scoping and
+        // expiry are the table's own; nothing here is trusted because it was
+        // stored.
+        const quantityPending = convo?.awaiting === 'daily_record_quantity'
+          && (convo.options as Partial<QuantityWanted> | null)?.kind === 'quantity_wanted'
+          ? convo.options as QuantityWanted
+          : null;
         const bandPending = convo?.awaiting === 'product_cost'
           && (convo.options as Partial<PriceBandPending> | null)?.kind === 'price_band_choice'
           ? convo.options as PriceBandPending
@@ -3615,6 +3630,8 @@ Deno.serve(async (req) => {
           ? convo.options as HypotheticalPortionChoice
           : null;
         let resumedQuantitySale: QuantitySale | null = null;
+        let resumedQuantityCredit: { party: string } | null = null;
+        let resumedQuantityPaymentMethod: QuantityWanted['paymentMethod'] = null;
         /** Combinations settled earlier in this same conversation. */
         let settledCombos: ComboSplit[] = [];
         // ── Signing out ──────────────────────────────────────────────────
@@ -3862,6 +3879,46 @@ Deno.serve(async (req) => {
           settledCombos = [...comboPending.known, settled];
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'combo', 'answered', 'applied');
+        }
+
+        if (quantityPending) {
+          const answer = parseQuantityAnswer(body ?? '');
+          if (!answer) {
+            // A message that plainly starts something else must not be trapped
+            // inside the question. The pending state simply lapses and the new
+            // subject is read by whoever owns it.
+            if (startsAnotherTopic(body ?? '')) {
+              await clearConversation(db, identity.id as string);
+              await audit(db, identity, waMessageId, 'quantity_wanted', 'topic_change', 'skipped');
+            } else {
+              await reply(phone, quantityNotUnderstood(quantityPending.product, lang));
+              await audit(db, identity, waMessageId, 'quantity_wanted', 'unreadable', 'pending');
+              await finish('skipped');
+              continue;
+            }
+          } else {
+            // Re-enter the ordinary quantity-sale pipeline below. It resolves
+            // the current company product and units and recalculates the price;
+            // conversation state contributes intent and wording, never money.
+            resumedQuantitySale = {
+              kind: 'quantity_sale',
+              items: [{
+                product: quantityPending.product,
+                quantity: answer.quantity,
+                band: null,
+                ...(answer.unit
+                  ? { spokenUnit: answer.unit, productWithoutUnit: quantityPending.product }
+                  : {}),
+              }],
+              expenses: [],
+            };
+            resumedQuantityCredit = quantityPending.ledger === 'debt_issued'
+              && quantityPending.party
+              ? { party: quantityPending.party }
+              : null;
+            resumedQuantityPaymentMethod = quantityPending.paymentMethod;
+            await audit(db, identity, waMessageId, 'quantity_wanted', 'answered', 'applied');
+          }
         }
 
         if (productSetupPending) {
@@ -6357,7 +6414,8 @@ Deno.serve(async (req) => {
           // message contains no price to be either. The quantity path below
           // already knows what to do with it; the batch parser must stand aside
           // rather than ask.
-          const namesNoMoney = parseQuantityOnlySale(writeBody) !== null;
+          const namesNoMoney = resumedQuantitySale !== null
+            || parseQuantityOnlySale(writeBody) !== null;
           const batch: DailyRecordBatchParse = namesNoMoney
             ? { kind: 'none' }
             : parseDailyRecordBatch(writeBody, lang);
@@ -6456,6 +6514,50 @@ Deno.serve(async (req) => {
           // own list before anything asks the trader to retype a price they
           // already gave. Only reached when no parser above claimed the message.
           // Goods that walked out unpaid. The wrapper is read here and the
+          // ── the goods were named and the number was not ──────────────────
+          //
+          // Before this, every such message reached the record parser, which
+          // asked for the AMOUNT — the money — because that is the field it
+          // knew was missing. Answering "5" to "how much?" made a sale of five
+          // shillings.
+          //
+          // The product is resolved NOW, so a question is never asked about
+          // something this shop does not sell, and the measure is settled now
+          // too: where the shop declared several ways of selling it, asking
+          // "how many?" would invite an answer nobody could price.
+          const wantsQuantity = resumedQuantitySale ? null : parseSaleMissingQuantity(writeBody);
+          if (wantsQuantity) {
+            const found = await resolveProductForRead(db, identity, wantsQuantity.product);
+            if (!found.error && found.resolution.kind === 'matched') {
+              const match = found.resolution.match;
+              const { data: unitRows } = await db.rpc('wa_company_product_sale_units', {
+                p_company_id: identity.company_id,
+              });
+              const units = ((unitRows ?? []) as Array<Record<string, unknown>>)
+                .filter((row) => String(row.product_key ?? '') === match.productKey)
+                .map((row) => String(row.unit_name ?? '')).filter(Boolean);
+
+              await db.from('whatsapp_conversations').upsert({
+                identity_id: identity.id,
+                company_id: identity.company_id,
+                profile_id: identity.profile_id,
+                awaiting: 'daily_record_quantity',
+                receipt_id: null,
+                options: { ...wantsQuantity, product: match.productName },
+                expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'identity_id' });
+
+              await reply(phone, units.length > 1
+                ? quantityUnitQuestion(match.productName, units, lang)
+                : quantityQuestion(match.productName, units[0] ?? null, lang));
+              await audit(db, identity, waMessageId, 'quantity_wanted',
+                units.length > 1 ? 'unit_required' : 'asked', 'pending');
+              await finish('applied');
+              continue;
+            }
+          }
+
           // GOODS go through the ordinary quantity parser, so an alias and a
           // measure said out loud behave exactly as they do in a paid sale.
           const creditSale = resumedQuantitySale ? null : parseCreditQuantitySale(writeBody);
@@ -6463,7 +6565,7 @@ Deno.serve(async (req) => {
           if (quantitySale) {
             const priced = await priceQuantitySale(
               db, identity, quantitySale, lang, settledCombos,
-              creditSale ? { party: creditSale.party } : null,
+              resumedQuantityCredit ?? (creditSale ? { party: creditSale.party } : null),
             );
             if (priced.kind === 'unknown') {
               if (!canUseCompanyFinanceReads(identity.role)) {
@@ -6520,7 +6622,11 @@ Deno.serve(async (req) => {
               continue;
             }
             if (priced.kind === 'priced') {
-              const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, priced.record);
+              const recordWithPayment = resumedQuantityPaymentMethod
+                ? { ...priced.record, paymentMethod: resumedQuantityPaymentMethod }
+                : priced.record;
+              const guardedRecord = await addHistoricalPriceWarnings(
+                db, identity.company_id, recordWithPayment);
               // Money out, written at the foot of the same paste, is a separate
               // record — never netted off the takings. Both are drafted in one
               // transaction so a NDIYO can never confirm the sales and lose the
