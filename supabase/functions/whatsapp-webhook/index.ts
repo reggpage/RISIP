@@ -196,7 +196,7 @@ import {
   setupSaleUnits,
   type ProductSetupPending,
 } from '../_shared/whatsappProductSetup.ts';
-import { extractPaymentMethod } from '../_shared/whatsappPaymentMethod.ts';
+import { extractPaymentMethod, parsePaymentMethodAnswer } from '../_shared/whatsappPaymentMethod.ts';
 import { parseCreditQuantitySale } from '../_shared/whatsappCreditSale.ts';
 import { lowStockNotice, type StockLevel } from '../_shared/whatsappLowStock.ts';
 import {
@@ -4331,6 +4331,40 @@ Deno.serve(async (req) => {
           continue;
         }
         if (dailyConversation) {
+          // "cash" arriving on its own, while a draft is on the screen waiting
+          // for NDIYO. It is an answer to the question being asked, not a new
+          // message about nothing — and before this the fact was simply lost.
+          //
+          // The draft is updated and the SAME confirmation is shown again, so
+          // nothing is saved a moment earlier than it would have been.
+          const answeredMethod = parsePaymentMethodAnswer(body);
+          if (answeredMethod && !isDailyRecordConfirmation(body) && !isDailyRecordRejection(body)) {
+            const { data: methodSet } = await db.rpc('wa_set_draft_payment_method', {
+              p_profile_id: identity.profile_id,
+              p_company_id: identity.company_id,
+              p_daily_record_id: dailyConversation.dailyRecordId,
+              p_payment_method: answeredMethod,
+            });
+            const applied = Boolean((methodSet as Record<string, unknown> | null)?.updated);
+            if (applied) {
+              const withMethod = { ...dailyConversation.record, paymentMethod: answeredMethod };
+              dailyConversation = { ...dailyConversation, record: withMethod };
+              await db.from('whatsapp_conversations').upsert({
+                identity_id: identity.id,
+                company_id: identity.company_id,
+                profile_id: identity.profile_id,
+                awaiting: 'payment_source',
+                receipt_id: null,
+                options: dailyConversation,
+                expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'identity_id' });
+              await reply(phone, `${identity.company_name} — ${buildDailyRecordConfirmation(withMethod, lang)}`);
+              await audit(db, identity, waMessageId, 'daily_record', 'payment_method', 'applied');
+              await finish('applied');
+              continue;
+            }
+          }
           if (isDailyRecordConfirmation(body)) {
             const { error } = await db.rpc('wa_confirm_daily_record', {
               p_profile_id: identity.profile_id,
