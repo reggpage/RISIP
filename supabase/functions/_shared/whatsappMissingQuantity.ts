@@ -30,6 +30,8 @@ export type QuantityWanted = {
   product: string;
   party: string | null;
   paymentMethod: DailyRecordPaymentMethod | null;
+  /** Safe context only; prices and totals are recalculated when quantity arrives. */
+  occurredAt?: string | null;
 };
 
 /** The answer: "5", "kilo mbili", "mbili", "2 kilo". */

@@ -47,6 +47,8 @@ export type ParsedDailyRecord = {
   paymentMethod?: DailyRecordPaymentMethod | null;
   /** The trader's own word for why stock was lost. Only for kind 'stock_loss'. */
   lossReason?: string | null;
+  /** Validated transaction time. Null/undefined preserves today's behaviour. */
+  occurredAt?: string | null;
 };
 
 export type DailyRecordParse =

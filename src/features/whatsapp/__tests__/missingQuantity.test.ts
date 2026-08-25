@@ -88,7 +88,7 @@ describe('conversation-state safety and normal pipeline reuse', () => {
   });
 
   it('stores canonical product wording and no financial result', () => {
-    expect(webhook).toContain('options: { ...wantsQuantity, product: match.productName },');
+    expect(webhook).toContain('...wantsQuantity, product: match.productName, occurredAt: wantedDate.occurredAt');
     expect(quantityBlock).not.toContain('amount:');
     expect(quantityBlock).not.toContain('price:');
     expect(quantityBlock).not.toContain('createDailyRecordDraft');

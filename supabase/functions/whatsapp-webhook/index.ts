@@ -358,7 +358,10 @@ import {
   parseCostAnswer,
   toCostPrompt,
 } from '../_shared/whatsappCostPrompt.ts';
-import { type ResolvedRange, isFuture, rangeLabel, resolveDateRange, withinTimeOfDay } from '../_shared/whatsappDateRange.ts';
+import {
+  type ResolvedRange, isFuture, rangeLabel, resolveDateRange,
+  resolveTransactionDate, withinTimeOfDay,
+} from '../_shared/whatsappDateRange.ts';
 import {
   type LogoutState,
   logoutCancelled,
@@ -446,6 +449,7 @@ type NewProductSaleSetup = {
   sourceMessageId: string;
   credit?: { party: string } | null;
   paymentMethod?: QuantityWanted['paymentMethod'];
+  occurredAt?: string | null;
 };
 
 /**
@@ -472,6 +476,7 @@ type ComboPending = {
   sourceMessageId: string;
   credit?: { party: string } | null;
   paymentMethod?: QuantityWanted['paymentMethod'];
+  occurredAt?: string | null;
 };
 
 /** Offered after the sale is confirmed, to owner and accountant only. */
@@ -491,6 +496,7 @@ type ComboVariantPending = {
   sourceMessageId: string;
   credit?: { party: string } | null;
   paymentMethod?: QuantityWanted['paymentMethod'];
+  occurredAt?: string | null;
 };
 
 type PriceBandPending = {
@@ -502,6 +508,7 @@ type PriceBandPending = {
   sourceMessageId: string;
   credit?: { party: string } | null;
   paymentMethod?: QuantityWanted['paymentMethod'];
+  occurredAt?: string | null;
 };
 
 type NewProductPricingState = {
@@ -511,7 +518,19 @@ type NewProductPricingState = {
   sourceMessageId?: string;
   credit?: { party: string } | null;
   paymentMethod?: QuantityWanted['paymentMethod'];
+  occurredAt?: string | null;
 };
+
+function transactionDateQuestion(reason: 'future' | 'range', lang: Lang): string {
+  if (reason === 'future') {
+    return lang === 'sw'
+      ? 'Siwezi kurekodi mauzo ya tarehe ya baadaye. Taja tarehe iliyopita au leo.'
+      : 'I cannot record a sale in the future. State a past date or today.';
+  }
+  return lang === 'sw'
+    ? 'Taja siku moja kamili ya mauzo haya, kwa mfano: jana au tarehe 7 Mei 2025.'
+    : 'State one exact day for this sale, for example: yesterday or 7 May 2025.';
+}
 
 /**
  * Prices a quantities-only sale from the shop's own price list.
@@ -544,6 +563,7 @@ async function priceQuantitySale(
    * quietly drift apart.
    */
   credit: { party: string } | null = null,
+  occurredAt: string | null = null,
 ): Promise<
   | { kind: 'priced'; record: ParsedDailyRecord; lines: PricedLine[]; notCounted: string[]; combos: ComboSplit[] }
   | { kind: 'blocked'; message: string }
@@ -750,23 +770,32 @@ async function priceQuantitySale(
   // multiplies money: it asks the database what a measure is worth and puts
   // the answer on the line.
   for (const item of resolvedItems) {
-    if (!item.declared || item.declared.retail !== null) continue;
+    if (!item.declared || (occurredAt === null && item.declared.retail !== null)) continue;
     const { data: derived } = await db.rpc('wa_price_sale_unit', {
       p_company_id: identity.company_id,
       p_product: item.declared.productName,
       p_unit: item.declared.unitName,
       p_quantity: item.quantity,
+      ...(occurredAt ? { p_priced_at: occurredAt } : {}),
     });
     const row = ((derived ?? []) as Array<Record<string, unknown>>)[0];
     const unitPrice = row?.unit_price == null ? null : Number(row.unit_price);
     if (unitPrice !== null && Number.isFinite(unitPrice) && unitPrice > 0) {
-      item.declared = { ...item.declared, retail: unitPrice };
+      item.declared = {
+        ...item.declared,
+        retail: unitPrice,
+        wholesale: row?.wholesale_price == null ? null : Number(row.wholesale_price),
+        wholesaleMinQty: row?.wholesale_min_qty == null ? null : Number(row.wholesale_min_qty),
+      };
+    } else if (occurredAt) {
+      item.declared = { ...item.declared, retail: null, wholesale: null, wholesaleMinQty: null };
     }
   }
 
   const { data, error } = await db.rpc('wa_product_pricing', {
     p_company_id: identity.company_id,
     p_product_keys: resolvedItems.filter((item) => !item.declared).map((item) => item.key),
+    ...(occurredAt ? { p_priced_at: occurredAt } : {}),
   });
   if (error) return { kind: 'skip' };
 
@@ -819,7 +848,12 @@ async function priceQuantitySale(
     else lines.push(line);
   }
   if (missing.length > 0 || lines.length === 0) {
-    return { kind: 'blocked', message: quantitySaleMissingPrices(missing, lang) };
+    const message = occurredAt
+      ? (lang === 'sw'
+        ? `Hakuna bei halali ya ${missing.map((name) => `*${name}*`).join(', ')} kwa tarehe hiyo. Weka bei ya tarehe hiyo kwanza; sijatumia bei ya leo.`
+        : `There is no valid price for ${missing.map((name) => `*${name}*`).join(', ')} on that date. Add a price effective on that date first; I did not use today's price.`)
+      : quantitySaleMissingPrices(missing, lang);
+    return { kind: 'blocked', message };
   }
   // Asked after the missing-price check, because a product with no price at all
   // is the bigger problem and its message says so. One question, listing only
@@ -845,6 +879,7 @@ async function priceQuantitySale(
         ...(line.unit ? { unit: line.unit } : {}),
       })),
       confidence: 0.99,
+      occurredAt,
     },
   };
 }
@@ -1425,7 +1460,7 @@ async function createDailyRecordDraft(
     p_amount: withPayment.amount,
     p_party_name: withPayment.partyName,
     p_description: dailyRecordStorageDescription(withPayment, lang),
-    p_occurred_at: new Date().toISOString(),
+    p_occurred_at: withPayment.occurredAt ?? new Date().toISOString(),
     p_source_message_id: messageId,
     p_lines: withPayment.lines,
     // Phase 1 gave the ledger these two. A record that states neither sends
@@ -1450,6 +1485,7 @@ async function createDailyRecordBatchDrafts(
     party_name: record.partyName,
     description: dailyRecordStorageDescription(record, lang),
     lines: record.lines,
+    occurred_at: record.occurredAt ?? null,
   }));
   const { data, error } = await db.rpc('wa_create_daily_record_batch_drafts', {
     p_profile_id: identity.profile_id,
@@ -2515,6 +2551,12 @@ async function executeAssistantTool(
       ? 'Sijaelewa bidhaa, idadi au kipimo kwa uhakika. Niandikie bidhaa na idadi yake.'
       : 'I could not safely understand the product, quantity or unit. State the product and its quantity.';
     if (!interpreted) return { content: invalid, isError: true, terminalReply: invalid };
+    const aiDate = resolveTransactionDate(interpreted.occurredAtWording);
+    if (aiDate.kind === 'invalid') {
+      const question = transactionDateQuestion(aiDate.reason, lang);
+      return { content: question, isError: true, terminalReply: question };
+    }
+    const aiOccurredAt = aiDate.occurredAt;
 
     if (interpreted.kind === 'missing_quantity') {
       const found = await resolveProductForRead(db, identity, interpreted.wanted.product);
@@ -2531,7 +2573,9 @@ async function executeAssistantTool(
       const units = (unitError ? [] : (unitRows ?? []) as Array<Record<string, unknown>>)
         .filter((row) => String(row.product_key ?? '') === match.productKey)
         .map((row) => String(row.unit_name ?? '')).filter(Boolean);
-      const wanted: QuantityWanted = { ...interpreted.wanted, product: match.productName };
+      const wanted: QuantityWanted = {
+        ...interpreted.wanted, product: match.productName, occurredAt: aiOccurredAt,
+      };
       await db.from('whatsapp_conversations').upsert({
         identity_id: identity.id,
         company_id: identity.company_id,
@@ -2549,7 +2593,7 @@ async function executeAssistantTool(
     }
 
     const priced = await priceQuantitySale(
-      db, identity, interpreted.sale, lang, [], interpreted.credit,
+      db, identity, interpreted.sale, lang, [], interpreted.credit, aiOccurredAt,
     );
     if (priced.kind === 'blocked') {
       return { content: priced.message, isError: true, terminalReply: priced.message };
@@ -2570,6 +2614,7 @@ async function executeAssistantTool(
         sourceMessageId: waMessageId,
         credit: interpreted.credit,
         paymentMethod: interpreted.paymentMethod,
+        occurredAt: aiOccurredAt,
       };
       await db.from('whatsapp_conversations').upsert({
         identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
@@ -3673,6 +3718,7 @@ Deno.serve(async (req) => {
           sourceMessageId: string,
           credit: { party: string } | null = null,
           paymentMethod: QuantityWanted['paymentMethod'] = null,
+          occurredAt: string | null = null,
         ) => {
           await db.from('whatsapp_conversations').upsert({
             identity_id: identity.id,
@@ -3682,7 +3728,7 @@ Deno.serve(async (req) => {
             receipt_id: null,
             options: {
               kind: 'combo_variant', sale, phrase, token, candidates,
-              known: settledCombos, sourceMessageId, credit, paymentMethod,
+              known: settledCombos, sourceMessageId, credit, paymentMethod, occurredAt,
             } satisfies ComboVariantPending,
             expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
             updated_at: new Date().toISOString(),
@@ -3699,6 +3745,7 @@ Deno.serve(async (req) => {
           orders: number,
           credit: { party: string } | null = null,
           paymentMethod: QuantityWanted['paymentMethod'] = null,
+          occurredAt: string | null = null,
         ) => {
           await db.from('whatsapp_conversations').upsert({
             identity_id: identity.id,
@@ -3708,7 +3755,7 @@ Deno.serve(async (req) => {
             receipt_id: null,
             options: {
               kind: 'combo_clarification',
-              sale, split, units, orders, sourceMessageId, credit, paymentMethod,
+              sale, split, units, orders, sourceMessageId, credit, paymentMethod, occurredAt,
               known: settledCombos,
             } satisfies ComboPending,
             expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
@@ -3724,6 +3771,7 @@ Deno.serve(async (req) => {
           prefix = '',
           credit: { party: string } | null = null,
           paymentMethod: QuantityWanted['paymentMethod'] = null,
+          occurredAt: string | null = null,
         ) => {
           await db.from('whatsapp_conversations').upsert({
             identity_id: identity.id,
@@ -3739,6 +3787,7 @@ Deno.serve(async (req) => {
               sourceMessageId,
               credit,
               paymentMethod,
+              occurredAt,
             } satisfies PriceBandPending,
             expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
             updated_at: new Date().toISOString(),
@@ -3764,6 +3813,7 @@ Deno.serve(async (req) => {
         let resumedQuantitySale: QuantitySale | null = null;
         let resumedQuantityCredit: { party: string } | null = null;
         let resumedQuantityPaymentMethod: QuantityWanted['paymentMethod'] = null;
+        let resumedQuantityOccurredAt: string | null = null;
         /** Combinations settled earlier in this same conversation. */
         let settledCombos: ComboSplit[] = [];
         // ── Signing out ──────────────────────────────────────────────────
@@ -3956,6 +4006,7 @@ Deno.serve(async (req) => {
           settledCombos = comboVariantPending.known;
           resumedQuantityCredit = comboVariantPending.credit ?? null;
           resumedQuantityPaymentMethod = comboVariantPending.paymentMethod ?? null;
+          resumedQuantityOccurredAt = comboVariantPending.occurredAt ?? null;
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'combo_variant', 'answered', 'applied');
         }
@@ -4013,6 +4064,7 @@ Deno.serve(async (req) => {
           settledCombos = [...comboPending.known, settled];
           resumedQuantityCredit = comboPending.credit ?? null;
           resumedQuantityPaymentMethod = comboPending.paymentMethod ?? null;
+          resumedQuantityOccurredAt = comboPending.occurredAt ?? null;
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'combo', 'answered', 'applied');
         }
@@ -4053,6 +4105,7 @@ Deno.serve(async (req) => {
               ? { party: quantityPending.party }
               : null;
             resumedQuantityPaymentMethod = quantityPending.paymentMethod;
+            resumedQuantityOccurredAt = quantityPending.occurredAt ?? null;
             await audit(db, identity, waMessageId, 'quantity_wanted', 'answered', 'applied');
           }
         }
@@ -4250,6 +4303,7 @@ Deno.serve(async (req) => {
           };
           resumedQuantityCredit = bandPending.credit ?? null;
           resumedQuantityPaymentMethod = bandPending.paymentMethod ?? null;
+          resumedQuantityOccurredAt = bandPending.occurredAt ?? null;
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'price_band', 'answered', 'applied');
         }
@@ -4883,6 +4937,7 @@ Deno.serve(async (req) => {
           const pendingSourceMessageId = newProductPending.sourceMessageId;
           const pendingCredit = newProductPending.credit ?? null;
           const pendingPaymentMethod = newProductPending.paymentMethod ?? null;
+          const pendingOccurredAt = newProductPending.occurredAt ?? null;
           if (isDailyRecordConfirmation(body)) {
             const { error: costError } = await db.rpc('wa_set_product_costs', {
               p_phone: phone,
@@ -4905,14 +4960,14 @@ Deno.serve(async (req) => {
               await replyQuietly(phone, productCostErrorMessage(failed, lang));
             } else if (pendingSale && pendingSourceMessageId) {
               const priced = await priceQuantitySale(
-                db, identity, pendingSale, lang, [], pendingCredit,
+                db, identity, pendingSale, lang, [], pendingCredit, pendingOccurredAt,
               );
               if (priced.kind === 'band') {
                 // Just registered with both prices, and the waiting sale named
                 // neither. Ask before pricing rather than after saving.
                 await askForPriceBand(priced.choices, priced.sale, pendingSourceMessageId,
                   `${newProductSaved(pendingProducts, lang, true)}\n\n`,
-                  pendingCredit, pendingPaymentMethod);
+                  pendingCredit, pendingPaymentMethod, pendingOccurredAt);
                 await audit(db, identity, pendingSourceMessageId, 'quantity_sale', 'band', 'pending');
               } else if (priced.kind === 'priced') {
                 const resumedRecord = pendingPaymentMethod
@@ -5733,6 +5788,7 @@ Deno.serve(async (req) => {
               sourceMessageId: newProductSaleSetup.sourceMessageId,
               credit: newProductSaleSetup.credit ?? null,
               paymentMethod: newProductSaleSetup.paymentMethod ?? null,
+              occurredAt: newProductSaleSetup.occurredAt ?? null,
             } : {}),
           };
           await db.from('whatsapp_conversations').upsert({
@@ -6686,6 +6742,13 @@ Deno.serve(async (req) => {
           // "how many?" would invite an answer nobody could price.
           const wantsQuantity = resumedQuantitySale ? null : parseSaleMissingQuantity(writeBody);
           if (wantsQuantity) {
+            const wantedDate = resolveTransactionDate(writeBody);
+            if (wantedDate.kind === 'invalid') {
+              await replyQuietly(phone, transactionDateQuestion(wantedDate.reason, lang));
+              await audit(db, identity, waMessageId, 'quantity_wanted', 'date', 'clarification');
+              await finish('skipped');
+              continue;
+            }
             const found = await resolveProductForRead(db, identity, wantsQuantity.product);
             if (!found.error && found.resolution.kind === 'matched') {
               const match = found.resolution.match;
@@ -6702,7 +6765,9 @@ Deno.serve(async (req) => {
                 profile_id: identity.profile_id,
                 awaiting: 'daily_record_quantity',
                 receipt_id: null,
-                options: { ...wantsQuantity, product: match.productName },
+                options: {
+                  ...wantsQuantity, product: match.productName, occurredAt: wantedDate.occurredAt,
+                },
                 expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
                 updated_at: new Date().toISOString(),
               }, { onConflict: 'identity_id' });
@@ -6722,6 +6787,18 @@ Deno.serve(async (req) => {
           const creditSale = resumedQuantitySale ? null : parseCreditQuantitySale(writeBody);
           const quantitySale = resumedQuantitySale ?? creditSale?.sale ?? parseQuantityOnlySale(writeBody);
           if (quantitySale) {
+            const requestedDate = resumedQuantitySale
+              ? { kind: 'historical' as const, occurredAt: resumedQuantityOccurredAt }
+              : resolveTransactionDate(writeBody);
+            if (requestedDate.kind === 'invalid') {
+              await replyQuietly(phone, transactionDateQuestion(requestedDate.reason, lang));
+              await audit(db, identity, waMessageId, 'quantity_sale', 'date', 'clarification');
+              await finish('skipped');
+              continue;
+            }
+            const quantityOccurredAt = resumedQuantitySale
+              ? resumedQuantityOccurredAt
+              : requestedDate.occurredAt;
             const quantityCredit = resumedQuantityCredit
               ?? (creditSale ? { party: creditSale.party } : null);
             const quantityPaymentMethod = resumedQuantityPaymentMethod
@@ -6729,7 +6806,7 @@ Deno.serve(async (req) => {
               ?? null;
             const priced = await priceQuantitySale(
               db, identity, quantitySale, lang, settledCombos,
-              quantityCredit,
+              quantityCredit, quantityOccurredAt,
             );
             if (priced.kind === 'unknown') {
               if (!canUseCompanyFinanceReads(identity.role)) {
@@ -6745,6 +6822,7 @@ Deno.serve(async (req) => {
                 sourceMessageId: waMessageId,
                 credit: quantityCredit,
                 paymentMethod: quantityPaymentMethod,
+                occurredAt: quantityOccurredAt,
               };
               await db.from('whatsapp_conversations').upsert({
                 identity_id: identity.id,
@@ -6765,6 +6843,7 @@ Deno.serve(async (req) => {
               await askWhichVariant(
                 priced.phrase, priced.token, priced.candidates, priced.sale, waMessageId,
                 quantityCredit, quantityPaymentMethod,
+                quantityOccurredAt,
               );
               await audit(db, identity, waMessageId, 'quantity_sale', 'combo_variant', 'pending');
               await finish('skipped');
@@ -6774,7 +6853,7 @@ Deno.serve(async (req) => {
               await askAboutCombo(priced.splits[0], priced.sale, priced.units, waMessageId,
                 quantitySale.items.find((item) =>
                   comboKey(item.product) === comboKey(priced.splits[0].phrase))?.quantity ?? 1,
-                quantityCredit, quantityPaymentMethod);
+                quantityCredit, quantityPaymentMethod, quantityOccurredAt);
               await audit(db, identity, waMessageId, 'quantity_sale', 'combo', 'pending');
               await finish('skipped');
               continue;
@@ -6783,6 +6862,7 @@ Deno.serve(async (req) => {
               await askForPriceBand(
                 priced.choices, priced.sale, waMessageId, '',
                 quantityCredit, quantityPaymentMethod,
+                quantityOccurredAt,
               );
               await audit(db, identity, waMessageId, 'quantity_sale', 'band', 'pending');
               await finish('skipped');
@@ -6813,6 +6893,7 @@ Deno.serve(async (req) => {
                   description: spent.label,
                   lines: [],
                   confidence: 0.95,
+                  occurredAt: quantityOccurredAt,
                 });
               }
               if (closingRecords.length > 1) {

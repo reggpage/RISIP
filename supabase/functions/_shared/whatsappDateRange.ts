@@ -437,3 +437,26 @@ export function rangeLabel(range: ResolvedRange, lang: Lang): string {
 export function isFuture(range: ResolvedRange, now = new Date()): boolean {
   return range.from.getTime() > now.getTime();
 }
+
+export type TransactionDateResolution =
+  | { kind: 'current'; occurredAt: null }
+  | { kind: 'historical'; occurredAt: string; label: string }
+  | { kind: 'invalid'; reason: 'future' | 'range' };
+
+/** Resolve one transaction day without inventing a time inside a broad period. */
+export function resolveTransactionDate(
+  text: string | null | undefined,
+  now = new Date(),
+): TransactionDateResolution {
+  const range = resolveDateRange(text, now);
+  if (!range) return { kind: 'current', occurredAt: null };
+  if (isFuture(range, now)) return { kind: 'invalid', reason: 'future' };
+  if (range.to.getTime() - range.from.getTime() !== DAY) {
+    return { kind: 'invalid', reason: 'range' };
+  }
+  const today = startOfToday(now);
+  if (range.from.getTime() === today.getTime()) {
+    return { kind: 'current', occurredAt: null };
+  }
+  return { kind: 'historical', occurredAt: range.from.toISOString(), label: range.sw };
+}

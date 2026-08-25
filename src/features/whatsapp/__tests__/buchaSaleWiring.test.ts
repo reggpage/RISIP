@@ -46,11 +46,14 @@ describe('where the money comes from', () => {
     // A kifuko that holds a kilo carries no price, because the kilo has one.
     expect(webhook).toContain("await db.rpc('wa_price_sale_unit', {");
     expect(webhook).toContain('p_quantity: item.quantity,');
-    expect(webhook).toContain('item.declared = { ...item.declared, retail: unitPrice };');
+    expect(webhook).toContain('retail: unitPrice,');
+    expect(webhook).toContain("...(occurredAt ? { p_priced_at: occurredAt } : {}),");
   });
 
   it('only derives for a declared measure that has no price of its own', () => {
-    expect(webhook).toContain('if (!item.declared || item.declared.retail !== null) continue;');
+    expect(webhook).toContain(
+      'if (!item.declared || (occurredAt === null && item.declared.retail !== null)) continue;',
+    );
   });
 });
 
