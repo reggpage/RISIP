@@ -107,6 +107,7 @@ import {
   type ProductSaleLine,
 } from '../_shared/whatsappProductAnalytics.ts';
 import { interpretDailyRecordWithAi, MAX_INTERPRETATION_CHARS, validateAiCandidate } from '../_shared/whatsappDailyRecordsAi.ts';
+import { validateAiTransactionCandidate } from '../_shared/whatsappTransactionAi.ts';
 import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared/whatsappReadIntentAi.ts';
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import { findNameWarnings, nameWarningText, productKey } from '../_shared/whatsappProductNames.ts';
@@ -1118,14 +1119,24 @@ async function resolveWhatsAppContext(
  * only — the financial values stay behind tools.
  */
 async function loadVocabularyContext(db: Admin, identity: ResolvedWhatsAppIdentity): Promise<string> {
-  const { data, error } = await db.rpc('wa_company_vocabulary', { p_company_id: identity.company_id });
-  if (error) return '';
-  return vocabularyContext(((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+  const [vocabularyRows, productRows] = await Promise.all([
+    db.rpc('wa_company_vocabulary', { p_company_id: identity.company_id }),
+    db.rpc('company_product_names', { p_company_id: identity.company_id }),
+  ]);
+  const vocabulary = vocabularyRows.error ? '' : vocabularyContext(((vocabularyRows.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
     kind: String(row.kind ?? ''),
     term: String(row.term ?? ''),
     productName: row.product_name ? String(row.product_name) : null,
     meaning: row.meaning ? String(row.meaning) : null,
   })));
+  const products = (productRows.error ? [] : (productRows.data ?? []) as Array<Record<string, unknown>>)
+    .map((row) => String(row.product_name ?? '').trim().slice(0, 80))
+    .filter(Boolean)
+    .slice(0, 60);
+  const catalogue = products.length > 0
+    ? `Products registered by this business (names only; never prices):\n${products.map((name) => `- ${name}`).join('\n')}`
+    : '';
+  return [vocabulary, catalogue].filter(Boolean).join('\n\n').slice(0, 6000);
 }
 
 function assistantIdentityContext(identity: ResolvedWhatsAppIdentity, vocabulary?: string): AssistantIdentityContext {
@@ -2496,6 +2507,109 @@ async function executeAssistantTool(
       previous ? Number((previous as { unit_cost: number }).unit_cost) : null,
       lang,
     );
+    return { content: confirmation, terminalReply: confirmation };
+  }
+  if (name === 'propose_catalogue_transaction') {
+    const interpreted = validateAiTransactionCandidate(input);
+    const invalid = lang === 'sw'
+      ? 'Sijaelewa bidhaa, idadi au kipimo kwa uhakika. Niandikie bidhaa na idadi yake.'
+      : 'I could not safely understand the product, quantity or unit. State the product and its quantity.';
+    if (!interpreted) return { content: invalid, isError: true, terminalReply: invalid };
+
+    if (interpreted.kind === 'missing_quantity') {
+      const found = await resolveProductForRead(db, identity, interpreted.wanted.product);
+      if (found.error || found.resolution.kind !== 'matched') {
+        const unknown = lang === 'sw'
+          ? `Sijapata bidhaa *${interpreted.wanted.product}* kwenye bidhaa za biashara hii. Taja jina lililosajiliwa.`
+          : `I could not find *${interpreted.wanted.product}* in this business catalogue. Use its registered name.`;
+        return { content: unknown, isError: true, terminalReply: unknown };
+      }
+      const match = found.resolution.match;
+      const { data: unitRows, error: unitError } = await db.rpc('wa_company_product_sale_units', {
+        p_company_id: identity.company_id,
+      });
+      const units = (unitError ? [] : (unitRows ?? []) as Array<Record<string, unknown>>)
+        .filter((row) => String(row.product_key ?? '') === match.productKey)
+        .map((row) => String(row.unit_name ?? '')).filter(Boolean);
+      const wanted: QuantityWanted = { ...interpreted.wanted, product: match.productName };
+      await db.from('whatsapp_conversations').upsert({
+        identity_id: identity.id,
+        company_id: identity.company_id,
+        profile_id: identity.profile_id,
+        awaiting: 'daily_record_quantity',
+        receipt_id: null,
+        options: wanted,
+        expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'identity_id' });
+      const question = units.length > 1
+        ? quantityUnitQuestion(match.productName, units, lang)
+        : quantityQuestion(match.productName, units[0] ?? null, lang);
+      return { content: question, terminalReply: question };
+    }
+
+    const priced = await priceQuantitySale(
+      db, identity, interpreted.sale, lang, [], interpreted.credit,
+    );
+    if (priced.kind === 'blocked') {
+      return { content: priced.message, isError: true, terminalReply: priced.message };
+    }
+    if (priced.kind === 'unknown') {
+      const list = priced.products.map((product) => `*${product}*`).join(', ');
+      const unknown = lang === 'sw'
+        ? `Sijapata ${list} kwenye bidhaa za biashara hii. Sajili bidhaa hiyo kwanza au taja jina lake lililosajiliwa.`
+        : `I could not find ${list} in this business catalogue. Register it first or use its registered name.`;
+      return { content: unknown, isError: true, terminalReply: unknown };
+    }
+    if (priced.kind === 'band') {
+      const state: PriceBandPending = {
+        kind: 'price_band_choice',
+        sale: priced.sale,
+        choices: priced.choices,
+        answered: priced.choices.map(() => null),
+        sourceMessageId: waMessageId,
+        credit: interpreted.credit,
+        paymentMethod: interpreted.paymentMethod,
+      };
+      await db.from('whatsapp_conversations').upsert({
+        identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+        awaiting: 'product_cost', receipt_id: null, options: state,
+        expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+      }, { onConflict: 'identity_id' });
+      const question = priceBandQuestion(priced.choices, lang);
+      return { content: question, terminalReply: question };
+    }
+    if (priced.kind === 'combo_question' || priced.kind === 'combo_variant') {
+      const question = lang === 'sw'
+        ? 'Nimepata zaidi ya bidhaa au kipimo kimoja kinachoweza kumaanishwa. Taja jina kamili la bidhaa na kipimo chake.'
+        : 'More than one product or unit could match. State the full product name and its unit.';
+      return { content: question, isError: true, terminalReply: question };
+    }
+    if (priced.kind !== 'priced') return { content: invalid, isError: true, terminalReply: invalid };
+
+    const record = interpreted.paymentMethod
+      ? { ...priced.record, paymentMethod: interpreted.paymentMethod }
+      : priced.record;
+    const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, record);
+    const created = await createDailyRecordDraft(db, identity, waMessageId, guardedRecord, lang, said);
+    if (created.error || !created.id) {
+      const failed = lang === 'sw'
+        ? 'Sikuweza kuhifadhi draft hii. Hakuna rekodi iliyothibitishwa; tafadhali jaribu tena.'
+        : 'I could not save this draft. No record was confirmed; please try again.';
+      return { content: failed, isError: true, terminalReply: failed };
+    }
+    const state: DailyRecordConversation = {
+      kind: 'daily_record_confirmation',
+      dailyRecordId: created.id,
+      sourceMessageId: waMessageId,
+      record: guardedRecord,
+    };
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+      awaiting: 'payment_source', receipt_id: null, options: state,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+    const confirmation = `${identity.company_name} — ${quantitySaleConfirmation(priced.lines, lang, [], priced.notCounted)}`;
     return { content: confirmation, terminalReply: confirmation };
   }
   if (name === 'propose_daily_record') {
@@ -6175,6 +6289,15 @@ Deno.serve(async (req) => {
         const recordReading = isDailyRecordCandidate(body) ? parseDailyRecord(body, lang) : null;
         const recordUnreadable = recordReading?.kind === 'clarify' && recordReading.reason === 'message';
         const deterministicRecord = Boolean(recordReading) && !recordUnreadable;
+        // Product sales have a stricter catalogue-backed path than the generic
+        // money parser. If any of these parsers understands the wording, Claude
+        // is not called: aliases, units, pricing and missing-quantity state stay
+        // free, exact and deterministic.
+        const deterministicCatalogueTransaction = Boolean(
+          parseSaleMissingQuantity(body)
+          || parseCreditQuantitySale(body)
+          || parseQuantityOnlySale(body),
+        );
 
         const aiEligible = Boolean(body?.trim())
           && (!convo || convo.awaiting === 'product_analytics')
@@ -6186,6 +6309,7 @@ Deno.serve(async (req) => {
           // Daily-record arithmetic is deterministic first — but only when the
           // deterministic path can actually read it. See recordUnreadable.
           && !deterministicRecord
+          && !deterministicCatalogueTransaction
           // Stock reads and physical counts are exact server arithmetic. Let
           // the deterministic path answer in its own concise words instead of
           // letting the model paraphrase zero as a guess or turn “ziwe” into a

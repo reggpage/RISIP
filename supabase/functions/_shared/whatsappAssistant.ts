@@ -157,6 +157,7 @@ export const ASSISTANT_TOOL_NAMES = [
   'get_stock_on_hand',
   'search_risip_help',
   'propose_product_cost',
+  'propose_catalogue_transaction',
   'propose_daily_record',
 ] as const;
 
@@ -310,6 +311,34 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
     true,
   ),
   tool(
+    'propose_catalogue_transaction',
+    'Interpret a sale or customer credit sale whose wording defeated the deterministic parser. Use product/quantity/unit language only. Never provide prices, totals, conversions, stock effects or product ids; the server resolves and prices every line. Use null quantity and missing_fields=["quantity"] when quantity is absent. Credit words such as hajalipa, kwa deni or atalipa mean debt_issued and payment_method must be null.',
+    {
+      kind: { type: 'string', enum: ['sale', 'debt_issued'] },
+      party_name: { type: ['string', 'null'], description: 'Debtor name for debt_issued, otherwise null.' },
+      payment_method: { type: ['string', 'null'], enum: ['cash', 'mobile_money', 'bank', 'other', null] },
+      lines: {
+        type: 'array',
+        description: 'One to 50 product-language lines. The server enforces the limit.',
+        items: {
+          type: 'object',
+          properties: {
+            product: { type: 'string', description: 'Product wording from the message; never invent a catalogue identity.' },
+            quantity: { type: ['number', 'null'], description: 'Positive quantity, or null if missing.' },
+            unit: { type: ['string', 'null'], description: 'Spoken unit such as kilo or kifuko, normalized from language, or null.' },
+          },
+          required: ['product', 'quantity', 'unit'],
+          additionalProperties: false,
+        },
+      },
+      missing_fields: { type: 'array', items: { type: 'string', enum: ['product', 'quantity', 'unit', 'party'] } },
+      credit_wording: { type: ['string', 'null'], description: 'Credit words copied from the user, or null.' },
+      occurred_at_wording: { type: ['string', 'null'], description: 'Time wording copied from the user, or null.' },
+    },
+    ['kind', 'party_name', 'payment_method', 'lines', 'missing_fields', 'credit_wording', 'occurred_at_wording'],
+    true,
+  ),
+  tool(
     'propose_daily_record',
     'Interpret a request to record a sale, expense, customer debt, customer payment, or stock purchase. This creates only a pending draft and the server asks for explicit YES/NDIYO confirmation. Never call for a question about existing data. Never invent missing quantity, price, amount, party or product.',
     {
@@ -442,7 +471,8 @@ GROUNDING AND TOOLS
 - Do your reasoning privately. Give the user a concise answer and, where useful, a short explanation of the evidence—not hidden chain-of-thought.
 
 WRITES AND HUMAN CONTROL
-- The only ledger-related operation available here is propose_daily_record. It creates a pending draft; it does not confirm or post it. propose_product_cost only prepares a confirmation for a buying-cost setting; it does not save it immediately.
+- For a product sale or product credit sale, use propose_catalogue_transaction. It supplies language only; the server re-resolves products and units and calculates every price and total. Never put a guessed price into propose_daily_record.
+- propose_daily_record remains for explicit-money records such as expenses, customer payments and sales whose amount/price the user actually stated. Both proposal tools create only a pending draft; neither confirms or posts it. propose_product_cost only prepares a confirmation for a buying-cost setting; it does not save it immediately.
 - Never claim a record is saved or confirmed until the server says so. Explicit NDIYO/YES is required and role policy is enforced server-side.
 - Never approve, pay, reverse, correct, void, delete, invite, change settings, or move money over plain WhatsApp text. Explain that the user must open Risip for those protected actions.
 - A SELLING PRICE IS NOT A PROTECTED SETTING, and neither is a buying cost or a stock count. The server reads all three straight from a WhatsApp message and asks the owner to confirm before saving. Never tell somebody to open the app for these — tell them the words to send:

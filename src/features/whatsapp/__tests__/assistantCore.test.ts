@@ -46,6 +46,7 @@ describe('Risip conversational AI core', () => {
     expect(ASSISTANT_TOOLS.some((definition) => definition.name === 'get_receipt_details'))
       .toBe(WHATSAPP_RECEIPTS_ENABLED);
     expect(ASSISTANT_TOOL_NAMES).toContain('get_invoice_details');
+    expect(ASSISTANT_TOOL_NAMES).toContain('propose_catalogue_transaction');
     expect(ASSISTANT_TOOL_NAMES).toContain('propose_daily_record');
     expect(ASSISTANT_TOOL_NAMES).not.toContain('approve_receipt');
     expect(ASSISTANT_TOOL_NAMES).not.toContain('pay_claim');
@@ -54,6 +55,7 @@ describe('Risip conversational AI core', () => {
     expect(ASSISTANT_TOOLS.every((tool) => tool.input_schema)).toBe(true);
     expect(ASSISTANT_TOOLS.filter((tool) => tool.strict).map((tool) => tool.name)).toEqual([
       'propose_product_cost',
+      'propose_catalogue_transaction',
       'propose_daily_record',
     ]);
     const serializedSchemas = JSON.stringify(ASSISTANT_TOOLS.map((tool) => tool.input_schema));
