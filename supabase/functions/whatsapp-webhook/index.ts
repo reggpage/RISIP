@@ -443,6 +443,8 @@ type NewProductSaleSetup = {
   missingProducts: string[];
   sale: QuantitySale;
   sourceMessageId: string;
+  credit?: { party: string } | null;
+  paymentMethod?: QuantityWanted['paymentMethod'];
 };
 
 /**
@@ -467,6 +469,8 @@ type ComboPending = {
   units: [string, string[]][];
   orders: number;
   sourceMessageId: string;
+  credit?: { party: string } | null;
+  paymentMethod?: QuantityWanted['paymentMethod'];
 };
 
 /** Offered after the sale is confirmed, to owner and accountant only. */
@@ -484,6 +488,8 @@ type ComboVariantPending = {
   candidates: string[];
   known: ComboSplit[];
   sourceMessageId: string;
+  credit?: { party: string } | null;
+  paymentMethod?: QuantityWanted['paymentMethod'];
 };
 
 type PriceBandPending = {
@@ -493,6 +499,8 @@ type PriceBandPending = {
   /** Bands already settled by an earlier, partial answer. */
   answered: (Band | null)[];
   sourceMessageId: string;
+  credit?: { party: string } | null;
+  paymentMethod?: QuantityWanted['paymentMethod'];
 };
 
 type NewProductPricingState = {
@@ -500,6 +508,8 @@ type NewProductPricingState = {
   products: NewProductPricing[];
   pendingSale?: QuantitySale;
   sourceMessageId?: string;
+  credit?: { party: string } | null;
+  paymentMethod?: QuantityWanted['paymentMethod'];
 };
 
 /**
@@ -3547,6 +3557,8 @@ Deno.serve(async (req) => {
           candidates: string[],
           sale: QuantitySale,
           sourceMessageId: string,
+          credit: { party: string } | null = null,
+          paymentMethod: QuantityWanted['paymentMethod'] = null,
         ) => {
           await db.from('whatsapp_conversations').upsert({
             identity_id: identity.id,
@@ -3556,7 +3568,7 @@ Deno.serve(async (req) => {
             receipt_id: null,
             options: {
               kind: 'combo_variant', sale, phrase, token, candidates,
-              known: settledCombos, sourceMessageId,
+              known: settledCombos, sourceMessageId, credit, paymentMethod,
             } satisfies ComboVariantPending,
             expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
             updated_at: new Date().toISOString(),
@@ -3571,6 +3583,8 @@ Deno.serve(async (req) => {
           units: [string, string[]][],
           sourceMessageId: string,
           orders: number,
+          credit: { party: string } | null = null,
+          paymentMethod: QuantityWanted['paymentMethod'] = null,
         ) => {
           await db.from('whatsapp_conversations').upsert({
             identity_id: identity.id,
@@ -3580,7 +3594,7 @@ Deno.serve(async (req) => {
             receipt_id: null,
             options: {
               kind: 'combo_clarification',
-              sale, split, units, orders, sourceMessageId,
+              sale, split, units, orders, sourceMessageId, credit, paymentMethod,
               known: settledCombos,
             } satisfies ComboPending,
             expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
@@ -3594,6 +3608,8 @@ Deno.serve(async (req) => {
           sale: QuantitySale,
           sourceMessageId: string,
           prefix = '',
+          credit: { party: string } | null = null,
+          paymentMethod: QuantityWanted['paymentMethod'] = null,
         ) => {
           await db.from('whatsapp_conversations').upsert({
             identity_id: identity.id,
@@ -3607,6 +3623,8 @@ Deno.serve(async (req) => {
               choices,
               answered: choices.map(() => null),
               sourceMessageId,
+              credit,
+              paymentMethod,
             } satisfies PriceBandPending,
             expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
             updated_at: new Date().toISOString(),
@@ -3822,6 +3840,8 @@ Deno.serve(async (req) => {
                 : item)),
           };
           settledCombos = comboVariantPending.known;
+          resumedQuantityCredit = comboVariantPending.credit ?? null;
+          resumedQuantityPaymentMethod = comboVariantPending.paymentMethod ?? null;
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'combo_variant', 'answered', 'applied');
         }
@@ -3877,6 +3897,8 @@ Deno.serve(async (req) => {
           }
           resumedQuantitySale = comboPending.sale;
           settledCombos = [...comboPending.known, settled];
+          resumedQuantityCredit = comboPending.credit ?? null;
+          resumedQuantityPaymentMethod = comboPending.paymentMethod ?? null;
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'combo', 'answered', 'applied');
         }
@@ -4112,6 +4134,8 @@ Deno.serve(async (req) => {
             ...bandPending.sale,
             items: applyPriceBands(bandPending.sale.items, bandPending.choices, settled),
           };
+          resumedQuantityCredit = bandPending.credit ?? null;
+          resumedQuantityPaymentMethod = bandPending.paymentMethod ?? null;
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'price_band', 'answered', 'applied');
         }
@@ -4743,6 +4767,8 @@ Deno.serve(async (req) => {
           const pendingProducts = newProductPending.products;
           const pendingSale = newProductPending.pendingSale;
           const pendingSourceMessageId = newProductPending.sourceMessageId;
+          const pendingCredit = newProductPending.credit ?? null;
+          const pendingPaymentMethod = newProductPending.paymentMethod ?? null;
           if (isDailyRecordConfirmation(body)) {
             const { error: costError } = await db.rpc('wa_set_product_costs', {
               p_phone: phone,
@@ -4764,15 +4790,22 @@ Deno.serve(async (req) => {
               await clearConversation(db, identity.id as string);
               await replyQuietly(phone, productCostErrorMessage(failed, lang));
             } else if (pendingSale && pendingSourceMessageId) {
-              const priced = await priceQuantitySale(db, identity, pendingSale, lang);
+              const priced = await priceQuantitySale(
+                db, identity, pendingSale, lang, [], pendingCredit,
+              );
               if (priced.kind === 'band') {
                 // Just registered with both prices, and the waiting sale named
                 // neither. Ask before pricing rather than after saving.
                 await askForPriceBand(priced.choices, priced.sale, pendingSourceMessageId,
-                  `${newProductSaved(pendingProducts, lang, true)}\n\n`);
+                  `${newProductSaved(pendingProducts, lang, true)}\n\n`,
+                  pendingCredit, pendingPaymentMethod);
                 await audit(db, identity, pendingSourceMessageId, 'quantity_sale', 'band', 'pending');
               } else if (priced.kind === 'priced') {
-                const guardedRecord = await addHistoricalPriceWarnings(db, identity.company_id, priced.record);
+                const resumedRecord = pendingPaymentMethod
+                  ? { ...priced.record, paymentMethod: pendingPaymentMethod }
+                  : priced.record;
+                const guardedRecord = await addHistoricalPriceWarnings(
+                  db, identity.company_id, resumedRecord);
                 const records: ParsedDailyRecord[] = [guardedRecord, ...pendingSale.expenses.map((spent) => ({
                   kind: 'expense' as const,
                   amount: spent.amount,
@@ -5584,6 +5617,8 @@ Deno.serve(async (req) => {
             ...(newProductSaleSetup ? {
               pendingSale: newProductSaleSetup.sale,
               sourceMessageId: newProductSaleSetup.sourceMessageId,
+              credit: newProductSaleSetup.credit ?? null,
+              paymentMethod: newProductSaleSetup.paymentMethod ?? null,
             } : {}),
           };
           await db.from('whatsapp_conversations').upsert({
@@ -6563,9 +6598,14 @@ Deno.serve(async (req) => {
           const creditSale = resumedQuantitySale ? null : parseCreditQuantitySale(writeBody);
           const quantitySale = resumedQuantitySale ?? creditSale?.sale ?? parseQuantityOnlySale(writeBody);
           if (quantitySale) {
+            const quantityCredit = resumedQuantityCredit
+              ?? (creditSale ? { party: creditSale.party } : null);
+            const quantityPaymentMethod = resumedQuantityPaymentMethod
+              ?? extractPaymentMethod(writeBody)?.method
+              ?? null;
             const priced = await priceQuantitySale(
               db, identity, quantitySale, lang, settledCombos,
-              resumedQuantityCredit ?? (creditSale ? { party: creditSale.party } : null),
+              quantityCredit,
             );
             if (priced.kind === 'unknown') {
               if (!canUseCompanyFinanceReads(identity.role)) {
@@ -6579,6 +6619,8 @@ Deno.serve(async (req) => {
                 missingProducts: priced.products,
                 sale: priced.sale,
                 sourceMessageId: waMessageId,
+                credit: quantityCredit,
+                paymentMethod: quantityPaymentMethod,
               };
               await db.from('whatsapp_conversations').upsert({
                 identity_id: identity.id,
@@ -6596,7 +6638,10 @@ Deno.serve(async (req) => {
               continue;
             }
             if (priced.kind === 'combo_variant') {
-              await askWhichVariant(priced.phrase, priced.token, priced.candidates, priced.sale, waMessageId);
+              await askWhichVariant(
+                priced.phrase, priced.token, priced.candidates, priced.sale, waMessageId,
+                quantityCredit, quantityPaymentMethod,
+              );
               await audit(db, identity, waMessageId, 'quantity_sale', 'combo_variant', 'pending');
               await finish('skipped');
               continue;
@@ -6604,13 +6649,17 @@ Deno.serve(async (req) => {
             if (priced.kind === 'combo_question') {
               await askAboutCombo(priced.splits[0], priced.sale, priced.units, waMessageId,
                 quantitySale.items.find((item) =>
-                  comboKey(item.product) === comboKey(priced.splits[0].phrase))?.quantity ?? 1);
+                  comboKey(item.product) === comboKey(priced.splits[0].phrase))?.quantity ?? 1,
+                quantityCredit, quantityPaymentMethod);
               await audit(db, identity, waMessageId, 'quantity_sale', 'combo', 'pending');
               await finish('skipped');
               continue;
             }
             if (priced.kind === 'band') {
-              await askForPriceBand(priced.choices, priced.sale, waMessageId);
+              await askForPriceBand(
+                priced.choices, priced.sale, waMessageId, '',
+                quantityCredit, quantityPaymentMethod,
+              );
               await audit(db, identity, waMessageId, 'quantity_sale', 'band', 'pending');
               await finish('skipped');
               continue;
@@ -6622,8 +6671,8 @@ Deno.serve(async (req) => {
               continue;
             }
             if (priced.kind === 'priced') {
-              const recordWithPayment = resumedQuantityPaymentMethod
-                ? { ...priced.record, paymentMethod: resumedQuantityPaymentMethod }
+              const recordWithPayment = quantityPaymentMethod
+                ? { ...priced.record, paymentMethod: quantityPaymentMethod }
                 : priced.record;
               const guardedRecord = await addHistoricalPriceWarnings(
                 db, identity.company_id, recordWithPayment);

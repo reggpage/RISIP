@@ -277,25 +277,33 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   if (!payload) return null;
 
   // "vifuko 4 vya mbwa" — the measure leads and the goods follow, which is how
-  // a person says it out loud. Rewritten into the ordinary "<goods> <count>"
-  // shape so ONE pattern still reads every line, with the measure remembered
-  // rather than discarded. The words are only moved when the leading word
-  // really is a measure this system knows; anything else is left alone.
-  // The joiner is optional. "nusu kilo nyama" normalises to "kilo 0.5 nyama",
-  // which says the same thing with no "vya" in it.
+  // a person says it out loud. Rewritten into "mbwa kifuko 4", the ordinary
+  // product/unit/quantity shape, before the one parser below reads every line.
   //
-  // Two guards, and the second was MEASURED: the leading word must itself be a
-  // measure this system knows, so no product name can fire it; and what follows
-  // must carry NO further digits. Without that, "trei 3 na mayai 15" — an
-  // ordinary bare list a genge sends — was read as three treys of "na mayai 15"
-  // and refused outright.
-  let leadingUnit: string | null = null;
-  let body = payload;
-  const unitFirst = /^([\p{L}]+)\s+([0-9]+(?:\.[0-9]+)?)\s+(?:(?:vya|za|ya|wa|la|of)\s+)?([\p{L}][^0-9]*)$/iu.exec(payload);
-  if (unitFirst && isUnitWord(unitFirst[1])) {
-    leadingUnit = canonicalUnitWord(unitFirst[1]);
-    body = clean(unitFirst[3]) + ' ' + unitFirst[2];
-  }
+  // This used to work only when it was the sole product. In
+  // "vifuko 4 vya mbwa na soseji 2" the second number disabled the rewrite and
+  // the parser produced products called "vifuko" and "vya mbwa na soseji".
+  // Rewriting one bounded segment at a time keeps the same language rule for a
+  // single line and a multi-product line.
+  //
+  // The product part cannot contain a digit. That is the measured guard which
+  // keeps "trei 3 na mayai 15" as two ordinary products rather than treating
+  // trei as a leading measure over the rest of the sentence.
+  const leadingUnits: Array<{ product: string; quantity: number; unit: string }> = [];
+  const unitFirstSegment = /(^|(?:\s+(?:na|and)\s+)|(?:[,;]\s*))([\p{L}]+)\s+([0-9]+(?:\.[0-9]+)?)\s+(?:(?:vya|za|ya|wa|la|of)\s+)?([\p{L}][^0-9]*?)(?=(?:(?:\s+(?:na|and)\s+)|(?:[,;]\s*))[\p{L}][\p{L}0-9'’.-]*(?:\s+[\p{L}][\p{L}0-9'’.-]*)*\s+[0-9]+(?:\.[0-9]+)?|$)/giu;
+  const body = payload.replace(
+    unitFirstSegment,
+    (whole, separator: string, unit: string, quantity: string, product: string) => {
+      if (!isUnitWord(unit)) return whole;
+      const productName = clean(product);
+      leadingUnits.push({
+        product: productName,
+        quantity: Number(quantity),
+        unit: canonicalUnitWord(unit),
+      });
+      return `${separator}${productName} ${quantity}`;
+    },
+  );
 
   const items: QuantitySaleItem[] = [];
   // A name runs until the number that follows it. Names here are routinely three
@@ -343,6 +351,13 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
   // Conservative on purpose: a lone word is never split, so a shop whose
   // product IS "mifuko" or "chupa" keeps it.
   const measured = items.map((item) => {
+    const leadingAt = leadingUnits.findIndex((candidate) =>
+      candidate.product.toLocaleLowerCase('sw-TZ') === item.product.toLocaleLowerCase('sw-TZ')
+      && candidate.quantity === item.quantity);
+    if (leadingAt >= 0) {
+      const [leading] = leadingUnits.splice(leadingAt, 1);
+      return { ...item, spokenUnit: leading.unit, productWithoutUnit: item.product };
+    }
     const words = item.product.split(' ');
     const last = words[words.length - 1];
     if (words.length >= 2 && isUnitWord(last)) {
@@ -351,7 +366,7 @@ export function parseQuantityOnlySale(text: string | null | undefined): Quantity
         return { ...item, spokenUnit: canonicalUnitWord(last), productWithoutUnit: name };
       }
     }
-    return leadingUnit ? { ...item, spokenUnit: leadingUnit, productWithoutUnit: item.product } : item;
+    return item;
   });
   items.length = 0;
   items.push(...measured);

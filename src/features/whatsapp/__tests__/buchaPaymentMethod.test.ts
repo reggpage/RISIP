@@ -93,10 +93,12 @@ describe('a bare answer to a question that was asked', () => {
 });
 
 describe('where it is applied', () => {
-  it('is applied once, at the single drafting helper', () => {
+  it('uses one shared extractor for drafting and parked multi-product context', () => {
     expect(webhook).toContain('const stated = extractPaymentMethod(said);');
-    // Once in the import, once at the call. Never inside a parser.
-    expect(webhook.split('extractPaymentMethod').length - 1).toBe(2);
+    expect(webhook).toContain('extractPaymentMethod(writeBody)?.method');
+    // Import + the central drafting helper + the one pre-draft context capture.
+    // Individual language parsers still never apply payment methods themselves.
+    expect(webhook.split('extractPaymentMethod').length - 1).toBe(3);
   });
 
   it('never overrides a method the flow already established', () => {

@@ -82,10 +82,6 @@ export function parseCreditQuantitySale(
   // both behave exactly as they do in a paid sale.
   const sale = parseQuantityOnlySale(`nimeuza ${goods}`);
   if (!sale || sale.items.length === 0) return null;
-  // One product at a time for now. A credit sale of several products is real
-  // and is not yet proven through this path, so it is declined rather than
-  // half-read.
-  if (sale.items.length > 1) return null;
 
   return {
     kind: 'credit_quantity_sale',

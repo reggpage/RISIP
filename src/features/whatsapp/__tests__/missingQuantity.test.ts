@@ -98,8 +98,10 @@ describe('conversation-state safety and normal pipeline reuse', () => {
     expect(quantityBlock).toContain('resumedQuantitySale = {');
     expect(webhook).toContain('const quantitySale = resumedQuantitySale ?? creditSale?.sale');
     expect(webhook).toContain('const priced = await priceQuantitySale(');
-    expect(webhook).toContain('resumedQuantityCredit ?? (creditSale');
-    expect(webhook).toContain('paymentMethod: resumedQuantityPaymentMethod');
+    expect(webhook).toContain('const quantityCredit = resumedQuantityCredit');
+    expect(webhook).toContain('?? (creditSale ? { party: creditSale.party } : null);');
+    expect(webhook).toContain('const quantityPaymentMethod = resumedQuantityPaymentMethod');
+    expect(webhook).toContain('const recordWithPayment = quantityPaymentMethod');
   });
 
   it('only reads a bare number inside a live quantity conversation', () => {

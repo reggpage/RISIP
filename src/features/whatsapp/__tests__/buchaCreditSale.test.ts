@@ -79,8 +79,9 @@ describe('what is not a customer taking goods on credit', () => {
 describe('one pricing engine, two ledger classifications', () => {
   it('prices credit through the same function as a paid sale', () => {
     expect(webhook).toContain('const creditSale = resumedQuantitySale ? null : parseCreditQuantitySale(writeBody);');
-    expect(webhook).toContain(
-      'resumedQuantityCredit ?? (creditSale ? { party: creditSale.party } : null),');
+    expect(webhook).toContain('const quantityCredit = resumedQuantityCredit');
+    expect(webhook).toContain('?? (creditSale ? { party: creditSale.party } : null);');
+    expect(webhook).toContain('quantityCredit,');
     // priceQuantitySale is also called by the resume paths, after a band or
     // combination question has been answered. What matters is that there is no
     // SECOND pricing function, and that credit enters through the same one.
