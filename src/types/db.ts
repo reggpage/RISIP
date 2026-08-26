@@ -342,7 +342,8 @@ export type DailyRecordKind =
   // folded into one above it: a spoiled kilo is not an expense, goods taken
   // home are not a sale, and money owed TO a supplier is not money owed BY a
   // customer.
-  | 'stock_loss' | 'owner_use' | 'supplier_payable' | 'supplier_payment';
+  | 'stock_loss' | 'owner_use' | 'supplier_payable' | 'supplier_payment'
+  | 'whole_animal_procurement';
 export type DailyRecordStatus = 'pending_confirmation' | 'confirmed' | 'voided';
 export type DailyRecordSource = 'app' | 'whatsapp' | 'other';
 

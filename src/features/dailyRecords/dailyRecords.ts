@@ -17,6 +17,8 @@ export type DailyRecordSummary = {
    * about the business.
    */
   stockPurchases: number;
+  /** Whole animals bought as inputs, before any measured product breakdown. */
+  wholeAnimalProcurements: number;
   debtIssued: number;
   customerPayments: number;
   /** Money in minus money out. Stock counts as out — it left the till. */
@@ -50,17 +52,19 @@ export function getDailyRecordSummary(
   const sales = sum('sale');
   const expenses = sum('expense');
   const stockPurchases = sum('stock_purchase');
+  const wholeAnimalProcurements = sum('whole_animal_procurement');
   const customerPayments = sum('customer_payment');
 
   return {
     sales,
     expenses,
     stockPurchases,
+    wholeAnimalProcurements,
     debtIssued: sum('debt_issued'),
     customerPayments,
     // Stock must be subtracted here. Leaving it out would tell a trader who just
     // spent 500,000 restocking that they still hold it.
-    cashMovement: sales + customerPayments - expenses - stockPurchases,
+    cashMovement: sales + customerPayments - expenses - stockPurchases - wholeAnimalProcurements,
   };
 }
 
@@ -150,4 +154,3 @@ export function useDailyRecords(): DailyRecordsState & { reload: () => void } {
 
   return { ...state, reload };
 }
-

@@ -7,7 +7,8 @@ import { DAILY_RECORD_CHART_COLORS } from '@/features/dailyRecords/uiRules';
 
 type Gran = 'day' | 'week' | 'month' | 'year';
 type SeriesKey = 'sale' | 'expense' | 'stock_purchase' | 'debt_issued' | 'customer_payment'
-  | 'stock_loss' | 'owner_use' | 'supplier_payable' | 'supplier_payment' | 'cash';
+  | 'stock_loss' | 'owner_use' | 'supplier_payable' | 'supplier_payment'
+  | 'whole_animal_procurement' | 'cash';
 type Series = { key: SeriesKey; label: string; color: string };
 
 const colors: Record<SeriesKey, string> = {
@@ -20,6 +21,7 @@ const colors: Record<SeriesKey, string> = {
   owner_use: DAILY_RECORD_CHART_COLORS.ownerUse,
   supplier_payable: DAILY_RECORD_CHART_COLORS.supplierPayable,
   supplier_payment: DAILY_RECORD_CHART_COLORS.supplierPayment,
+  whole_animal_procurement: DAILY_RECORD_CHART_COLORS.stockPurchase,
   cash: DAILY_RECORD_CHART_COLORS.cashMovement,
 };
 
@@ -71,7 +73,7 @@ function buildPoints(records: DailyRecord[], gran: Gran): Point[] {
     } else {
       date = new Date(today.getFullYear() - index, 0, 1); key = String(date.getFullYear()); label = key;
     }
-    points.push({ key, label, values: { sale: 0, expense: 0, stock_purchase: 0, debt_issued: 0, customer_payment: 0, stock_loss: 0, owner_use: 0, supplier_payable: 0, supplier_payment: 0, cash: 0 } });
+    points.push({ key, label, values: { sale: 0, expense: 0, stock_purchase: 0, debt_issued: 0, customer_payment: 0, stock_loss: 0, owner_use: 0, supplier_payable: 0, supplier_payment: 0, whole_animal_procurement: 0, cash: 0 } });
   }
   const indexByKey = new Map(points.map((point, index) => [point.key, index]));
   for (const record of records) {
@@ -84,7 +86,8 @@ function buildPoints(records: DailyRecord[], gran: Gran): Point[] {
   // Stock is money that left the till, so it comes off the cash line too.
   for (const point of points) {
     point.values.cash = point.values.sale + point.values.customer_payment
-      - point.values.expense - point.values.stock_purchase;
+      - point.values.expense - point.values.stock_purchase
+      - point.values.whole_animal_procurement;
   }
   return points;
 }

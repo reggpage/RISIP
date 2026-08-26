@@ -15,7 +15,8 @@ export type DailyRecordKind =
   // folded into one above it: a spoiled kilo is not an expense, goods taken
   // home are not a sale, and money owed TO a supplier is not money owed BY a
   // customer.
-  | 'stock_loss' | 'owner_use' | 'supplier_payable' | 'supplier_payment';
+  | 'stock_loss' | 'owner_use' | 'supplier_payable' | 'supplier_payment'
+  | 'whole_animal_procurement';
 
 export type DailyRecordLine = {
   description: string;
@@ -958,6 +959,7 @@ function kindLabel(kind: DailyRecordKind, lang: Lang): string {
       debt_issued: 'Mkopo uliotolewa', customer_payment: 'Malipo ya mteja',
       stock_loss: 'Upotevu wa bidhaa', owner_use: 'Bidhaa zilizochukuliwa nyumbani',
       supplier_payable: 'Deni la muuzaji', supplier_payment: 'Malipo kwa muuzaji',
+      whole_animal_procurement: 'Ununuzi wa ng\'ombe mzima',
     })[kind];
   }
   return ({
@@ -965,6 +967,7 @@ function kindLabel(kind: DailyRecordKind, lang: Lang): string {
     debt_issued: 'Debt issued', customer_payment: 'Customer payment',
     stock_loss: 'Stock loss', owner_use: 'Taken by owner',
     supplier_payable: 'Owed to supplier', supplier_payment: 'Paid to supplier',
+    whole_animal_procurement: 'Whole-animal procurement',
   })[kind];
 }
 

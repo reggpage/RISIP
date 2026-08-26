@@ -198,6 +198,10 @@ import {
   type ProductSetupPending,
 } from '../_shared/whatsappProductSetup.ts';
 import { extractPaymentMethod, parsePaymentMethodAnswer } from '../_shared/whatsappPaymentMethod.ts';
+import {
+  parseWholeAnimalProcurement,
+  wholeAnimalProcurementConfirmation,
+} from '../_shared/whatsappWholeAnimalProcurement.ts';
 import { parseCreditQuantitySale } from '../_shared/whatsappCreditSale.ts';
 import {
   parseQuantityAnswer,
@@ -6342,9 +6346,11 @@ Deno.serve(async (req) => {
         //
         // Only the last one is handed over. Ordinary sales — the highest
         // volume messages in the product — still never touch the network.
+        const wholeAnimalReading = parseWholeAnimalProcurement(body, lang);
         const recordReading = isDailyRecordCandidate(body) ? parseDailyRecord(body, lang) : null;
         const recordUnreadable = recordReading?.kind === 'clarify' && recordReading.reason === 'message';
-        const deterministicRecord = Boolean(recordReading) && !recordUnreadable;
+        const deterministicRecord = (Boolean(recordReading) && !recordUnreadable)
+          || wholeAnimalReading.kind !== 'none';
         // Product sales have a stricter catalogue-backed path than the generic
         // money parser. If any of these parsers understands the wording, Claude
         // is not called: aliases, units, pricing and missing-quantity state stay
@@ -6483,6 +6489,91 @@ Deno.serve(async (req) => {
         // Asked once, before the sale parsers see it; a product already in the
         // catalogue has been measured before and is never asked about again.
         if (!mixed && isDailyRecordCandidate(writeBody)) {
+          // ── Bucha phase 6: the animal arrives, but its products do not ───
+          //
+          // A whole cow is procured as one input asset. It intentionally has
+          // no daily_record_lines: those are product-stock movements, and the
+          // kilograms and offal do not exist until a later measured breakdown.
+          const procurementReading = parseWholeAnimalProcurement(writeBody, lang);
+          if (procurementReading.kind === 'supplier_credit') {
+            await replyQuietly(phone, procurementReading.question);
+            await audit(db, identity, waMessageId, 'whole_animal_procurement', 'supplier_credit', 'clarification');
+            await finish('skipped');
+            continue;
+          }
+          if (procurementReading.kind === 'missing') {
+            await replyQuietly(phone, procurementReading.question);
+            await audit(db, identity, waMessageId, 'whole_animal_procurement',
+              procurementReading.missing.join(','), 'clarification');
+            await finish('skipped');
+            continue;
+          }
+          if (procurementReading.kind === 'parsed') {
+            const wantedDate = resolveTransactionDate(writeBody);
+            if (wantedDate.kind === 'invalid') {
+              await replyQuietly(phone, transactionDateQuestion(wantedDate.reason, lang));
+              await audit(db, identity, waMessageId, 'whole_animal_procurement', 'date', 'clarification');
+              await finish('skipped');
+              continue;
+            }
+            const procurement = procurementReading.procurement;
+            const occurredAt = wantedDate.occurredAt;
+            const { data: procurementId, error: procurementError } = await db.rpc(
+              'wa_create_whole_animal_procurement_draft',
+              {
+                p_profile_id: identity.profile_id,
+                p_company_id: identity.company_id,
+                p_animal_type: procurement.animalType,
+                p_animal_count: procurement.animalCount,
+                p_purchase_total: procurement.purchaseTotal,
+                p_supplier_name: procurement.supplierName,
+                p_payment_method: procurement.paymentMethod,
+                p_occurred_at: occurredAt ?? new Date().toISOString(),
+                p_source_message_id: waMessageId,
+                p_reference: procurement.reference,
+                p_note: procurement.note,
+              },
+            );
+            if (procurementError || !procurementId) {
+              await replyQuietly(phone, lang === 'sw'
+                ? 'Sikuweza kuhifadhi draft ya ununuzi huu. Hakuna stock ya nyama iliyoongezwa; jaribu tena.'
+                : 'I could not save this procurement draft. No meat stock was added; please try again.');
+              await audit(db, identity, waMessageId, 'whole_animal_procurement', 'draft', 'failed');
+              await finish('skipped');
+              continue;
+            }
+            const record: ParsedDailyRecord = {
+              kind: 'whole_animal_procurement',
+              amount: procurement.purchaseTotal,
+              partyName: procurement.supplierName,
+              description: `${procurement.animalType} mzima`,
+              lines: [],
+              paymentMethod: procurement.paymentMethod,
+              occurredAt,
+              confidence: 0.99,
+            };
+            const state: DailyRecordConversation = {
+              kind: 'daily_record_confirmation',
+              dailyRecordId: String(procurementId),
+              sourceMessageId: waMessageId,
+              record,
+            };
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'payment_source',
+              receipt_id: null,
+              options: state,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await replyQuietly(phone, wholeAnimalProcurementConfirmation(procurement, occurredAt, lang));
+            await audit(db, identity, waMessageId, 'whole_animal_procurement', 'create', 'pending');
+            await finish('applied');
+            continue;
+          }
+
           const { data: catalogueRows } = await db.rpc('company_product_names', {
             p_company_id: identity.company_id,
           });
