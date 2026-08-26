@@ -353,9 +353,16 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
       },
       missing_fields: { type: 'array', items: { type: 'string', enum: ['product', 'quantity', 'unit', 'party'] } },
       credit_wording: { type: ['string', 'null'], description: 'Credit words copied from the user, or null.' },
+      // The trader's OWN word for which price they used. Never a number: the
+      // server decides what jumla is worth. Dropping this word made Risip ask
+      // 'umeuza kwa bei gani?' about a sentence that had already said jumla.
+      price_band_wording: {
+        anyOf: [{ type: 'string' }, { type: 'null' }],
+        description: 'Copy jumla/wholesale or rejareja/retail from the message, or null if the user did not say.',
+      },
       occurred_at_wording: { type: ['string', 'null'], description: 'Time wording copied from the user, or null.' },
     },
-    ['kind', 'party_name', 'payment_method', 'lines', 'missing_fields', 'credit_wording', 'occurred_at_wording'],
+    ['kind', 'party_name', 'payment_method', 'lines', 'missing_fields', 'credit_wording', 'occurred_at_wording', 'price_band_wording'],
     true,
   ),
   tool(

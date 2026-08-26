@@ -6,8 +6,27 @@ export const MAX_AI_TRANSACTION_LINES = 50;
 
 const ROOT_KEYS = new Set([
   'kind', 'party_name', 'payment_method', 'lines', 'missing_fields',
-  'credit_wording', 'occurred_at_wording',
+  'credit_wording', 'occurred_at_wording', 'price_band_wording',
 ]);
+/**
+ * Which of the shop's two prices the trader named, in their own word.
+ *
+ * MEASURED FAILURE, straight after the model was put in front of the parsers:
+ * "nimeuza nguvu ya sala 7 jumla" was answered "umeuza kwa bei gani?" — a
+ * question the sentence had already answered. The deterministic parser read
+ * "jumla" perfectly; the tool schema simply had nowhere to put it, so the word
+ * was dropped on the way through the model and the server had to ask.
+ *
+ * The model carries the WORD. The server decides what it is worth.
+ */
+function bandFromWording(value: unknown): 'retail' | 'wholesale' | null {
+  if (typeof value !== 'string') return null;
+  const said = value.toLowerCase().trim();
+  if (/\b(?:jumla|wholesale|bulk)\b/.test(said)) return 'wholesale';
+  if (/\b(?:rejareja|retail)\b/.test(said)) return 'retail';
+  return null;
+}
+
 const LINE_KEYS = new Set(['product', 'quantity', 'unit']);
 const PAYMENT_METHODS = new Set<DailyRecordPaymentMethod>(['cash', 'mobile_money', 'bank', 'other']);
 const MISSING_FIELDS = new Set(['product', 'quantity', 'unit', 'party']);
@@ -113,7 +132,7 @@ export function validateAiTransactionCandidate(candidate: unknown): AiTransactio
       spokenUnit: unit,
       productWithoutUnit: unit ? product : null,
       unit: null,
-      band: null,
+      band: bandFromWording(raw.price_band_wording),
     });
   }
 
