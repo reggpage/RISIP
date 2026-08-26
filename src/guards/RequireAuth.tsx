@@ -34,5 +34,12 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
     );
   }
 
+  // A business deletion can leave a member with a valid personal profile but
+  // no active business. Keep every finance route fail-closed while still
+  // allowing Settings to finish account cleanup or sign out.
+  if (!auth.profile.company_id && location.pathname !== '/settings') {
+    return <Navigate to="/settings" replace />;
+  }
+
   return <>{children}</>;
 }

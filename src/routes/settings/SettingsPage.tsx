@@ -95,9 +95,20 @@ export default function SettingsPage() {
 
   // ── Delete company ─────────────────────────────────────────────────────────
   const [deleteInput, setDeleteInput] = useState('');
+  const [deleteFirstConfirmationInput, setDeleteFirstConfirmationInput] = useState('');
+  const [deleteConfirmationInput, setDeleteConfirmationInput] = useState('');
+  const [deleteStage, setDeleteStage] = useState<1 | 2>(1);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [leavingCompany, setLeavingCompany] = useState(false);
+
+  // ── Delete account ────────────────────────────────────────────────────────
+  const [ownedBusinesses, setOwnedBusinesses] = useState<Array<{ id: string; name: string }>>([]);
+  const [accountDeleteInput, setAccountDeleteInput] = useState('');
+  const [accountDeleteConfirmationInput, setAccountDeleteConfirmationInput] = useState('');
+  const [accountDeleteStage, setAccountDeleteStage] = useState<1 | 2>(1);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [accountDeleteError, setAccountDeleteError] = useState<string | null>(null);
 
   // Hydrate the "Your profile" form fields whenever the auth profile changes.
   useEffect(() => {
@@ -131,6 +142,13 @@ export default function SettingsPage() {
   useEffect(() => {
     if (!profile) return;
     const companyId = profile.company_id;
+    if (!companyId) {
+      setLoadingCompany(false);
+      setLoadingMembers(false);
+      setCompany(null);
+      setMembers([]);
+      return;
+    }
 
     supabase.from('companies').select('*').eq('id', companyId).single()
       .then(({ data, error }) => {
@@ -152,6 +170,20 @@ export default function SettingsPage() {
         else setMembers((data ?? []) as Profile[]);
       });
   }, [profile]);
+
+  useEffect(() => {
+    if (!profile) return;
+    void supabase.rpc('my_memberships').then(({ data, error }) => {
+      if (error) {
+        setAccountDeleteError(error.message);
+        return;
+      }
+      const owned = ((data ?? []) as Array<{ company_id: string; company_name: string; role: string }>)
+        .filter((membership) => membership.role === 'owner')
+        .map((membership) => ({ id: membership.company_id, name: membership.company_name }));
+      setOwnedBusinesses(owned);
+    });
+  }, [profile?.id]);
 
   async function saveCompanyProfile() {
     if (!company || !isOwner) return;
@@ -250,13 +282,17 @@ export default function SettingsPage() {
 
   async function deleteCompany() {
     if (!company || !isOwner) return;
-    if (deleteInput.trim() !== company.name) return setDeleteError(sw.settings.deleteCompanyMismatch);
+    if (deleteStage !== 2 || deleteInput.trim() !== company.name) return setDeleteError(sw.settings.deleteCompanyMismatch);
+    if (deleteConfirmationInput.trim() !== sw.settings.deleteConfirmation) {
+      return setDeleteError(sw.settings.deleteConfirmationMismatch);
+    }
     setDeleting(true);
     setDeleteError(null);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
       const { error } = await supabase.functions.invoke('delete-company', {
+        body: { company_id: company.id, confirmation: sw.settings.deleteConfirmation },
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       if (error) throw error;
@@ -265,6 +301,34 @@ export default function SettingsPage() {
     } catch (err) {
       setDeleteError(err instanceof Error ? err.message : sw.common.error);
       setDeleting(false);
+    }
+  }
+
+  async function deleteAccount() {
+    if (!profile || accountDeleteStage !== 2) return;
+    if (accountDeleteInput.trim() !== sw.settings.deleteAccountFirstConfirmation
+      || accountDeleteConfirmationInput.trim() !== sw.settings.deleteConfirmation) {
+      setAccountDeleteError(sw.settings.deleteConfirmationMismatch);
+      return;
+    }
+    setDeletingAccount(true);
+    setAccountDeleteError(null);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const { error } = await supabase.functions.invoke('delete-account', {
+        body: {
+          owned_company_ids: ownedBusinesses.map((business) => business.id),
+          confirmation: sw.settings.deleteConfirmation,
+        },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (error) throw error;
+      await signOut();
+      navigate('/', { replace: true });
+    } catch (err) {
+      setAccountDeleteError(err instanceof Error ? err.message : sw.common.error);
+      setDeletingAccount(false);
     }
   }
 
@@ -698,17 +762,123 @@ export default function SettingsPage() {
                     className="w-full rounded-lg border border-white/40 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/60 focus:outline-none focus:ring-2 focus:ring-white/60"
                   />
                 </label>
+                {deleteStage === 1 && (
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium text-white">{sw.settings.deleteFirstStepHint}</span>
+                    <input
+                      type="text"
+                      value={deleteFirstConfirmationInput}
+                      onChange={(e) => { setDeleteFirstConfirmationInput(e.target.value); setDeleteError(null); }}
+                      placeholder={sw.settings.deleteAccountFirstConfirmation}
+                      className="w-full rounded-lg border border-white/40 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/60 focus:outline-none focus:ring-2 focus:ring-white/60"
+                    />
+                  </label>
+                )}
+                {deleteStage === 2 && (
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium text-white">{sw.settings.deleteSecondStepHint}</span>
+                    <input
+                      type="text"
+                      value={deleteConfirmationInput}
+                      onChange={(e) => { setDeleteConfirmationInput(e.target.value); setDeleteError(null); }}
+                      placeholder={sw.settings.deleteConfirmation}
+                      className="w-full rounded-lg border border-white/40 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/60 focus:outline-none focus:ring-2 focus:ring-white/60"
+                    />
+                  </label>
+                )}
                 {deleteError && <p className="text-sm text-white">{deleteError}</p>}
                 <div>
                   <button
                     type="button"
-                    disabled={deleting || deleteInput.trim() !== company?.name}
-                    onClick={() => void deleteCompany()}
+                    disabled={deleting || (deleteStage === 1
+                      ? deleteInput.trim() !== company?.name || deleteFirstConfirmationInput.trim() !== sw.settings.deleteAccountFirstConfirmation
+                      : deleteConfirmationInput.trim() !== sw.settings.deleteConfirmation)}
+                    onClick={() => {
+                      if (deleteStage === 1) {
+                        setDeleteStage(2);
+                        setDeleteError(null);
+                      } else {
+                        void deleteCompany();
+                      }
+                    }}
                     className="inline-flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <AlertTriangle className="h-4 w-4" />
-                    {deleting ? sw.common.loading : sw.settings.deleteCompanyConfirm}
+                    {deleting ? sw.common.loading : deleteStage === 1 ? sw.settings.deleteContinue : sw.settings.deleteCompanyConfirm}
                   </button>
+                </div>
+              </div>
+            </div>
+          </SettingsSection>
+        )}
+
+        {/* Account deletion is separate from business deletion and is available
+            to every signed-in role. Owned businesses are listed explicitly so
+            a multi-business member can never delete a business they do not own. */}
+        {profile && (
+          <SettingsSection
+            icon={<AlertTriangle className="h-4 w-4" />}
+            title={sw.settings.deleteAccount}
+            description={sw.settingsCopy.deleteAccountDesc}
+            danger
+          >
+            <div className="rounded-xl border border-red-200 bg-red-50 p-6 sm:p-8">
+              <p className="mb-5 text-sm text-red-900">{sw.settings.deleteAccountWarning}</p>
+              {ownedBusinesses.length > 0 && (
+                <div className="mb-5 rounded-lg border border-red-200 bg-white p-4">
+                  <p className="mb-3 text-sm font-semibold text-red-900">{sw.settings.deleteOwnedBusinesses}</p>
+                  <ul className="space-y-2">
+                    {ownedBusinesses.map((business) => (
+                      <li key={business.id} className="flex items-center gap-2 text-sm text-red-900">
+                        <Check className="h-4 w-4 text-red-600" />
+                        {business.name}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div className="flex flex-col gap-4">
+                {accountDeleteStage === 1 ? (
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium text-red-900">{sw.settings.deleteFirstStepHint}</span>
+                    <input
+                      type="text"
+                      value={accountDeleteInput}
+                      onChange={(e) => { setAccountDeleteInput(e.target.value); setAccountDeleteError(null); }}
+                      placeholder={sw.settings.deleteAccountFirstConfirmation}
+                      className="w-full rounded-lg border border-red-300 bg-white px-3 py-2 text-sm text-red-900 placeholder:text-red-300 focus:outline-none focus:ring-2 focus:ring-red-400"
+                    />
+                  </label>
+                ) : (
+                  <label className="flex flex-col gap-1">
+                    <span className="text-sm font-medium text-red-900">{sw.settings.deleteSecondStepHint}</span>
+                    <input
+                      type="text"
+                      value={accountDeleteConfirmationInput}
+                      onChange={(e) => { setAccountDeleteConfirmationInput(e.target.value); setAccountDeleteError(null); }}
+                      placeholder={sw.settings.deleteConfirmation}
+                      className="w-full rounded-lg border border-red-300 bg-white px-3 py-2 text-sm text-red-900 placeholder:text-red-300 focus:outline-none focus:ring-2 focus:ring-red-400"
+                    />
+                  </label>
+                )}
+                {accountDeleteError && <p className="text-sm text-red-700">{accountDeleteError}</p>}
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    variant="danger"
+                    disabled={deletingAccount || (accountDeleteStage === 1
+                      ? accountDeleteInput.trim() !== sw.settings.deleteAccountFirstConfirmation
+                      : accountDeleteConfirmationInput.trim() !== sw.settings.deleteConfirmation)}
+                    onClick={() => {
+                      if (accountDeleteStage === 1) {
+                        setAccountDeleteStage(2);
+                        setAccountDeleteError(null);
+                      } else {
+                        void deleteAccount();
+                      }
+                    }}
+                  >
+                    {deletingAccount ? sw.common.loading : accountDeleteStage === 1 ? sw.settings.deleteContinue : sw.settings.deleteAccountConfirm}
+                  </Button>
                 </div>
               </div>
             </div>

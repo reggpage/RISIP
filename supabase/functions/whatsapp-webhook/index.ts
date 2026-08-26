@@ -398,6 +398,15 @@ import {
   parseLogoutIntent,
 } from '../_shared/whatsappLogout.ts';
 import {
+  accountDeletionDone,
+  accountDeletionReask,
+  accountDeletionWarning,
+  isAccountDeletionCancel,
+  isAccountDeletionConfirmation,
+  isAccountDeletionRequest,
+  type AccountDeletionState,
+} from '../_shared/whatsappAccountDeletion.ts';
+import {
   canUseCompanyFinanceReads,
   runConversationalAssistant,
   shouldDeferRecordLikeReply,
@@ -1376,6 +1385,42 @@ async function parkLogout(
     company_id: identity.company_id,
     profile_id: identity.profile_id,
     awaiting: 'logout_confirm',
+    receipt_id: null,
+    options: state,
+    expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'identity_id' });
+}
+
+async function loadOwnedBusinesses(db: Admin, profileId: string): Promise<Array<{ id: string; name: string }>> {
+  const { data: memberships, error: membershipError } = await db
+    .from('company_members')
+    .select('company_id')
+    .eq('profile_id', profileId)
+    .eq('role', 'owner');
+  if (membershipError) throw membershipError;
+  const ids = [...new Set((memberships ?? []).map((row) => String(row.company_id)))];
+  if (!ids.length) return [];
+  const { data: companies, error: companyError } = await db
+    .from('companies')
+    .select('id, name')
+    .in('id', ids);
+  if (companyError) throw companyError;
+  return (companies ?? []).map((company) => ({ id: String(company.id), name: String(company.name) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+async function parkAccountDeletion(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  ownedCompanies: Array<{ id: string; name: string }>,
+): Promise<void> {
+  const state: AccountDeletionState = { kind: 'account_delete', step: 'confirm', ownedCompanies };
+  await db.from('whatsapp_conversations').upsert({
+    identity_id: identity.id,
+    company_id: identity.company_id,
+    profile_id: identity.profile_id,
+    awaiting: 'account_delete_confirm',
     receipt_id: null,
     options: state,
     expires_at: new Date(Date.now() + 15 * 60_000).toISOString(),
@@ -3816,7 +3861,11 @@ Deno.serve(async (req) => {
         }
 
         if (!identity) {
-          await replyQuietly(phone, await handleOnboarding(db, phone, body, false));
+          await replyQuietly(phone, isAccountDeletionRequest(body)
+            ? (lang === 'sw'
+              ? 'Futa akaunti inahitaji namba iliyounganishwa na Risip na identity iliyothibitishwa. Hakuna kilichofutwa.'
+              : 'Account deletion requires a verified Risip-linked number. Nothing was deleted.')
+            : await handleOnboarding(db, phone, body, false));
           await finish('skipped', 'onboarding');
           continue;
         }
@@ -4076,6 +4125,57 @@ Deno.serve(async (req) => {
         let resumedQuantityOccurredAt: string | null = null;
         /** Combinations settled earlier in this same conversation. */
         let settledCombos: ComboSplit[] = [];
+        // Full account deletion is a separate control-plane flow from logout:
+        // logout only unlinks this phone. The first account-delete message
+        // always parks a warning; only the exact second phrase can call the
+        // service-role deletion RPC.
+        const accountDeletePending = convo?.awaiting === 'account_delete_confirm'
+          && (convo.options as Partial<AccountDeletionState> | null)?.kind === 'account_delete'
+          ? convo.options as AccountDeletionState
+          : null;
+
+        if (accountDeletePending) {
+          if (isAccountDeletionCancel(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, lang === 'sw' ? 'Sawa, sijaafuta chochote.' : 'Okay, nothing was deleted.');
+          } else if (isAccountDeletionConfirmation(body)) {
+            const { error } = await db.rpc('delete_account_data', {
+              p_profile_id: identity.profile_id,
+              p_owned_company_ids: accountDeletePending.ownedCompanies.map((company) => company.id),
+            });
+            if (error) {
+              await clearConversation(db, identity.id as string);
+              await replyQuietly(phone, lang === 'sw'
+                ? 'Sikuweza kufuta akaunti sasa. Hakuna kilichofutwa; tafadhali jaribu tena kupitia Risip.'
+                : 'I could not delete the account now. Nothing was deleted; please try again in Risip.');
+            } else {
+              // The RPC deletes the current identity and message row too, so
+              // finish() is intentionally not followed by an audit write.
+              await replyQuietly(phone, accountDeletionDone(lang));
+            }
+          } else {
+            await replyQuietly(phone, accountDeletionReask(lang));
+          }
+          await finish('skipped');
+          continue;
+        }
+
+        if (isAccountDeletionRequest(body)) {
+          try {
+            const ownedCompanies = await loadOwnedBusinesses(db, identity.profile_id);
+            await clearConversation(db, identity.id as string);
+            await parkAccountDeletion(db, identity, ownedCompanies);
+            await replyQuietly(phone, accountDeletionWarning(ownedCompanies, lang));
+            await audit(db, identity, waMessageId, 'account_delete', 'warning', 'applied');
+          } catch {
+            await replyQuietly(phone, lang === 'sw'
+              ? 'Sikuweza kuanza uthibitisho wa kufuta akaunti sasa. Jaribu tena.'
+              : 'I could not start the account deletion confirmation now. Please try again.');
+          }
+          await finish('skipped');
+          continue;
+        }
+
         // ── Signing out ──────────────────────────────────────────────────
         // The phone number is the credential, so this unlinks it. It runs
         // before the stop command on purpose: bare "toka" means both "cancel

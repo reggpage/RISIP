@@ -231,12 +231,25 @@ export function parseReadRequest(input: string | null | undefined, now = new Dat
   // today, and it went to the model — which then had to be talked into calling
   // the tool that was sitting right here. Asking with "kiasi gani" or "ngapi"
   // is a question; a sale always names a figure, so these cannot collide.
+  //
+  // MEASURED FAILURE, three times in one screenshot: "Leo nimeuza shingapi",
+  // sent at 10:26, again at 12:45 and again as "Imeuzwa shingapi leo" at 16:02,
+  // each answered with the generic help text. "Shingapi" is "shilingi ngapi"
+  // run together and it is how the question is actually typed — the shop asked
+  // the same thing three times and was told what it could ask about instead.
+  //
+  // "Imeuzwa" is the passive: the goods were sold, rather than "I sold". Both
+  // forms mean the same question and only one of them was here.
   if (hasAny(text, ['muhtasari', 'summary', 'imekuwaje', 'what happened', 'mauzo ya leo', 'mauzo ya wiki',
     'mauzo ya mwezi', 'sales today', 'business summary', 'cash movement', 'mzunguko wa pesa', 'spend trend',
     'matumizi ya wiki', 'nimepata kiasi gani', 'nimeingiza kiasi gani',
     'nimeuza kiasi gani', 'nimeuza ngapi', 'niliuza kiasi gani', 'tumeuza kiasi gani',
     'nimeingiza pesa ngapi', 'nimeingiza ngapi', 'nimepata pesa ngapi', 'nimepata ngapi',
-    'pesa ngapi leo', 'mauzo yangu'])) {
+    'pesa ngapi leo', 'mauzo yangu',
+    'nimeuza shingapi', 'niliuza shingapi', 'tumeuza shingapi', 'imeuzwa shingapi',
+    'nimeuza shilingi ngapi', 'niliuza shilingi ngapi', 'imeuzwa shilingi ngapi',
+    'imeuzwa kiasi gani', 'imeuzwa ngapi', 'zimeuzwa kiasi gani', 'zimeuzwa ngapi',
+    'nimepata shingapi', 'nimeingiza shingapi'])) {
     return withRange({ tool: 'ai_business_summary', period });
   }
   return null;
