@@ -20,14 +20,16 @@ import { CategoryBarSkeleton, ListItemSkeleton, MetricCardSkeleton } from '@/com
 import { useDashboardData } from '@/features/dashboard/useDashboardData';
 import { useProjects } from '@/features/projects/useProjects';
 import { getDailyRecordSummary, useDailyRecords } from '@/features/dailyRecords/dailyRecords';
+import { useBuchaReporting } from '@/features/dailyRecords/useBuchaReporting';
 import { formatMoney } from '@/lib/format';
 
 const copy: Record<LangCode, {
   project: string; daily: string; spend: string; todaySales: string; todayExpenses: string; debt: string; payments: string; cash: string;
   dailyOnly: string; receiptSeparate: string; debtHint: string; paymentHint: string; cashHint: string; recordsLink: string;
+  profit: string; receivables: string; supplierPayables: string; stockLoss: string; animalsPending: string; reportingHint: string;
 }> = {
-  en: { project: 'Project Dashboard', daily: 'Daily Records', spend: 'Spend Trend', todaySales: 'Today’s Sales', todayExpenses: 'Today’s Expenses', debt: 'Debt Issued / Open Debts', payments: 'Customer Payments', cash: 'Cash Movement Estimate', dailyOnly: 'Daily records only', receiptSeparate: 'Separate from receipt expenses', debtHint: 'Debt issued is not cash received', paymentHint: 'Does not create sales', cashHint: 'Sales + payments − daily expenses', recordsLink: 'View' },
-  sw: { project: 'Dashibodi ya Mradi', daily: 'Rekodi za Siku', spend: 'Mwelekeo wa Matumizi', todaySales: 'Mauzo ya Leo', todayExpenses: 'Matumizi ya Leo', debt: 'Mkopo Uliotolewa / Madeni', payments: 'Malipo ya Wateja', cash: 'Makadirio ya Mtiririko wa Fedha', dailyOnly: 'Rekodi za siku pekee', receiptSeparate: 'Zimetenganishwa na matumizi ya risiti', debtHint: 'Mkopo si fedha iliyopokelewa', paymentHint: 'Haiundi mauzo', cashHint: 'Mauzo + malipo − matumizi ya siku', recordsLink: 'Ona' },
+  en: { project: 'Project Dashboard', daily: 'Daily Records', spend: 'Spend Trend', todaySales: 'Today’s Sales', todayExpenses: 'Today’s Expenses', debt: 'Debt Issued / Open Debts', payments: 'Customer Payments', cash: 'Cash Movement Estimate', dailyOnly: 'Daily records only', receiptSeparate: 'Separate from receipt expenses', debtHint: 'Debt issued is not cash received', paymentHint: 'Does not create sales', cashHint: 'Sales + payments − daily expenses', recordsLink: 'View', profit: 'Estimated Profit', receivables: 'Customers Owe You', supplierPayables: 'You Owe Suppliers', stockLoss: 'Stock Loss', animalsPending: 'Animals Awaiting Breakdown', reportingHint: 'Confirmed ledger snapshot' },
+  sw: { project: 'Dashibodi ya Mradi', daily: 'Rekodi za Siku', spend: 'Mwelekeo wa Matumizi', todaySales: 'Mauzo ya Leo', todayExpenses: 'Matumizi ya Leo', debt: 'Mkopo Uliotolewa / Madeni', payments: 'Malipo ya Wateja', cash: 'Makadirio ya Mtiririko wa Fedha', dailyOnly: 'Rekodi za siku pekee', receiptSeparate: 'Zimetenganishwa na matumizi ya risiti', debtHint: 'Mkopo si fedha iliyopokelewa', paymentHint: 'Haiundi mauzo', cashHint: 'Mauzo + malipo − matumizi ya siku', recordsLink: 'Ona', profit: 'Makisio ya Faida', receivables: 'Wateja Wanakudai', supplierPayables: 'Unawadai Suppliers', stockLoss: 'Potevu wa Stock', animalsPending: 'Ng’ombe Bado Hawajafanyiwa Breakdown', reportingHint: 'Snapshot ya rekodi zilizothibitishwa' },
 };
 
 export default function Dashboard() {
@@ -72,6 +74,7 @@ function CompanyDashboard() {
   const data = useDashboardData(projectId || undefined);
   const dailyRecords = useDailyRecords();
   const dailySummary = getDailyRecordSummary(dailyRecords.records);
+  const reporting = useBuchaReporting();
   const activeProjects = projectsState.status === 'ready' ? projectsState.projects.filter((project) => project.status === 'active') : [];
   const recentActivity = useMemo(() => {
     const visible = data.recent.slice(0, 3);
@@ -99,7 +102,7 @@ function CompanyDashboard() {
       {projectsOn && dashboardTab === 'project' ? (
         <ProjectDashboardContent data={data} recentActivity={recentActivity} />
       ) : (
-        <DailyDashboardContent dailyRecords={dailyRecords} dailySummary={dailySummary} text={text} lang={lang} />
+        <DailyDashboardContent dailyRecords={dailyRecords} dailySummary={dailySummary} reporting={reporting} text={text} lang={lang} />
       )}
     </div>
   );
@@ -128,10 +131,20 @@ function ProjectDashboardContent({ data, recentActivity }: { data: ReturnType<ty
   </>;
 }
 
-function DailyDashboardContent({ dailyRecords, dailySummary, text, lang }: { dailyRecords: ReturnType<typeof useDailyRecords>; dailySummary: ReturnType<typeof getDailyRecordSummary>; text: typeof copy.en; lang: LangCode }) {
+function DailyDashboardContent({ dailyRecords, dailySummary, reporting, text, lang }: { dailyRecords: ReturnType<typeof useDailyRecords>; dailySummary: ReturnType<typeof getDailyRecordSummary>; reporting?: ReturnType<typeof useBuchaReporting>; text: typeof copy.en; lang: LangCode }) {
+  const snapshot = reporting?.snapshot;
+  const receivables = (snapshot?.customer_receivables ?? []).reduce((sum, row) => sum + Number(row.outstanding ?? 0), 0);
+  const supplierPayables = (snapshot?.supplier_payables ?? []).reduce((sum, row) => sum + Number(row.outstanding ?? 0), 0);
   return <section aria-label={text.daily}>
     <div className="mb-3 flex items-end justify-between gap-3"><div><h2 className="text-base font-semibold text-ink">{text.daily}</h2><p className="text-xs text-ink-muted">{text.receiptSeparate} · {text.dailyOnly}</p></div><Link to="/daily-records" className="text-sm font-medium text-role-admin hover:underline">{text.recordsLink}</Link></div>
-    {dailyRecords.status === 'loading' && dailyRecords.records.length === 0 ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">{Array.from({ length: 5 }).map((_, index) => <MetricCardSkeleton key={index} />)}</div> : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+    {reporting?.status === 'loading' && !snapshot ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">{Array.from({ length: 6 }).map((_, index) => <MetricCardSkeleton key={index} />)}</div> : snapshot ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+      <MetricCard label={text.todaySales} value={formatMoney(Number(snapshot.sales?.total ?? 0))} icon={<TrendingUp className="h-5 w-5" />} hint={text.reportingHint} />
+      <MetricCard label={text.profit} value={formatMoney(Number(snapshot.profit?.estimated_profit ?? 0))} icon={<ArrowLeftRight className="h-5 w-5" />} hint={text.reportingHint} />
+      <MetricCard label={text.receivables} value={formatMoney(receivables)} icon={<HandCoins className="h-5 w-5" />} hint={text.reportingHint} />
+      <MetricCard label={text.supplierPayables} value={formatMoney(supplierPayables)} icon={<CreditCard className="h-5 w-5" />} hint={text.reportingHint} />
+      <MetricCard label={text.stockLoss} value={formatMoney(Number(snapshot.stock_loss?.amount ?? 0))} icon={<Wallet className="h-5 w-5" />} hint={text.reportingHint} />
+      <MetricCard label={text.animalsPending} value={Number(snapshot.whole_animals?.pending_breakdown ?? 0)} icon={<Receipt className="h-5 w-5" />} hint={text.reportingHint} />
+    </div> : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
       <MetricCard label={text.todaySales} value={formatMoney(dailySummary.sales)} icon={<TrendingUp className="h-5 w-5" />} hint={text.dailyOnly} />
       <MetricCard label={text.todayExpenses} value={formatMoney(dailySummary.expenses)} icon={<Wallet className="h-5 w-5" />} hint={text.receiptSeparate} />
       <MetricCard label={text.debt} value={formatMoney(dailySummary.debtIssued)} icon={<HandCoins className="h-5 w-5" />} hint={text.debtHint} />

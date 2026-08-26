@@ -40,7 +40,7 @@ describe('A1 deterministic read-only WhatsApp tools', () => {
       { kind: 'customer_payment', status: 'confirmed', amount: 20000 },
       { kind: 'sale', status: 'voided', amount: 9000 },
     ]);
-    expect(summary).toMatchObject({ sales: 140000, expenses: 10000, debtIssued: 50000, customerPayments: 20000, cashMovement: 150000 });
+    expect(summary).toMatchObject({ sales: 190000, cashSales: 140000, expenses: 10000, debtIssued: 50000, customerPayments: 20000, cashMovement: 150000 });
     expect(buildBusinessSummaryReply(summary, 'today', 'sw')).toContain('si fedha iliyopokelewa');
   });
 
@@ -106,5 +106,12 @@ describe('phrasings the eval set caught on its first run', () => {
   it('reads a loss question as a profit estimate', () => {
     expect(tool('nimepoteza pesa mwezi huu?')).toBe('daily_profit_estimate');
     expect(tool('nimepoteza pesa kwa kununua stock')).toBe('daily_profit_estimate');
+  });
+
+  it('routes Phase 9 operational reports deterministically', () => {
+    expect(tool('nyama iliyoharibika leo ni kilo ngapi?')).toBe('ai_stock_loss');
+    expect(tool('nimechukua stock nyumbani mwezi huu')).toBe('ai_owner_use');
+    expect(tool('ngombe wangapi nimenunua mwezi huu?')).toBe('ai_whole_animals');
+    expect(tool('ngombe gani bado hajafanyiwa breakdown?')).toBe('ai_whole_animals');
   });
 });

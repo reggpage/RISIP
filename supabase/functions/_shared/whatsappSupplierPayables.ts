@@ -162,7 +162,8 @@ export function supplierPaymentConfirmation(payment: SupplierPayment, lang: Lang
 
 export function parseSupplierBalanceQuestion(input: string | null | undefined): SupplierBalanceQuestion | null {
   const text = normalise(String(input ?? ''));
-  const match = text.match(/^nina\s+deni\s+kiasi\s+gani\s+(?:kwa|na)\s+(.+?)[?!.]*$/i);
+  const match = text.match(/^nina\s+deni\s+kiasi\s+gani\s+(?:kwa|na)\s+(.+?)[?!.]*$/i)
+    ?? text.match(/^(?:nina\s+deni\s+kiasi\s+gani\s+kwa|namdaiwa\s+kiasi\s+gani\s+na)\s+(.+?)[?!.]*$/i);
   if (!match) return null;
   const subject = match[1].trim();
   return {

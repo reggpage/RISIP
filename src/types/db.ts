@@ -834,6 +834,11 @@ export type Database = {
           bought_since: string; sold_since: string; produced_since: string; on_hand: string; incomplete_purchases: boolean;
         }>;
       };
+      /** Owner/accountant: server-derived Bucha reporting snapshot. */
+      bucha_reporting_snapshot: {
+        Args: { p_from?: string | null; p_to?: string | null };
+        Returns: unknown;
+      };
       /** Finance-only: record a physical count. Supersedes the previous one. */
       record_stock_count: {
         Args: { p_name: string; p_quantity: number; p_unit: string | null; p_note: string | null };

@@ -434,6 +434,7 @@ import {
   type ReceiptDetail,
   type InvoiceDetail,
 } from '../_shared/whatsappReadTools.ts';
+import { buildBuchaReportReply, type BuchaReportingSnapshot } from '../_shared/whatsappBuchaReports.ts';
 import {
   isProjectSetupState,
   parseProjectSetupChoice,
@@ -2269,7 +2270,7 @@ async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest,
   const { from, to } = readPeriodBounds(request);
   const companyId = String(identity.company_id);
   const profileId = String(identity.profile_id);
-  const financeOnly = new Set(['ai_business_summary', 'ai_debtors', 'ai_debtor_detail', 'daily_profit_estimate', 'ai_pending_approvals']);
+  const financeOnly = new Set(['ai_business_summary', 'ai_debtors', 'ai_debtor_detail', 'daily_profit_estimate', 'ai_stock_loss', 'ai_owner_use', 'ai_whole_animals', 'ai_pending_approvals']);
   if (financeOnly.has(request.tool) && !canUseCompanyFinanceReads(String(identity.role ?? 'worker'))) {
     return lang === 'sw'
       ? 'Taarifa za kampuni nzima zinaonekana kwa owner au accountant tu. Unaweza kuniuliza kuhusu risiti zako, petty cash yako au reimbursement yako.'
@@ -2321,6 +2322,19 @@ async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest,
     const { count, error } = await db.from('receipts').select('id', { count: 'exact', head: true })
       .eq('company_id', companyId).in('status', ['pending_review', 'submitted']);
     return error ? (lang === 'sw' ? 'Sikuweza kupata approvals zinazosubiri.' : 'I could not load pending approvals.') : buildPendingApprovalsReply(count ?? 0, lang);
+  }
+
+  const snapshotTools = new Set(['ai_business_summary', 'ai_debtors', 'daily_profit_estimate', 'ai_stock_loss', 'ai_owner_use', 'ai_whole_animals']);
+  if (snapshotTools.has(request.tool)) {
+    const allTime = request.tool === 'ai_debtors';
+    const { data, error } = await db.rpc('wa_bucha_reporting_snapshot', {
+      p_profile_id: profileId,
+      p_company_id: companyId,
+      p_from: allTime ? null : from,
+      p_to: allTime ? null : to,
+    });
+    if (error) return lang === 'sw' ? 'Sikuweza kupata report hiyo sasa.' : 'I could not load that report right now.';
+    return buildBuchaReportReply(data as BuchaReportingSnapshot, request.tool, request.period, lang, request.range);
   }
 
   const rangeQuery = db.from('daily_records').select('id, kind, status, amount, party_name, occurred_at')

@@ -12,6 +12,9 @@ export type ReadToolName =
   | 'ai_business_summary'
   | 'ai_debtors'
   | 'daily_profit_estimate'
+  | 'ai_stock_loss'
+  | 'ai_owner_use'
+  | 'ai_whole_animals'
   | 'ai_debtor_detail'
   | 'ai_my_receipts'
   | 'ai_petty_cash_balance'
@@ -57,10 +60,12 @@ export type ReadProductCost = {
 
 export type BusinessSummary = {
   sales: number;
+  cashSales: number;
   expenses: number;
   debtIssued: number;
   customerPayments: number;
   stockPurchases: number;
+  byPaymentMethod: Record<string, number>;
   cashMovement: number;
 };
 
@@ -210,6 +215,15 @@ export function parseReadRequest(input: string | null | undefined, now = new Dat
     'onyesha wadeni', 'list ya madeni', 'who owes me', 'hajanilipa', 'nina madeni', 'madeni yangu', 'madeni ya'])) {
     return withRange({ tool: 'ai_debtors', period });
   }
+  if (hasAny(text, ['nyama iliyoharibika', 'nyama imeharibika', 'stock loss', 'stock_loss', 'spoiled stock', 'bidhaa zilizoharibika', 'potevu wa stock'])) {
+    return withRange({ tool: 'ai_stock_loss', period });
+  }
+  if (hasAny(text, ['nimechukua stock', 'stock ya nyumbani', 'owner use', 'owner_use', 'matumizi ya mwenye', 'nimechukua bidhaa nyumbani'])) {
+    return withRange({ tool: 'ai_owner_use', period });
+  }
+  if (hasAny(text, ['ngombe wangapi', 'ngombe gani', 'ngombe mzima', 'whole animal', 'whole_animal', 'breakdown ya ngombe', 'breakdown ya jana'])) {
+    return withRange({ tool: 'ai_whole_animals', period });
+  }
   if (hasAny(text, ['faida', 'profit', 'margin', 'biashara inalipa', 'gharama zimezidi', 'nimepoteza pesa', 'nimepata hasara', 'hasara', 'lost money', 'losing money'])) {
     return withRange({ tool: 'daily_profit_estimate', period });
   }
@@ -254,17 +268,21 @@ export function calculateBusinessSummary(rows: ReadDailyRow[]): BusinessSummary 
     .filter((row) => row.kind === kind)
     .reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0);
   const sales = total('sale');
+  const cashSales = sales;
+  const creditSales = total('debt_issued');
   const expenses = total('expense');
   const debtIssued = total('debt_issued');
   const customerPayments = total('customer_payment');
   const stockPurchases = total('stock_purchase');
   return {
-    sales,
+    sales: cashSales + creditSales,
+    cashSales,
     expenses,
     debtIssued,
     customerPayments,
     stockPurchases,
-    cashMovement: sales + customerPayments - expenses - stockPurchases,
+    byPaymentMethod: { cash: cashSales, credit: creditSales },
+    cashMovement: cashSales + customerPayments - expenses - stockPurchases,
   };
 }
 
@@ -293,7 +311,7 @@ export function calculateProfitEstimate(
   costs: ReadProductCost[],
 ): ProfitEstimate {
   const confirmed = rows.filter((row) => row.status === 'confirmed');
-  const sales = confirmed.filter((row) => row.kind === 'sale').reduce((sum, row) => sum + Number(row.amount || 0), 0);
+  const sales = confirmed.filter((row) => row.kind === 'sale' || row.kind === 'debt_issued').reduce((sum, row) => sum + Number(row.amount || 0), 0);
   const expenses = confirmed.filter((row) => row.kind === 'expense').reduce((sum, row) => sum + Number(row.amount || 0), 0);
   const findCost = (line: ReadDailyLine): number | null => {
     const key = normalise(line.description);
@@ -330,9 +348,9 @@ export function calculateProfitEstimate(
 export function buildBusinessSummaryReply(summary: BusinessSummary, period: ReadPeriod, lang: 'sw' | 'en', range?: ResolvedRange | null): string {
   const label = periodLabel(period, lang, range);
   if (lang === 'sw') {
-    return `Muhtasari wa ${label}:\nMauzo: ${money(summary.sales, lang)}\nMatumizi ya rekodi za siku: ${money(summary.expenses, lang)}\nMalipo ya wateja: ${money(summary.customerPayments, lang)}\nDeni lililotolewa: ${money(summary.debtIssued, lang)} (si fedha iliyopokelewa)\nMabadiliko ya fedha yanayokadiriwa: ${money(summary.cashMovement, lang)}\n\nHaya ni rekodi za siku; gharama za risiti zinaonyeshwa kando.`;
+    return `Muhtasari wa ${label}:\nMauzo yote: ${money(summary.sales, lang)}\n  Cash: ${money(summary.cashSales, lang)} · Mkopo: ${money(summary.debtIssued, lang)} (si fedha iliyopokelewa)\nMatumizi ya rekodi za siku: ${money(summary.expenses, lang)}\nMalipo ya wateja: ${money(summary.customerPayments, lang)}\nMabadiliko ya fedha yanayokadiriwa: ${money(summary.cashMovement, lang)}\n\nHaya ni rekodi za siku; gharama za risiti zinaonyeshwa kando.`;
   }
-  return `Summary for ${label}:\nSales: ${money(summary.sales, lang)}\nDaily-record expenses: ${money(summary.expenses, lang)}\nCustomer payments: ${money(summary.customerPayments, lang)}\nDebt issued: ${money(summary.debtIssued, lang)} (not cash received)\nEstimated cash movement: ${money(summary.cashMovement, lang)}\n\nThese are daily records; receipt expenses are shown separately.`;
+  return `Summary for ${label}:\nTotal sales: ${money(summary.sales, lang)}\n  Cash: ${money(summary.cashSales, lang)} · Credit: ${money(summary.debtIssued, lang)} (not cash received)\nDaily-record expenses: ${money(summary.expenses, lang)}\nCustomer payments: ${money(summary.customerPayments, lang)}\nEstimated cash movement: ${money(summary.cashMovement, lang)}\n\nThese are daily records; receipt expenses are shown separately.`;
 }
 
 export function buildDebtorsReply(debtors: Debtor[], lang: 'sw' | 'en'): string {

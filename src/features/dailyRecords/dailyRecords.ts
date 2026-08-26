@@ -49,7 +49,9 @@ export function getDailyRecordSummary(
 
   const sum = (kind: DailyRecord['kind']) =>
     today.filter((record) => record.kind === kind).reduce((total, record) => total + asNumber(record.amount), 0);
-  const sales = sum('sale');
+  const cashSales = sum('sale');
+  const debtIssued = sum('debt_issued');
+  const sales = cashSales + debtIssued;
   const expenses = sum('expense');
   const stockPurchases = sum('stock_purchase');
   const wholeAnimalProcurements = sum('whole_animal_procurement');
@@ -60,11 +62,11 @@ export function getDailyRecordSummary(
     expenses,
     stockPurchases,
     wholeAnimalProcurements,
-    debtIssued: sum('debt_issued'),
+    debtIssued,
     customerPayments,
     // Stock must be subtracted here. Leaving it out would tell a trader who just
     // spent 500,000 restocking that they still hold it.
-    cashMovement: sales + customerPayments - expenses - stockPurchases - wholeAnimalProcurements,
+    cashMovement: cashSales + customerPayments - expenses - stockPurchases - wholeAnimalProcurements,
   };
 }
 
