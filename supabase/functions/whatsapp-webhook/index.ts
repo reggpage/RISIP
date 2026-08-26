@@ -3529,6 +3529,17 @@ Deno.serve(async (req) => {
       const messages = Array.isArray(value.messages) ? value.messages : [];
 
       for (const message of messages) {
+        // MEASURED FAILURE, and the worst kind: total silence.
+        //
+        //   whatsapp_messages  15:25:32 | text | pending | retries=0 | (no error)
+        //
+        // Every other message that day reached 'skipped'. This one stayed
+        // 'pending' for ever, with no last_error, no audit row and no reply —
+        // because nothing wrapped the body of this loop. Anything that threw
+        // escaped, the row was left as it was inserted, and the shopkeeper was
+        // simply never answered.
+        //
+        // A message may fail. It may not disappear.
         const waMessageId = String(message?.id ?? '');
         const phone = normalizeE164(message?.from);
         if (!waMessageId || !phone) continue;
@@ -3546,6 +3557,9 @@ Deno.serve(async (req) => {
           console.error('message insert failed', dupErr.message);
           continue;
         }
+
+        // Everything after the idempotency gate runs inside this guard.
+        try {
 
         // Give immediate feedback before onboarding, tools or the model do any
         // slower work. This runs only after signature verification and the
@@ -7987,6 +8001,22 @@ Deno.serve(async (req) => {
               : 'I understood your question but could not get an answer just now. Try again in a minute.')
             : (intent === 'help' ? `${t('help', lang)}\n\n${buildKnowledgeReply(body, lang)}` : t('onlyRisip', lang)));
         await finish('skipped');
+        } catch (err) {
+          // Whatever went wrong is recorded on the message itself, so the next
+          // person looking has the reason instead of a row stuck on 'pending'.
+          const reason = err instanceof Error ? `${err.name}: ${err.message}` : 'unknown_error';
+          try {
+            await db.from('whatsapp_messages')
+              .update({ status: 'failed', last_error: reason.slice(0, 500), processed_at: new Date().toISOString() })
+              .eq('wa_message_id', waMessageId);
+          } catch { /* the update must never mask the original failure */ }
+          console.error('message failed', maskPhone(phone), reason);
+          // And the shop is told. Silence reads as Risip ignoring them, which
+          // is worse than an error and harder to report.
+          try {
+            await sendReplyText(phone, 'Samahani, kuna hitilafu kwa upande wangu. Jaribu tena baada ya dakika moja.');
+          } catch { /* nothing more can be done for this message */ }
+        }
       }
     }
   }

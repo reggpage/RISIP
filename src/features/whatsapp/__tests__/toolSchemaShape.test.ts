@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ASSISTANT_TOOLS } from '../../../../supabase/functions/_shared/whatsappAssistant';
 
@@ -78,5 +80,36 @@ describe('every tool schema is one the API will accept', () => {
       expect(((tool.input_schema ?? {}) as Schema).type).toBe('object');
       expect(properties(tool).length).toBeGreaterThanOrEqual(0);
     }
+  });
+});
+
+describe('a message may fail, but it may not disappear', () => {
+  // MEASURED FAILURE, and the worst kind: total silence.
+  //
+  //   whatsapp_messages  15:25:32 | text | pending | retries=0 | (no error)
+  //
+  // Every other message that day reached 'skipped'. This one stayed 'pending'
+  // for ever, with no last_error, no audit row and no reply, because nothing
+  // wrapped the body of the message loop. Anything that threw escaped and the
+  // shopkeeper was simply never answered.
+  const webhook = readFileSync(
+    resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+
+  it('guards everything after the idempotency gate', () => {
+    expect(webhook).toContain('// Everything after the idempotency gate runs inside this guard.');
+    // The gate itself stays outside, so a redelivery still collides and returns
+    // without being treated as a failure.
+    const guard = webhook.indexOf('// Everything after the idempotency gate');
+    expect(webhook.indexOf("if (dupErr.code === '23505') continue;")).toBeLessThan(guard);
+  });
+
+  it('records why, on the message itself', () => {
+    expect(webhook).toContain("status: 'failed', last_error: reason.slice(0, 500)");
+  });
+
+  it('tells the shop something rather than nothing', () => {
+    // Silence reads as Risip ignoring them, which is worse than an error and
+    // harder to report.
+    expect(webhook).toContain('Samahani, kuna hitilafu kwa upande wangu.');
   });
 });
