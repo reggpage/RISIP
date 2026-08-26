@@ -6767,6 +6767,17 @@ Deno.serve(async (req) => {
         // conversation history. The deterministic parsers below remain the
         // availability fallback when the provider or budget is unavailable.
         let conversationalAiBudgetBlock: AiBudgetDecision | null = null;
+        /**
+         * The model was asked and came back with nothing.
+         *
+         * MEASURED FAILURE: when that happened the shop was sent the generic
+         * "I can help you with Risip and your records..." menu — the same reply
+         * an off-topic message gets. To somebody who had just watched Risip
+         * answer two questions correctly, that reads as Risip not understanding
+         * Swahili. The truth is narrower and worth saying: the question was
+         * understood and the answer did not arrive.
+         */
+        let assistantCameBackEmpty = false;
         const outOfStockQuestion = parseOutOfStockQuestion(body);
         const directStockQuestion = parseStockQuestion(body);
 
@@ -6878,6 +6889,7 @@ Deno.serve(async (req) => {
             // nothing, say nothing here and let the deterministic branches
             // below have their turn — one of them almost always knows.
             if (assistant && assistant.unavailable) {
+              assistantCameBackEmpty = true;
               await audit(db, identity, waMessageId, 'conversational_ai', 'empty', 'fallback');
             } else if (assistant && !unsafeRecordProse) {
               await reply(phone, assistant.reply);
@@ -7966,10 +7978,14 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Nothing pending: help, or a polite scope boundary.
+        // Nothing pending: help, a truthful failure, or a polite scope boundary.
         await replyQuietly(phone, conversationalAiBudgetBlock
           ? aiBudgetMessage(lang, conversationalAiBudgetBlock.resetAt, conversationalAiBudgetBlock.reason)
-          : (intent === 'help' ? `${t('help', lang)}\n\n${buildKnowledgeReply(body, lang)}` : t('onlyRisip', lang)));
+          : assistantCameBackEmpty
+            ? (lang === 'sw'
+              ? 'Nimeelewa swali lako lakini sijaweza kupata jibu sasa hivi. Jaribu tena baada ya dakika moja.'
+              : 'I understood your question but could not get an answer just now. Try again in a minute.')
+            : (intent === 'help' ? `${t('help', lang)}\n\n${buildKnowledgeReply(body, lang)}` : t('onlyRisip', lang)));
         await finish('skipped');
       }
     }

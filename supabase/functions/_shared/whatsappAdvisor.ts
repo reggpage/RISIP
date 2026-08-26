@@ -137,12 +137,24 @@ const list = (names: string[], limit = 4) => {
  *
  * Deliberately narrow. This is an expensive, wide-ranging answer, and a
  * shopkeeper who asked "daftari ziko ngapi" wants a number, not a consultation.
+ *
+ * MEASURED FAILURE, one minute after two questions had been answered properly:
+ * "leo mambo yakoje?" came back with the generic help menu. It is the same
+ * question as "biashara yangu ikoje" in the words people actually use when they
+ * are not being formal — and the shop had just watched Risip answer twice, so
+ * being handed a list of topics read as Risip not understanding Swahili.
+ *
+ * The additions stay narrow in the same way: they are asking how things ARE,
+ * never how much of something there is.
  */
 export function parseAdvisorRequest(text: string | null | undefined): boolean {
   const said = String(text ?? '').toLowerCase().replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim();
   if (!said || said.length > 120) return false;
   return /\b(?:nipe\s+ushauri|ushauri|nishauri|unanishauri|nishaurije|mchanganuo|nifanye\s+nini|nianzie\s+wapi|biashara\s+(?:yangu\s+)?(?:ikoje|inaendeleaje|iko\s*je)|advice|advise\s+me|what\s+should\s+i\s+do|how\s+is\s+my\s+business)\b/
-    .test(said);
+    .test(said)
+    // "mambo yakoje", "hali ikoje", "duka likoje", "vipi biashara", "kunaendeleaje"
+    || /\b(?:mambo\s+(?:yakoje|yako\s*je|vipi)|hali\s+(?:ikoje|iko\s*je|yakoje)|duka\s+(?:likoje|liko\s*je|linaendeleaje)|kunaendeleaje|inaendeleaje|vipi\s+biashara|biashara\s+vipi|hows?\s+business|how\s+are\s+things)\b/
+      .test(said);
 }
 
 /**

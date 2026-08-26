@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseReadRequest } from '../../../../supabase/functions/_shared/whatsappReadTools';
 
@@ -56,5 +58,60 @@ describe('a question is still not a sale', () => {
   ])('does not read %s as a question', (said) => {
     const request = parseReadRequest(said);
     expect(request?.tool ?? null, said).not.toBe('ai_business_summary');
+  });
+});
+
+// MEASURED FAILURE, one minute after two questions had been answered properly:
+//
+//   17:27  Imeuzwa shingapi leo  -> a real summary
+//   17:27  Leo nimeuza shingapi  -> a real summary
+//   17:28  leo mambo yakoje?     -> the generic help menu
+//
+// It is the same question as "biashara yangu ikoje" in the words people use
+// when they are not being formal. Handing back a list of topics, to somebody
+// who had just watched Risip answer twice, reads as Risip not understanding
+// Swahili.
+describe('asking how things are going', () => {
+  it.each([
+    'leo mambo yakoje?',
+    'mambo yakoje',
+    'hali ikoje leo',
+    'duka likoje',
+    'vipi biashara',
+    'kunaendeleaje',
+  ])('reads %s as a question about the business', async (said) => {
+    const { parseAdvisorRequest } = await import(
+      '../../../../supabase/functions/_shared/whatsappAdvisor');
+    expect(parseAdvisorRequest(said)).toBe(true);
+  });
+
+  it('still answers the formal wording it always did', async () => {
+    const { parseAdvisorRequest } = await import(
+      '../../../../supabase/functions/_shared/whatsappAdvisor');
+    expect(parseAdvisorRequest('Leo biashara yangu ikoje')).toBe(true);
+    expect(parseAdvisorRequest('nipe ushauri')).toBe(true);
+  });
+
+  it('stays narrow: a count is not a consultation', async () => {
+    const { parseAdvisorRequest } = await import(
+      '../../../../supabase/functions/_shared/whatsappAdvisor');
+    for (const said of ['daftari ziko ngapi', 'nimeuza nyama kilo 2', 'leo nimeuza shingapi', 'mambo']) {
+      expect(parseAdvisorRequest(said), said).toBe(false);
+    }
+  });
+});
+
+describe('when the model comes back with nothing', () => {
+  it('says so, instead of handing back a menu of topics', () => {
+    const webhook = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+    expect(webhook).toContain('let assistantCameBackEmpty = false;');
+    expect(webhook).toContain('assistantCameBackEmpty = true;');
+    // The truth is narrower than "I can help you with Risip": the question was
+    // understood and the answer did not arrive.
+    expect(webhook).toContain('sijaweza kupata jibu sasa hivi');
+    const fallback = webhook.slice(webhook.indexOf('// Nothing pending: help, a truthful failure'));
+    expect(fallback.indexOf('assistantCameBackEmpty'))
+      .toBeLessThan(fallback.indexOf("t('onlyRisip', lang)"));
   });
 });
