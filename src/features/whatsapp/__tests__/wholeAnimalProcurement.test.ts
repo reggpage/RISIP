@@ -59,13 +59,20 @@ describe('whole-animal procurement', () => {
     expect(parseWholeAnimalProcurement('nimenunua mzoga', 'sw')).toEqual({ kind: 'none' });
   });
 
-  it('refuses to fake supplier-credit accounting', () => {
+  it('preserves supplier credit as an unstated payment method for Phase 8', () => {
     const result = parseWholeAnimalProcurement(
-      "nimechukua ng'ombe mmoja kwa supplier kwa deni",
+      "nimechukua ng'ombe mmoja kwa Musa kwa deni 1200000",
       'sw',
     );
-    expect(result.kind).toBe('supplier_credit');
-    if (result.kind === 'supplier_credit') expect(result.question).toContain('deni la supplier');
+    expect(result).toMatchObject({
+      kind: 'parsed',
+      procurement: {
+        animalCount: 1,
+        purchaseTotal: 1_200_000,
+        supplierName: 'musa',
+        paymentMethod: null,
+      },
+    });
   });
 
   it('preserves a supplied supplier name and mobile-money method', () => {

@@ -203,6 +203,14 @@ import {
   wholeAnimalProcurementConfirmation,
 } from '../_shared/whatsappWholeAnimalProcurement.ts';
 import {
+  parseSupplierCreditPurchase,
+  parseSupplierBalanceQuestion,
+  parseSupplierPayment,
+  supplierPaymentConfirmation,
+  type SupplierCreditPurchase,
+  type SupplierPayment,
+} from '../_shared/whatsappSupplierPayables.ts';
+import {
   parseWholeAnimalBreakdown,
   parseWholeAnimalSourceChoice,
   wholeAnimalBreakdownConfirmation,
@@ -1486,6 +1494,134 @@ async function createDailyRecordDraft(
     p_loss_reason: withPayment.lossReason ?? null,
   });
   return { id: data ? String(data) : null, error };
+}
+
+async function createSupplierCreditPurchaseDraft(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  messageId: string,
+  purchase: SupplierCreditPurchase,
+  occurredAt: string | null | undefined,
+): Promise<{ id: string | null; record: ParsedDailyRecord | null; error: any; clarification?: string }> {
+  const lines: Array<{ description: string; quantity: number; unit: string | null }> = [];
+  for (const line of purchase.lines) {
+    const resolved = await resolveProductForWrite(db, identity, line.description);
+    if (resolved.kind === 'ambiguous') {
+      return {
+        id: null,
+        record: null,
+        error: null,
+        clarification: productReadClarification(resolved, 'sw'),
+      };
+    }
+    lines.push({
+      description: resolved.kind === 'matched' ? resolved.match.productName : line.description,
+      quantity: line.quantity,
+      unit: line.unit,
+    });
+  }
+  const { data, error } = await db.rpc('wa_create_supplier_credit_purchase_draft', {
+    p_profile_id: identity.profile_id,
+    p_company_id: identity.company_id,
+    p_supplier_name: purchase.supplierName,
+    p_lines: lines,
+    p_amount: purchase.amount,
+    p_occurred_at: occurredAt ?? new Date().toISOString(),
+    p_source_message_id: messageId,
+  });
+  if (error || !data) return { id: data ? String(data) : null, record: null, error };
+  const id = String(data);
+  const [{ data: row, error: rowError }, { data: storedLines, error: linesError }] = await Promise.all([
+    db.from('daily_records').select('kind, amount, party_name, description, payment_method, occurred_at').eq('id', id).maybeSingle(),
+    db.from('daily_record_lines').select('description, quantity, unit_amount, unit').eq('daily_record_id', id).order('line_number', { ascending: true }),
+  ]);
+  if (rowError || linesError || !row) return { id, record: null, error: rowError ?? linesError };
+  const record: ParsedDailyRecord = {
+    kind: 'supplier_payable',
+    amount: Number(row.amount),
+    partyName: row.party_name ? String(row.party_name) : null,
+    description: row.description ? String(row.description) : 'Ununuzi wa bidhaa kwa deni',
+    lines: ((storedLines ?? []) as Array<Record<string, unknown>>).map((line) => ({
+      description: String(line.description ?? ''),
+      quantity: Number(line.quantity),
+      unit_amount: Number(line.unit_amount),
+      unit: line.unit ? String(line.unit) : null,
+    })),
+    paymentMethod: null,
+    occurredAt: row.occurred_at ? String(row.occurred_at) : occurredAt,
+    confidence: 0.99,
+  };
+  return { id, record, error: null };
+}
+
+async function createSupplierPaymentDraft(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  messageId: string,
+  payment: SupplierPayment,
+  occurredAt: string | null | undefined,
+): Promise<{ id: string | null; record: ParsedDailyRecord | null; error: any }> {
+  const { data, error } = await db.rpc('wa_create_supplier_payment_draft', {
+    p_profile_id: identity.profile_id,
+    p_company_id: identity.company_id,
+    p_supplier_name: payment.supplierName,
+    p_amount: payment.amount,
+    p_payment_method: payment.paymentMethod,
+    p_occurred_at: occurredAt ?? new Date().toISOString(),
+    p_source_message_id: messageId,
+  });
+  if (error || !data) return { id: data ? String(data) : null, record: null, error };
+  const id = String(data);
+  const { data: row, error: rowError } = await db.from('daily_records')
+    .select('kind, amount, party_name, description, payment_method, occurred_at').eq('id', id).maybeSingle();
+  if (rowError || !row) return { id, record: null, error: rowError };
+  return {
+    id,
+    error: null,
+    record: {
+      kind: 'supplier_payment',
+      amount: Number(row.amount),
+      partyName: row.party_name ? String(row.party_name) : null,
+      description: row.description ? String(row.description) : 'Malipo kwa supplier',
+      lines: [],
+      paymentMethod: row.payment_method as ParsedDailyRecord['paymentMethod'],
+      occurredAt: row.occurred_at ? String(row.occurred_at) : occurredAt,
+      confidence: 0.99,
+    },
+  };
+}
+
+async function supplierBalanceReply(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  question: { supplierName: string | null },
+  lang: Lang,
+): Promise<string> {
+  if (!canUseCompanyFinanceReads(identity.role)) {
+    return lang === 'sw'
+      ? 'Salio la supplier linaonekana kwa owner au accountant tu.'
+      : 'Supplier balances are available only to an owner or accountant.';
+  }
+  const { data, error } = await db.rpc('wa_supplier_balances', {
+    p_profile_id: identity.profile_id,
+    p_company_id: identity.company_id,
+    p_supplier_name: question.supplierName,
+  });
+  if (error) throw error;
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  if (rows.length === 0) {
+    return question.supplierName
+      ? (lang === 'sw' ? `Sina deni lililothibitishwa kwa ${question.supplierName}.` : `There is no confirmed amount owed to ${question.supplierName}.`)
+      : (lang === 'sw' ? 'Sina madeni ya suppliers yaliyothibitishwa kwa sasa.' : 'There are no confirmed supplier payables right now.');
+  }
+  if (question.supplierName) {
+    const row = rows[0];
+    return lang === 'sw'
+      ? `Biashara inamdaiwa ${row.supplier_name}: *TSh ${Number(row.outstanding).toLocaleString('en-US')}*. Ununuzi wa mkopo: TSh ${Number(row.payable).toLocaleString('en-US')}; tumelipa: TSh ${Number(row.payments).toLocaleString('en-US')}.`
+      : `The business owes ${row.supplier_name}: *TZS ${Number(row.outstanding).toLocaleString('en-US')}*. Credit purchases: TZS ${Number(row.payable).toLocaleString('en-US')}; paid: TZS ${Number(row.payments).toLocaleString('en-US')}.`;
+  }
+  return (lang === 'sw' ? 'Madeni ya suppliers yaliyothibitishwa:\n' : 'Confirmed supplier payables:\n')
+    + rows.map((row) => `${row.supplier_name}: ${lang === 'sw' ? 'TSh' : 'TZS'} ${Number(row.outstanding).toLocaleString('en-US')}`).join('\n');
 }
 
 function breakdownCandidatesFor(
@@ -6551,10 +6687,15 @@ Deno.serve(async (req) => {
         // volume messages in the product — still never touch the network.
         const wholeAnimalReading = parseWholeAnimalProcurement(body, lang);
         const wholeAnimalBreakdownReading = parseWholeAnimalBreakdown(body, lang);
+        const supplierCreditReading = parseSupplierCreditPurchase(body, lang);
+        const supplierPaymentReading = parseSupplierPayment(body, lang);
+        const supplierBalanceQuestion = parseSupplierBalanceQuestion(body);
         const recordReading = isDailyRecordCandidate(body) ? parseDailyRecord(body, lang) : null;
         const recordUnreadable = recordReading?.kind === 'clarify' && recordReading.reason === 'message';
         const deterministicRecord = (Boolean(recordReading) && !recordUnreadable)
           || wholeAnimalReading.kind !== 'none'
+          || supplierCreditReading.kind !== 'none'
+          || supplierPaymentReading.kind !== 'none'
           || wholeAnimalBreakdownReading.kind !== 'none';
         // Product sales have a stricter catalogue-backed path than the generic
         // money parser. If any of these parsers understands the wording, Claude
@@ -6577,6 +6718,7 @@ Deno.serve(async (req) => {
           // deterministic path can actually read it. See recordUnreadable.
           && !deterministicRecord
           && !deterministicCatalogueTransaction
+          && !supplierBalanceQuestion
           // Stock reads and physical counts are exact server arithmetic. Let
           // the deterministic path answer in its own concise words instead of
           // letting the model paraphrase zero as a guess or turn “ziwe” into a
@@ -6666,6 +6808,20 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        if (!mixed && supplierBalanceQuestion) {
+          try {
+            await reply(phone, await supplierBalanceReply(db, identity, supplierBalanceQuestion, lang));
+            await audit(db, identity, waMessageId, 'supplier_balance', supplierBalanceQuestion.supplierName ?? 'all', 'applied');
+          } catch {
+            await reply(phone, lang === 'sw'
+              ? 'Sikuweza kupata salio la suppliers sasa. Jaribu tena baadaye.'
+              : 'I could not load supplier balances right now. Please try again later.');
+            await audit(db, identity, waMessageId, 'supplier_balance', 'read', 'failed');
+          }
+          await finish('skipped');
+          continue;
+        }
+
         const readRequest = mixed ? null : parseReadRequest(body);
         if (readRequest) {
           try {
@@ -6693,7 +6849,105 @@ Deno.serve(async (req) => {
         // something, and three of something is a number no report can use.
         // Asked once, before the sale parsers see it; a product already in the
         // catalogue has been measured before and is never asked about again.
-        if (!mixed && (isDailyRecordCandidate(writeBody) || parseWholeAnimalBreakdown(writeBody, lang).kind !== 'none')) {
+        if (!mixed && (isDailyRecordCandidate(writeBody)
+          || parseSupplierCreditPurchase(writeBody, lang).kind !== 'none'
+          || parseSupplierPayment(writeBody, lang).kind !== 'none'
+          || parseWholeAnimalBreakdown(writeBody, lang).kind !== 'none')) {
+          const supplierPayment = parseSupplierPayment(writeBody, lang);
+          if (supplierPayment.kind !== 'none') {
+            if (supplierPayment.kind !== 'parsed') {
+              await replyQuietly(phone, supplierPayment.question);
+              await audit(db, identity, waMessageId, 'supplier_payment', supplierPayment.kind, 'clarification');
+              await finish('skipped');
+              continue;
+            }
+            const wantedDate = resolveTransactionDate(writeBody);
+            if (wantedDate.kind === 'invalid') {
+              await replyQuietly(phone, transactionDateQuestion(wantedDate.reason, lang));
+              await audit(db, identity, waMessageId, 'supplier_payment', 'date', 'clarification');
+              await finish('skipped');
+              continue;
+            }
+            const payment = supplierPayment.payment;
+            const created = await createSupplierPaymentDraft(
+              db, identity, waMessageId, payment, wantedDate.occurredAt,
+            );
+            const hint = String((created.error as { hint?: string } | null)?.hint ?? '');
+            if (created.error || !created.id || !created.record) {
+              await replyQuietly(phone, hint === 'supplier_overpayment'
+                ? (lang === 'sw'
+                  ? `Malipo ya TSh ${payment.amount.toLocaleString('en-US')} yanazidi deni la ${payment.supplierName}. Siwezi kuunda advance bila sera ya supplier prepayment.`
+                  : `That payment exceeds ${payment.supplierName}'s outstanding balance. I cannot create a supplier advance without an explicit policy.`)
+                : (lang === 'sw' ? 'Sikuweza kuhifadhi draft ya malipo haya. Tafadhali hakiki supplier, kiasi na njia ya malipo.' : 'I could not save this payment draft. Please check the supplier, amount, and payment method.'));
+              await audit(db, identity, waMessageId, 'supplier_payment', 'draft', 'failed');
+              await finish('skipped');
+              continue;
+            }
+            const state: DailyRecordConversation = {
+              kind: 'daily_record_confirmation', dailyRecordId: created.id,
+              sourceMessageId: waMessageId, record: created.record,
+            };
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+              awaiting: 'payment_source', receipt_id: null, options: state,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await replyQuietly(phone, supplierPaymentConfirmation(payment, lang));
+            await audit(db, identity, waMessageId, 'supplier_payment', 'create', 'pending');
+            await finish('applied');
+            continue;
+          }
+
+          const supplierCredit = parseSupplierCreditPurchase(writeBody, lang);
+          if (supplierCredit.kind !== 'none') {
+            if (supplierCredit.kind !== 'parsed') {
+              await replyQuietly(phone, supplierCredit.question);
+              await audit(db, identity, waMessageId, 'supplier_payable', supplierCredit.kind, 'clarification');
+              await finish('skipped');
+              continue;
+            }
+            const wantedDate = resolveTransactionDate(writeBody);
+            if (wantedDate.kind === 'invalid') {
+              await replyQuietly(phone, transactionDateQuestion(wantedDate.reason, lang));
+              await audit(db, identity, waMessageId, 'supplier_payable', 'date', 'clarification');
+              await finish('skipped');
+              continue;
+            }
+            const created = await createSupplierCreditPurchaseDraft(
+              db, identity, waMessageId, supplierCredit.purchase, wantedDate.occurredAt,
+            );
+            if (created.clarification) {
+              await replyQuietly(phone, created.clarification);
+              await audit(db, identity, waMessageId, 'supplier_payable', 'product', 'clarification');
+              await finish('skipped');
+              continue;
+            }
+            const hint = String((created.error as { hint?: string } | null)?.hint ?? '');
+            if (created.error || !created.id || !created.record) {
+              await replyQuietly(phone, hint === 'purchase_cost_required'
+                ? (lang === 'sw'
+                  ? 'Sina purchase cost iliyowekwa kwa bidhaa hii. Taja jumla ya ununuzi, kwa mfano: “kwa deni TSh 40000”.'
+                  : 'No purchase cost is configured for this product. State the purchase total, for example: “on credit TZS 40000”.')
+                : (lang === 'sw' ? 'Sikuweza kuhifadhi draft ya ununuzi huu wa deni. Tafadhali hakiki bidhaa, kiasi na jumla.' : 'I could not save this credit-purchase draft. Please check the product, quantity, and total.'));
+              await audit(db, identity, waMessageId, 'supplier_payable', 'draft', 'failed');
+              await finish('skipped');
+              continue;
+            }
+            const state: DailyRecordConversation = {
+              kind: 'daily_record_confirmation', dailyRecordId: created.id,
+              sourceMessageId: waMessageId, record: created.record,
+            };
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+              awaiting: 'payment_source', receipt_id: null, options: state,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await replyDailyRecordConfirmationQuietly(phone, created.record, lang);
+            await audit(db, identity, waMessageId, 'supplier_payable', 'create', 'pending');
+            await finish('applied');
+            continue;
+          }
+
           const breakdownReading = parseWholeAnimalBreakdown(writeBody, lang);
           if (breakdownReading.kind === 'missing_quantity' || breakdownReading.kind === 'missing_product') {
             await replyQuietly(phone, breakdownReading.question);
@@ -6768,12 +7022,6 @@ Deno.serve(async (req) => {
           // no daily_record_lines: those are product-stock movements, and the
           // kilograms and offal do not exist until a later measured breakdown.
           const procurementReading = parseWholeAnimalProcurement(writeBody, lang);
-          if (procurementReading.kind === 'supplier_credit') {
-            await replyQuietly(phone, procurementReading.question);
-            await audit(db, identity, waMessageId, 'whole_animal_procurement', 'supplier_credit', 'clarification');
-            await finish('skipped');
-            continue;
-          }
           if (procurementReading.kind === 'missing') {
             await replyQuietly(phone, procurementReading.question);
             await audit(db, identity, waMessageId, 'whole_animal_procurement',

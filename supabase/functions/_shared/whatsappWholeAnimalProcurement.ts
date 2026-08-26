@@ -15,7 +15,6 @@ export type WholeAnimalProcurement = {
 export type WholeAnimalProcurementReading =
   | { kind: 'parsed'; procurement: WholeAnimalProcurement }
   | { kind: 'missing'; missing: Array<'quantity' | 'cost'>; question: string }
-  | { kind: 'supplier_credit'; question: string }
   | { kind: 'none' };
 
 const NUMBER_WORDS: Record<string, number> = {
@@ -66,12 +65,12 @@ function paymentMethod(text: string): WholeAnimalPaymentMethod | null {
 }
 
 function supplierName(text: string): string | null {
-  const match = text.match(/\b(?:kutoka kwa|from|supplier|muuzaji)\s+([\p{L}][\p{L}'’-]*(?:\s+[\p{L}][\p{L}'’-]*){0,2})/iu);
+  const match = text.match(/\b(?:kutoka kwa|from|supplier|muuzaji|kwa)\s+([\p{L}][\p{L}'’-]*(?:\s+[\p{L}][\p{L}'’-]*){0,2}?)(?=\s+kwa\s+(?:deni|mkopo)|\s+(?:on\s+)?credit\b|\s+[0-9]|$)/iu);
   if (!match) return null;
   const name = match[1]
-    .replace(/\s+(?:cash|taslimu|bank|benki|mpesa|m-pesa|kwa|for|at)$/i, '')
+    .replace(/\s+(?:cash|taslimu|bank|benki|mpesa|m-pesa|kwa|for|at|deni|mkopo)$/i, '')
     .trim();
-  return name || null;
+  return /^(?:deni|mkopo|credit)$/i.test(name) ? null : (name || null);
 }
 
 export function parseWholeAnimalProcurement(
@@ -93,16 +92,8 @@ export function parseWholeAnimalProcurement(
   // "kwa"/"for"/"@" establishes that this is the transaction total. A bare
   // number is never promoted to money because it may be the animal count.
   const totalMatch = text.match(/(?:\b(?:kwa|for|jumla|total)\b|@)\s*(?:tshs?|tsh|tzs|sh)?\s*([0-9][0-9,]*(?:\.\d+)?\s*(?:\/=|\/-)?)/i);
-  const total = parseMoney(totalMatch?.[1]);
-
-  if (/\b(?:kwa deni|hajalipa|atalipa|supplier credit|on credit)\b/i.test(text)) {
-    return {
-      kind: 'supplier_credit',
-      question: lang === 'sw'
-        ? 'Ununuzi wa ng\'ombe kwa deni la supplier bado haujawezeshwa hapa. Taja cash, benki au mobile money; vinginevyo rekodi hii isubiri.'
-        : 'Supplier-credit animal purchases are not enabled here yet. State cash, bank or mobile money, or leave this purchase unrecorded for now.',
-    };
-  }
+  const creditTotalMatch = text.match(/\b(?:deni|mkopo)\b\s*[, ]+\s*(?:tshs?|tsh|tzs|sh)?\s*([0-9][0-9,]*(?:\.\d+)?)/i);
+  const total = parseMoney(totalMatch?.[1] ?? creditTotalMatch?.[1]);
 
   const missing: Array<'quantity' | 'cost'> = [];
   if (count === null) missing.push('quantity');
