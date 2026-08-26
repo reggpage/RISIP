@@ -303,6 +303,7 @@ export type StockLevel = {
   hasCount: boolean;
   boughtSince: number;
   soldSince: number;
+  producedSince?: number;
   onHand: number;
   incompletePurchases: boolean;
 };
@@ -343,6 +344,7 @@ export function useStockLevels() {
         hasCount: Boolean(row.has_count),
         boughtSince: Number(row.bought_since ?? 0),
         soldSince: Number(row.sold_since ?? 0),
+        producedSince: Number(row.produced_since ?? 0),
         onHand: Number(row.on_hand ?? 0),
         incompletePurchases: Boolean(row.incomplete_purchases),
       })));

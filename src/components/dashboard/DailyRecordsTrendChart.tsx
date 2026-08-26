@@ -8,7 +8,7 @@ import { DAILY_RECORD_CHART_COLORS } from '@/features/dailyRecords/uiRules';
 type Gran = 'day' | 'week' | 'month' | 'year';
 type SeriesKey = 'sale' | 'expense' | 'stock_purchase' | 'debt_issued' | 'customer_payment'
   | 'stock_loss' | 'owner_use' | 'supplier_payable' | 'supplier_payment'
-  | 'whole_animal_procurement' | 'cash';
+  | 'whole_animal_procurement' | 'whole_animal_breakdown' | 'cash';
 type Series = { key: SeriesKey; label: string; color: string };
 
 const colors: Record<SeriesKey, string> = {
@@ -22,6 +22,7 @@ const colors: Record<SeriesKey, string> = {
   supplier_payable: DAILY_RECORD_CHART_COLORS.supplierPayable,
   supplier_payment: DAILY_RECORD_CHART_COLORS.supplierPayment,
   whole_animal_procurement: DAILY_RECORD_CHART_COLORS.stockPurchase,
+  whole_animal_breakdown: DAILY_RECORD_CHART_COLORS.stockPurchase,
   cash: DAILY_RECORD_CHART_COLORS.cashMovement,
 };
 
@@ -73,7 +74,7 @@ function buildPoints(records: DailyRecord[], gran: Gran): Point[] {
     } else {
       date = new Date(today.getFullYear() - index, 0, 1); key = String(date.getFullYear()); label = key;
     }
-    points.push({ key, label, values: { sale: 0, expense: 0, stock_purchase: 0, debt_issued: 0, customer_payment: 0, stock_loss: 0, owner_use: 0, supplier_payable: 0, supplier_payment: 0, whole_animal_procurement: 0, cash: 0 } });
+    points.push({ key, label, values: { sale: 0, expense: 0, stock_purchase: 0, debt_issued: 0, customer_payment: 0, stock_loss: 0, owner_use: 0, supplier_payable: 0, supplier_payment: 0, whole_animal_procurement: 0, whole_animal_breakdown: 0, cash: 0 } });
   }
   const indexByKey = new Map(points.map((point, index) => [point.key, index]));
   for (const record of records) {

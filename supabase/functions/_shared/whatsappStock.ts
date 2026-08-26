@@ -22,6 +22,7 @@ export type StockRow = {
   countedAt: string | null;
   boughtSince: number;
   soldSince: number;
+  producedSince?: number;
   incompletePurchases: boolean;
 };
 

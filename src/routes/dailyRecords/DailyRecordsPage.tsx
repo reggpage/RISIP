@@ -34,6 +34,7 @@ const kindLabels: Record<DailyRecordKind, string> = {
   stock_loss: ui.stockLoss, owner_use: ui.ownerUse,
   supplier_payable: ui.supplierPayable, supplier_payment: ui.supplierPayment,
   whole_animal_procurement: ui.wholeAnimalProcurement,
+  whole_animal_breakdown: lang === 'sw' ? 'Breakdown ya ng\'ombe mzima' : 'Whole-animal breakdown',
 };
 const statusLabels: Record<DailyRecordStatus, string> = { pending_confirmation: ui.pending, confirmed: ui.confirmed, voided: ui.voided };
 const partyHint = lang === 'sw'

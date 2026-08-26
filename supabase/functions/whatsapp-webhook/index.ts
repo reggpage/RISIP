@@ -202,6 +202,17 @@ import {
   parseWholeAnimalProcurement,
   wholeAnimalProcurementConfirmation,
 } from '../_shared/whatsappWholeAnimalProcurement.ts';
+import {
+  parseWholeAnimalBreakdown,
+  parseWholeAnimalSourceChoice,
+  wholeAnimalBreakdownConfirmation,
+  wholeAnimalSourceQuestion,
+  type WholeAnimalBreakdownCandidate,
+  type WholeAnimalBreakdownConfirmationState,
+  type WholeAnimalBreakdownOutput,
+  type WholeAnimalBreakdownReading,
+  type WholeAnimalBreakdownSourceSelection,
+} from '../_shared/whatsappWholeAnimalBreakdown.ts';
 import { parseCreditQuantitySale } from '../_shared/whatsappCreditSale.ts';
 import {
   parseQuantityAnswer,
@@ -1078,6 +1089,7 @@ async function lowStockNoticeFor(
         onHand: Number(row.on_hand ?? 0),
         unit: row.unit ? String(row.unit) : null,
         hasCount: Boolean(row.has_count),
+        producedSince: Number(row.produced_since ?? 0),
       });
     }
     return lowStockNotice(levels, lang);
@@ -1474,6 +1486,91 @@ async function createDailyRecordDraft(
     p_loss_reason: withPayment.lossReason ?? null,
   });
   return { id: data ? String(data) : null, error };
+}
+
+function breakdownCandidatesFor(
+  candidates: WholeAnimalBreakdownCandidate[],
+  reading: Extract<WholeAnimalBreakdownReading, { kind: 'parsed' }>,
+  message: string,
+): WholeAnimalBreakdownCandidate[] {
+  let filtered = candidates;
+  if (reading.source.purchaseTotal !== null) {
+    filtered = filtered.filter((candidate) => candidate.purchaseTotal === reading.source.purchaseTotal);
+  }
+  if (reading.source.relativeDate === 'yesterday') {
+    const wanted = resolveTransactionDate(message);
+    if (wanted.kind === 'historical' && wanted.occurredAt) {
+      const day = wanted.occurredAt.slice(0, 10);
+      filtered = filtered.filter((candidate) => candidate.occurredAt.slice(0, 10) === day);
+    }
+  }
+  return filtered;
+}
+
+async function createWholeAnimalBreakdownDraft(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  reading: Extract<WholeAnimalBreakdownReading, { kind: 'parsed' }>,
+  source: WholeAnimalBreakdownCandidate,
+  messageId: string,
+): Promise<{
+  id: string | null;
+  error: unknown;
+  outputs: WholeAnimalBreakdownOutput[];
+  clarification: string | null;
+}> {
+  const outputs: WholeAnimalBreakdownOutput[] = [];
+  for (const output of reading.outputs) {
+    const resolved = await resolveProductForWrite(db, identity, output.productName);
+    if (resolved.kind === 'ambiguous') {
+      return {
+        id: null, error: null, outputs: [],
+        clarification: productReadClarification(resolved, identity.lang),
+      };
+    }
+    if (resolved.kind !== 'matched') {
+      return {
+        id: null, error: null, outputs: [],
+        clarification: identity.lang === 'sw'
+          ? `Sijaipata bidhaa “${output.productName}” kwenye katalogi ya kampuni. Iweke kwanza kama bidhaa iliyosanidiwa; hakuna output iliyohifadhiwa.`
+          : `I could not find “${output.productName}” in the company catalogue. Configure it first; no output was saved.`,
+      };
+    }
+    outputs.push({ ...output, productName: resolved.match.productName });
+  }
+
+  const { data, error } = await db.rpc('wa_create_whole_animal_breakdown_draft', {
+    p_profile_id: identity.profile_id,
+    p_company_id: identity.company_id,
+    p_source_procurement_daily_record_id: source.dailyRecordId,
+    p_outputs: outputs.map((output) => ({
+      product_key: productKey(output.productName),
+      product_name: output.productName,
+      quantity: output.quantity,
+      unit: output.unit,
+    })),
+    p_occurred_at: new Date().toISOString(),
+    p_source_message_id: messageId,
+  });
+  return { id: data ? String(data) : null, error, outputs, clarification: null };
+}
+
+async function listWholeAnimalBreakdownSources(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+): Promise<WholeAnimalBreakdownCandidate[]> {
+  const { data, error } = await db.rpc('wa_list_available_whole_animal_procurements', {
+    p_profile_id: identity.profile_id,
+    p_company_id: identity.company_id,
+  });
+  if (error) return [];
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    dailyRecordId: String(row.daily_record_id),
+    animalType: String(row.animal_type ?? "ng'ombe"),
+    animalCount: Number(row.animal_count ?? 1),
+    purchaseTotal: Number(row.purchase_total ?? 0),
+    occurredAt: String(row.occurred_at ?? ''),
+  })).filter((candidate) => candidate.dailyRecordId && candidate.purchaseTotal > 0 && candidate.occurredAt);
 }
 
 async function createDailyRecordBatchDrafts(
@@ -2470,6 +2567,7 @@ async function executeAssistantTool(
       countedAt: row.counted_at ? String(row.counted_at) : null,
       boughtSince: Number(row.bought_since ?? 0),
       soldSince: Number(row.sold_since ?? 0),
+      producedSince: Number(row.produced_since ?? 0),
       incompletePurchases: Boolean(row.incomplete_purchases),
     }));
     // wa_stock_on_hand contains movements/counts. The catalogue also contains
@@ -3599,6 +3697,14 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<DailyRecordConversation> | null)?.kind === 'daily_record_confirmation'
           ? convo.options as DailyRecordConversation
           : null;
+        const breakdownConfirmation = convo?.awaiting === 'payment_source'
+          && (convo.options as Partial<WholeAnimalBreakdownConfirmationState> | null)?.kind === 'whole_animal_breakdown_confirmation'
+          ? convo.options as WholeAnimalBreakdownConfirmationState
+          : null;
+        const breakdownSourcePending = convo?.awaiting === 'payment_source'
+          && (convo.options as Partial<WholeAnimalBreakdownSourceSelection> | null)?.kind === 'whole_animal_breakdown_source_selection'
+          ? convo.options as WholeAnimalBreakdownSourceSelection
+          : null;
         const dailyClarification = convo?.awaiting === 'payment_source'
           && (convo.options as Partial<DailyRecordClarification> | null)?.kind === 'daily_record_clarification'
           ? convo.options as DailyRecordClarification
@@ -4415,6 +4521,103 @@ Deno.serve(async (req) => {
         // clarification consumed the whole message and asked the same question
         // again, and not one price was saved. A person who has plainly moved on
         // gets the new thing done, and is told the old question was let go.
+        if (breakdownSourcePending) {
+          if (isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, lang === 'sw'
+              ? 'Sawa. Uchaguzi wa chanzo umeghairiwa; hakuna breakdown iliyohifadhiwa.'
+              : 'Okay. Source selection was cancelled; no breakdown was saved.');
+            await audit(db, identity, waMessageId, 'whole_animal_breakdown', 'source_cancel', 'applied');
+            await finish('skipped');
+            continue;
+          }
+          const choice = parseWholeAnimalSourceChoice(body, breakdownSourcePending.candidates.length);
+          if (choice === null) {
+            await replyQuietly(phone, wholeAnimalSourceQuestion(breakdownSourcePending.candidates, lang));
+            await audit(db, identity, waMessageId, 'whole_animal_breakdown', 'source_choice', 'clarification');
+            await finish('skipped');
+            continue;
+          }
+          const source = breakdownSourcePending.candidates[choice];
+          const result = await createWholeAnimalBreakdownDraft(
+            db,
+            identity,
+            { kind: 'parsed', source: { relativeDate: null, purchaseTotal: null }, outputs: breakdownSourcePending.outputs },
+            source,
+            breakdownSourcePending.sourceMessageId,
+          );
+          if (result.clarification) {
+            await replyQuietly(phone, result.clarification);
+            await audit(db, identity, waMessageId, 'whole_animal_breakdown', 'output', 'clarification');
+            await finish('skipped');
+            continue;
+          }
+          if (result.error || !result.id) {
+            await replyQuietly(phone, lang === 'sw'
+              ? 'Sikuweza kuhifadhi breakdown hii. Hakuna stock ya nyama iliyoongezwa; jaribu tena.'
+              : 'I could not save this breakdown. No meat stock was added; please try again.');
+            await audit(db, identity, waMessageId, 'whole_animal_breakdown', 'draft', 'failed');
+            await finish('skipped');
+            continue;
+          }
+          const state: WholeAnimalBreakdownConfirmationState = {
+            kind: 'whole_animal_breakdown_confirmation',
+            dailyRecordId: result.id,
+            sourceMessageId: breakdownSourcePending.sourceMessageId,
+            outputs: result.outputs,
+          };
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+            awaiting: 'payment_source', receipt_id: null, options: state,
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          await replyQuietly(phone, wholeAnimalBreakdownConfirmation(result.outputs, lang));
+          await audit(db, identity, waMessageId, 'whole_animal_breakdown', 'create', 'pending');
+          await finish('applied');
+          continue;
+        }
+        if (breakdownConfirmation) {
+          if (isDailyRecordConfirmation(body)) {
+            const { error } = await db.rpc('wa_confirm_daily_record', {
+              p_profile_id: identity.profile_id,
+              p_company_id: identity.company_id,
+              p_daily_record_id: breakdownConfirmation.dailyRecordId,
+            });
+            if (!error) {
+              await clearConversation(db, identity.id as string);
+              await clearAssistantMemory(db, identity);
+            }
+            await replyQuietly(phone, error
+              ? wholeAnimalBreakdownConfirmation(breakdownConfirmation.outputs, lang)
+              : (lang === 'sw'
+                ? '✅ Breakdown imethibitishwa. Outputs halisi zimeongezwa kwenye stock; gharama bado haijagawanywa kwa bidhaa.'
+                : '✅ Breakdown confirmed. The measured outputs were added to stock; cost allocation remains incomplete.'));
+            await audit(db, identity, waMessageId, 'whole_animal_breakdown', 'confirm', error ? 'pending' : 'applied');
+            await finish('skipped');
+            continue;
+          }
+          if (isDailyRecordRejection(body)) {
+            const { error } = await db.rpc('wa_cancel_daily_record_draft', {
+              p_profile_id: identity.profile_id,
+              p_company_id: identity.company_id,
+              p_daily_record_id: breakdownConfirmation.dailyRecordId,
+              p_reason: 'WhatsApp user declined whole-animal breakdown draft',
+            });
+            if (!error) {
+              await clearConversation(db, identity.id as string);
+              await clearAssistantMemory(db, identity);
+            }
+            await replyQuietly(phone, error
+              ? wholeAnimalBreakdownConfirmation(breakdownConfirmation.outputs, lang)
+              : (lang === 'sw' ? 'Sawa. Breakdown imeghairiwa; stock haijabadilika.' : 'Okay. Breakdown cancelled; stock was unchanged.'));
+            await audit(db, identity, waMessageId, 'whole_animal_breakdown', 'cancel', error ? 'failed' : 'applied');
+            await finish('skipped');
+            continue;
+          }
+          await replyQuietly(phone, wholeAnimalBreakdownConfirmation(breakdownConfirmation.outputs, lang));
+          await finish('skipped');
+          continue;
+        }
         const changedSubject = (dailyBatchClarification || dailyClarification)
           ? parseProductCostBatch(body)
           : null;
@@ -6347,10 +6550,12 @@ Deno.serve(async (req) => {
         // Only the last one is handed over. Ordinary sales — the highest
         // volume messages in the product — still never touch the network.
         const wholeAnimalReading = parseWholeAnimalProcurement(body, lang);
+        const wholeAnimalBreakdownReading = parseWholeAnimalBreakdown(body, lang);
         const recordReading = isDailyRecordCandidate(body) ? parseDailyRecord(body, lang) : null;
         const recordUnreadable = recordReading?.kind === 'clarify' && recordReading.reason === 'message';
         const deterministicRecord = (Boolean(recordReading) && !recordUnreadable)
-          || wholeAnimalReading.kind !== 'none';
+          || wholeAnimalReading.kind !== 'none'
+          || wholeAnimalBreakdownReading.kind !== 'none';
         // Product sales have a stricter catalogue-backed path than the generic
         // money parser. If any of these parsers understands the wording, Claude
         // is not called: aliases, units, pricing and missing-quantity state stay
@@ -6488,7 +6693,75 @@ Deno.serve(async (req) => {
         // something, and three of something is a number no report can use.
         // Asked once, before the sale parsers see it; a product already in the
         // catalogue has been measured before and is never asked about again.
-        if (!mixed && isDailyRecordCandidate(writeBody)) {
+        if (!mixed && (isDailyRecordCandidate(writeBody) || parseWholeAnimalBreakdown(writeBody, lang).kind !== 'none')) {
+          const breakdownReading = parseWholeAnimalBreakdown(writeBody, lang);
+          if (breakdownReading.kind === 'missing_quantity' || breakdownReading.kind === 'missing_product') {
+            await replyQuietly(phone, breakdownReading.question);
+            await audit(db, identity, waMessageId, 'whole_animal_breakdown', breakdownReading.kind, 'clarification');
+            await finish('skipped');
+            continue;
+          }
+          if (breakdownReading.kind === 'parsed') {
+            const allSources = await listWholeAnimalBreakdownSources(db, identity);
+            const sources = breakdownCandidatesFor(allSources, breakdownReading, writeBody);
+            if (sources.length === 0) {
+              await replyQuietly(phone, lang === 'sw'
+                ? 'Sina procurement ya ng\'ombe iliyothibitishwa na ambayo bado haijavunjwa. Thibitisha ununuzi kwanza; hakuna stock iliyoongezwa.'
+                : 'I found no confirmed whole-animal procurement that is still available for breakdown. Confirm the purchase first; no stock was added.');
+              await audit(db, identity, waMessageId, 'whole_animal_breakdown', 'source', 'clarification');
+              await finish('skipped');
+              continue;
+            }
+            if (sources.length > 1) {
+              const state: WholeAnimalBreakdownSourceSelection = {
+                kind: 'whole_animal_breakdown_source_selection',
+                sourceMessageId: waMessageId,
+                outputs: breakdownReading.outputs,
+                candidates: sources,
+              };
+              await db.from('whatsapp_conversations').upsert({
+                identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+                awaiting: 'payment_source', receipt_id: null, options: state,
+                expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+              }, { onConflict: 'identity_id' });
+              await replyQuietly(phone, wholeAnimalSourceQuestion(sources, lang));
+              await audit(db, identity, waMessageId, 'whole_animal_breakdown', 'source', 'clarification');
+              await finish('skipped');
+              continue;
+            }
+            const result = await createWholeAnimalBreakdownDraft(
+              db, identity, breakdownReading, sources[0], waMessageId,
+            );
+            if (result.clarification) {
+              await replyQuietly(phone, result.clarification);
+              await audit(db, identity, waMessageId, 'whole_animal_breakdown', 'output', 'clarification');
+              await finish('skipped');
+              continue;
+            }
+            if (result.error || !result.id) {
+              await replyQuietly(phone, lang === 'sw'
+                ? 'Sikuweza kuhifadhi breakdown hii. Hakuna stock ya nyama iliyoongezwa; jaribu tena.'
+                : 'I could not save this breakdown. No meat stock was added; please try again.');
+              await audit(db, identity, waMessageId, 'whole_animal_breakdown', 'draft', 'failed');
+              await finish('skipped');
+              continue;
+            }
+            const state: WholeAnimalBreakdownConfirmationState = {
+              kind: 'whole_animal_breakdown_confirmation',
+              dailyRecordId: result.id,
+              sourceMessageId: waMessageId,
+              outputs: result.outputs,
+            };
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+              awaiting: 'payment_source', receipt_id: null, options: state,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await replyQuietly(phone, wholeAnimalBreakdownConfirmation(result.outputs, lang));
+            await audit(db, identity, waMessageId, 'whole_animal_breakdown', 'create', 'pending');
+            await finish('applied');
+            continue;
+          }
           // ── Bucha phase 6: the animal arrives, but its products do not ───
           //
           // A whole cow is procured as one input asset. It intentionally has

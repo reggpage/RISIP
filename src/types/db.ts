@@ -343,7 +343,7 @@ export type DailyRecordKind =
   // home are not a sale, and money owed TO a supplier is not money owed BY a
   // customer.
   | 'stock_loss' | 'owner_use' | 'supplier_payable' | 'supplier_payment'
-  | 'whole_animal_procurement';
+  | 'whole_animal_procurement' | 'whole_animal_breakdown';
 export type DailyRecordStatus = 'pending_confirmation' | 'confirmed' | 'voided';
 export type DailyRecordSource = 'app' | 'whatsapp' | 'other';
 
@@ -831,7 +831,7 @@ export type Database = {
         Returns: Array<{
           product_key: string; product_name: string; unit: string | null; measured: boolean;
           counted_qty: string | null; counted_at: string | null; has_count: boolean;
-          bought_since: string; sold_since: string; on_hand: string; incomplete_purchases: boolean;
+          bought_since: string; sold_since: string; produced_since: string; on_hand: string; incomplete_purchases: boolean;
         }>;
       };
       /** Finance-only: record a physical count. Supersedes the previous one. */
