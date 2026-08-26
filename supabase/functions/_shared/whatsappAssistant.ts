@@ -261,7 +261,11 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
     {
       period: periodSchema,
       when: whenSchema,
-      status: { type: ['string', 'null'], enum: ['confirmed', 'submitted', null] },
+      // Same shape as payment_method below, and it would have failed the same
+      // way the moment this tool was reached.
+      status: {
+        anyOf: [{ type: 'string', enum: ['confirmed', 'submitted'] }, { type: 'null' }],
+      },
     },
     ['period', 'when', 'status'],
   ),
@@ -316,7 +320,23 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
     {
       kind: { type: 'string', enum: ['sale', 'debt_issued'] },
       party_name: { type: ['string', 'null'], description: 'Debtor name for debt_issued, otherwise null.' },
-      payment_method: { type: ['string', 'null'], enum: ['cash', 'mobile_money', 'bank', 'other', null] },
+      // MEASURED FAILURE, from whatsapp_audit_log: eleven times in one day,
+      //
+      //   conversational_ai | provider | provider_400_invalid_request_error_
+      //   tools.12.custom_Invalid_schema_Enum_value_cash_does_not_match_
+      //   declared_type_[_string_null_]
+      //
+      // A union type with an enum beside it is refused in strict tool mode, so
+      // EVERY conversational call returned 400 and every answer the shop saw
+      // was the deterministic fallback — the same advisor template, month after
+      // month, with only the numbers moving. It looked like a model that could
+      // not think. There was no model at all.
+      //
+      // anyOf is the shape the API accepts for "one of these, or nothing".
+      payment_method: {
+        anyOf: [{ type: 'string', enum: ['cash', 'mobile_money', 'bank', 'other'] }, { type: 'null' }],
+        description: 'Manually recorded only. Null unless the user said how it was paid. Never for credit.',
+      },
       lines: {
         type: 'array',
         description: 'One to 50 product-language lines. The server enforces the limit.',
