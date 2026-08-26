@@ -49,10 +49,14 @@ describe('deterministic hypothetical product profit', () => {
 
   it('routes the deterministic read before the conversational model', () => {
     const webhook = readFileSync(resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+    // The order inverted deliberately: the model reads the message first and
+    // the deterministic reads are the fallback beneath it. What matters here is
+    // unchanged — the arithmetic is the tool's, not the model's — so this now
+    // asserts the tool exists and is reachable, not that it runs first.
     const deterministic = webhook.indexOf('parseHypotheticalProfitRequest(body)');
     const assistant = webhook.indexOf('const aiEligible = Boolean(body?.trim())');
     expect(deterministic).toBeGreaterThan(-1);
-    expect(deterministic).toBeLessThan(assistant);
+    expect(deterministic).toBeGreaterThan(assistant);
     expect(webhook).toContain("if (name === 'get_hypothetical_product_profit')");
     expect(webhook).toContain('return { content: result.text, terminalReply: result.text };');
   });

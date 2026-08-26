@@ -25,8 +25,19 @@ describe('A2 AI fallback budget boundary', () => {
     // narrower and stronger: deterministic only when it can actually produce a
     // record; the unreadable ones are exactly the uncertain path this test is
     // about, and they go to the model.
-    expect(webhook).toContain('&& !deterministicRecord');
-    expect(webhook).toContain("recordReading.reason === 'message'");
+    // The rule inverted. It used to read "the model only sees what no parser
+    // could": the guard was && !deterministicRecord. Adding phrases one at a
+    // time never covered the language — "shingapi" cost three unanswered
+    // messages — so the model now sees every free-text message first and the
+    // parsers below are the fallback for when it is unavailable.
+    //
+    // What is still kept away from it is the point of this test: a live pending
+    // question owns its own answer, and system commands and yes/no must never
+    // cost a model call.
+    expect(webhook).toContain("(!convo || convo.awaiting === 'product_analytics')");
+    expect(webhook).toContain("&& !isDailyRecordConfirmation(body ?? '')");
+    expect(webhook).toContain("&& !isDailyRecordRejection(body ?? '')");
+    expect(webhook).not.toContain('&& !deterministicRecord');
   });
 
   it('normalizes the server reset timestamp and has an exact UTC-day fallback', () => {

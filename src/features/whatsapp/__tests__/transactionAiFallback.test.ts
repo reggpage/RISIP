@@ -154,7 +154,9 @@ describe('mocked Claude tool call and deterministic revalidation wiring', () => 
     expect(parseQuantityOnlySale('nimeuza nyama kilo 2 na soseji 5 cash')).not.toBeNull();
     expect(parseCreditQuantitySale('Juma kachukua nyama kilo 2 na za mbwa 3 hajalipa')).not.toBeNull();
     expect(parseSaleMissingQuantity('nimeuza soseji')).not.toBeNull();
-    expect(webhook).toContain('&& !deterministicCatalogueTransaction');
+    // These parsers are still here and still exact. They are no longer the
+    // gatekeepers: the model reads first, and they catch what it cannot.
+    expect(webhook).toContain('deterministicCatalogueTransaction');
     expect(webhook).toContain('parseSaleMissingQuantity(body)');
     expect(webhook).toContain('parseCreditQuantitySale(body)');
     expect(webhook).toContain('parseQuantityOnlySale(body)');

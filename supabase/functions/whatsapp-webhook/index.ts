@@ -5818,6 +5818,109 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        let conversationalAiBudgetBlock: AiBudgetDecision | null = null;
+        /**
+         * The model was asked and came back with nothing.
+         *
+         * MEASURED FAILURE: when that happened the shop was sent the generic
+         * "I can help you with Risip and your records..." menu — the same reply
+         * an off-topic message gets. To somebody who had just watched Risip
+         * answer two questions correctly, that reads as Risip not understanding
+         * Swahili. The truth is narrower and worth saying: the question was
+         * understood and the answer did not arrive.
+         */
+        let assistantCameBackEmpty = false;
+        // ── the model decides, not a list of words ───────────────────────────
+        //
+        // The owner's instruction, and they were right: a parser has to be
+        // taught every sentence. "Nimeuza" worked and "nimeuuza" did not;
+        // "shingapi" cost three unanswered messages; "mambo yakoje" cost
+        // another. Adding phrases one at a time never ends and never covers a
+        // language.
+        //
+        // So the model now sees EVERY free-text message first and picks the
+        // tool. What it may not do is unchanged and is the whole safety of
+        // this: it never computes money, never names a product the catalogue
+        // does not hold, and never writes a confirmed record. Its proposals go
+        // through the same validation, the same product resolution, the same
+        // pricing RPCs and the same NDIYO as before.
+        //
+        // The deterministic parsers below are no longer the gatekeepers. They
+        // are the fallback for when the model is unavailable, over budget or
+        // silent — a shop must still be able to record a sale when Anthropic
+        // is down.
+        //
+        // Only four things are kept away from it, and none of them is a
+        // business sentence: a live pending question owns its own answer, and
+        // system commands and yes/no must never cost a model call.
+        const aiEligible = Boolean(body?.trim())
+          && (!convo || convo.awaiting === 'product_analytics')
+          && !isSwitchRequest(body)
+          && !isLoginRequest(body)
+          && !parseLanguageCommand(body)
+          && intent !== 'cancel_action'
+          && intent !== 'change_language'
+          && !isDailyRecordConfirmation(body ?? '')
+          && !isDailyRecordRejection(body ?? '');
+        if (aiEligible) {
+          const history = await loadAssistantHistory(db, identity);
+          const contextChars = body!.length + history.reduce((sum, message) => sum + message.content.length, 0);
+          const budget = await consumeAiBudget(db, identity, contextChars);
+          if (budget.allowed) {
+            let assistantFailure = 'unknown_failure';
+            // The model and its tool loop are the slowest thing here, and the
+            // indicator raised at the top of the request has long expired by the
+            // time it answers. Raised again so the wait is visible.
+            await showTyping(waMessageId);
+            const assistant = await runConversationalAssistant({
+              context: assistantIdentityContext(identity, await loadVocabularyContext(db, identity)),
+              history,
+              userText: body!,
+              executeTool: (name, input) => executeAssistantTool(db, identity, waMessageId, lang, name, input, body!),
+              onFailure: (code) => { assistantFailure = code; },
+            });
+            // A record-looking sentence may never be acknowledged as saved by
+            // prose alone. If the model did not call the proposal tool, let the
+            // existing deterministic validator/clarifier below take over.
+            // The model's own words are passed in now: a CLAIM of saving is
+            // still refused, but a clarifying QUESTION gets through. Deferring
+            // both is what put "Sijaelewa vizuri" in front of somebody who had
+            // just rephrased their message for us.
+            const unsafeRecordProse = assistant
+              && shouldDeferRecordLikeReply(
+                isDailyRecordCandidate(body), assistant.toolNames, assistant.reply,
+              );
+            // An apology is not an answer. When the model comes back with
+            // nothing, say nothing here and let the deterministic branches
+            // below have their turn — one of them almost always knows.
+            if (assistant && assistant.unavailable) {
+              assistantCameBackEmpty = true;
+              await audit(db, identity, waMessageId, 'conversational_ai', 'empty', 'fallback');
+            } else if (assistant && !unsafeRecordProse) {
+              await reply(phone, assistant.reply);
+              const remembered = await storeAssistantExchange(
+                db, identity, waMessageId, body!, assistant.reply, assistant.memory,
+              );
+              await audit(
+                db,
+                identity,
+                waMessageId,
+                'conversational_ai',
+                assistant.toolNames.join(',') || 'answer',
+                remembered ? (assistant.usedSafeFallback ? 'safe_fallback' : 'applied') : 'memory_failed',
+              );
+              await finish('skipped');
+              continue;
+            }
+            if (!assistant) {
+              await audit(db, identity, waMessageId, 'conversational_ai', 'provider', assistantFailure);
+            }
+          } else {
+            conversationalAiBudgetBlock = budget;
+            await audit(db, identity, waMessageId, 'conversational_ai', 'budget', 'fallback');
+          }
+        }
+
         // Adding a product is checked before anything records money, because
         // the whole value of it is refusing to create the near-duplicate.
         if (isAddProductStart(writeBody)) {
@@ -6780,18 +6883,6 @@ Deno.serve(async (req) => {
         // model first, with bounded client tools and recent company-scoped
         // conversation history. The deterministic parsers below remain the
         // availability fallback when the provider or budget is unavailable.
-        let conversationalAiBudgetBlock: AiBudgetDecision | null = null;
-        /**
-         * The model was asked and came back with nothing.
-         *
-         * MEASURED FAILURE: when that happened the shop was sent the generic
-         * "I can help you with Risip and your records..." menu — the same reply
-         * an off-topic message gets. To somebody who had just watched Risip
-         * answer two questions correctly, that reads as Risip not understanding
-         * Swahili. The truth is narrower and worth saying: the question was
-         * understood and the answer did not arrive.
-         */
-        let assistantCameBackEmpty = false;
         const outOfStockQuestion = parseOutOfStockQuestion(body);
         const directStockQuestion = parseStockQuestion(body);
 
@@ -6846,89 +6937,6 @@ Deno.serve(async (req) => {
           || parseQuantityOnlySale(body),
         );
 
-        const aiEligible = Boolean(body?.trim())
-          && (!convo || convo.awaiting === 'product_analytics')
-          && !isSwitchRequest(body)
-          && !isLoginRequest(body)
-          && !parseLanguageCommand(body)
-          && intent !== 'cancel_action'
-          && intent !== 'change_language'
-          // Daily-record arithmetic is deterministic first — but only when the
-          // deterministic path can actually read it. See recordUnreadable.
-          && !deterministicRecord
-          && !deterministicCatalogueTransaction
-          && !supplierBalanceQuestion
-          // Stock reads and physical counts are exact server arithmetic. Let
-          // the deterministic path answer in its own concise words instead of
-          // letting the model paraphrase zero as a guess or turn “ziwe” into a
-          // purchase.
-          && !outOfStockQuestion
-          && !directStockQuestion
-          && !parseStockCountBatch(body)
-          && !parseStockCount(body)
-          // A mixed message belongs to the write chain below. MEASURED FAILURE:
-          // "nimeuza nguvu ya sala 2 kwa 20000 kisha nionyeshe risiti za leo"
-          // was claimed here by the read half, the receipts were listed, and the
-          // SALE WAS NEVER RECORDED. The instruction has to win.
-          && !mixed;
-        if (aiEligible) {
-          const history = await loadAssistantHistory(db, identity);
-          const contextChars = body!.length + history.reduce((sum, message) => sum + message.content.length, 0);
-          const budget = await consumeAiBudget(db, identity, contextChars);
-          if (budget.allowed) {
-            let assistantFailure = 'unknown_failure';
-            // The model and its tool loop are the slowest thing here, and the
-            // indicator raised at the top of the request has long expired by the
-            // time it answers. Raised again so the wait is visible.
-            await showTyping(waMessageId);
-            const assistant = await runConversationalAssistant({
-              context: assistantIdentityContext(identity, await loadVocabularyContext(db, identity)),
-              history,
-              userText: body!,
-              executeTool: (name, input) => executeAssistantTool(db, identity, waMessageId, lang, name, input, body!),
-              onFailure: (code) => { assistantFailure = code; },
-            });
-            // A record-looking sentence may never be acknowledged as saved by
-            // prose alone. If the model did not call the proposal tool, let the
-            // existing deterministic validator/clarifier below take over.
-            // The model's own words are passed in now: a CLAIM of saving is
-            // still refused, but a clarifying QUESTION gets through. Deferring
-            // both is what put "Sijaelewa vizuri" in front of somebody who had
-            // just rephrased their message for us.
-            const unsafeRecordProse = assistant
-              && shouldDeferRecordLikeReply(
-                isDailyRecordCandidate(body), assistant.toolNames, assistant.reply,
-              );
-            // An apology is not an answer. When the model comes back with
-            // nothing, say nothing here and let the deterministic branches
-            // below have their turn — one of them almost always knows.
-            if (assistant && assistant.unavailable) {
-              assistantCameBackEmpty = true;
-              await audit(db, identity, waMessageId, 'conversational_ai', 'empty', 'fallback');
-            } else if (assistant && !unsafeRecordProse) {
-              await reply(phone, assistant.reply);
-              const remembered = await storeAssistantExchange(
-                db, identity, waMessageId, body!, assistant.reply, assistant.memory,
-              );
-              await audit(
-                db,
-                identity,
-                waMessageId,
-                'conversational_ai',
-                assistant.toolNames.join(',') || 'answer',
-                remembered ? (assistant.usedSafeFallback ? 'safe_fallback' : 'applied') : 'memory_failed',
-              );
-              await finish('skipped');
-              continue;
-            }
-            if (!assistant) {
-              await audit(db, identity, waMessageId, 'conversational_ai', 'provider', assistantFailure);
-            }
-          } else {
-            conversationalAiBudgetBlock = budget;
-            await audit(db, identity, waMessageId, 'conversational_ai', 'budget', 'fallback');
-          }
-        }
 
         if (!mixed && outOfStockQuestion) {
           const answered = await executeAssistantTool(
