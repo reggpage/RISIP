@@ -9,7 +9,7 @@ export type AccountDeletionState = {
 const clean = (text: string | null | undefined) => (text ?? '').replace(/\s+/g, ' ').trim();
 
 export function isAccountDeletionRequest(text: string | null | undefined): boolean {
-  return /^(?:futa|delete)\s+(?:account|akaunti)\s+(?:yangu|my)$/i.test(clean(text));
+  return /^(?:futa\s+(?:account|akaunti)\s+yangu|delete\s+(?:my\s+account|account\s+my))$/i.test(clean(text));
 }
 
 export function isAccountDeletionConfirmation(text: string | null | undefined): boolean {

@@ -92,7 +92,7 @@ as $fn$
 declare
   v_profile uuid;
   v_fallback uuid;
-  v_profiles uuid[] := '{}';
+  v_profiles uuid[] := '{}'::uuid[];
   v_table name;
   v_count bigint;
 begin
@@ -220,7 +220,7 @@ security definer
 set search_path = pg_catalog, public
 as $fn$
 declare
-  v_expected uuid[] := '{}';
+  v_expected uuid[] := '{}'::uuid[];
   v_requested uuid[] := coalesce(p_owned_company_ids, '{}');
   v_company uuid;
   v_duplicate_count integer;
@@ -256,7 +256,6 @@ begin
   delete from public.whatsapp_conversations where profile_id = p_profile_id;
   delete from public.whatsapp_ai_messages where profile_id = p_profile_id;
   delete from public.whatsapp_ai_threads where profile_id = p_profile_id;
-  delete from public.whatsapp_notification_deliveries where profile_id = p_profile_id;
   delete from public.whatsapp_notification_consent_log where profile_id = p_profile_id;
   delete from public.whatsapp_identities where profile_id = p_profile_id;
   delete from public.whatsapp_link_tokens where profile_id = p_profile_id;
