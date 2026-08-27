@@ -40,7 +40,7 @@ export type SemanticIntent =
   | 'product_cost_setup' | 'selling_price_setup' | 'unit_setup' | 'vocabulary_teaching'
   | 'business_summary' | 'profit_query' | 'product_performance' | 'sales_trend'
   | 'stock_query' | 'receivables_query' | 'payables_query' | 'price_query'
-  | 'cost_query' | 'advice' | 'receipts_query' | 'invoice_query'
+  | 'cost_query' | 'price_comparison' | 'missing_selling_price' | 'advice' | 'receipts_query' | 'invoice_query'
   | 'petty_cash_query' | 'reimbursement_query' | 'businesses_query'
   | 'approvals_query' | 'hypothetical_profit' | 'help'
   | 'conversational'
@@ -52,6 +52,8 @@ const TOOL_INTENT: Record<string, SemanticIntent> = {
   get_product_performance: 'product_performance',
   get_product_cost: 'cost_query',
   get_selling_price: 'price_query',
+  get_product_price_comparison: 'price_comparison',
+  get_products_missing_selling_price: 'missing_selling_price',
   get_business_advice: 'advice',
   get_sales_trend: 'sales_trend',
   get_hypothetical_product_profit: 'hypothetical_profit',

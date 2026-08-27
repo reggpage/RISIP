@@ -41,15 +41,15 @@ const ui = lang === 'sw' ? {
   refresh: 'Onyesha upya',
   search: 'Tafuta bidhaa',
   all: 'Zote', month: 'Mwezi huu', week: 'Wiki hii',
-  products: 'Bidhaa', missingCost: 'Hazina bei ya kununua', belowCost: 'Zinauzwa chini ya gharama',
+  products: 'Bidhaa', missingCost: 'Hazina bei ya kununua', belowCost: 'Mauzo ya chini ya gharama',
   coverage: 'Faida inayoonekana',
   coverageHint: 'Sehemu ya mauzo ambayo makisio ya faida yanaweza kuiona.',
-  sold: 'Imeuzwa', revenue: 'Mapato', buying: 'Kununua', selling: 'Bei ya kuuza', avgSelling: 'Wastani uliopatikana', margin: 'Faida',
+  sold: 'Imeuzwa', revenue: 'Mapato', buying: 'Kununua', selling: 'Bei ya kuuza', avgSelling: 'Wastani uliopatikana', currentMargin: 'Faida ya sasa', margin: 'Faida',
   lastSold: 'Mauzo ya mwisho', never: 'Bado haijauzwa',
   setCost: 'Weka bei ya kununua', editCost: 'Badilisha bei', edit: 'Hariri',
   unknown: 'Haijulikani',
   needsCostBadge: 'Bei ya kununua inakosekana',
-  belowCostBadge: 'Chini ya gharama',
+  belowCostBadge: 'Ziliuzwa chini ya gharama',
   perUnit: 'kwa kimoja',
   empty: 'Bado hakuna bidhaa.',
   emptyHint: 'Rekodi mauzo kupitia WhatsApp au app, na bidhaa zitajitokeza hapa zenyewe.',
@@ -69,15 +69,15 @@ const ui = lang === 'sw' ? {
   refresh: 'Refresh',
   search: 'Search products',
   all: 'All time', month: 'This month', week: 'This week',
-  products: 'Products', missingCost: 'Missing a buying price', belowCost: 'Sold below cost',
+  products: 'Products', missingCost: 'Missing a buying price', belowCost: 'Past sales below cost',
   coverage: 'Profit visible',
   coverageHint: 'The share of sales the profit estimate can actually see.',
-  sold: 'Sold', revenue: 'Revenue', buying: 'Buying', selling: 'Selling price', avgSelling: 'Average achieved', margin: 'Margin',
+  sold: 'Sold', revenue: 'Revenue', buying: 'Buying', selling: 'Selling price', avgSelling: 'Average achieved', currentMargin: 'Current margin', margin: 'Margin',
   lastSold: 'Last sold', never: 'Not sold yet',
   setCost: 'Set buying price', editCost: 'Change price', edit: 'Edit',
   unknown: 'Unknown',
   needsCostBadge: 'Buying price missing',
-  belowCostBadge: 'Below cost',
+  belowCostBadge: 'Past sales below cost',
   perUnit: 'each',
   empty: 'No products yet.',
   emptyHint: 'Record sales on WhatsApp or in the app and products appear here on their own.',
@@ -151,6 +151,10 @@ function ProductRow({ product, level, prices, canPrice, onEdit, onMerge, onArchi
   const missing = needsCost(product);
   const below = soldBelowCost(product);
   const percent = marginPercent(product);
+  const currentPrice = prices.find((price) => price.saleUnitKey === null) ?? prices[0] ?? null;
+  const currentMargin = currentPrice && product.unitCost !== null
+    ? currentPrice.retailPrice - (product.unitCost * currentPrice.unitBaseQuantity)
+    : null;
   const onHand = level ? formatOnHand(level, lang) : null;
   const stockOff = level ? stockLooksWrong(level) : false;
 
@@ -197,14 +201,19 @@ function ProductRow({ product, level, prices, canPrice, onEdit, onMerge, onArchi
           label={ui.buying}
           value={product.unitCost === null ? '—' : formatMoney(product.unitCost)}
           tone={product.unitCost === null ? 'muted' : 'ink'}
-          hint={product.avgUnitPrice === null ? undefined : `${ui.avgSelling} ${formatMoney(product.avgUnitPrice)}`}
+          hint={product.avgUnitPrice === null ? undefined : `${ui.avgSelling} ${formatMoney(product.avgUnitPrice)} · ${ui.period.toLowerCase()}`}
         />
-        <Figure label={ui.selling} value={sellingPriceText(prices)} tone={prices.length === 0 ? 'muted' : 'ink'} />
+        <Figure
+          label={ui.selling}
+          value={sellingPriceText(prices)}
+          tone={prices.length === 0 ? 'muted' : currentMargin !== null && currentMargin < 0 ? 'bad' : 'ink'}
+          hint={currentMargin === null ? undefined : `${ui.currentMargin} ${formatMoney(currentMargin)}`}
+        />
         <Figure
           label={ui.margin}
           value={product.estimatedMargin === null ? '—' : formatMoney(product.estimatedMargin)}
           tone={product.estimatedMargin === null ? 'muted' : product.estimatedMargin < 0 ? 'bad' : 'good'}
-          hint={percent === null ? undefined : `${percent.toFixed(0)}%`}
+          hint={percent === null ? undefined : `${percent.toFixed(0)}% · ${ui.period.toLowerCase()}`}
         />
       </div>
 

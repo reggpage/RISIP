@@ -32,6 +32,8 @@ import {
   requiresCurrentBusinessDataTool,
   toolsForModel,
   type AssistantIdentityContext,
+  type AssistantHistoryMessage,
+  normalizeAssistantHistory,
 } from '../_shared/whatsappAssistant.ts';
 import { resolveAnthropicModel } from '../_shared/anthropicModel.ts';
 
@@ -46,7 +48,7 @@ function tokenMatches(given: string, expected: string): boolean {
   return diff === 0;
 }
 
-type EvalCase = { id: string; say: string; lang?: 'sw' | 'en' };
+type EvalCase = { id: string; say: string; lang?: 'sw' | 'en'; history?: AssistantHistoryMessage[] };
 
 type EvalResult = {
   id: string;
@@ -65,6 +67,7 @@ async function askModel(
   model: string,
   context: AssistantIdentityContext,
   say: string,
+  history: AssistantHistoryMessage[],
   // Stage C compares 'auto' against 'any'. Forced tool choice is a design to be
   // measured, not assumed: it can also turn a correct silence into a wrong call.
   force: boolean,
@@ -98,7 +101,7 @@ async function askModel(
           type: force || requiresCurrentBusinessDataTool(say) ? 'any' : 'auto',
           disable_parallel_tool_use: false,
         },
-        messages: [{ role: 'user', content: say }],
+        messages: [...normalizeAssistantHistory(history), { role: 'user', content: say }],
       }),
     });
   } catch {
@@ -218,7 +221,8 @@ Deno.serve(async (request) => {
   for (const testCase of cases) {
     const say = String(testCase.say ?? '').trim().slice(0, 2000);
     if (!say) continue;
-    const outcome = await askModel(apiKey, model, { ...context, lang: testCase.lang ?? context.lang }, say, forceToolChoice);
+    const history = normalizeAssistantHistory(Array.isArray(testCase.history) ? testCase.history : []);
+    const outcome = await askModel(apiKey, model, { ...context, lang: testCase.lang ?? context.lang }, say, history, forceToolChoice);
     results.push({ id: String(testCase.id), ...outcome });
   }
 

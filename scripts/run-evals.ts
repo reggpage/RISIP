@@ -43,6 +43,7 @@ const FILES = [
   'debtors.yaml',
   'products.yaml',
   'profit.yaml',
+  'stage_d_context.yaml',
 ];
 
 type EvalCase = {
@@ -53,6 +54,7 @@ type EvalCase = {
   expectIntent: string | null;
   hasHistory: boolean;
   history: string[];
+  contextRequired: boolean;
   hasRole: boolean;
   role?: string;
   disputed: boolean;
@@ -66,6 +68,16 @@ function unescape(match: RegExpMatchArray | null | undefined): string | undefine
   const [, quote, value] = match;
   if (quote !== '"') return value;
   return value.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+}
+
+function historyContents(block: string): string[] {
+  const structured = [...block.matchAll(/^\s+- role:\s*(?:user|assistant)\s*\n\s+content:\s*("(?:[^"\\]|\\.)*"|'[^']*')\s*$/gm)]
+    .map((match) => match[1].startsWith('"')
+      ? match[1].slice(1, -1).replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+      : match[1].slice(1, -1));
+  if (structured.length > 0) return structured;
+  return [...(block.match(/^\s+history:\s*\[(.*)\]\s*$/m)?.[1] ?? '').matchAll(/"((?:[^"\\]|\\.)*)"/g)]
+    .map((found) => found[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\'));
 }
 
 function extractCases(file: string, source: string): EvalCase[] {
@@ -89,8 +101,8 @@ function extractCases(file: string, source: string): EvalCase[] {
       expectIntent: block.match(/^\s+expect_intent:\s*([a-z_]+)\s*(?:#.*)?$/m)?.[1] ?? null,
       hasHistory: /^\s+history:/m.test(block),
       // history: ["first turn", "the answer it got"] — the turns before this one.
-      history: [...(block.match(/^\s+history:\s*\[(.*)\]\s*$/m)?.[1] ?? '')
-        .matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((found) => found[1]),
+      history: historyContents(block),
+      contextRequired: /^\s+context_required:\s*true/m.test(block),
       hasRole: /^\s+role:/m.test(block),
       role: block.match(/^\s+role:\s*([a-z_]+)/m)?.[1],
       disputed: /^\s+disputed:\s*true/m.test(block),
@@ -121,6 +133,8 @@ const SATISFIES: Record<string, string[]> = {
   daily_profit_estimate: ['hypothetical_profit'],
   ai_top_products: ['product_analytics'],
   get_product_performance: ['product_analytics'],
+  get_product_price_comparison: ['conversational_ai'],
+  get_products_missing_selling_price: ['conversational_ai'],
   set_product_cost: ['product_cost', 'product_cost_batch', 'new_product'],
   propose_product_cost: ['product_cost', 'product_cost_batch'],
   language_control: ['change_language'],
@@ -194,6 +208,8 @@ const MODEL_ROUTED_INTENT: Record<string, string> = {
   get_product_cost: 'cost_query',
   get_selling_price: 'price_query',
   get_stock_on_hand: 'stock_query',
+  get_product_price_comparison: 'price_comparison',
+  get_products_missing_selling_price: 'missing_selling_price',
   search_risip_help: 'help',
 };
 
@@ -289,6 +305,10 @@ for (const c of cases) {
   // An expectation I believe is wrong is recorded as disputed in the YAML,
   // with the reason, rather than quietly satisfied by bending a parser.
   if (c.disputed) { unchecked.push({ c, why: 'disputed expectation' }); continue; }
+  if (c.contextRequired) {
+    unchecked.push({ c, why: 'context_required: evaluated by the multi-turn model harness' });
+    continue;
+  }
   const onboarding = c.expectTool ? ONBOARDING[c.expectTool] : undefined;
   if (onboarding) {
     if (onboarding(c.say)) passed += 1;

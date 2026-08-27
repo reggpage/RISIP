@@ -119,7 +119,15 @@ function numberIn(said: string): number | null {
   const normalized = normalizeNumberWords(peelNounClass(said.toLowerCase()));
   const found = /-?\d+(?:[.,]\d+)?/u.exec(normalized.replace(/(\d),(\d{3})\b/gu, '$1$2'));
   if (!found) return null;
-  const value = Number(found[0].replace(',', '.'));
+  // A Tanzanian amount is commonly grouped as 80,000. The old conversion
+  // treated that comma as a decimal separator and independently read it as
+  // eighty, even though the daily-record parser already accepted the same
+  // money token. Keep grouped digits intact; only a non-grouped comma is a
+  // decimal separator.
+  const token = found[0];
+  const value = /,\d{3}(?:,\d{3})*$/u.test(token)
+    ? Number(token.replace(/,/g, ''))
+    : Number(token.replace(',', '.'));
   return Number.isFinite(value) ? value : null;
 }
 

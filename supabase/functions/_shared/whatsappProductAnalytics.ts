@@ -74,6 +74,13 @@ export function parseProductAnalyticsRequest(text: string | null | undefined, no
   // finished is a stock question and belongs to the shelf, not to a league
   // table of sales.
   if (/\b(?:zimeisha|zilizoisha|zimekwisha|kimeisha|out of stock)\b/.test(value)) return null;
+  // Price is a neighbouring concept, not a performance metric. A product can
+  // have the lowest selling price while making a healthy margin, and a product
+  // can be sold below cost while having a high configured price today. Leave
+  // both price-comparison and missing-price questions for their dedicated read
+  // capabilities; this is a category boundary, not a sentence patch.
+  const asksPrice = /\b(?:bei|price|cheapest|cheap|lowest|expensive)\b/.test(value);
+  if (asksPrice && !/hasara\b|chini ya gharama|below cost|loss|losing money/.test(value)) return null;
   const asksProduct = /(?:\b(?:bidhaa|bidha|product|products)\b.*\b(?:gani|which|zote|inauza|inauzika|imeuzwa|iliuzwa|ninazouza|ninauza|selling|sold|faida|profit|revenue|mapato)\b)|(?:\b(?:inauza zaidi|inauza sana|inauza ngapi|imeuzw\w* ngap\w*|iliuzwa ngapi|(?:ina|kina)uzika sana|nini (?:kiliuza|iliuza|kiliuzwa|iliyouzwa) (?:zaidi|sana)|best selling|(?:what |wht )?sold (?:the )?most|top)\b)/.test(value);
   // MEASURED FAILURE: "nini kimeuzika leo" — what sold today — was answered
   // with the day's cash summary, because this parser only recognised the
@@ -93,6 +100,10 @@ export function parseProductAnalyticsRequest(text: string | null | undefined, no
   // boundary, so "hasarani" (a place) is not swept in.
   const asksLoss = /hasara\b|\b(?:inapoteza|napoteza|zinapoteza|chini ya gharama|below cost|losing money|loss)\b/.test(value);
   const asksProfit = /\b(faida|margin|profit|earn)\b/.test(value);
+  // “Faida au hasara?” without a product asks about the business-level result;
+  // product analytics cannot answer that ledger question. Keep the two
+  // neighbouring concepts separate instead of letting the loss branch claim it.
+  if (asksLoss && asksProfit && !asksProduct) return null;
   const asksRevenue = /\b(mapato|revenue|money|fedha nyingi|pesa nyingi)\b/.test(value);
   // A bare "faida ya leo" is a period profit question, not a product ranking.
   // Product analytics only claims messages that explicitly mention products or
@@ -295,10 +306,10 @@ export function productAnalyticsReply(
     const rows = losing.slice(0, 8).map((item) =>
       `• ${item.product} — ${money(item.margin ?? 0)}`);
     return (lang === 'sw'
-      ? `Ndiyo. Bidhaa ${losing.length} zinauzwa chini ya gharama ${periodLabel} — jumla ${money(total)}:\n`
-        + `${rows.join('\n')}\n\nPandisha bei au punguza gharama ya kununua.`
-      : `Yes. ${losing.length} product(s) sold below cost ${periodLabel} — ${money(total)} in total:\n`
-        + `${rows.join('\n')}\n\nRaise the price or bring the buying cost down.`) + uncostedNote;
+      ? `Ndiyo. Bidhaa ${losing.length} ziliuzwa chini ya gharama ${periodLabel} — jumla ${money(total)}:\n`
+        + `${rows.join('\n')}\n\nHii ni historia ya mauzo ya kipindi hicho; angalia bei ya sasa na gharama ya sasa tofauti.`
+      : `Yes. ${losing.length} product(s) were sold below cost ${periodLabel} — ${money(total)} in total:\n`
+        + `${rows.join('\n')}\n\nThis is historical sales for that period; review today’s selling price and cost separately.`) + uncostedNote;
   }
   const basis = request.rankBy === 'quantity'
     ? (lang === 'sw' ? 'idadi ya bidhaa' : 'quantity sold')

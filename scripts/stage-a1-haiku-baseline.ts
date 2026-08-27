@@ -20,7 +20,7 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { controlIntent, recordKind, route } from './lib/route.ts';
-import { ASSISTANT_TOOLS } from '../supabase/functions/_shared/whatsappAssistant.ts';
+import { ASSISTANT_TOOLS, type AssistantHistoryMessage } from '../supabase/functions/_shared/whatsappAssistant.ts';
 
 const args = process.argv.slice(2);
 const flags = new Set(args);
@@ -50,7 +50,24 @@ type Case = {
   expectWhen?: string;
   expectLines: Line[];
   backendShould?: string;
+  history: AssistantHistoryMessage[];
 };
+
+function parseHistory(block: string): AssistantHistoryMessage[] {
+  const structured = [...block.matchAll(/^\s+- role:\s*(user|assistant)\s*\n\s+content:\s*("(?:[^"\\]|\\.)*"|'[^']*')\s*$/gm)]
+    .map((match) => ({
+      role: match[1] as AssistantHistoryMessage['role'],
+      content: match[2].startsWith('"')
+        ? match[2].slice(1, -1).replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+        : match[2].slice(1, -1),
+    }));
+  if (structured.length > 0) return structured;
+  const legacy = block.match(/^\s+history:\s*\[(.*)\]\s*$/m)?.[1] ?? '';
+  return [...legacy.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((match, index) => ({
+    role: index % 2 === 0 ? 'user' : 'assistant',
+    content: match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\'),
+  }));
+}
 
 function parseLines(block: string): Line[] {
   const section = block.match(/^\s+expect_lines:\s*\n((?:\s+-[\s\S]*?)(?=\n\s{4}[a-z_]+:|\n\s{2}- id:|$))/m)?.[1];
@@ -91,6 +108,7 @@ function loadCases(): Case[] {
         expectWhen: str('expect_occurred_at_wording'),
         expectLines: parseLines(block),
         backendShould: str('backend_should'),
+        history: parseHistory(block),
       });
     }
   }
@@ -114,6 +132,8 @@ const CANONICAL: Record<string, string> = {
   ai_top_products: 'product_performance',
   get_product_cost: 'cost_query',
   get_selling_price: 'price_query',
+  get_product_price_comparison: 'price_comparison',
+  get_products_missing_selling_price: 'missing_selling_price',
   get_sales_trend: 'sales_trend',
   get_open_debts: 'receivables_query',
   ai_debtors: 'receivables_query',
@@ -233,6 +253,7 @@ const FAMILY: Record<string, string> = {
   product_performance: 'profit / product performance', sales_trend: 'profit / product performance',
   hypothetical_profit: 'profit / product performance',
   price_query: 'price & cost questions', cost_query: 'price & cost questions',
+  price_comparison: 'price & cost questions', missing_selling_price: 'price & cost questions',
   advice: 'advice', help: 'help', businesses_query: 'businesses',
   product_cost_setup: 'product setup',
   receipts_query: 'receipt / contractor reads', petty_cash_query: 'receipt / contractor reads',
@@ -273,6 +294,7 @@ const TOOL_INTENT: Record<string, string> = {
   get_supplier_payables: 'payables_query',
   get_business_summary: 'business_summary', get_product_performance: 'product_performance',
   get_product_cost: 'cost_query', get_selling_price: 'price_query',
+  get_product_price_comparison: 'price_comparison', get_products_missing_selling_price: 'missing_selling_price',
   get_business_advice: 'advice', get_sales_trend: 'sales_trend',
   get_hypothetical_product_profit: 'hypothetical_profit', get_open_debts: 'receivables_query',
   get_my_receipts: 'receipts_query', get_receipt_details: 'receipts_query',
@@ -339,7 +361,7 @@ async function runBatches(cases: Case[]): Promise<{ model: string; toolsShown: s
       body: JSON.stringify({
         token,
         force_tool_choice: forceToolChoice,
-        cases: batch.map((testCase) => ({ id: testCase.id, say: testCase.say, lang: testCase.lang })),
+        cases: batch.map((testCase) => ({ id: testCase.id, say: testCase.say, lang: testCase.lang, history: testCase.history })),
       }),
     });
     if (!response.ok) throw new Error(`evaluator returned ${response.status}`);
@@ -599,6 +621,18 @@ async function main() {
   console.log(`  full semantic       ${applicable.filter((e) => e.semanticOk).length}/${applicable.length}  ${percent(applicable.filter((e) => e.semanticOk).length, applicable.length)}`);
   console.log(`  entities asserted   ${withEntities.filter((e) => e.entities.every((c) => c.ok)).length}/${withEntities.length}  ${percent(withEntities.filter((e) => e.entities.every((c) => c.ok)).length, withEntities.length)}`);
   console.log(`  clarification       ${clarifyCases.filter((e) => e.intentOk).length}/${clarifyCases.length}  ${percent(clarifyCases.filter((e) => e.intentOk).length, clarifyCases.length)}`);
+
+  const singleTurn = applicable.filter((entry) => entry.row.testCase.history.length === 0);
+  const multiTurn = applicable.filter((entry) => entry.row.testCase.history.length > 0);
+  const scoreSlice = (entries: Scored[], semantic: boolean) => {
+    const correct = entries.filter((entry) => semantic ? entry.semanticOk : entry.intentOk).length;
+    return `${correct}/${entries.length}  ${percent(correct, entries.length)}`;
+  };
+  console.log(`  single-turn intent  ${scoreSlice(singleTurn, false)}`);
+  console.log(`  single-turn semantic ${scoreSlice(singleTurn, true)}`);
+  console.log(`  multi-turn intent   ${scoreSlice(multiTurn, false)}`);
+  console.log(`  multi-turn semantic ${scoreSlice(multiTurn, true)}`);
+  console.log(`  reference resolution ${scoreSlice(multiTurn, true)}  (contextual cases only)`);
 
   // STAGE C's headline metric. A business request answered from the model's own
   // prose is the failure that survived the contract repair: 18 of the 39 Stage B

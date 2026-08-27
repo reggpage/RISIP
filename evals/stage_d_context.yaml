@@ -1,0 +1,79 @@
+# Stage D: contextual references and neighboring read concepts.
+# History uses the same role/content shape passed by production WhatsApp turns.
+- id: stage_d_cheapest_price
+  say: "bidhaa gani ina bei ya chini sana"
+  expect_tool: get_product_price_comparison
+  expect_intent: price_comparison
+
+- id: stage_d_below_cost
+  say: "bidhaa gani inauzwa chini ya gharama"
+  expect_tool: get_product_performance
+  expect_intent: product_performance
+
+- id: stage_d_missing_selling_price
+  say: "bidhaa gani haina bei?"
+  expect_tool: get_products_missing_selling_price
+  expect_intent: missing_selling_price
+
+- id: stage_d_yeye_customer
+  history:
+    - role: user
+      content: "Juma bado ananidai?"
+    - role: assistant
+      content: "Juma anadaiwa TSh 45,000."
+  say: "yeye amelipa kiasi gani?"
+  context_required: true
+  expect_tool: get_open_debts
+  expect_intent: receivables_query
+
+- id: stage_d_hiyo_selling_price
+  history:
+    - role: user
+      content: "bei ya nyama ni 12000?"
+    - role: assistant
+      content: "Bei hiyo ni ya kuuza."
+  say: "bei hiyo ni ya kununua?"
+  context_required: true
+  expect_tool: get_product_cost
+  expect_intent: cost_query
+
+- id: stage_d_numeric_words
+  say: "Nimeongeza birka thelathini dukani gharama nimetumia 300,000"
+  expect_tool: propose_business_event
+  expect_intent: stock_purchase
+  expect_lines:
+    - product_wording: "birka"
+      quantity: 30
+  backend_should: "one event with quantity and total amount"
+
+- id: stage_d_numeric_digits
+  say: "Nimeongeza birka 30 dukani gharama nimetumia 300,000"
+  expect_tool: propose_business_event
+  expect_intent: stock_purchase
+  expect_lines:
+    - product_wording: "birka"
+      quantity: 30
+  backend_should: "one event with quantity and total amount"
+
+- id: stage_d_comma_amount
+  say: "Nimetumia 80,000 kununua birka 4"
+  expect_tool: propose_business_event
+  expect_intent: stock_purchase
+  expect_amount: 80000
+
+- id: stage_d_reference_topic_switch
+  history:
+    - role: user
+      content: "Juma anadaiwa TSh 45,000."
+    - role: assistant
+      content: "Juma anadaiwa TSh 45,000."
+  say: "na Musa je?"
+  context_required: true
+  expect_tool: get_open_debts
+  expect_intent: receivables_query
+
+- id: stage_d_not_counted
+  say: "bidhaa gani zimeisha?"
+  expect_tool: get_stock_on_hand
+  expect_intent: stock_query
+  backend_should: "not counted is not zero"

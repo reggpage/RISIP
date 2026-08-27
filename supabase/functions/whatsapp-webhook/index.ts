@@ -112,6 +112,11 @@ import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import { findNameWarnings, nameWarningText, productKey } from '../_shared/whatsappProductNames.ts';
 import {
+  missingSellingPriceReply,
+  productPriceComparisonReply,
+  type ProductPriceRead,
+} from '../_shared/whatsappProductPriceReads.ts';
+import {
   parseSellingPriceBatch,
   sellingPriceBatchCancelled,
   sellingPriceBatchConfirmation,
@@ -3166,6 +3171,42 @@ async function executeAssistantTool(
         canUseCompanyFinanceReads(identity.role),
       ),
     };
+  }
+  if (name === 'get_product_price_comparison' || name === 'get_products_missing_selling_price') {
+    const { data: names, error: namesError } = await db.rpc('company_product_names', { p_company_id: identity.company_id });
+    if (namesError) {
+      const failed = lang === 'sw' ? 'Sikuweza kupata orodha ya bidhaa sasa.' : 'I could not load the product catalogue right now.';
+      return { content: failed, isError: true, terminalReply: failed };
+    }
+    const products = ((names ?? []) as Array<Record<string, unknown>>)
+      .map((row) => String(row.product_name ?? '').trim()).filter(Boolean);
+    const { data: priceRows, error: priceError } = await db.rpc('wa_product_pricing', {
+      p_company_id: identity.company_id,
+      p_product_keys: products.map((product) => productKey(product)),
+    });
+    if (priceError) {
+      const failed = lang === 'sw' ? 'Sikuweza kupata bei za bidhaa sasa.' : 'I could not load selling prices right now.';
+      return { content: failed, isError: true, terminalReply: failed };
+    }
+    const byKey = new Map<string, Record<string, unknown>>(
+      ((priceRows ?? []) as Array<Record<string, unknown>>).map((row) => [String(row.product_key), row]),
+    );
+    const rows: ProductPriceRead[] = products.map((product) => {
+      const price = byKey.get(productKey(product));
+      return {
+        productName: product,
+        retailPrice: price?.retail_price == null ? null : Number(price.retail_price),
+        wholesalePrice: price?.wholesale_price == null ? null : Number(price.wholesale_price),
+        wholesaleMinQty: price?.wholesale_min_qty == null ? null : Number(price.wholesale_min_qty),
+      };
+    });
+    if (name === 'get_products_missing_selling_price') {
+      const reply = missingSellingPriceReply(rows, lang);
+      return { content: reply, terminalReply: reply };
+    }
+    const direction = input.direction === 'highest' ? 'highest' as const : 'lowest' as const;
+    const reply = productPriceComparisonReply(rows, direction, lang);
+    return { content: reply, terminalReply: reply };
   }
   if (name === 'get_hypothetical_product_profit') {
     const productName = typeof input.product_name === 'string' ? input.product_name : '';

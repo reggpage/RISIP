@@ -37,6 +37,8 @@ describe('intent comes from the tool call, not from the model’s opinion', () =
     expect(semanticIntentOf('get_business_summary')).toBe('business_summary');
     expect(semanticIntentOf('get_open_debts')).toBe('receivables_query');
     expect(semanticIntentOf('get_business_advice')).toBe('advice');
+    expect(semanticIntentOf('get_product_price_comparison')).toBe('price_comparison');
+    expect(semanticIntentOf('get_products_missing_selling_price')).toBe('missing_selling_price');
   });
 
   it('says unknown rather than guessing', () => {
@@ -192,7 +194,7 @@ describe('Stage A changed no behaviour', () => {
     // widened the LANGUAGE contract deliberately: three tools added, and the
     // two they supersede hidden from the model but kept as executors.
     // Stage C added one more, and it is the one that can do nothing.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(24);
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(26);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('propose_business_event');
     expect(shown).toContain('propose_money_event');
