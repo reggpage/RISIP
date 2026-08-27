@@ -214,6 +214,11 @@ import {
 // Who sees a message first: the line between a sentence and a protocol answer.
 import { answersPendingQuestion, messageGoesToModel } from '../_shared/whatsappRouting.ts';
 import {
+  assistantFailureMessage,
+  classifyAssistantFailure,
+  type AssistantFailureClass,
+} from '../_shared/whatsappAssistant.ts';
+import {
   asBand,
   checkCanonicalValue,
   checkNumber,
@@ -6845,6 +6850,9 @@ Deno.serve(async (req) => {
          * understood and the answer did not arrive.
          */
         let assistantCameBackEmpty = false;
+        // Why the model did not answer, so the reply can say something true
+        // and the telemetry can say something useful.
+        let aiFailureClass: AssistantFailureClass | null = null;
         // ── the model decides, not a list of words ───────────────────────────
         //
         // The owner's instruction, and they were right: a parser has to be
@@ -6978,6 +6986,7 @@ Deno.serve(async (req) => {
 
             if (assistant && assistant.unavailable) {
               assistantCameBackEmpty = true;
+              aiFailureClass = classifyAssistantFailure(assistantFailure);
               messageRoute = 'ai_outage_fallback';
               await recordInterpretation('fallback', 'model_empty');
               await audit(db, identity, waMessageId, 'conversational_ai', 'empty', 'fallback');
@@ -7005,6 +7014,7 @@ Deno.serve(async (req) => {
               continue;
             }
             if (!assistant) {
+              aiFailureClass = classifyAssistantFailure(assistantFailure);
               messageRoute = 'ai_outage_fallback';
               await recordInterpretation('provider_failed',
                 /timeout/i.test(assistantFailure) ? 'provider_timeout'
@@ -9121,12 +9131,15 @@ Deno.serve(async (req) => {
         }
 
         // Nothing pending: help, a truthful failure, or a polite scope boundary.
+        // Two honest outcomes and no third. Either the model answered, or the
+        // shop is told the AI could not — never an old template sent under the
+        // assistant's name, which is what "Biashara inaendaje so far" received
+        // after a two-minute wait.
+        const aiWasTried = aiEligible && (assistantCameBackEmpty || aiFailureClass !== null);
         await replyQuietly(phone, conversationalAiBudgetBlock
           ? aiBudgetMessage(lang, conversationalAiBudgetBlock.resetAt, conversationalAiBudgetBlock.reason)
-          : assistantCameBackEmpty
-            ? (lang === 'sw'
-              ? 'Nimeelewa swali lako lakini sijaweza kupata jibu sasa hivi. Jaribu tena baada ya dakika moja.'
-              : 'I understood your question but could not get an answer just now. Try again in a minute.')
+          : aiWasTried
+            ? assistantFailureMessage(aiFailureClass ?? 'model_empty', lang)
             : (intent === 'help' ? `${t('help', lang)}\n\n${buildKnowledgeReply(body, lang)}` : t('onlyRisip', lang)));
         await finish('skipped');
         } catch (err) {

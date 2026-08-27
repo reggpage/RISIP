@@ -14,6 +14,121 @@ export const MAX_ASSISTANT_HISTORY_CHARS = 16_000;
 // it just read, and the third call is where the answer actually is.
 const MAX_TOOL_ROUNDS = 3;
 
+/**
+ * How long one Anthropic call may take, and how long the whole turn may.
+ *
+ * MEASURED: "Biashara inaendaje so far" took roughly two minutes and then
+ * showed a fixed monthly template. There was no deadline anywhere — no
+ * AbortController, no overall budget — so a slow provider simply held the
+ * shopkeeper for as long as it liked while WhatsApp showed nothing.
+ *
+ * Stage A.1 measured this model at P50 1.4s and P99 6.4s over 213 calls. Twenty
+ * seconds a call is roughly three times the worst honest case, and forty-five
+ * for the whole turn leaves room for three tool rounds and the ledger writes
+ * between them. Past that the answer is late enough to be useless, and saying
+ * so is better than a shopkeeper watching an empty screen.
+ */
+const CALL_DEADLINE_MS = 20_000;
+const TURN_DEADLINE_MS = 45_000;
+
+/**
+ * Why the model did not answer.
+ *
+ * Never guessed. "Timeout" is only used where a deadline actually fired, and
+ * nothing here claims a worker was evicted — that was never proven, and a
+ * label that invents a cause is worse than 'unknown'.
+ */
+export type AssistantFailureClass =
+  | 'provider_timeout'
+  | 'provider_5xx'
+  | 'provider_4xx'
+  | 'invalid_tool_schema'
+  | 'model_empty'
+  | 'model_invalid_tool'
+  | 'tool_execution_failure'
+  | 'tool_round_limit'
+  | 'ai_budget_block'
+  | 'network_failure'
+  | 'runtime_deadline'
+  | 'missing_api_key'
+  | 'unknown';
+
+/** How the turn actually spent its time, so two minutes is diagnosable. */
+/**
+ * What a failure code means, decided from the code and nothing else.
+ *
+ * Deliberately conservative. 'timeout' is only returned where a deadline
+ * actually fired; nothing here claims a worker was evicted, because that was
+ * never proven and a label that invents a cause is worse than 'unknown'.
+ */
+export function classifyAssistantFailure(code: string | null | undefined): AssistantFailureClass {
+  const said = String(code ?? '').toLowerCase();
+  if (!said) return 'unknown';
+  if (said.includes('missing_api_key')) return 'missing_api_key';
+  if (said.includes('provider_timeout')) return 'provider_timeout';
+  if (said.includes('provider_network_error')) return 'network_failure';
+  if (said.includes('tool_round_limit') || said.includes('tool_loop_exhausted')) return 'tool_round_limit';
+  if (said.includes('missing_required_tool_call') || said.includes('ungrounded')) return 'model_invalid_tool';
+  if (said.includes('turn_deadline')) return 'runtime_deadline';
+  if (/provider_4\d\d/.test(said)) {
+    // A 400 caused by our own tool schema is our bug, not the provider's, and
+    // it is the one that returned on EVERY conversational call for a day while
+    // looking like a stupid model.
+    return /tools?\.|schema|invalid_request/.test(said) ? 'invalid_tool_schema' : 'provider_4xx';
+  }
+  if (/provider_5\d\d/.test(said)) return 'provider_5xx';
+  return 'unknown';
+}
+
+/**
+ * What the shop is told, and it is always the truth.
+ *
+ * MEASURED: asked "Biashara inaendaje so far", the owner waited about two
+ * minutes and received a fixed monthly ledger block sent under the assistant's
+ * name. A shopkeeper cannot tell that apart from thinking, so an infrastructure
+ * failure was billed to the product's intelligence instead of being fixed.
+ *
+ * No stack traces, no HTTP codes, no provider names. Just which of the honest
+ * things went wrong, and whether trying again is worth their time.
+ */
+export function assistantFailureMessage(failure: AssistantFailureClass, lang: Lang): string {
+  const sw = lang === 'sw';
+  switch (failure) {
+    case 'provider_timeout':
+    case 'runtime_deadline':
+      return sw
+        ? 'Samahani, AI ya Risip imechukua muda mrefu kuliko kawaida kujibu. Tafadhali jaribu tena.'
+        : 'Sorry — Risip AI took longer than usual to answer. Please try again.';
+    case 'ai_budget_block':
+      return sw
+        ? 'AI ya Risip imefikia kikomo chake cha matumizi kwa sasa. Itaweza kutumika tena kikomo kitakaporejeshwa.'
+        : 'Risip AI has reached its usage limit for now. It will work again once the limit resets.';
+    case 'tool_execution_failure':
+      return sw
+        ? 'Nimeelewa ombi lako, lakini sikuweza kupata taarifa zinazohitajika kutoka kwenye mfumo kwa sasa. Tafadhali jaribu tena.'
+        : 'I understood your request, but I could not load the information I needed just now. Please try again.';
+    case 'invalid_tool_schema':
+    case 'model_invalid_tool':
+    case 'tool_round_limit':
+      // Our bug, not theirs. The shop is not told whose — only that trying the
+      // same thing immediately will not help.
+      return sw
+        ? 'Samahani, kuna hitilafu kwa upande wangu na sikuweza kukamilisha jibu. Tumeirekodi; tafadhali jaribu tena baadaye.'
+        : 'Sorry — something went wrong on my side and I could not finish the answer. It has been recorded; please try again later.';
+    default:
+      return sw
+        ? 'Samahani, AI ya Risip haikuweza kukamilisha ombi hili kwa sasa. Tafadhali jaribu tena baada ya muda mfupi.'
+        : 'Sorry — Risip AI could not complete this request just now. Please try again shortly.';
+  }
+}
+
+export type AssistantTimings = {
+  modelMs: number;
+  toolMs: number;
+  totalMs: number;
+  rounds: number;
+};
+
 export type AssistantIdentityContext = {
   identityId: string;
   profileId: string;
@@ -118,7 +233,17 @@ export type AssistantRunResult = {
    */
   lastToolInput?: Record<string, unknown> | null;
   model: string;
+  /**
+   * Whether deterministic business prose was sent in place of an answer.
+   *
+   * Kept only so a test can assert it is always false. When the model cannot
+   * finish, the shop is told the AI could not finish — it is not handed an old
+   * template dressed as intelligence.
+   */
   usedSafeFallback: boolean;
+  /** Why it failed, when it did. Never guessed. */
+  failureClass?: AssistantFailureClass;
+  timings?: AssistantTimings;
 };
 
 type ToolDefinition = {
@@ -969,31 +1094,27 @@ export function inferAssistantMemory(
 }
 
 /**
- * The best thing to send a person when the model cannot finish.
+ * REMOVED, deliberately, and this comment is the record of why.
  *
- * Prefers each tool's own human rendering and falls back to its content only
- * when that content is prose. Never sends machine text, and never sends
- * anything that looks like an instruction to the model — that is how Risip's
- * own prompt ended up in a shopkeeper's WhatsApp.
+ * humanFallback() used to gather each tool's own prose and send it when the
+ * model could not finish. It is how the owner asked "Biashara inaendaje so
+ * far", waited about two minutes, and received the fixed monthly ledger block:
+ *
+ *     Muhtasari wa mwezi huu:
+ *     Mauzo yote: ...
+ *
+ * The figures in it were right. It was still the wrong thing to do, because it
+ * was sent AS IF it were the assistant's answer. A shopkeeper cannot tell the
+ * difference between "the AI thought about your question" and "the AI never
+ * finished and a template went out under its name" — and every time the second
+ * happens quietly, an infrastructure failure is billed to the product's
+ * intelligence instead of being fixed.
+ *
+ * There is no substitute now. When the model cannot finish, the shop is told
+ * the AI could not finish. Two honest outcomes, and no third one that looks
+ * like a third kind of answer.
  */
-function humanFallback(results: Array<{ result: AssistantToolExecution }>): string {
-  const parts: string[] = [];
-  for (const { result } of results) {
-    if (result.fallbackReply) { parts.push(result.fallbackReply); continue; }
-    if (result.fallbackReply === undefined && looksLikeProse(result.content)) parts.push(result.content);
-  }
-  return parts.filter(Boolean).join('\n\n');
-}
 
-/** key=value lines and ALL-CAPS instruction headings are not an answer. */
-function looksLikeProse(text: string): boolean {
-  const said = String(text ?? '').trim();
-  if (!said) return false;
-  const lines = said.split('\n').filter(Boolean);
-  const machine = lines.filter((line) => /^[a-z_]+=/.test(line.trim())).length;
-  if (machine > 0) return false;
-  return !/^[A-Z][A-Z _()]{6,}$/m.test(said);
-}
 
 function unavailable(lang: Lang): string {
   return lang === 'sw'
@@ -1031,13 +1152,24 @@ export async function runConversationalAssistant(args: {
   const evidence: string[] = [userText];
   // Kept alongside the evidence so a fallback can send the shopkeeper each
   // tool's own human rendering rather than the machine text the model reads.
-  const executedResults: Array<{ result: AssistantToolExecution }> = [];
   const mustGroundWithTool = requiresCurrentBusinessDataTool(userText);
 
+  const turnStartedAt = Date.now();
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
+    // Three rounds of a slow provider is longer than anybody will wait staring
+    // at a WhatsApp thread. Past this the answer is late enough to be useless,
+    // and saying so beats an empty screen.
+    if (Date.now() - turnStartedAt > TURN_DEADLINE_MS) {
+      args.onFailure?.('turn_deadline_exceeded');
+      return null;
+    }
     let response: Response;
     try {
+      const abort = new AbortController();
+      const deadline = setTimeout(() => abort.abort(), CALL_DEADLINE_MS);
+      try {
       response = await fetch(ANTHROPIC_URL, {
+        signal: abort.signal,
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -1072,8 +1204,13 @@ export async function runConversationalAssistant(args: {
           messages,
         }),
       });
-    } catch {
-      args.onFailure?.('provider_network_error');
+      } finally { clearTimeout(deadline); }
+    } catch (error) {
+      // A deadline that fired is a timeout. Anything else is the network. The
+      // difference decides whether a retry could ever help, so it is not
+      // flattened into one word.
+      const aborted = error instanceof Error && error.name === 'AbortError';
+      args.onFailure?.(aborted ? 'provider_timeout' : 'provider_network_error');
       return null;
     }
     if (!response.ok) {
@@ -1103,15 +1240,17 @@ export async function runConversationalAssistant(args: {
       const reply = modelText || unavailable(args.context.lang);
       const ungrounded = findUngroundedNumbers(reply, evidence);
       if (ungrounded.length > 0) {
-        const gathered = humanFallback(executedResults);
+        // The model stated a figure no tool returned. The answer cannot go out,
+        // and neither can a template pretending to be one.
+        args.onFailure?.('model_ungrounded_number');
         return {
-          reply: gathered || unavailable(args.context.lang),
+          reply: unavailable(args.context.lang),
           memory: inferAssistantMemory(executed),
           toolNames: executed.map((call) => call.name),
           lastToolInput: executed.length > 0 ? executed[executed.length - 1].input : null,
           model,
-          usedSafeFallback: true,
-          unavailable: !gathered,
+          usedSafeFallback: false,
+          unavailable: true,
         };
       }
       return {
@@ -1126,21 +1265,21 @@ export async function runConversationalAssistant(args: {
     }
 
     if (round >= MAX_TOOL_ROUNDS) {
-      // MEASURED FAILURE, the owner's own thread: "Can i get advice on my
-      // business" and "Nini kinanipa hasara?" both came back "Sorry, I could
-      // not complete that answer right now" — while the tools had ALREADY
-      // returned the figures. Running out of rounds threw verified data away
-      // and sent an apology in its place. The figures are worth more than the
-      // sentence that would have wrapped them.
-      const gathered = humanFallback(executedResults);
+      // This branch used to gather the tools' own prose and send it. That was
+      // written to save verified figures from being thrown away, which was a
+      // fair instinct and the wrong answer: what went out was a report the
+      // shopkeeper had not asked for, under the assistant's name, after a long
+      // wait. Running out of rounds is a failure of ours, and it now reads as
+      // one.
+      args.onFailure?.('tool_round_limit');
       return {
-        reply: gathered || unavailable(args.context.lang),
+        reply: unavailable(args.context.lang),
         memory: inferAssistantMemory(executed),
         toolNames: executed.map((call) => call.name),
-          lastToolInput: executed.length > 0 ? executed[executed.length - 1].input : null,
+        lastToolInput: executed.length > 0 ? executed[executed.length - 1].input : null,
         model,
-        usedSafeFallback: true,
-        unavailable: !gathered,
+        usedSafeFallback: false,
+        unavailable: true,
       };
     }
 
@@ -1161,7 +1300,6 @@ export async function runConversationalAssistant(args: {
       }
       executed.push({ name: call.name, input: call.input });
       evidence.push(result.content);
-      executedResults.push({ result });
       return { call, result };
     }));
 

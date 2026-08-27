@@ -254,7 +254,7 @@ describe('Risip conversational AI core', () => {
     ]);
   });
 
-  it('falls back to exact server evidence when model prose invents a figure', async () => {
+  it('refuses the answer outright when model prose invents a figure', async () => {
     (globalThis as { Deno?: unknown }).Deno = {
       env: { get: (name: string) => name === 'ANTHROPIC_API_KEY' ? 'test-key' : undefined },
     };
@@ -276,7 +276,13 @@ describe('Risip conversational AI core', () => {
       userText: 'Bidhaa gani imeuza sana leo?',
       executeTool: async () => ({ content: evidence }),
     });
-    expect(result).toMatchObject({ reply: evidence, usedSafeFallback: true });
+    // It used to send the tool's own prose instead, which was safer than the
+    // invented figure and still wrong: the shopkeeper received a report they
+    // had not asked for, under the assistant's name. A figure no tool returned
+    // means the answer cannot go out — and neither can a substitute dressed as
+    // one. The shop is told the AI could not finish.
+    expect(result).toMatchObject({ usedSafeFallback: false, unavailable: true });
+    expect(result?.reply).not.toBe(evidence);
   });
 
   it('reports a safe provider failure code without exposing prompts or secrets', async () => {

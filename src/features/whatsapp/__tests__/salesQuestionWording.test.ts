@@ -108,10 +108,12 @@ describe('when the model comes back with nothing', () => {
     expect(webhook).toContain('let assistantCameBackEmpty = false;');
     expect(webhook).toContain('assistantCameBackEmpty = true;');
     // The truth is narrower than "I can help you with Risip": the question was
-    // understood and the answer did not arrive.
-    expect(webhook).toContain('sijaweza kupata jibu sasa hivi');
-    const fallback = webhook.slice(webhook.indexOf('// Nothing pending: help, a truthful failure'));
-    expect(fallback.indexOf('assistantCameBackEmpty'))
+    // understood and the answer did not arrive. It is now narrower still —
+    // assistantFailureMessage says WHICH honest thing went wrong, so a timeout
+    // and a usage limit no longer read as the same shrug.
+    expect(webhook).toContain('assistantFailureMessage(aiFailureClass ?? ');
+    const fallback = webhook.slice(webhook.indexOf('// Two honest outcomes and no third'));
+    expect(fallback.indexOf('assistantFailureMessage'))
       .toBeLessThan(fallback.indexOf("t('onlyRisip', lang)"));
   });
 });
