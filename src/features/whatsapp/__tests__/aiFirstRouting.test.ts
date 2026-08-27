@@ -187,3 +187,70 @@ describe('the parsers survive as the outage answer', () => {
     }
   });
 });
+
+describe('a parked question releases unless the message answers it', () => {
+  // THE LAST BYPASS, and the one that took a probe to find rather than a guess.
+  //
+  // Every parked question used to ask "is this another topic?" — startsAnotherTopic,
+  // a union of fourteen business parsers. Anything on the list escaped. Anything
+  // else stayed parked and was asked again:
+  //
+  //   namaanisha anton            answer=false  recordShaped=false  -> re-asked
+  //   sio hiyo                    answer=false  recordShaped=false  -> re-asked
+  //   ile ya hisense              answer=false  recordShaped=false  -> re-asked
+  //   nilimaanisha nguvu ya sala  answer=false  recordShaped=false  -> re-asked
+  //
+  // These are the corrections §9 and §18 name, and they are exactly what a
+  // shop says when Risip has just told it "Antoni haipo". The question is now
+  // the only one that needs no list: is this the ANSWER?
+
+  it('has no list of recognised subjects left to maintain', () => {
+    expect(webhook).not.toContain('function startsAnotherTopic');
+    expect(webhook).not.toContain('startsAnotherTopic(');
+  });
+
+  it('states the rule once, and states it as a release', () => {
+    const rule = webhook.slice(
+      webhook.indexOf('function releasesParkedQuestion'),
+      webhook.indexOf('async function resolveProductForRead'),
+    );
+    expect(rule).toContain('isDailyRecordConfirmation(text) || isDailyRecordRejection(text) || isCancel(text)');
+    expect(rule).toContain('return true;');
+  });
+
+  it('asks each parked question about its own answer, not about topics', () => {
+    // One site per parked state, each naming the parser that reads ITS answer.
+    for (const [state, predicate] of [
+      ['quantityMeaningPending', 'parseQuantityMeaningAnswer(body) === null'],
+      ['hypotheticalPortionPending', '!matchHypotheticalPortionAnswer(body, hypotheticalPortionPending)'],
+      ['invitePending', '!parseInviteRole(body)'],
+      ['productRenamePending', '!isDailyRecordConfirmation(body)'],
+      ['portionSizePending', '!resumePortionSetup(portionSizePending, body)'],
+      ['portionConfirmPending', '!isDailyRecordConfirmation(body)'],
+      // Two branches carry this state: an explicit cancel at the first, and the
+      // release rule at the second. lastIndexOf reaches the one under test.
+      ['newProductSaleSetup', 'SKIP'],
+    ] as const) {
+      if (predicate === 'SKIP') continue;
+      const branch = webhook.slice(webhook.indexOf(`if (${state} &&`));
+      expect(branch.slice(0, 400), state).toContain(predicate);
+    }
+  });
+
+  it('releases the new-product offer for anything that is not a price', () => {
+    const branch = webhook.slice(webhook.lastIndexOf('if (newProductSaleSetup &&'));
+    expect(branch.slice(0, 200)).toContain('!looksLikeAnAnswer');
+    expect(branch.slice(0, 200)).not.toContain('startsAnotherTopic');
+  });
+
+  it('drops the re-ask that met every correction', () => {
+    // "Sijaelewa, ni ngapi?" three times running is not a clarification; it is
+    // a loop. The model sees the question in history and can answer the
+    // correction instead of repeating the prompt.
+    const quantityBranch = webhook.slice(
+      webhook.indexOf('const answer = parseQuantityAnswer(body ??'),
+      webhook.indexOf("'quantity_wanted', 'topic_change', 'skipped'"),
+    );
+    expect(quantityBranch).not.toContain('quantityNotUnderstood');
+  });
+});

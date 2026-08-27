@@ -119,23 +119,35 @@ describe('a pending question that knows when to let go', () => {
   const webhook = () => readFileSync(
     resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
 
-  it('abandons the invite when the message starts another topic', () => {
+  it('abandons the invite for anything that is not a role', () => {
     // MEASURED FAILURE: "change language to kiswahili" was answered by asking
     // "what will they be? Reply 1 or 2" a second time. Every message that was
     // not a role was treated as a wrong answer, which made the question a trap.
+    //
+    // The first repair asked "is this another topic?", which is a list of
+    // recognised topics and therefore still a trap for anything not on it —
+    // "namaanisha anton" was on no list and met the same question again. The
+    // question is now the only one that needs no list: is this the ANSWER?
     const source = webhook();
-    expect(source).toContain('if (invitePending && startsAnotherTopic(body)) {');
-    expect(source).toMatch(/startsAnotherTopic\(body\)\) \{\s*\n\s*await clearConversation/);
+    expect(source).toContain(
+      "if (invitePending && !isCancel(body) && !isDailyRecordRejection(body) && !parseInviteRole(body)) {",
+    );
+    expect(source).toMatch(/!parseInviteRole\(body\)\) \{\s*\n\s*await clearConversation/);
   });
 
-  it('counts only unmistakable topic changes, so a vague reply still re-asks', () => {
+  it('lets a vague reply go to the model rather than re-asking forever', () => {
+    // The old rule kept a bare word parked, on the theory that re-asking was
+    // kinder than losing the thread. It was not: the shop said the same thing
+    // three different ways and got the same question three times. Anything that
+    // is not a role now reaches Claude, which can see the question in history
+    // and answer the correction instead of repeating the prompt.
     const source = webhook();
-    const helper = source.slice(source.indexOf('function startsAnotherTopic'));
-    expect(helper).toContain('parseLanguageCommand(text)');
-    expect(helper).toContain('parseQuantityOnlySale(text)');
-    expect(helper).toContain('parseReadRequest(text)');
-    // A bare word must not qualify: that is what re-asking is for.
-    expect(helper).not.toContain('text.length');
+    const invite = source.slice(
+      source.indexOf('if (invitePending &&'),
+      source.indexOf('} else if (voidPending)'),
+    );
+    expect(invite.length).toBeGreaterThan(30);
+    expect(invite).not.toContain('startsAnotherTopic');
   });
 });
 

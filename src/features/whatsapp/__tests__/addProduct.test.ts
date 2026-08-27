@@ -76,15 +76,22 @@ describe('product topic switching in the webhook', () => {
     expect(guard.indexOf("db.rpc('wa_cancel_daily_record_draft'")).toBeLessThan(guard.indexOf('dailyConversation = null'));
   });
 
-  it('treats measured setup, add-product, and a new ledger message as real topic changes', () => {
+  it('releases a parked question for anything that is not its answer', () => {
+    // This used to assert the contents of startsAnotherTopic — a list of
+    // fourteen parsers naming the subjects a parked question was willing to be
+    // interrupted by. The list had to grow every time a shop said something
+    // new, and it met "namaanisha anton" with the same question a third time.
+    //
+    // The list is gone. A confirmation, a rejection or a cancel is an answer;
+    // everything else releases, and needs no list at all.
     const source = webhook();
-    const start = source.indexOf('function startsAnotherTopic');
-    const end = source.indexOf('async function resolveProductForRead', start);
-    const helper = source.slice(start, end);
-    expect(helper).toContain('parsePortionSetupOffer(text)');
-    expect(helper).toContain('isAddProductStart(text)');
-    expect(helper).toContain('parseAddProduct(text)');
-    expect(helper).toContain('isDailyRecordCandidate(text)');
+    expect(source).not.toContain('function startsAnotherTopic');
+    const rule = source.slice(
+      source.indexOf('function releasesParkedQuestion'),
+      source.indexOf('async function resolveProductForRead'),
+    );
+    expect(rule).toContain('isDailyRecordConfirmation(text) || isDailyRecordRejection(text) || isCancel(text)');
+    expect(rule).toContain('return true;');
   });
 
   it('parks “naongeza bidhaa” as a name question instead of sending it to stale AI context', () => {

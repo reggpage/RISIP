@@ -1047,31 +1047,14 @@ function offerNewProducts(notCounted: string[], lang: Lang): string {
  */
 function releasesParkedQuestion(text: string): boolean {
   if (isDailyRecordConfirmation(text) || isDailyRecordRejection(text) || isCancel(text)) return false;
-  return startsAnotherTopic(text);
+  // Everything else releases. This used to ask startsAnotherTopic — "is this
+  // one of the subjects I recognise?" — and a correction that named no product
+  // and no known subject was on no list, so the shop was asked the same
+  // question again, and again. There is no list to maintain here: a message
+  // that is not the answer is a new turn, and new turns belong to the model.
+  return true;
 }
 
-function startsAnotherTopic(text: string): boolean {
-  return Boolean(
-    parseLanguageCommand(text)
-    || parseInviteRequest(text)
-    || isAddProductStart(text)
-    || parseAddProduct(text)
-    || parseQuantityOnlySale(text)
-    // A sale written with no verb is still a sale, and still a change of
-    // subject. Without this, "antoni wa padua 3" was answered with the ugali
-    // question, three times running.
-    || parseBareQuantityList(text)
-    || parseSellingPriceBatch(text)
-    || parsePortionSetupOffer(text)
-    || parseProductRename(text)
-    || parseStockCountBatch(text)
-    || parseProductCostBatch(text)
-    || parseHypotheticalProfitRequest(text)
-    || parseProductAnalyticsRequest(text)
-    || parseReadRequest(text)
-    || isDailyRecordCandidate(text),
-  );
-}
 
 /**
  * Decide "total or each?" from the shop's own price list instead of asking.
@@ -4983,7 +4966,7 @@ Deno.serve(async (req) => {
           (dailyBatchConversation || dailyConversation)
           && !isDailyRecordConfirmation(body)
           && !isDailyRecordRejection(body)
-          && startsAnotherTopic(body ?? ''),
+          && !isCancel(body ?? ''),
         );
         if (switchesPendingDailyTopic && dailyBatchConversation) {
           const { error } = await db.rpc('wa_cancel_daily_record_batch', {
@@ -5132,15 +5115,12 @@ Deno.serve(async (req) => {
             // A message that plainly starts something else must not be trapped
             // inside the question. The pending state simply lapses and the new
             // subject is read by whoever owns it.
-            if (startsAnotherTopic(body ?? '')) {
-              await clearConversation(db, identity.id as string);
-              await audit(db, identity, waMessageId, 'quantity_wanted', 'topic_change', 'skipped');
-            } else {
-              await reply(phone, quantityNotUnderstood(quantityPending.product, lang));
-              await audit(db, identity, waMessageId, 'quantity_wanted', 'unreadable', 'pending');
-              await finish('skipped');
-              continue;
-            }
+            // parseQuantityAnswer already found nothing, so this is not the
+            // answer to the question we asked. Release it to the model rather
+            // than asking a third time — that re-ask is what met every
+            // correction the shop tried to make.
+            await clearConversation(db, identity.id as string);
+            await audit(db, identity, waMessageId, 'quantity_wanted', 'topic_change', 'skipped');
           } else {
             // Re-enter the ordinary quantity-sale pipeline below. It resolves
             // the current company product and units and recalculates the price;
@@ -5370,7 +5350,7 @@ Deno.serve(async (req) => {
         // A bare list such as "kitabu 7, biblia 3" is parked because it could
         // mean sales or stock. A short answer resumes the exact list instead of
         // being parsed as a brand-new one-line message.
-        if (quantityMeaningPending && startsAnotherTopic(body)) {
+        if (quantityMeaningPending && parseQuantityMeaningAnswer(body) === null) {
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'quantity_meaning', 'abandoned', 'skipped');
         } else if (quantityMeaningPending) {
@@ -5434,18 +5414,16 @@ Deno.serve(async (req) => {
             };
             await clearConversation(db, identity.id as string);
             await audit(db, identity, waMessageId, 'portion_quantity', 'resumed', 'applied');
-          } else if (startsAnotherTopic(body) || isDailyRecordCandidate(body)) {
+          } else {
+            // The quantity did not parse, so this is not the answer. Release
+            // and let the model read it — including the corrections that used
+            // to be met with the same question a third time.
             await clearConversation(db, identity.id as string);
             await audit(db, identity, waMessageId, 'portion_quantity', 'abandoned', 'skipped');
-          } else {
-            await reply(phone, portionQuantityQuestion(portionQuantityPending, lang));
-            await audit(db, identity, waMessageId, 'portion_quantity', 'reask', 'clarification');
-            await finish('skipped');
-            continue;
           }
         }
 
-        if (hypotheticalPortionPending && startsAnotherTopic(body)) {
+        if (hypotheticalPortionPending && !matchHypotheticalPortionAnswer(body, hypotheticalPortionPending)) {
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'hypothetical_product_profit', 'unit_abandoned', 'skipped');
         } else if (hypotheticalPortionPending) {
@@ -5895,7 +5873,7 @@ Deno.serve(async (req) => {
         // invite branch treated every message that was not a role as a bad
         // answer to its own question. Nobody escapes a question by answering it
         // correctly; they escape by talking about something else.
-        if (invitePending && startsAnotherTopic(body)) {
+        if (invitePending && !isCancel(body) && !isDailyRecordRejection(body) && !parseInviteRole(body)) {
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'invite', 'abandoned', 'skipped');
         } else if (voidPending) {
@@ -5969,7 +5947,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        if (productRenamePending && startsAnotherTopic(body)) {
+        if (productRenamePending && !isDailyRecordConfirmation(body) && !isDailyRecordRejection(body) && !isCancel(body)) {
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'product_rename', 'abandoned', 'skipped');
         } else if (productRenamePending) {
@@ -5998,7 +5976,7 @@ Deno.serve(async (req) => {
         // A portion setup is two-stage because words such as "robo" do not say
         // what they are a fraction of. The trader states every conversion, sees
         // the cost/margin arithmetic, and only NDIYO writes the transaction.
-        if (portionSizePending && startsAnotherTopic(body)) {
+        if (portionSizePending && !isCancel(body) && !isDailyRecordRejection(body) && !resumePortionSetup(portionSizePending, body)) {
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'portion_setup', 'abandoned', 'skipped');
         } else if (portionSizePending) {
@@ -6036,7 +6014,7 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        if (portionConfirmPending && startsAnotherTopic(body)) {
+        if (portionConfirmPending && !isDailyRecordConfirmation(body) && !isDailyRecordRejection(body) && !isCancel(body)) {
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'portion_setup', 'abandoned', 'skipped');
         } else if (portionConfirmPending) {
@@ -6370,7 +6348,10 @@ Deno.serve(async (req) => {
               await finish('skipped');
               continue;
             }
-            if (startsAnotherTopic(body ?? '')) {
+            // A parked question releases unless the message ANSWERS it. Asking
+            // "is this another topic?" here meant a correction that named no
+            // parseable product simply got the same question again.
+            if (!parseAddProductName(body)) {
               await clearConversation(db, identity.id as string);
               await clearAssistantMemory(db, identity);
               await audit(db, identity, waMessageId, 'add_product', 'guided_abandoned', 'skipped');
@@ -6407,7 +6388,8 @@ Deno.serve(async (req) => {
               : body;
             const answered = parseCostAnswer(answerWithoutUnit);
             if (answered === null) {
-              if (startsAnotherTopic(body ?? '')) {
+              // Not the cost we asked for, so not the answer. Release it.
+              if (true) {
                 await clearConversation(db, identity.id as string);
                 await clearAssistantMemory(db, identity);
                 await audit(db, identity, waMessageId, 'add_product', 'guided_abandoned', 'skipped');
@@ -7196,7 +7178,7 @@ Deno.serve(async (req) => {
             && newProductSaleSetup.missingProducts.some((name) =>
               body.toLocaleLowerCase('sw-TZ').includes(name.toLocaleLowerCase('sw-TZ')))
           : false;
-        if (newProductSaleSetup && (startsAnotherTopic(body) || !looksLikeAnAnswer)) {
+        if (newProductSaleSetup && !looksLikeAnAnswer) {
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'new_product_sale_setup', 'abandoned', 'skipped');
         } else if (newProductSaleSetup) {

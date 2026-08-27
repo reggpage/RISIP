@@ -107,8 +107,19 @@ describe('conversation-state safety and normal pipeline reuse', () => {
   it('only reads a bare number inside a live quantity conversation', () => {
     expect(webhook.split('parseQuantityAnswer(body ??').length - 1).toBe(1);
     expect(webhook).toContain("if (new Date(data.expires_at as string).getTime() < Date.now())");
-    expect(webhook).toContain("if (startsAnotherTopic(body ?? ''))");
+    // The parked question now releases for anything that is not the answer.
+    // It used to ask "is this another topic?" and re-ask when the answer was
+    // no — so a correction that named no recognised subject was met with the
+    // same question a third time while the model that could have read it sat
+    // unused. parseQuantityAnswer has already returned nothing by this point;
+    // there is nothing left for a topic list to decide.
     expect(webhook).toContain("'quantity_wanted', 'topic_change', 'skipped'");
+    const quantityBranch = webhook.slice(
+      webhook.indexOf('const answer = parseQuantityAnswer(body ??'),
+      webhook.indexOf("'quantity_wanted', 'topic_change', 'skipped'"),
+    );
+    expect(quantityBranch).not.toContain('startsAnotherTopic');
+    expect(quantityBranch).not.toContain('quantityNotUnderstood');
   });
 
   it('does not let the generic amount parser steal the resumed bare number', () => {
