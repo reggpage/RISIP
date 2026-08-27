@@ -62,15 +62,31 @@ describe('every tool schema is one the API will accept', () => {
     }
   });
 
-  it('expresses nullable choices as anyOf', () => {
+  it('expresses any nullable choice as anyOf', () => {
     const tools = ASSISTANT_TOOLS as Array<Record<string, unknown>>;
     const nullable = tools.flatMap((tool) =>
       [...everyProperty((tool.input_schema ?? {}) as Schema)]
         .filter(([, schema]) => Array.isArray(schema.anyOf)));
-    expect(nullable.length).toBeGreaterThan(0);
+    // No lower bound: Stage B removed the last nullable enum from the visible
+    // surface by taking the trader's word instead of a category. The rule still
+    // has to hold for anything that comes back.
     for (const [path, schema] of nullable) {
       const options = schema.anyOf as Schema[];
       expect(options.some((option) => option.type === 'null'), path).toBe(true);
+    }
+  });
+
+  it('has no nullable enum left on the visible surface at all', () => {
+    // The 400 that returned on every conversational call for a day was a
+    // nullable enum, and the enum that survived it turned "tigopesa" into cash.
+    // Stage B replaced both with wording the server canonicalizes, so the shape
+    // that caused each is now simply absent rather than carefully spelled.
+    for (const tool of ASSISTANT_TOOLS as Array<Record<string, unknown>>) {
+      for (const [path, schema] of everyProperty((tool.input_schema ?? {}) as Schema)) {
+        const nullableEnum = Array.isArray(schema.anyOf)
+          && (schema.anyOf as Schema[]).some((option) => Array.isArray(option.enum));
+        expect(nullableEnum, `${tool.name}.${path}`).toBe(false);
+      }
     }
   });
 

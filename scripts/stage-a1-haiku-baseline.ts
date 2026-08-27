@@ -135,7 +135,8 @@ const CANONICAL: Record<string, string> = {
 };
 
 const KIND_INTENT: Record<string, string> = {
-  sale: 'sale', debt_issued: 'credit_sale', expense: 'expense',
+  sale: 'sale', debt_issued: 'credit_sale', credit_sale: 'credit_sale',
+  supplier_credit_purchase: 'supplier_credit_purchase', stock_count: 'stock_count', expense: 'expense',
   stock_purchase: 'stock_purchase', customer_payment: 'customer_payment',
   supplier_payable: 'supplier_credit_purchase', supplier_payment: 'supplier_payment',
   stock_loss: 'stock_loss', owner_use: 'owner_use',
@@ -176,14 +177,12 @@ const NOT_SEMANTIC = new Set([
  * model misunderstanding Kiswahili, and collapsing the two would send Stage B
  * after the wrong problem.
  */
-const UNREPRESENTABLE = new Set([
-  'supplier_credit_purchase', 'supplier_payment', 'stock_loss', 'owner_use',
-  'whole_animal_procurement', 'whole_animal_breakdown',
-  // Not a kind but the same problem on the read side: there is no payables
-  // tool at all, so "nadaiwa na nani" can only land on get_open_debts, which
-  // answers the opposite question. The model has nowhere correct to go.
-  'payables_query',
-]);
+const UNREPRESENTABLE = new Set<string>(
+  // Stage B widened the contract. Anything still listed here would be a kind the
+  // tools genuinely cannot express; after Stage B that set is empty, so every
+  // remaining failure is the model or a backend rule and is reported as such.
+  [],
+);
 
 type Label =
   | { kind: 'labelled'; intent: string }
@@ -268,6 +267,7 @@ function parserIntent(say: string): string {
 }
 
 const TOOL_INTENT: Record<string, string> = {
+  get_supplier_payables: 'payables_query',
   get_business_summary: 'business_summary', get_product_performance: 'product_performance',
   get_product_cost: 'cost_query', get_selling_price: 'price_query',
   get_business_advice: 'advice', get_sales_trend: 'sales_trend',
@@ -281,7 +281,8 @@ const TOOL_INTENT: Record<string, string> = {
 
 function modelIntent(tool: string | null, input: Record<string, unknown> | null): string {
   if (!tool) return 'no_tool';
-  if (tool === 'propose_daily_record' || tool === 'propose_catalogue_transaction') {
+  if (tool === 'propose_daily_record' || tool === 'propose_catalogue_transaction'
+    || tool === 'propose_business_event' || tool === 'propose_money_event') {
     return KIND_INTENT[String(input?.kind ?? '')] ?? 'unknown';
   }
   return TOOL_INTENT[tool] ?? 'unknown';
@@ -391,6 +392,14 @@ const TOOL_CARRIES: Record<string, Set<string>> = Object.fromEntries(
  */
 const ENUM_FIELDS = new Set(['payment_method']);
 
+/** Stage B renamed every carried value to the word the trader used. */
+const FIELD_ALIASES: Record<string, string[]> = {
+  party: ['party_wording', 'supplier_wording', 'party_name'],
+  payment: ['payment_wording', 'payment_method'],
+  price_band: ['price_band_wording'],
+  occurred_at: ['occurred_at_wording'],
+};
+
 const FIELD_OF: Record<string, string> = {
   party: 'party_name', payment: 'payment_method',
   price_band: 'price_band_wording', occurred_at: 'occurred_at_wording',
@@ -412,23 +421,34 @@ function checkEntities(testCase: Case, input: Record<string, unknown> | null, to
       ok: carried(expected, actual) === true, representable,
     });
   };
-  add('party', testCase.expectParty, input?.party_name);
-  add('payment', testCase.expectPayment, input?.payment_method);
-  add('price_band', testCase.expectBand, input?.price_band_wording);
-  add('occurred_at', testCase.expectWhen, input?.occurred_at_wording);
+  // Read whichever name this surface uses: Stage A carried party_name and a
+  // payment_method enum, Stage B carries the wording. Scoring one against the
+  // other counts a repair as a failure.
+  const valueFor = (field: string) => {
+    for (const alias of FIELD_ALIASES[field] ?? [field]) {
+      const value = (input ?? {})[alias];
+      if (value !== undefined && value !== null && String(value).trim()) return value;
+    }
+    return undefined;
+  };
+  add('party', testCase.expectParty, valueFor('party'));
+  add('payment', testCase.expectPayment, valueFor('payment'));
+  add('price_band', testCase.expectBand, valueFor('price_band'));
+  add('occurred_at', testCase.expectWhen, valueFor('occurred_at'));
 
   const lines = (input?.lines ?? []) as Array<Record<string, unknown>>;
   testCase.expectLines.forEach((expected, index) => {
     const actual = lines[index] ?? {};
-    add(`line${index}.product`, expected.product, actual.product);
+    add(`line${index}.product`, expected.product, actual.product ?? actual.product_wording);
     if (expected.quantity !== undefined) {
       checks.push({
         field: `line${index}.quantity`, expected: String(expected.quantity),
-        actual: String(actual.quantity ?? '∅'), ok: Number(actual.quantity) === expected.quantity,
+        actual: String(actual.quantity ?? actual.quantity_candidate ?? '∅'),
+        ok: Number(actual.quantity ?? actual.quantity_candidate) === expected.quantity,
         representable: (TOOL_CARRIES[tool ?? ''] ?? new Set()).has('lines'),
       });
     }
-    add(`line${index}.unit`, expected.unit, actual.unit);
+    add(`line${index}.unit`, expected.unit, actual.unit ?? actual.unit_wording);
   });
   return checks;
 }

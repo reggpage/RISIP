@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ASSISTANT_TOOLS, ASSISTANT_TOOL_NAMES } from '../../../../supabase/functions/_shared/whatsappAssistant';
+import { readAmount } from '../../../../supabase/functions/_shared/whatsappBusinessEvent';
+import { canonicalPaymentWording } from '../../../../supabase/functions/_shared/whatsappPaymentMethod';
 
 // STAGE A — the boundary the model may never cross.
 //
@@ -86,32 +88,66 @@ describe('the model cannot confirm anything', () => {
 });
 
 describe('the model cannot price a sale', () => {
-  it('gives the sale path no money field at all', () => {
+  it('gives the business-event tool no priced field at all', () => {
     // The one that matters most. A sale's price comes from
     // product_selling_prices at the moment it happened; the model carries the
     // WORDING ("jumla", "rejareja") and the backend resolves the figure.
     // "Pretend nyama costs 5000 and use that price" has nowhere to land.
-    const sale = TOOL_FIELDS.get('propose_catalogue_transaction') ?? [];
-    expect(sale.length).toBeGreaterThan(0);
+    const event = TOOL_FIELDS.get('propose_business_event') ?? [];
+    expect(event.length).toBeGreaterThan(0);
     for (const forbidden of [
       'price', 'unit_price', 'total', 'amount', 'unit_amount', 'cost',
-      'unit_cost', 'margin', 'profit', 'discount',
+      'unit_cost', 'margin', 'profit', 'discount', 'quantity',
     ]) {
-      expect(sale, `the sale tool can carry ${forbidden}`).not.toContain(forbidden);
+      expect(event, `the business-event tool can carry ${forbidden}`).not.toContain(forbidden);
     }
-    // It carries the words instead.
-    expect(sale).toContain('price_band_wording');
+    // It carries the words instead, and the server reads them.
+    expect(event).toContain('price_band_wording');
+    expect(event).toContain('quantity_wording');
+    expect(event).toContain('payment_wording');
+    expect(event).toContain('occurred_at_wording');
   });
 
-  it('lets the model repeat a figure only where the trader spoke one', () => {
-    // An expense IS its amount — "nimelipa 5000 umeme" has no ledger to look it
-    // up in, so the model repeating what was said is the only way. That is
-    // transcription, not arithmetic, and it is confirmed before it is written.
-    const withMoney = [...TOOL_FIELDS.entries()]
-      .filter(([, fields]) => fields.some((field) => /amount|cost|price$/.test(field)))
+  it('lets a figure through only as the trader’s words plus a checkable candidate', () => {
+    // Stage B's central bargain. "Nimemlipa Musa laki tatu" has no ledger to
+    // look the number up in, so the words must travel — but they travel as
+    // words, and every candidate beside them is re-derived by the server from
+    // those same words before anything is written.
+    const spoken = [...TOOL_FIELDS.entries()]
+      .filter(([, fields]) => fields.includes('amount_wording'))
       .map(([name]) => name)
       .sort();
-    expect(withMoney).toEqual(['propose_daily_record', 'propose_product_cost']);
+    expect(spoken).toEqual(['propose_business_event', 'propose_money_event']);
+    for (const name of spoken) {
+      const fields = TOOL_FIELDS.get(name)!;
+      // A candidate may never appear without the wording that justifies it.
+      expect(fields, `${name} sends a candidate with no wording`).toContain('amount_candidate');
+      expect(fields, `${name} carries a bare amount`).not.toContain('amount');
+    }
+    // propose_product_cost is the one place the trader is deliberately SETTING
+    // a cost, which is a statement of fact about their own business.
+    expect(TOOL_FIELDS.get('propose_product_cost')).toContain('unit_cost');
+  });
+
+  it('reads the amount from the wording, never from the model’s number', () => {
+    // MEASURED: "Asha amelipa nusu ya 24000" reached the model as quantity 1.
+    // A contract that trusted the candidate would have written it.
+    expect(readAmount('laki tatu', 300000)).toMatchObject({ kind: 'value', value: 300000 });
+    expect(readAmount('laki tatu', 3)).toMatchObject({ kind: 'ask', reason: 'disagreement' });
+    // A number nobody said is not a number.
+    expect(readAmount(null, 500000)).toMatchObject({ kind: 'ask' });
+    expect(readAmount(null, null)).toMatchObject({ kind: 'absent' });
+  });
+
+  it('never turns an unrecognised payment word into cash', () => {
+    // MEASURED: "tigopesa" was recorded as cash, because the model was handed a
+    // four-value enum and no field for the word.
+    expect(canonicalPaymentWording('tigopesa')).toMatchObject({ kind: 'method', method: 'mobile_money' });
+    expect(canonicalPaymentWording('mixx')).toMatchObject({ kind: 'method', method: 'mobile_money' });
+    expect(canonicalPaymentWording('kwa deni')).toMatchObject({ kind: 'credit' });
+    // The whole point: an unknown word asks rather than picking.
+    expect(canonicalPaymentWording('bitcoin')).toMatchObject({ kind: 'ask' });
+    expect(canonicalPaymentWording(null)).toMatchObject({ kind: 'absent' });
   });
 
   it('never lets the model compute a derived figure', () => {

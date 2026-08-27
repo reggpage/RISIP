@@ -53,11 +53,25 @@ describe('Risip conversational AI core', () => {
     expect(ASSISTANT_TOOL_NAMES).not.toContain('reverse_receipt');
     expect(ASSISTANT_TOOL_NAMES).not.toContain('void_daily_record');
     expect(ASSISTANT_TOOLS.every((tool) => tool.input_schema)).toBe(true);
+    // MEASURED PROVIDER LIMIT. Anthropic compiles a strict tool schema into a
+    // grammar and refused the Stage B contract twice: first "too many
+    // parameters with union types", then "Schema is too complex" — a budget
+    // shared across every strict tool in the request. Removing the unions to
+    // fit was worse than the disease: asked for an empty string instead of
+    // null, the model leaked tool-call scaffolding into party_wording and
+    // invented an amount_candidate of 30000 beside it.
+    //
+    // So the wide tools are not strict, and validateBusinessEvent is the
+    // boundary instead. It was always the boundary; constrained decoding was
+    // never what made this safe.
     expect(ASSISTANT_TOOLS.filter((tool) => tool.strict).map((tool) => tool.name)).toEqual([
       'propose_product_cost',
-      'propose_catalogue_transaction',
-      'propose_daily_record',
     ]);
+    for (const wide of ['propose_business_event', 'propose_money_event']) {
+      const definition = ASSISTANT_TOOLS.find((tool) => tool.name === wide);
+      // additionalProperties stays false even without constrained decoding.
+      expect((definition?.input_schema as { additionalProperties?: boolean }).additionalProperties).toBe(false);
+    }
     const serializedSchemas = JSON.stringify(ASSISTANT_TOOLS.map((tool) => tool.input_schema));
     for (const unsupported of ['minLength', 'maxLength', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'minItems', 'maxItems', 'pattern']) {
       expect(serializedSchemas).not.toContain(`\"${unsupported}\"`);

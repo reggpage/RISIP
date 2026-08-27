@@ -22,7 +22,7 @@
  * them, and a telemetry label that lies is worse than one that says less.
  */
 export const PROMPT_VERSION = 'risip-agent-v1';
-export const TOOL_SCHEMA_VERSION = 'tools-stage-a';
+export const TOOL_SCHEMA_VERSION = 'tools-stage-b';
 
 /**
  * What the assistant was asked to do, derived from the tool it actually called.
@@ -64,6 +64,7 @@ const TOOL_INTENT: Record<string, SemanticIntent> = {
   get_pending_approvals: 'approvals_query',
   get_stock_on_hand: 'stock_query',
   search_risip_help: 'help',
+  get_supplier_payables: 'payables_query',
   propose_product_cost: 'product_cost_setup',
 };
 
@@ -75,6 +76,10 @@ const KIND_INTENT: Record<string, SemanticIntent> = {
   stock_purchase: 'stock_purchase',
   customer_payment: 'customer_payment',
   supplier_payable: 'supplier_credit_purchase',
+  // Stage B says these in full rather than through a legacy alias.
+  credit_sale: 'credit_sale',
+  supplier_credit_purchase: 'supplier_credit_purchase',
+  stock_count: 'stock_count',
   supplier_payment: 'supplier_payment',
   stock_loss: 'stock_loss',
   owner_use: 'owner_use',
@@ -96,7 +101,8 @@ export function semanticIntentOf(
   const name = String(toolName ?? '').trim();
   if (!name) return 'no_tool';
 
-  if (name === 'propose_daily_record' || name === 'propose_catalogue_transaction') {
+  if (name === 'propose_daily_record' || name === 'propose_catalogue_transaction'
+    || name === 'propose_business_event' || name === 'propose_money_event') {
     const kind = String(toolInput?.kind ?? '').trim();
     return KIND_INTENT[kind] ?? 'unknown';
   }

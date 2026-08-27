@@ -197,7 +197,22 @@ import {
   setupSaleUnits,
   type ProductSetupPending,
 } from '../_shared/whatsappProductSetup.ts';
-import { extractPaymentMethod, parsePaymentMethodAnswer } from '../_shared/whatsappPaymentMethod.ts';
+import {
+  canonicalPaymentWording,
+  extractPaymentMethod,
+  parsePaymentMethodAnswer,
+  paymentWordingQuestion,
+} from '../_shared/whatsappPaymentMethod.ts';
+// STAGE B — the wide language contract. The model sends the trader's words;
+// these decide what they are worth.
+import {
+  numberQuestion,
+  validateBusinessEvent,
+  validateMoneyEvent,
+} from '../_shared/whatsappBusinessEvent.ts';
+import type { ValidatedBusinessEvent } from '../_shared/whatsappBusinessEvent.ts';
+import type { DailyRecordPaymentMethod } from '../_shared/whatsappDailyRecords.ts';
+import type { WholeAnimalPaymentMethod } from '../_shared/whatsappWholeAnimalProcurement.ts';
 import {
   PROMPT_VERSION,
   TOOL_SCHEMA_VERSION,
@@ -2472,6 +2487,533 @@ function invoiceLineItemLabels(value: unknown): string[] {
   }).filter(Boolean);
 }
 
+/**
+ * STAGE B — the language contract's executor.
+ *
+ * The model sends the trader's words. Everything that decides money or stock
+ * happens here: the amount is normalized from the wording rather than taken
+ * from the model's number, the payment word is canonicalized by the table that
+ * has always known "tigopesa", the date wording goes to the same resolver the
+ * deterministic path already uses, and the product is resolved against this
+ * company's catalogue.
+ *
+ * Dispatch, not reimplementation. Every kind ends in the same draft creator the
+ * deterministic parsers have always ended in, so nothing about how a record is
+ * written, priced or confirmed changes here.
+ */
+async function pendingDraftState(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  dailyRecordId: string,
+  waMessageId: string,
+  record: ParsedDailyRecord,
+): Promise<void> {
+  const state: DailyRecordConversation = {
+    kind: 'daily_record_confirmation',
+    dailyRecordId,
+    sourceMessageId: waMessageId,
+    record,
+  };
+  await db.from('whatsapp_conversations').upsert({
+    identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+    awaiting: 'payment_source', receipt_id: null, options: state,
+    expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+  }, { onConflict: 'identity_id' });
+}
+
+/** A question the shop must answer before anything can be drafted. */
+const askBack = (question: string): AssistantToolExecution =>
+  ({ content: question, isError: true, terminalReply: question });
+
+/**
+ * The payment method, decided here and never by the model.
+ *
+ * MEASURED FAILURE, Stage A.1 case 9180: "nimeuza soseji 12 kwa tigopesa" was
+ * recorded as CASH. The model had a four-value enum and no field for the word,
+ * so a Tanzanian mobile-money brand became physical cash — and because nothing
+ * kept "tigopesa", no report and no human could ever have caught it. An
+ * unrecognised word is now asked about, never defaulted.
+ */
+function decidePayment(
+  wording: string | null,
+  lang: Lang,
+  declaredMissing: boolean,
+): { ok: true; method: DailyRecordPaymentMethod | null } | { ok: false; question: string } {
+  const reading = canonicalPaymentWording(wording);
+  if (reading.kind === 'absent' || reading.kind === 'credit') return { ok: true, method: null };
+  if (reading.kind === 'method') return { ok: true, method: reading.method };
+  // MEASURED: on "wiki iliyopita nililipa umeme 30000" the model put the verb
+  // "kulipa" in payment_wording and listed payment_method as missing in the
+  // same call. Asking which channel "kulipa" was would be a question about the
+  // model's own slip. Its own signal that nothing was stated settles it, and
+  // null is the honest value — never cash.
+  if (declaredMissing) return { ok: true, method: null };
+  return { ok: false, question: paymentWordingQuestion(reading.said, lang) };
+}
+
+/** The occurrence date, from the trader's wording via the existing resolver. */
+function decideDate(
+  wording: string | null,
+  lang: Lang,
+): { ok: true; occurredAt: string | null } | { ok: false; question: string } {
+  const resolved = resolveTransactionDate(wording ?? undefined);
+  if (resolved.kind === 'invalid') return { ok: false, question: transactionDateQuestion(resolved.reason, lang) };
+  return { ok: true, occurredAt: resolved.occurredAt };
+}
+
+/** jumla and rejareja, mapped by the server. The model never sends a band. */
+function bandFromWording(wording: string | null): Band | null {
+  const said = String(wording ?? '').toLowerCase();
+  if (!said) return null;
+  if (/\b(jumla|wholesale|bulk)\b/u.test(said)) return 'wholesale';
+  if (/\b(rejareja|reja|retail|kawaida)\b/u.test(said)) return 'retail';
+  return null;
+}
+
+/** Every line must have a quantity the server could read for itself. */
+function decideQuantities(
+  event: ValidatedBusinessEvent,
+  lang: Lang,
+): { ok: true; quantities: number[] } | { ok: false; question: string } {
+  const quantities: number[] = [];
+  for (const line of event.lines) {
+    if (line.quantity.kind === 'value') { quantities.push(line.quantity.value); continue; }
+    if (line.quantity.kind === 'ask') return { ok: false, question: numberQuestion('quantity', line.quantity, lang) };
+    return {
+      ok: false,
+      question: lang === 'sw'
+        ? `Umesema *${line.productWording}* lakini hujasema idadi. Ni ngapi?`
+        : `You mentioned *${line.productWording}* but not how many. How many?`,
+    };
+  }
+  return { ok: true, quantities };
+}
+
+async function executeBusinessEvent(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  waMessageId: string,
+  lang: Lang,
+  input: Record<string, unknown>,
+  said?: string,
+): Promise<AssistantToolExecution> {
+  const notUnderstood = lang === 'sw'
+    ? 'Sijaelewa bidhaa, idadi au kipimo kwa uhakika. Niandikie bidhaa na idadi yake.'
+    : 'I could not safely understand the product, quantity or unit. State the product and its quantity.';
+  const notSaved = lang === 'sw'
+    ? 'Sikuweza kuhifadhi draft hii. Hakuna rekodi iliyothibitishwa; jaribu tena.'
+    : 'I could not save this draft. Nothing was confirmed; please try again.';
+
+  const event = validateBusinessEvent(input);
+  if (!event) return askBack(notUnderstood);
+
+  const date = decideDate(event.occurredAtWording, lang);
+  if (!date.ok) return askBack(date.question);
+  const payment = decidePayment(event.paymentWording, lang, event.missingFields.includes('payment_method'));
+  if (!payment.ok) return askBack(payment.question);
+  // Credit and a payment channel are mutually exclusive facts. The credit
+  // wording wins over any channel the model may also have sent.
+  const paymentMethod = event.creditWording ? null : payment.method;
+
+  // ── a sale, or a customer taking goods on credit ─────────────────────────
+  if (event.kind === 'sale' || event.kind === 'credit_sale') {
+    const quantities = decideQuantities(event, lang);
+    if (!quantities.ok) return askBack(quantities.question);
+    const sale: QuantitySale = {
+      kind: 'quantity_sale',
+      items: event.lines.map((line, index) => ({
+        product: line.productWording,
+        quantity: quantities.quantities[index],
+        spokenUnit: line.unitWording,
+        // The band the SHOP said, mapped by the server. The model sends the
+        // word; it never sends a band and never sends a price.
+        band: bandFromWording(event.priceBandWording),
+      })),
+      // Money out at the foot of a closing paste. A single business event
+      // never carries them; propose_money_event is where an expense lives.
+      expenses: [],
+    };
+    const credit = event.kind === 'credit_sale'
+      ? { partyName: event.partyWording ?? null, wording: event.creditWording ?? null }
+      : null;
+    const priced = await priceQuantitySale(
+      db, identity, sale, lang, [], credit as never, date.occurredAt,
+    );
+    if (priced.kind === 'blocked') return askBack(priced.message);
+    if (priced.kind === 'unknown') {
+      const list = priced.products.map((product) => `*${product}*`).join(', ');
+      return askBack(lang === 'sw'
+        ? `Sijapata ${list} kwenye bidhaa za biashara hii. Sajili bidhaa hiyo kwanza au taja jina lake lililosajiliwa.`
+        : `I could not find ${list} in this business catalogue. Register it first or use its registered name.`);
+    }
+    if (priced.kind === 'band') {
+      // MEASURED REGRESSION, twice: "nimeuza nguvu ya sala 7 jumla" was asked
+      // which band it wanted, by a sentence that had already said. The word is
+      // mapped here; only an absent or unmapped band reaches the question.
+      const chosen = bandFromWording(event.priceBandWording);
+      const state: PriceBandPending = {
+        kind: 'price_band_choice', sale: priced.sale, choices: priced.choices,
+        answered: priced.choices.map(() => chosen), sourceMessageId: waMessageId,
+        credit: credit as never, paymentMethod, occurredAt: date.occurredAt,
+      };
+      await db.from('whatsapp_conversations').upsert({
+        identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+        awaiting: 'product_cost', receipt_id: null, options: state,
+        expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+      }, { onConflict: 'identity_id' });
+      const question = priceBandQuestion(priced.choices, lang);
+      return { content: question, terminalReply: question };
+    }
+    if (priced.kind !== 'priced') return askBack(notUnderstood);
+
+    const saleRecord = paymentMethod ? { ...priced.record, paymentMethod } : priced.record;
+    const guardedSale = await addHistoricalPriceWarnings(db, identity.company_id, saleRecord);
+    const createdSale = await createDailyRecordDraft(db, identity, waMessageId, guardedSale, lang, said);
+    if (createdSale.error || !createdSale.id) return askBack(notSaved);
+    await pendingDraftState(db, identity, createdSale.id, waMessageId, guardedSale);
+    const confirmation = `${identity.company_name} — ${quantitySaleConfirmation(priced.lines, lang, [], priced.notCounted)}`;
+    return { content: confirmation, terminalReply: confirmation };
+  }
+
+  // ── goods taken from a supplier on credit ────────────────────────────────
+  if (event.kind === 'supplier_credit_purchase') {
+    const supplierName = event.supplierWording ?? event.partyWording;
+    if (!supplierName) {
+      return askBack(lang === 'sw'
+        ? 'Umechukua mzigo kwa deni — lakini kwa nani? Taja jina la msambazaji.'
+        : 'Goods taken on credit — but from whom? Name the supplier.');
+    }
+    const quantities = decideQuantities(event, lang);
+    if (!quantities.ok) return askBack(quantities.question);
+    if (event.amount.kind === 'ask') return askBack(numberQuestion('amount', event.amount, lang));
+    const purchase: SupplierCreditPurchase = {
+      supplierName,
+      // Null is honest. A shop that says "nimechukua kilo 200 kwa deni" has not
+      // said what it will owe, and the payable is settled when the invoice is.
+      amount: event.amount.kind === 'value' ? event.amount.value : null,
+      lines: event.lines.map((line, index) => ({
+        description: line.productWording,
+        quantity: quantities.quantities[index],
+        unit: line.unitWording,
+      })),
+    };
+    const created = await createSupplierCreditPurchaseDraft(db, identity, waMessageId, purchase, date.occurredAt);
+    if (created.clarification) return askBack(created.clarification);
+    if (created.error || !created.id || !created.record) {
+      return askBack(lang === 'sw'
+        ? 'Sikuweza kuhifadhi draft ya mzigo huu wa deni. Hakuna kitu kilichothibitishwa.'
+        : 'I could not save this supplier credit draft. Nothing was confirmed.');
+    }
+    await pendingDraftState(db, identity, created.id, waMessageId, created.record);
+    const confirmation = buildDailyRecordConfirmation(created.record, lang);
+    return { content: confirmation, terminalReply: confirmation };
+  }
+
+  // ── spoilage, and stock the owner took home ──────────────────────────────
+  if (event.kind === 'stock_loss' || event.kind === 'owner_use') {
+    const quantities = decideQuantities(event, lang);
+    if (!quantities.ok) return askBack(quantities.question);
+    const line = event.lines[0];
+    const found = await resolveProductForRead(db, identity, line.productWording);
+    if (found.error || found.resolution.kind !== 'matched') {
+      // Subtracting the wrong product is worse than subtracting nothing.
+      return askBack(found.resolution.kind === 'ambiguous'
+        ? (lang === 'sw'
+          ? `Sina uhakika ni bidhaa ipi: ${found.resolution.candidates.map((candidate) => `*${candidate.productName}*`).join(', ')}. Itaje kwa jina kamili.`
+          : `I am not sure which product this is: ${found.resolution.candidates.map((candidate) => `*${candidate.productName}*`).join(', ')}. Name it in full.`)
+        : (lang === 'sw'
+          ? `Sina *${line.productWording}* kwenye bidhaa zako, kwa hiyo siwezi kuipunguza kwenye stock.`
+          : `I do not have *${line.productWording}* among your products, so I cannot take it off your stock.`));
+    }
+    const match = found.resolution.match;
+    const { data: costRows } = await db.rpc('wa_product_pricing', {
+      p_company_id: identity.company_id, p_product_keys: [match.productKey],
+    });
+    const rawCost = Number(((costRows ?? []) as Array<Record<string, unknown>>)[0]?.unit_cost ?? 0);
+    // product_costs enforces unit_cost > 0, so anything else means this shop
+    // has never said what the product costs. The loss is still real.
+    const unitCost = Number.isFinite(rawCost) && rawCost > 0 ? rawCost : null;
+    const quantity = quantities.quantities[0];
+    const value = unitCost === null ? null : Math.round(unitCost * quantity * 100) / 100;
+    const record: ParsedDailyRecord = {
+      kind: event.kind,
+      // Zero means "not valued", reachable only when the cost engine returned
+      // nothing. Reporting counts these apart so nothing calls a loss free.
+      amount: value ?? 0,
+      partyName: null,
+      description: null,
+      lines: [{
+        description: match.productName,
+        quantity,
+        unit_amount: unitCost ?? 0,
+        ...(line.unitWording ? { unit: line.unitWording } : {}),
+      }],
+      confidence: 0.99,
+      ...(event.kind === 'stock_loss' ? { lossReason: event.lossReasonWording ?? null } : {}),
+    };
+    const created = await createDailyRecordDraft(db, identity, waMessageId, record, lang, said);
+    if (created.error || !created.id) return askBack(notSaved);
+    await pendingDraftState(db, identity, created.id, waMessageId, record);
+    const reading = {
+      kind: event.kind, product: match.productName, quantity,
+      unit: line.unitWording, reason: event.lossReasonWording ?? '',
+    };
+    const confirmation = event.kind === 'stock_loss'
+      ? stockLossConfirmation(reading as never, match.productName, value, lang)
+      : ownerUseConfirmation(reading as never, match.productName, value, lang);
+    return { content: confirmation, terminalReply: confirmation };
+  }
+
+  // ── stock arriving, paid for ─────────────────────────────────────────────
+  if (event.kind === 'stock_purchase') {
+    const quantities = decideQuantities(event, lang);
+    if (!quantities.ok) return askBack(quantities.question);
+    if (event.amount.kind === 'ask') return askBack(numberQuestion('amount', event.amount, lang));
+    if (event.amount.kind === 'absent') {
+      return askBack(lang === 'sw'
+        ? 'Umeingiza mzigo — ulilipa kiasi gani? Niandikie kwa tarakimu.'
+        : 'Stock came in — how much did you pay? Write it in digits.');
+    }
+    const total = event.amount.value;
+    const count = event.lines.length;
+    const record: ParsedDailyRecord = {
+      kind: 'stock_purchase',
+      amount: total,
+      partyName: event.supplierWording ?? event.partyWording ?? null,
+      description: null,
+      lines: event.lines.map((line, index) => ({
+        description: line.productWording,
+        quantity: quantities.quantities[index],
+        // The shop stated one total for the load. Splitting it is the server's
+        // arithmetic, never the model's.
+        unit_amount: Math.round((total / count / quantities.quantities[index]) * 100) / 100,
+        ...(line.unitWording ? { unit: line.unitWording } : {}),
+      })),
+      confidence: 0.95,
+      ...(paymentMethod ? { paymentMethod } : {}),
+    };
+    const created = await createDailyRecordDraft(db, identity, waMessageId, record, lang, said);
+    if (created.error || !created.id) return askBack(notSaved);
+    await pendingDraftState(db, identity, created.id, waMessageId, record);
+    const confirmation = buildDailyRecordConfirmation(record, lang);
+    return { content: confirmation, terminalReply: confirmation };
+  }
+
+  // ── buying a live animal ─────────────────────────────────────────────────
+  if (event.kind === 'whole_animal_procurement') {
+    if (event.amount.kind === 'ask') return askBack(numberQuestion('amount', event.amount, lang));
+    if (event.amount.kind === 'absent') {
+      return askBack(lang === 'sw'
+        ? 'Umenunua mnyama — kwa bei gani? Niandikie kwa tarakimu.'
+        : 'You bought an animal — for how much? Write it in digits.');
+    }
+    // The animal is its own line — "ngombe", "wawili" — so it is counted by the
+    // same reader as everything else rather than by a second pair of fields.
+    const animalLine = event.lines[0];
+    if (animalLine.quantity.kind === 'ask') return askBack(numberQuestion('animal_count', animalLine.quantity, lang));
+    const animalCount = animalLine.quantity.kind === 'value' ? animalLine.quantity.value : 1;
+    const supplierName = event.supplierWording ?? event.partyWording ?? null;
+    const { data: procurementId, error: procurementError } = await db.rpc(
+      'wa_create_whole_animal_procurement_draft',
+      {
+        p_profile_id: identity.profile_id,
+        p_company_id: identity.company_id,
+        p_animal_type: "ng'ombe",
+        p_animal_count: animalCount,
+        p_purchase_total: event.amount.value,
+        p_supplier_name: supplierName,
+        p_payment_method: paymentMethod,
+        p_occurred_at: date.occurredAt ?? new Date().toISOString(),
+        p_source_message_id: waMessageId,
+        p_reference: null,
+        p_note: animalLine.productWording,
+      },
+    );
+    if (procurementError || !procurementId) {
+      return askBack(lang === 'sw'
+        ? "Sikuweza kuhifadhi draft ya ununuzi huu. Hakuna stock ya nyama iliyoongezwa; jaribu tena."
+        : 'I could not save this procurement draft. No meat stock was added; please try again.');
+    }
+    const record: ParsedDailyRecord = {
+      kind: 'whole_animal_procurement',
+      amount: event.amount.value,
+      partyName: supplierName,
+      description: animalLine.productWording,
+      // A whole animal has no product lines on purpose: the kilograms and offal
+      // do not exist as stock until a measured breakdown says they do.
+      lines: [],
+      confidence: 0.95,
+    };
+    await pendingDraftState(db, identity, String(procurementId), waMessageId, record);
+    const confirmation = wholeAnimalProcurementConfirmation({
+      animalType: "ng'ombe", animalCount, purchaseTotal: event.amount.value,
+      supplierName,
+      paymentMethod: paymentMethod as WholeAnimalPaymentMethod | null,
+      reference: null, note: animalLine.productWording,
+    }, date.occurredAt, lang);
+    return { content: confirmation, terminalReply: confirmation };
+  }
+
+  // ── butchering it ────────────────────────────────────────────────────────
+  if (event.kind === 'whole_animal_breakdown') {
+    const quantities = decideQuantities(event, lang);
+    if (!quantities.ok) return askBack(quantities.question);
+    const outputs: WholeAnimalBreakdownOutput[] = event.lines.map((line, index) => ({
+      productName: line.productWording,
+      quantity: quantities.quantities[index],
+      unit: line.unitWording ?? 'kilo',
+    }));
+    const reading = {
+      kind: 'parsed' as const,
+      source: { relativeDate: null, purchaseTotal: null },
+      outputs,
+    };
+    const allSources = await listWholeAnimalBreakdownSources(db, identity);
+    const sources = breakdownCandidatesFor(allSources, reading, said ?? '');
+    if (sources.length === 0) {
+      return askBack(lang === 'sw'
+        ? "Sina procurement ya ng'ombe iliyothibitishwa na ambayo bado haijavunjwa. Thibitisha ununuzi kwanza; hakuna stock iliyoongezwa."
+        : 'I found no confirmed whole-animal procurement still available for breakdown. Confirm the purchase first; no stock was added.');
+    }
+    if (sources.length > 1) {
+      // Allocating one carcass's cost to another silently misprices every kilo
+      // that came off both.
+      const selection: WholeAnimalBreakdownSourceSelection = {
+        kind: 'whole_animal_breakdown_source_selection',
+        sourceMessageId: waMessageId, outputs, candidates: sources,
+      };
+      await db.from('whatsapp_conversations').upsert({
+        identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+        awaiting: 'payment_source', receipt_id: null, options: selection,
+        expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+      }, { onConflict: 'identity_id' });
+      const question = wholeAnimalSourceQuestion(sources, lang);
+      return { content: question, terminalReply: question };
+    }
+    const result = await createWholeAnimalBreakdownDraft(db, identity, reading, sources[0], waMessageId);
+    if (result.clarification) return askBack(result.clarification);
+    if (result.error || !result.id) {
+      return askBack(lang === 'sw'
+        ? 'Sikuweza kuhifadhi breakdown hii. Hakuna stock ya nyama iliyoongezwa; jaribu tena.'
+        : 'I could not save this breakdown. No meat stock was added; please try again.');
+    }
+    const breakdownState: WholeAnimalBreakdownConfirmationState = {
+      kind: 'whole_animal_breakdown_confirmation',
+      dailyRecordId: result.id, sourceMessageId: waMessageId, outputs: result.outputs,
+    };
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+      awaiting: 'payment_source', receipt_id: null, options: breakdownState,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+    const confirmation = wholeAnimalBreakdownConfirmation(result.outputs, lang);
+    return { content: confirmation, terminalReply: confirmation };
+  }
+
+  // ── counting what is actually on the shelf ───────────────────────────────
+  if (event.kind === 'stock_count') {
+    const quantities = decideQuantities(event, lang);
+    if (!quantities.ok) return askBack(quantities.question);
+    const stockBatch: StockCountBatch = {
+      kind: 'stock_count_batch',
+      counts: event.lines.map((line, index) => ({
+        product: line.productWording,
+        quantity: quantities.quantities[index],
+        unit: line.unitWording ?? null,
+      })),
+      unreadable: [],
+    };
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+      awaiting: 'product_cost', receipt_id: null, options: stockBatch,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+    const confirmation = stockCountBatchConfirmation(stockBatch, lang);
+    return { content: confirmation, terminalReply: confirmation };
+  }
+
+  return askBack(notUnderstood);
+}
+
+async function executeMoneyEvent(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  waMessageId: string,
+  lang: Lang,
+  input: Record<string, unknown>,
+  said?: string,
+): Promise<AssistantToolExecution> {
+  const event = validateMoneyEvent(input);
+  if (!event) {
+    return askBack(lang === 'sw'
+      ? 'Sijaelewa kiasi na aina ya rekodi. Taja ni malipo ya nini na kiasi kwa tarakimu.'
+      : 'I could not understand the amount or the kind of record. Say what the money was for, and the amount in digits.');
+  }
+
+  const date = decideDate(event.occurredAtWording, lang);
+  if (!date.ok) return askBack(date.question);
+  const payment = decidePayment(event.paymentWording, lang, event.missingFields.includes('payment_method'));
+  if (!payment.ok) return askBack(payment.question);
+
+  if (event.amount.kind === 'ask') return askBack(numberQuestion('amount', event.amount, lang));
+  if (event.amount.kind === 'absent') {
+    return askBack(lang === 'sw'
+      ? 'Hujasema kiasi. Ni shilingi ngapi?'
+      : 'You did not say the amount. How many shillings?');
+  }
+  const amount = event.amount.value;
+
+  // ── money out, to a supplier ─────────────────────────────────────────────
+  if (event.kind === 'supplier_payment') {
+    const supplierName = event.partyWording;
+    if (!supplierName) {
+      return askBack(lang === 'sw'
+        ? 'Umelipa kiasi hicho kwa msambazaji yupi? Taja jina lake.'
+        : 'Which supplier did you pay? Name them.');
+    }
+    // The RPC requires a channel. "Other" is the honest value when the shop did
+    // not say, and it never claims the money was cash.
+    const method = (payment.method ?? 'other') as SupplierPayment['paymentMethod'];
+    const created = await createSupplierPaymentDraft(
+      db, identity, waMessageId, { supplierName, amount, paymentMethod: method }, date.occurredAt,
+    );
+    const hint = String((created.error as { hint?: string } | null)?.hint ?? '');
+    if (created.error || !created.id || !created.record) {
+      return askBack(hint === 'supplier_overpayment'
+        ? (lang === 'sw'
+          ? `Malipo ya TSh ${amount.toLocaleString('en-US')} yanazidi deni la ${supplierName}. Siwezi kuunda advance bila sera ya supplier prepayment.`
+          : `That payment exceeds ${supplierName}'s outstanding balance. I cannot create a supplier advance without an explicit policy.`)
+        : (lang === 'sw'
+          ? 'Sikuweza kuhifadhi draft ya malipo haya. Hakiki msambazaji, kiasi na njia ya malipo.'
+          : 'I could not save this payment draft. Please check the supplier, amount, and payment method.'));
+    }
+    await pendingDraftState(db, identity, created.id, waMessageId, created.record);
+    const confirmation = supplierPaymentConfirmation({ supplierName, amount, paymentMethod: method }, lang);
+    return { content: confirmation, terminalReply: confirmation };
+  }
+
+  // ── an expense, or a customer clearing their debt ────────────────────────
+  const record: ParsedDailyRecord = {
+    kind: event.kind,
+    amount,
+    partyName: event.partyWording,
+    description: event.descriptionWording,
+    lines: [],
+    confidence: 0.95,
+    ...(payment.method ? { paymentMethod: payment.method } : {}),
+  };
+  const guarded = await addHistoricalPriceWarnings(db, identity.company_id, record);
+  const created = await createDailyRecordDraft(db, identity, waMessageId, guarded, lang, said);
+  if (created.error || !created.id) {
+    return askBack(lang === 'sw'
+      ? 'Sikuweza kuhifadhi draft hii. Hakuna rekodi iliyothibitishwa; jaribu tena.'
+      : 'I could not save this draft. Nothing was confirmed; please try again.');
+  }
+  await pendingDraftState(db, identity, created.id, waMessageId, guarded);
+  const confirmation = buildDailyRecordConfirmation(guarded, lang);
+  return { content: confirmation, terminalReply: confirmation };
+}
+
 async function executeAssistantTool(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
@@ -2848,6 +3390,19 @@ async function executeAssistantTool(
       lang,
     );
     return { content: confirmation, terminalReply: confirmation };
+  }
+  // ── STAGE B ─────────────────────────────────────────────────────────────
+  if (name === 'propose_business_event') {
+    return await executeBusinessEvent(db, identity, waMessageId, lang, input, said);
+  }
+  if (name === 'propose_money_event') {
+    return await executeMoneyEvent(db, identity, waMessageId, lang, input, said);
+  }
+  if (name === 'get_supplier_payables') {
+    // The opposite ledger from get_open_debts. Stage A.1 found every payable
+    // question landing on receivables because no payables tool existed at all.
+    const supplier = typeof input.supplier_wording === 'string' ? input.supplier_wording.trim() : '';
+    return { content: await supplierBalanceReply(db, identity, { supplierName: supplier || null }, lang) };
   }
   if (name === 'propose_catalogue_transaction') {
     const interpreted = validateAiTransactionCandidate(input);

@@ -95,11 +95,21 @@ describe('Phase 5 Part 8 structured transaction boundary', () => {
     expect(validateAiTransactionCandidate(candidate)).toBeNull();
   });
 
-  it('offers a strict schema with no price, amount, total or stock fields', () => {
-    const definition = ASSISTANT_TOOLS.find((tool) => tool.name === 'propose_catalogue_transaction');
-    expect(definition?.strict).toBe(true);
+  it('offers a closed schema with no price, unit price, total or stock fields', () => {
+    // Stage B moved this to propose_business_event. amount_wording is allowed
+    // and amount_candidate with it — a shop that says "nimenunua nyama kilo 80
+    // kwa 640000" stated that number out loud, and the server re-reads the
+    // wording rather than trusting the model's copy of it. Everything the
+    // server must compute for itself stays absent.
+    const definition = ASSISTANT_TOOLS.find((tool) => tool.name === 'propose_business_event');
+    // Not strict: the provider refused the compiled grammar. See assistantCore.
+    expect((definition?.input_schema as { additionalProperties?: boolean }).additionalProperties).toBe(false);
     const schema = JSON.stringify(definition?.input_schema);
-    expect(schema).not.toMatch(/unit_price|unit_amount|total|amount|stock|cogs|product_id/i);
+    expect(schema).not.toMatch(/unit_price|unit_amount|"total"|stock_level|cogs|product_id|product_key|margin|profit/i);
+    const properties = Object.keys((definition?.input_schema as { properties: Record<string, unknown> }).properties);
+    expect(properties).toContain('amount_wording');
+    expect(properties).not.toContain('amount');
+    expect(properties).not.toContain('price');
   });
 });
 

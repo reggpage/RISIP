@@ -101,3 +101,50 @@ export function parsePaymentMethodAnswer(
   }
   return null;
 }
+
+/**
+ * STAGE B — canonicalize a payment phrase the model already extracted.
+ *
+ * MEASURED FAILURE. Stage A.1, case 9180: "nimeuza soseji 12 kwa tigopesa"
+ * arrived as payment_method = "cash". The model had been handed a four-value
+ * enum and no field for the word, so it collapsed a Tanzanian mobile-money
+ * brand into physical cash — and because nothing kept "tigopesa", no report,
+ * no reconciliation and no human reading the ledger could ever have caught it.
+ *
+ * The table above has known tigopesa the whole time. The word simply never
+ * reached it. So the model now sends payment_wording and this decides.
+ *
+ * Different from extractPaymentMethod, which pulls a method OUT of a whole
+ * sentence and requires a sentence to be left behind. This receives a phrase
+ * that is already only about payment, so "cash" alone is a valid input here
+ * where it is deliberately not there.
+ */
+export type PaymentWordingReading =
+  | { kind: 'method'; method: DailyRecordPaymentMethod; said: string }
+  | { kind: 'credit' }
+  | { kind: 'ask'; said: string }
+  | { kind: 'absent' };
+
+export function canonicalPaymentWording(wording: string | null | undefined): PaymentWordingReading {
+  const said = clean(wording);
+  if (!said) return { kind: 'absent' };
+  // Credit is not a way of being paid. It has its own accounting meaning and
+  // must leave payment_method NULL rather than pick a channel.
+  if (statesCredit(said)) return { kind: 'credit' };
+
+  for (const { re, method } of PATTERNS) {
+    const match = re.exec(said);
+    if (match) return { kind: 'method', method, said: clean(match[0]) };
+  }
+  // An unrecognised word never becomes cash. A shop paid through something
+  // this table has not learned yet gets asked, and the answer is a word worth
+  // adding — deliberately, once, not guessed every time it appears.
+  return { kind: 'ask', said };
+}
+
+/** What to ask when a payment word is not recognised. */
+export function paymentWordingQuestion(said: string, lang: 'sw' | 'en'): string {
+  return lang === 'sw'
+    ? `Sijaelewa *${said}* ni njia gani ya malipo. Ni *cash*, *mpesa/tigopesa/airtel*, au *benki*?`
+    : `I do not recognise *${said}* as a payment method. Was it *cash*, *mobile money*, or *bank*?`;
+}

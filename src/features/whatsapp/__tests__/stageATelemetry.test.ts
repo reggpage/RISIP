@@ -158,7 +158,7 @@ describe('telemetry never costs a shop its answer', () => {
 
   it('records a version so a later regression can be attributed', () => {
     expect(PROMPT_VERSION).toBe('risip-agent-v1');
-    expect(TOOL_SCHEMA_VERSION).toBe('tools-stage-a');
+    expect(TOOL_SCHEMA_VERSION).toBe('tools-stage-b');
     expect(webhook).toContain('p_prompt_version: PROMPT_VERSION');
     expect(webhook).toContain('p_tool_schema_version: TOOL_SCHEMA_VERSION');
   });
@@ -187,12 +187,23 @@ describe('Stage A changed no behaviour', () => {
     expect(webhook).toContain("&& !isDailyRecordConfirmation(body ?? '')");
   });
 
-  it('left the tool list at twenty', () => {
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(20);
-    expect(ASSISTANT_TOOLS.length).toBeGreaterThan(10);
+  it('kept the surface bounded when Stage B widened it', () => {
+    // Stage A froze this at twenty because Stage A changed nothing. Stage B
+    // widened the LANGUAGE contract deliberately: three tools added, and the
+    // two they supersede hidden from the model but kept as executors.
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(23);
+    const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
+    expect(shown).toContain('propose_business_event');
+    expect(shown).toContain('propose_money_event');
+    expect(shown).toContain('get_supplier_payables');
+    expect(shown).not.toContain('propose_catalogue_transaction');
+    expect(shown).not.toContain('propose_daily_record');
   });
 
   it('added no financial authority to any tool', () => {
+    // Stage B added amount_wording and amount_candidate, which are the trader's
+    // words and the model's reading of them. Neither is authority: the server
+    // normalizes the wording itself and a disagreement becomes a question.
     // Stage A is instrumentation. If a proposing tool grew a price field here,
     // that would be Stage B arriving by accident.
     const json = JSON.stringify(ASSISTANT_TOOLS);
