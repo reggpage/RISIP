@@ -168,7 +168,11 @@ describe('telemetry never costs a shop its answer', () => {
 
 describe('the four outcomes are distinguishable', () => {
   it('separates an empty model from a provider failure from a budget block', () => {
-    expect(webhook).toContain("await recordInterpretation('fallback', 'model_empty');");
+    // MEASURED: an adviser answer refused for quoting a figure no tool returned
+    // was landing in this row as 'model_empty' — a different fault with a
+    // different fix, hidden behind the same word. The class decides it now.
+    expect(webhook).toContain("? 'model_reply_deferred_for_safety'");
+    expect(webhook).toContain(": 'model_empty');");
     expect(webhook).toContain("await recordInterpretation('provider_failed',");
     expect(webhook).toContain("p_backend_outcome: 'budget_blocked'");
     // "Fallback" on its own is the answer that hid a dead API for a day.

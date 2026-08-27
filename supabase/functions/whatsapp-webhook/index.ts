@@ -6988,7 +6988,14 @@ Deno.serve(async (req) => {
               assistantCameBackEmpty = true;
               aiFailureClass = classifyAssistantFailure(assistantFailure);
               messageRoute = 'ai_outage_fallback';
-              await recordInterpretation('fallback', 'model_empty');
+              // MEASURED: an adviser answer refused for quoting a figure no
+              // tool returned was logged as 'model_empty' — a different fault
+              // with a different fix. The class decides the row now, so a guard
+              // that is too strict cannot hide as a quiet model.
+              await recordInterpretation('fallback',
+                aiFailureClass === 'model_invalid_tool'
+                  ? 'model_reply_deferred_for_safety'
+                  : 'model_empty');
               await audit(db, identity, waMessageId, 'conversational_ai', 'empty', 'fallback');
             } else if (assistant && !unsafeRecordProse) {
               await reply(phone, assistant.reply);
@@ -7049,6 +7056,44 @@ Deno.serve(async (req) => {
             } catch { /* telemetry is never allowed to break a message */ }
             await audit(db, identity, waMessageId, 'conversational_ai', 'budget', 'fallback');
           }
+        }
+
+        // THE MODEL WAS TRIED AND COULD NOT FINISH. STOP HERE.
+        //
+        // MEASURED, from the owner's own screen at 20:48. He asked "Naomba
+        // ushauri wa biashara yangu"; telemetry recorded route=ai_outage_fallback,
+        // fallback_reason=model_empty, chosen_tool=get_business_advice, one tool
+        // round, 10.7 seconds. The model called the adviser, received the
+        // figures, and then produced no text. Execution fell through to the
+        // branches below, parseAdvisorRequest matched, and the deterministic MD
+        // brief went out under the assistant's name — headings, emoji and all.
+        //
+        // Removing humanFallback() from inside the assistant was not enough,
+        // and claiming otherwise was wrong. The loop itself was the bigger
+        // fallback: forty-odd deterministic handlers, any of which will happily
+        // answer a message the model has just failed on. The old comment beside
+        // this said "let the deterministic branches below have their turn — one
+        // of them almost always knows", which is exactly the behaviour the
+        // owner rejected. One of them knowing is not the same as Risip having
+        // thought about the question, and a shopkeeper cannot tell them apart.
+        //
+        // The same fall-through is why "Compare today's price and yesterday"
+        // came back as a SALES trend: parseSalesTrendRequest matched the word
+        // "compare" and answered a different question confidently.
+        //
+        // System commands and protocol answers never set aiEligible, so they
+        // still reach their own handlers untouched.
+        if (aiEligible && (conversationalAiBudgetBlock || assistantCameBackEmpty || aiFailureClass !== null)) {
+          await replyQuietly(phone, conversationalAiBudgetBlock
+            ? aiBudgetMessage(lang, conversationalAiBudgetBlock.resetAt, conversationalAiBudgetBlock.reason)
+            : assistantFailureMessage(aiFailureClass ?? 'model_empty', lang));
+          await audit(
+            db, identity, waMessageId, 'conversational_ai',
+            conversationalAiBudgetBlock ? 'budget_block' : (aiFailureClass ?? 'model_empty'),
+            'failed',
+          );
+          await finish('skipped');
+          continue;
         }
 
         // Adding a product is checked before anything records money, because
