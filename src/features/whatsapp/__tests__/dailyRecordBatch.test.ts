@@ -168,7 +168,16 @@ describe('WhatsApp mixed daily-record batches', () => {
     expect(webhook).toContain("db.rpc('wa_create_daily_record_batch_drafts'");
     expect(webhook).toContain("db.rpc('wa_confirm_daily_record_batch'");
     expect(webhook).toContain("db.rpc('wa_cancel_daily_record_batch'");
-    expect(webhook).toContain('const deterministicBatch = body ? parseDailyRecordBatch(body, lang)');
+    // The batch parser still exists and still drafts a mixed message
+    // atomically — as the OUTAGE path. It no longer runs in the eligibility
+    // gate, where it used to take every multi-record message away from the
+    // model before Haiku could decompose it into a sale and a purchase.
+    expect(webhook).toContain('parseDailyRecordBatch');
+    const gate = webhook.slice(
+      webhook.indexOf('const aiEligible = Boolean(body?.trim())'),
+      webhook.indexOf('let messageRoute'),
+    );
+    expect(gate).not.toContain('parseDailyRecordBatch');
     expect(webhook).not.toContain("from('daily_records').update");
   });
 });

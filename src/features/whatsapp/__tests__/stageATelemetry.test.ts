@@ -184,8 +184,11 @@ describe('the four outcomes are distinguishable', () => {
 });
 
 describe('Stage A changed no behaviour', () => {
-  it('left the AI-first gate exactly as it was', () => {
-    expect(webhook).toContain("(!convo || convo.awaiting === 'product_analytics')");
+  it('left the AI-first gate where the routing correction put it', () => {
+    // Stage A froze this line because Stage A changed nothing. The routing
+    // correction moved it deliberately: the parked-conversation blanket became
+    // a narrow "does this answer the question we just asked?".
+    expect(webhook).toContain('&& !answersPendingQuestion(convo, body)');
     expect(webhook).toContain("&& !isDailyRecordConfirmation(body ?? '')");
   });
 

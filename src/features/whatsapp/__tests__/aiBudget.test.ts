@@ -34,7 +34,11 @@ describe('A2 AI fallback budget boundary', () => {
     // What is still kept away from it is the point of this test: a live pending
     // question owns its own answer, and system commands and yes/no must never
     // cost a model call.
-    expect(webhook).toContain("(!convo || convo.awaiting === 'product_analytics')");
+    // A parked conversation no longer holds the NEXT message away from the
+    // model — only a message that actually answers the question it asked does.
+    // A shop asked "Rejareja au jumla?" that instead types "leo nimeuza
+    // shingapi" has changed the subject, and a changed subject is a sentence.
+    expect(webhook).toContain('&& !answersPendingQuestion(convo, body)');
     expect(webhook).toContain("&& !isDailyRecordConfirmation(body ?? '')");
     expect(webhook).toContain("&& !isDailyRecordRejection(body ?? '')");
     expect(webhook).not.toContain('&& !deterministicRecord');

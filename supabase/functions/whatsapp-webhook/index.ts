@@ -210,6 +210,9 @@ import {
   parsePaymentMethodAnswer,
   paymentWordingQuestion,
 } from '../_shared/whatsappPaymentMethod.ts';
+// Who sees a message first: the line between a sentence and a protocol answer.
+import { answersPendingQuestion } from '../_shared/whatsappRouting.ts';
+import type { MessageRoute } from '../_shared/whatsappRouting.ts';
 // STAGE B — the wide language contract. The model sends the trader's words;
 // these decide what they are worth.
 import {
@@ -306,6 +309,7 @@ import {
 } from '../_shared/whatsappCombos.ts';
 import {
   cataloguePrefixResolution,
+  catalogueTokenResolution,
   nearestCatalogueName,
   normalizeProductReadResolution,
   productReadClarification,
@@ -1193,8 +1197,16 @@ async function resolveProductForRead(
   // returns ambiguity when the same prefix names two real products, so this
   // can never turn a partial name into a guess.
   const byPrefix = cataloguePrefixResolution(asked, names);
-  if (!byPrefix) return { resolution, error: false };
-  return { resolution: { ...byPrefix, asked }, error: false };
+  if (byPrefix) return { resolution: { ...byPrefix, asked }, error: false };
+
+  // Last rung before "I do not have that". A trader almost never types a
+  // product's full registered name — they type the word they call it by, and
+  // that word is usually one of the words IN the name. "Antoni" for "Anton wa
+  // Padua". Ambiguity comes back as ambiguity, never as the closest guess.
+  const byToken = catalogueTokenResolution(asked, names);
+  if (byToken) return { resolution: { ...byToken, asked }, error: false };
+
+  return { resolution, error: false };
 }
 
 function admin(): Admin {
@@ -6523,26 +6535,45 @@ Deno.serve(async (req) => {
         // silent — a shop must still be able to record a sale when Anthropic
         // is down.
         //
-        // Only four things are kept away from it, and none of them is a
-        // business sentence: a live pending question owns its own answer, and
-        // system commands and yes/no must never cost a model call.
-        // These two bounded shapes already carry a safe, backend-owned
-        // interpretation. Letting Haiku see them first invited it to turn a
-        // bare catalogue list into a stock purchase, or to collapse a mixed
-        // sale/purchase message into one event. The existing paths retain the
-        // list for a meaning choice and draft a parsed mixed batch atomically.
-        const deterministicBatch = body ? parseDailyRecordBatch(body, lang) : { kind: 'none' as const };
+        // AI-FIRST, FOR REAL THIS TIME.
+        //
+        // Two deterministic parsers used to stand here and take ordinary
+        // business language away from the model before it could look:
+        //
+        //   && !parseBareQuantityList(body)
+        //   && !(deterministicBatch.kind === 'parsed' && records.length > 1)
+        //
+        // MEASURED FAILURE. A shop sent three lines — "Feni 7 / Nguvu 6 /
+        // Antoni 4" — and Haiku never saw them. A parser counted the
+        // quantities, asked MAUZO or MANUNUZI, and when "Antoni" did not match
+        // "Anton wa Padua" letter for letter the shop was offered a NEW PRODUCT
+        // registration for something it already sells. The same gate ate mixed
+        // sale-and-purchase messages, and expense batches whose second line was
+        // dropped in silence.
+        //
+        // That is two personalities in one product: some sentences met a
+        // language model and others met a regular expression, and the shop
+        // could not tell which it would get. Both are gone.
+        //
+        // What remains in front of the model is not language. It is the ANSWER
+        // to a question Risip itself just asked, plus the system commands that
+        // must never cost a model call. answersPendingQuestion is deliberately
+        // narrow: a shop asked "Rejareja au jumla?" that instead types "leo
+        // nimeuza shingapi" has changed the subject, and changing the subject
+        // goes to Claude like any other sentence.
         const aiEligible = Boolean(body?.trim())
-          && (!convo || convo.awaiting === 'product_analytics')
+          && !answersPendingQuestion(convo, body)
           && !isSwitchRequest(body)
           && !isLoginRequest(body)
           && !parseLanguageCommand(body)
           && intent !== 'cancel_action'
           && intent !== 'change_language'
           && !isDailyRecordConfirmation(body ?? '')
-          && !isDailyRecordRejection(body ?? '')
-          && !parseBareQuantityList(body)
-          && !(deterministicBatch.kind === 'parsed' && deterministicBatch.records.length > 1);
+          && !isDailyRecordRejection(body ?? '');
+        // Watched in production: ai_primary is what an ordinary business
+        // message must be. If parsers ever start eating them again, this is
+        // where it shows first.
+        let messageRoute: MessageRoute = aiEligible ? 'ai_primary' : 'pending_protocol';
         if (aiEligible) {
           const history = await loadAssistantHistory(db, identity);
           const contextChars = body!.length + history.reduce((sum, message) => sum + message.content.length, 0);
@@ -6614,12 +6645,14 @@ Deno.serve(async (req) => {
                   p_fallback_used: row.fallbackUsed,
                   p_fallback_reason: row.fallbackReason,
                   p_provider_failure_code: row.providerFailureCode,
+                  p_route: messageRoute,
                 });
               } catch { /* telemetry is never allowed to break a message */ }
             };
 
             if (assistant && assistant.unavailable) {
               assistantCameBackEmpty = true;
+              messageRoute = 'ai_outage_fallback';
               await recordInterpretation('fallback', 'model_empty');
               await audit(db, identity, waMessageId, 'conversational_ai', 'empty', 'fallback');
             } else if (assistant && !unsafeRecordProse) {
@@ -6646,6 +6679,7 @@ Deno.serve(async (req) => {
               continue;
             }
             if (!assistant) {
+              messageRoute = 'ai_outage_fallback';
               await recordInterpretation('provider_failed',
                 /timeout/i.test(assistantFailure) ? 'provider_timeout'
                   : /schema|tools./i.test(assistantFailure) ? 'invalid_tool_schema'
@@ -6653,6 +6687,7 @@ Deno.serve(async (req) => {
               await audit(db, identity, waMessageId, 'conversational_ai', 'provider', assistantFailure);
             }
           } else {
+            messageRoute = 'ai_outage_fallback';
             conversationalAiBudgetBlock = budget;
             // The cap is a business decision, not a model failure. Recorded
             // separately so a quiet month of budget blocks can never be read as

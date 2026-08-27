@@ -110,6 +110,68 @@ export function cataloguePrefixResolution(
     : { kind: 'ambiguous', asked, candidates };
 }
 
+/**
+ * Resolves a wording against the WORDS of a catalogue name, not the whole name.
+ *
+ * MEASURED FAILURE. The catalogue held "Anton wa Padua". A shop wrote
+ * "Antoni 4" and was offered a NEW PRODUCT registration for something it
+ * already sells, because every resolver above compares whole strings:
+ * "antoni" against "anton wa padua" is nowhere near one edit, so nothing
+ * matched and the answer was "haipo".
+ *
+ * A trader naming a product almost never types its full registered name. They
+ * type the word they use for it, and that word is usually one of the words in
+ * the name. This matches the asked wording against each name's own tokens,
+ * allowing the same single edit the whole-name resolver allows — "Antoni" for
+ * "Anton", "Sala" for "Sala".
+ *
+ * Ambiguity is preserved rather than resolved. If two products share the token,
+ * the caller gets both and asks, because "closest wins" on a product name is
+ * how the wrong meat leaves the shelf.
+ */
+export function catalogueTokenResolution(
+  asked: string,
+  names: string[],
+): ProductReadResolution | null {
+  const wanted = asked.trim().toLocaleLowerCase('sw-TZ');
+  // Below four letters a single edit reaches too much to be evidence — the
+  // same floor the whole-name resolver uses, for the same reason.
+  if (wanted.length < 4) return null;
+
+  const hits: string[] = [];
+  for (const name of names) {
+    const clean = name.trim();
+    if (!clean) continue;
+    const tokens = clean.toLocaleLowerCase('sw-TZ').split(/\s+/u).filter((token) => token.length >= 4);
+    if (tokens.some((token) => token === wanted || withinOneEdit(wanted, token))) hits.push(clean);
+  }
+
+  const unique = [...new Set(hits)];
+  if (unique.length === 0) return null;
+  if (unique.length === 1) {
+    return {
+      kind: 'matched',
+      asked,
+      match: {
+        productKey: unique[0].toLocaleLowerCase('sw-TZ').replace(/\s+/gu, ' '),
+        productName: unique[0],
+        matchKind: 'trigram',
+        matchScore: 0.98,
+      },
+    };
+  }
+  return {
+    kind: 'ambiguous',
+    asked,
+    candidates: unique.map((name) => ({
+      productKey: name.toLocaleLowerCase('sw-TZ').replace(/\s+/gu, ' '),
+      productName: name,
+      matchKind: 'trigram' as const,
+      matchScore: 0.98,
+    })),
+  };
+}
+
 export function productReadClarification(resolution: Extract<ProductReadResolution, { kind: 'ambiguous' }>, lang: Lang): string {
   const names = resolution.candidates.slice(0, 3).map((candidate) => candidate.productName);
   const choices = names.length === 2

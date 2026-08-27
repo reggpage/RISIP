@@ -38,17 +38,43 @@ const deterministicRecord = (said: string): boolean => {
 };
 
 describe('who owns a record-shaped message', () => {
-  it('keeps ambiguous bare lists and parsed mixed batches out of AI guessing', () => {
-    expect(webhook).toContain('&& !parseBareQuantityList(body)');
-    expect(webhook).toContain("deterministicBatch.kind === 'parsed' && deterministicBatch.records.length > 1");
+  it('no longer lets a parser take a bare list or a mixed batch first', () => {
+    // THE INVERTED INVARIANT. These two lines used to sit in the eligibility
+    // gate and were the reason "Feni 7 / Nguvu 6 / Antoni 4" never reached
+    // Haiku: a parser counted the quantities, asked MAUZO or MANUNUZI, and
+    // offered to register a product the shop already sells.
+    // Asserted against the gate itself, not the file: the comment above it
+    // quotes both removed lines on purpose, so the reader can see what used to
+    // stand here and why it went.
+    const gate = webhook.slice(
+      webhook.indexOf('const aiEligible = Boolean(body?.trim())'),
+      webhook.indexOf('let messageRoute'),
+    );
+    expect(gate).not.toContain('parseBareQuantityList');
+    expect(gate).not.toContain('deterministicBatch');
   });
 
-  it('keeps an ordinary sale away from the model entirely', () => {
-    // The highest-volume message in the product. Free, instant, offline, and
-    // it must stay that way.
+  it('sends an ordinary sale to the model first', () => {
+    // The highest-volume message in the product, and for four stages it was the
+    // one that never met the model. The deterministic path can still read these
+    // — that is what makes it a usable outage fallback — but reading them is no
+    // longer the same thing as owning them.
     expect(deterministicRecord('nimeuza daftari 5 kwa 7500')).toBe(true);
     expect(deterministicRecord('nimenunua sukari kilo 50 kwa 130000')).toBe(true);
     expect(deterministicRecord('nimelipa umeme elfu ishirini')).toBe(true);
+    // And nothing in the gate consults any of that before Claude.
+    const gate = webhook.slice(
+      webhook.indexOf('const aiEligible = Boolean(body?.trim())'),
+      webhook.indexOf('let messageRoute'),
+    );
+    expect(gate.length).toBeGreaterThan(50);
+    for (const parser of [
+      'parseBareQuantityList', 'parseDailyRecordBatch', 'parseQuantityOnlySale',
+      'parseDailyRecord(', 'isDailyRecordCandidate', 'parseStockLoss',
+      'parseSupplierCreditPurchase', 'parseWholeAnimalProcurement',
+    ]) {
+      expect(gate, `the gate still consults ${parser}`).not.toContain(parser);
+    }
   });
 
   it('keeps a record it understood but needs one figure for', () => {

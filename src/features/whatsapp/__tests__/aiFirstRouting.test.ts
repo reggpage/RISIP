@@ -1,0 +1,189 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import {
+  PARSERS_BEHIND_CLAUDE,
+  answersPendingQuestion,
+} from '../../../../supabase/functions/_shared/whatsappRouting';
+
+// AI-FIRST ROUTING, AS AN INVARIANT RATHER THAN AN INTENTION.
+//
+// The architecture has claimed to be AI-first since Stage A while two
+// deterministic parsers still stood in front of the model:
+//
+//   && !parseBareQuantityList(body)
+//   && !(deterministicBatch.kind === 'parsed' && records.length > 1)
+//
+// MEASURED. A shop sent:
+//
+//   Feni 7
+//   Nguvu 6
+//   Antoni 4
+//
+// and Haiku never saw it. A parser counted the quantities, asked MAUZO or
+// MANUNUZI, and when "Antoni" did not match "Anton wa Padua" letter for letter
+// the shop was offered a NEW PRODUCT registration for a product it already
+// sells. Two personalities in one product, and no way for a shopkeeper to know
+// which one they were about to get.
+//
+// These tests hold the line where it belongs: security and transport in front,
+// the ANSWER to a question Risip itself asked in front, and everything else —
+// every sentence that carries meaning — to the model.
+
+const webhook = readFileSync(resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+
+/** The eligibility gate, sliced out so assertions are about routing only. */
+const gate = webhook.slice(
+  webhook.indexOf('const aiEligible = Boolean(body?.trim())'),
+  webhook.indexOf('let messageRoute'),
+);
+
+describe('nothing that reads business language stands in front of Claude', () => {
+  it('has a gate to test at all', () => {
+    expect(gate.length).toBeGreaterThan(80);
+    expect(gate).toContain('answersPendingQuestion(convo, body)');
+  });
+
+  it('consults no business parser before the model', () => {
+    for (const parser of PARSERS_BEHIND_CLAUDE) {
+      expect(gate, `${parser} still gates the model`).not.toContain(parser);
+    }
+  });
+
+  it('keeps only security, transport and protocol answers in front', () => {
+    // Each of these is a system command or an exact state answer. None of them
+    // is a sentence about the business.
+    for (const allowed of [
+      'answersPendingQuestion', 'isSwitchRequest', 'isLoginRequest',
+      'parseLanguageCommand', 'cancel_action', 'change_language',
+      'isDailyRecordConfirmation', 'isDailyRecordRejection',
+    ]) {
+      expect(gate, `${allowed} should still guard the model`).toContain(allowed);
+    }
+  });
+
+  it('no longer lets any parked conversation hold a new sentence', () => {
+    // The old gate was `(!convo || convo.awaiting === 'product_analytics')`,
+    // so ANY parked state — a half-finished price band, a quantity question —
+    // sent the next message to the parsers whatever it said.
+    expect(gate).not.toContain("convo.awaiting === 'product_analytics'");
+  });
+});
+
+describe('an answer to a question Risip asked stays deterministic', () => {
+  it('owns yes, no and cancel on a drafted record', () => {
+    // Semantic drift on the one step that writes to a ledger is not worth the
+    // intelligence it would buy.
+    const drafted = { awaiting: 'payment_source', options: {} };
+    for (const said of ['ndiyo', 'NDIYO', 'hapana', 'yes', 'no']) {
+      expect(answersPendingQuestion(drafted, said), said).toBe(true);
+    }
+  });
+
+  it('owns a band answer while a band was asked', () => {
+    const band = { awaiting: 'product_cost', options: { choices: [{ productName: 'nyama' }] } };
+    for (const said of ['jumla', 'rejareja', 'reja']) {
+      expect(answersPendingQuestion(band, said), said).toBe(true);
+    }
+  });
+
+  it('owns a bare quantity while a quantity was asked', () => {
+    const quantity = { awaiting: 'daily_record_quantity', options: {} };
+    expect(answersPendingQuestion(quantity, '5')).toBe(true);
+    expect(answersPendingQuestion(quantity, 'tano')).toBe(true);
+  });
+
+  it('owns the destructive confirmations outright', () => {
+    // A wrong reading here deletes an account or ends a session.
+    for (const awaiting of ['logout_confirm', 'account_delete_confirm']) {
+      expect(answersPendingQuestion({ awaiting, options: {} }, 'chochote'), awaiting).toBe(true);
+    }
+  });
+});
+
+describe('changing the subject escapes the pending question', () => {
+  it('lets a new business message out of a band question', () => {
+    // Asked "Rejareja au jumla?" and answered with something else entirely.
+    // That is a new sentence, and new sentences go to the model.
+    const band = { awaiting: 'product_cost', options: { choices: [{ productName: 'nyama' }] } };
+    for (const said of [
+      'leo nimeuza shingapi',
+      'bidhaa gani imeuza zaidi',
+      'nimeuza daftari tatu',
+    ]) {
+      expect(answersPendingQuestion(band, said), said).toBe(false);
+    }
+  });
+
+  it('lets a correction out of a quantity question', () => {
+    const quantity = { awaiting: 'daily_record_quantity', options: {} };
+    for (const said of ['namaanisha anton', 'sio hiyo, ile ya hisense', 'nilimaanisha nguvu ya sala']) {
+      expect(answersPendingQuestion(quantity, said), said).toBe(false);
+    }
+    // "Acha" is not a topic switch — it is a cancel, and it belongs to the
+    // deterministic path for the same reason NDIYO does.
+    expect(answersPendingQuestion(quantity, 'acha kabisa')).toBe(true);
+  });
+
+  it('holds nothing when nothing was asked', () => {
+    expect(answersPendingQuestion(null, 'nimeuza daftari tatu')).toBe(false);
+    expect(answersPendingQuestion({ awaiting: 'product_analytics' }, 'ndiyo')).toBe(false);
+    expect(answersPendingQuestion({ awaiting: 'payment_source' }, '')).toBe(false);
+  });
+});
+
+describe('the messages that used to be taken from the model', () => {
+  // §12 of the correction, as executable coverage. Each of these is ordinary
+  // business language and must be eligible for the model: no parked state, no
+  // system command, no yes/no.
+  const ORDINARY = [
+    'nimeuza daftari tatu',
+    'chakula 20000 nauli 5000',
+    'Feni 7\nNguvu 6\nAntoni 4',
+    'leo nimeuza daftari 7 na punch 3 pia nimenunua feni 4 kwa 120000',
+    'Matumizi ya leo chakula 20,000 nauli 5000',
+    'bidhaa gani imeuza zaidi',
+    'leo nimeuza shingapi',
+    'namaanisha anton',
+  ];
+
+  it('are all ordinary language, not protocol answers', () => {
+    for (const said of ORDINARY) {
+      expect(answersPendingQuestion(null, said), said).toBe(false);
+      // And still ordinary language even while a question is parked.
+      expect(
+        answersPendingQuestion({ awaiting: 'product_cost', options: { choices: [] } }, said),
+        `${said} (with a band question parked)`,
+      ).toBe(false);
+    }
+  });
+});
+
+describe('the route is visible', () => {
+  it('names the three routes and records them', () => {
+    expect(webhook).toContain("let messageRoute: MessageRoute = aiEligible ? 'ai_primary' : 'pending_protocol'");
+    // Every path where the model did not serve the message marks itself, so a
+    // month of quiet fallbacks cannot read like a month of healthy traffic.
+    expect((webhook.match(/messageRoute = 'ai_outage_fallback'/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect(webhook).toContain('p_route: messageRoute');
+  });
+
+  it('bounds the column to those three values', () => {
+    const migration = readFileSync(
+      resolve(process.cwd(), 'supabase/migrations/0142_ai_interpretation_route.sql'), 'utf8',
+    );
+    expect(migration).toContain("route in ('ai_primary', 'pending_protocol', 'ai_outage_fallback')");
+    // One signature, not a silent overload writing rows with no route.
+    expect(migration).toContain('drop function if exists public.wa_record_ai_interpretation(');
+  });
+});
+
+describe('the parsers survive as the outage answer', () => {
+  it('is still possible to record a sale when the model is unreachable', () => {
+    // Deleting them would mean a shop cannot write down a sale during an
+    // Anthropic outage. They keep their place — behind the model, not in front.
+    for (const parser of ['parseDailyRecord', 'parseStockLoss', 'parseSupplierCreditPurchase']) {
+      expect(webhook, parser).toContain(parser);
+    }
+  });
+});
