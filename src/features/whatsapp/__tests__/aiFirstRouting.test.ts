@@ -170,7 +170,7 @@ describe('the route is visible', () => {
 
   it('bounds the column to those three values', () => {
     const migration = readFileSync(
-      resolve(process.cwd(), 'supabase/migrations/0142_ai_interpretation_route.sql'), 'utf8',
+      resolve(process.cwd(), 'supabase/migrations/0143_ai_interpretation_route.sql'), 'utf8',
     );
     expect(migration).toContain("route in ('ai_primary', 'pending_protocol', 'ai_outage_fallback')");
     // One signature, not a silent overload writing rows with no route.
