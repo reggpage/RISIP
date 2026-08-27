@@ -7,6 +7,10 @@ import {
   claimsRecordSaved,
   shouldDeferRecordLikeReply,
 } from '../../../../supabase/functions/_shared/whatsappAssistant';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const webhook = readFileSync(resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
 
 // MEASURED FAILURE, three replies in one screenshot:
 //
@@ -34,6 +38,11 @@ const deterministicRecord = (said: string): boolean => {
 };
 
 describe('who owns a record-shaped message', () => {
+  it('keeps ambiguous bare lists and parsed mixed batches out of AI guessing', () => {
+    expect(webhook).toContain('&& !parseBareQuantityList(body)');
+    expect(webhook).toContain("deterministicBatch.kind === 'parsed' && deterministicBatch.records.length > 1");
+  });
+
   it('keeps an ordinary sale away from the model entirely', () => {
     // The highest-volume message in the product. Free, instant, offline, and
     // it must stay that way.

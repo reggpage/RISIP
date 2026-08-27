@@ -42,6 +42,7 @@ describe('company-scoped product read resolver', () => {
     expect(migration).not.toContain('create or replace function public.set_product_cost');
     expect(migration).not.toContain('create or replace function public.wa_set_stock_count');
     expect(webhook).toContain("db.rpc('wa_resolve_company_product_read'");
+    expect(webhook).toContain('const byPrefix = cataloguePrefixResolution(asked, names);');
   });
 
   it('expands one unique short product name and asks when the prefix is shared', () => {
@@ -51,6 +52,19 @@ describe('company-scoped product read resolver', () => {
       .toMatchObject({
         kind: 'ambiguous',
         candidates: [{ productName: 'Nguvu' }, { productName: 'Nguvu ya Sala' }],
+      });
+  });
+
+  it('resolves a unique real-world partial such as feni without guessing', () => {
+    expect(cataloguePrefixResolution('feni', ['Feni ya ukutani']))
+      .toMatchObject({ kind: 'matched', match: { productName: 'Feni ya ukutani' } });
+    expect(cataloguePrefixResolution('feni', ['Feni ya ukutani', 'Feni ndogo']))
+      .toMatchObject({
+        kind: 'ambiguous',
+        candidates: [
+          { productName: 'Feni ya ukutani' },
+          { productName: 'Feni ndogo' },
+        ],
       });
   });
 });

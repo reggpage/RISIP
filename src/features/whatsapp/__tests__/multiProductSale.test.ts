@@ -44,7 +44,8 @@ describe('Phase 5 Part 7 multi-product language path', () => {
         { product: 'nyama kilo', quantity: 2 },
         { product: 'bidhaa-isiyojulikana', quantity: 4 },
       ]);
-    expect(webhook).toContain("if (unknown.length > 0) return { kind: 'unknown', products: unknown, sale };");
+    expect(webhook).toContain("if (unknown.length > 0) {");
+    expect(webhook).toContain('resolvedProducts: [...new Set(resolvedItems.map((item) => item.name))]');
   });
 
   it('parses generic product labels independently before unit validation', () => {
@@ -77,7 +78,8 @@ describe('Phase 5 Part 7 multi-product credit language path', () => {
 describe('one backend pricing and one draft', () => {
   it('loops all lines through priceQuantitySale before one draft is created', () => {
     expect(webhook).toContain('for (const [at, item] of sale.items.entries())');
-    expect(webhook).toContain("if (unknown.length > 0) return { kind: 'unknown', products: unknown, sale };");
+    expect(webhook).toContain("if (unknown.length > 0) {");
+    expect(webhook).toContain('resolvedProducts: [...new Set(resolvedItems.map((item) => item.name))]');
     expect(webhook).toContain("kind: credit ? 'debt_issued' : 'sale',");
     expect(webhook).toContain('const amount = Math.round(lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0) * 100) / 100;');
     expect(webhook).not.toContain('priceMultiProductSale');

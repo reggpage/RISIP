@@ -629,7 +629,7 @@ async function priceQuantitySale(
 ): Promise<
   | { kind: 'priced'; record: ParsedDailyRecord; lines: PricedLine[]; notCounted: string[]; combos: ComboSplit[] }
   | { kind: 'blocked'; message: string }
-  | { kind: 'unknown'; products: string[]; sale: QuantitySale }
+  | { kind: 'unknown'; products: string[]; sale: QuantitySale; resolvedProducts: string[] }
   // Both prices registered, the line named neither, and the quantity does not
   // settle it. Guessing here is guessing at the takings.
   | { kind: 'band'; choices: PriceBandChoice[]; sale: QuantitySale }
@@ -809,7 +809,17 @@ async function priceQuantitySale(
   // A catalogue miss is never converted into an anonymous sale and never
   // omitted from a multi-line sale. Registration and its own confirmation come
   // first; the original sale is resumed afterwards.
-  if (unknown.length > 0) return { kind: 'unknown', products: unknown, sale };
+  if (unknown.length > 0) {
+    return {
+      kind: 'unknown',
+      products: unknown,
+      sale,
+      // Keep the lines the backend did resolve visible to the next response.
+      // The unresolved lines still block the draft, so this is acknowledgement
+      // rather than a partial financial write.
+      resolvedProducts: [...new Set(resolvedItems.map((item) => item.name))],
+    };
+  }
 
   // A combination that left something unsaid is asked about ONCE, before any
   // price is worked out — and the answer is what gets remembered.
@@ -1166,15 +1176,25 @@ async function resolveProductForRead(
     .map((row) => String(row.product_name ?? '').trim())
     .filter(Boolean);
   const near = nearestCatalogueName(asked, names);
-  if (!near) return { resolution, error: false };
-  return {
-    resolution: {
-      kind: 'matched',
-      asked,
-      match: { productKey: productKey(near), productName: near, matchKind: 'trigram', matchScore: 0.99 },
-    },
-    error: false,
-  };
+  if (near) {
+    return {
+      resolution: {
+        kind: 'matched',
+        asked,
+        match: { productKey: productKey(near), productName: near, matchKind: 'trigram', matchScore: 0.99 },
+      },
+      error: false,
+    };
+  }
+
+  // A short word can be a perfectly good company-scoped reference even when
+  // it is not an edit of the full catalogue name: "feni" should resolve to
+  // the one product whose name starts with it. The shared helper deliberately
+  // returns ambiguity when the same prefix names two real products, so this
+  // can never turn a partial name into a guess.
+  const byPrefix = cataloguePrefixResolution(asked, names);
+  if (!byPrefix) return { resolution, error: false };
+  return { resolution: { ...byPrefix, asked }, error: false };
 }
 
 function admin(): Admin {
@@ -2596,6 +2616,22 @@ function decideQuantities(
   return { ok: true, quantities };
 }
 
+function unknownProductMessage(
+  unknownProducts: string[],
+  resolvedProducts: string[],
+  lang: Lang,
+): string {
+  const missing = unknownProducts.map((product) => `*${product}*`).join(', ');
+  const understood = resolvedProducts.length > 0
+    ? lang === 'sw'
+      ? `Nimezitambua tayari: ${resolvedProducts.map((product) => `*${product}*`).join(', ')}.\n`
+      : `I understood already: ${resolvedProducts.map((product) => `*${product}*`).join(', ')}.\n`
+    : '';
+  return lang === 'sw'
+    ? `${understood}Bado sijapata ${missing} kwenye bidhaa za biashara hii. Sajili ${missing} kwanza au taja jina lililosajiliwa.`
+    : `${understood}I could not find ${missing} in this business catalogue. Register ${missing} first or use its registered name.`;
+}
+
 async function executeBusinessEvent(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
@@ -2648,10 +2684,7 @@ async function executeBusinessEvent(
     );
     if (priced.kind === 'blocked') return askBack(priced.message);
     if (priced.kind === 'unknown') {
-      const list = priced.products.map((product) => `*${product}*`).join(', ');
-      return askBack(lang === 'sw'
-        ? `Sijapata ${list} kwenye bidhaa za biashara hii. Sajili bidhaa hiyo kwanza au taja jina lake lililosajiliwa.`
-        : `I could not find ${list} in this business catalogue. Register it first or use its registered name.`);
+      return askBack(unknownProductMessage(priced.products, priced.resolvedProducts, lang));
     }
     if (priced.kind === 'band') {
       // MEASURED REGRESSION, twice: "nimeuza nguvu ya sala 7 jumla" was asked
@@ -2679,7 +2712,7 @@ async function executeBusinessEvent(
     if (createdSale.error || !createdSale.id) return askBack(notSaved);
     await pendingDraftState(db, identity, createdSale.id, waMessageId, guardedSale);
     const confirmation = `${identity.company_name} — ${quantitySaleConfirmation(priced.lines, lang, [], priced.notCounted)}`;
-    return { content: confirmation, terminalReply: confirmation };
+    return { content: confirmation, fallbackReply: confirmation };
   }
 
   // ── goods taken from a supplier on credit ────────────────────────────────
@@ -2713,7 +2746,7 @@ async function executeBusinessEvent(
     }
     await pendingDraftState(db, identity, created.id, waMessageId, created.record);
     const confirmation = buildDailyRecordConfirmation(created.record, lang);
-    return { content: confirmation, terminalReply: confirmation };
+    return { content: confirmation, fallbackReply: confirmation };
   }
 
   // ── spoilage, and stock the owner took home ──────────────────────────────
@@ -2768,7 +2801,7 @@ async function executeBusinessEvent(
     const confirmation = event.kind === 'stock_loss'
       ? stockLossConfirmation(reading as never, match.productName, value, lang)
       : ownerUseConfirmation(reading as never, match.productName, value, lang);
-    return { content: confirmation, terminalReply: confirmation };
+    return { content: confirmation, fallbackReply: confirmation };
   }
 
   // ── stock arriving, paid for ─────────────────────────────────────────────
@@ -2803,7 +2836,7 @@ async function executeBusinessEvent(
     if (created.error || !created.id) return askBack(notSaved);
     await pendingDraftState(db, identity, created.id, waMessageId, record);
     const confirmation = buildDailyRecordConfirmation(record, lang);
-    return { content: confirmation, terminalReply: confirmation };
+    return { content: confirmation, fallbackReply: confirmation };
   }
 
   // ── buying a live animal ─────────────────────────────────────────────────
@@ -2858,7 +2891,7 @@ async function executeBusinessEvent(
       paymentMethod: paymentMethod as WholeAnimalPaymentMethod | null,
       reference: null, note: animalLine.productWording,
     }, date.occurredAt, lang);
-    return { content: confirmation, terminalReply: confirmation };
+    return { content: confirmation, fallbackReply: confirmation };
   }
 
   // ── butchering it ────────────────────────────────────────────────────────
@@ -2914,7 +2947,7 @@ async function executeBusinessEvent(
       expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
     }, { onConflict: 'identity_id' });
     const confirmation = wholeAnimalBreakdownConfirmation(result.outputs, lang);
-    return { content: confirmation, terminalReply: confirmation };
+    return { content: confirmation, fallbackReply: confirmation };
   }
 
   // ── counting what is actually on the shelf ───────────────────────────────
@@ -2936,7 +2969,7 @@ async function executeBusinessEvent(
       expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
     }, { onConflict: 'identity_id' });
     const confirmation = stockCountBatchConfirmation(stockBatch, lang);
-    return { content: confirmation, terminalReply: confirmation };
+    return { content: confirmation, fallbackReply: confirmation };
   }
 
   return askBack(notUnderstood);
@@ -2996,7 +3029,7 @@ async function executeMoneyEvent(
     }
     await pendingDraftState(db, identity, created.id, waMessageId, created.record);
     const confirmation = supplierPaymentConfirmation({ supplierName, amount, paymentMethod: method }, lang);
-    return { content: confirmation, terminalReply: confirmation };
+    return { content: confirmation, fallbackReply: confirmation };
   }
 
   // ── an expense, or a customer clearing their debt ────────────────────────
@@ -3018,7 +3051,7 @@ async function executeMoneyEvent(
   }
   await pendingDraftState(db, identity, created.id, waMessageId, guarded);
   const confirmation = buildDailyRecordConfirmation(guarded, lang);
-  return { content: confirmation, terminalReply: confirmation };
+  return { content: confirmation, fallbackReply: confirmation };
 }
 
 async function executeAssistantTool(
@@ -3437,7 +3470,7 @@ async function executeAssistantTool(
       previous ? Number((previous as { unit_cost: number }).unit_cost) : null,
       lang,
     );
-    return { content: confirmation, terminalReply: confirmation };
+    return { content: confirmation, fallbackReply: confirmation };
   }
   // ── STAGE B ─────────────────────────────────────────────────────────────
   if (name === 'propose_business_event') {
@@ -3518,10 +3551,7 @@ async function executeAssistantTool(
       return { content: priced.message, isError: true, terminalReply: priced.message };
     }
     if (priced.kind === 'unknown') {
-      const list = priced.products.map((product) => `*${product}*`).join(', ');
-      const unknown = lang === 'sw'
-        ? `Sijapata ${list} kwenye bidhaa za biashara hii. Sajili bidhaa hiyo kwanza au taja jina lake lililosajiliwa.`
-        : `I could not find ${list} in this business catalogue. Register it first or use its registered name.`;
+      const unknown = unknownProductMessage(priced.products, priced.resolvedProducts, lang);
       return { content: unknown, isError: true, terminalReply: unknown };
     }
     if (priced.kind === 'band') {
@@ -3574,7 +3604,7 @@ async function executeAssistantTool(
       expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
     }, { onConflict: 'identity_id' });
     const confirmation = `${identity.company_name} — ${quantitySaleConfirmation(priced.lines, lang, [], priced.notCounted)}`;
-    return { content: confirmation, terminalReply: confirmation };
+    return { content: confirmation, fallbackReply: confirmation };
   }
   if (name === 'propose_daily_record') {
     const parsed = validateAiCandidate(input, said);
@@ -3613,7 +3643,7 @@ async function executeAssistantTool(
     const nearName = await nearNameNotice(db, identity.company_id, guardedRecord, lang);
     const underPrice = await belowOwnPriceNotice(db, identity.company_id, guardedRecord, lang);
     const confirmation = `${identity.company_name} — ${buildDailyRecordConfirmation(guardedRecord, lang)}${nearName}${underPrice}`;
-    return { content: confirmation, terminalReply: confirmation };
+    return { content: confirmation, fallbackReply: confirmation };
   }
   return {
     content: lang === 'sw' ? 'Tool hiyo haipatikani.' : 'That tool is not available.',
@@ -6496,6 +6526,12 @@ Deno.serve(async (req) => {
         // Only four things are kept away from it, and none of them is a
         // business sentence: a live pending question owns its own answer, and
         // system commands and yes/no must never cost a model call.
+        // These two bounded shapes already carry a safe, backend-owned
+        // interpretation. Letting Haiku see them first invited it to turn a
+        // bare catalogue list into a stock purchase, or to collapse a mixed
+        // sale/purchase message into one event. The existing paths retain the
+        // list for a meaning choice and draft a parsed mixed batch atomically.
+        const deterministicBatch = body ? parseDailyRecordBatch(body, lang) : { kind: 'none' as const };
         const aiEligible = Boolean(body?.trim())
           && (!convo || convo.awaiting === 'product_analytics')
           && !isSwitchRequest(body)
@@ -6504,7 +6540,9 @@ Deno.serve(async (req) => {
           && intent !== 'cancel_action'
           && intent !== 'change_language'
           && !isDailyRecordConfirmation(body ?? '')
-          && !isDailyRecordRejection(body ?? '');
+          && !isDailyRecordRejection(body ?? '')
+          && !parseBareQuantityList(body)
+          && !(deterministicBatch.kind === 'parsed' && deterministicBatch.records.length > 1);
         if (aiEligible) {
           const history = await loadAssistantHistory(db, identity);
           const contextChars = body!.length + history.reduce((sum, message) => sum + message.content.length, 0);

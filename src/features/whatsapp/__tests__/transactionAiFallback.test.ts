@@ -45,6 +45,42 @@ describe('Phase 5 Part 8 structured transaction boundary', () => {
     expect(JSON.stringify(result)).not.toMatch(/unitPrice|total|amount|stock|cogs/i);
   });
 
+  it('lets Haiku phrase a verified pending confirmation naturally', async () => {
+    (globalThis as { Deno?: unknown }).Deno = {
+      env: { get: (name: string) => name === 'ANTHROPIC_API_KEY' ? 'test-key' : undefined },
+    };
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'claude-haiku-4-5-20251001' }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        stop_reason: 'tool_use',
+        content: [{
+          type: 'tool_use', id: 'event-1', name: 'propose_business_event',
+          input: {
+            kind: 'sale', lines: [{ product_wording: 'daftari', quantity_wording: 'tatu', quantity_candidate: 3, unit_wording: null }],
+            party_wording: null, supplier_wording: null, credit_wording: null,
+            payment_wording: null, price_band_wording: null, occurred_at_wording: null,
+            loss_reason_wording: null, amount_wording: null, amount_candidate: null, missing_fields: [],
+          },
+        }],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'Nimeelewa mauzo ya daftari 3. Thibitisha kwa NDIYO.' }],
+      }), { status: 200 }));
+    const executeTool = vi.fn(async () => ({
+      content: 'pending_draft=true\nproduct=Daftari\nquantity=3\namount=4500\nconfirmation_required=true',
+      fallbackReply: 'Duka — Daftari 3 kwa TSh 4,500. Jibu NDIYO kuthibitisha.',
+    }));
+    const result = await runConversationalAssistant({
+      context, history: [], userText: 'nimeuza daftari tatu', executeTool,
+    });
+    expect(executeTool).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      reply: 'Nimeelewa mauzo ya daftari 3. Thibitisha kwa NDIYO.',
+      toolNames: ['propose_business_event'], usedSafeFallback: false,
+    });
+  });
+
   it('keeps credit, customer and null payment method intact', () => {
     expect(validateAiTransactionCandidate({
       kind: 'debt_issued', party_name: 'Juma', payment_method: null,

@@ -132,6 +132,20 @@ describe('WhatsApp mixed daily-record batches', () => {
     });
   });
 
+  it('decomposes clearly directed sales and purchases in one message', () => {
+    const parsed = parseDailyRecordBatch([
+      'nimeuza daftari 2 kwa 4000',
+      'nimenunua sukari kilo 5 kwa 10000',
+    ].join('\n'), 'sw');
+    expect(parsed).toMatchObject({
+      kind: 'parsed',
+      records: [
+        { kind: 'sale', amount: 4_000 },
+        { kind: 'stock_purchase', amount: 10_000 },
+      ],
+    });
+  });
+
   it('keeps create, confirm and cancel transactional behind service-role batch RPCs', () => {
     const migration = readFileSync(resolve(process.cwd(), 'supabase/migrations/0084_whatsapp_daily_record_batches.sql'), 'utf8');
     const webhook = readFileSync(resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
@@ -154,6 +168,7 @@ describe('WhatsApp mixed daily-record batches', () => {
     expect(webhook).toContain("db.rpc('wa_create_daily_record_batch_drafts'");
     expect(webhook).toContain("db.rpc('wa_confirm_daily_record_batch'");
     expect(webhook).toContain("db.rpc('wa_cancel_daily_record_batch'");
+    expect(webhook).toContain('const deterministicBatch = body ? parseDailyRecordBatch(body, lang)');
     expect(webhook).not.toContain("from('daily_records').update");
   });
 });

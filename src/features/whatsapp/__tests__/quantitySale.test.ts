@@ -316,7 +316,8 @@ describe('the warning actually reaching the message', () => {
     // catalogue has never heard of now gets its OWN branch and its own offer.
     // It is never quietly left out of a sale, and never turned into an
     // anonymous one under a name nobody recognises.
-    expect(webhook).toContain("return { kind: 'unknown', products: unknown, sale }");
+    expect(webhook).toContain("kind: 'unknown',");
+    expect(webhook).toContain('resolvedProducts: [...new Set(resolvedItems.map((item) => item.name))]');
     expect(webhook).toContain('newProductSaleOffer(');
     expect(webhook).toContain('priced.notCounted');
   });
