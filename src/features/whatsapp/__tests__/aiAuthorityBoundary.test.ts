@@ -100,9 +100,12 @@ describe('the model cannot confirm anything', () => {
     expect(conversational).toEqual(['reason']);
   });
 
-  it('lets the resume tool carry words and a checkable number, and nothing else', () => {
+  it('lets the resume tool carry a meaning, a number and the words behind them', () => {
+    // canonical_value is the MEANING, decided by the model, because the server
+    // no longer reads wording at any point. raw_wording is kept so the shop can
+    // be shown its own words back, and is never parsed.
     expect(TOOL_FIELDS.get('resolve_pending_clarification'))
-      .toEqual(['field', 'wording', 'numeric_candidate']);
+      .toEqual(['answers', 'field', 'canonical_value', 'numeric_value', 'raw_wording']);
   });
 });
 

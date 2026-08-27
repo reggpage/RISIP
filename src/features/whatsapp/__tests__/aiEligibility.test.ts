@@ -47,7 +47,7 @@ describe('who owns a record-shaped message', () => {
     // quotes both removed lines on purpose, so the reader can see what used to
     // stand here and why it went.
     const gate = webhook.slice(
-      webhook.indexOf('const aiEligible = Boolean(body?.trim())'),
+      webhook.indexOf('const aiEligible = messageGoesToModel'),
       webhook.indexOf('let messageRoute'),
     );
     expect(gate).not.toContain('parseBareQuantityList');
@@ -64,7 +64,7 @@ describe('who owns a record-shaped message', () => {
     expect(deterministicRecord('nimelipa umeme elfu ishirini')).toBe(true);
     // And nothing in the gate consults any of that before Claude.
     const gate = webhook.slice(
-      webhook.indexOf('const aiEligible = Boolean(body?.trim())'),
+      webhook.indexOf('const aiEligible = messageGoesToModel'),
       webhook.indexOf('let messageRoute'),
     );
     expect(gate.length).toBeGreaterThan(50);

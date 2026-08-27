@@ -549,20 +549,42 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
   ),
   tool(
     'resolve_pending_clarification',
-    'Use ONLY when Risip has asked a question and this message answers it. The pending question and what would count as an answer are stated in the context above. '
-      + 'Send the field being answered and the trader\'s OWN WORDS — "reja", "thelathini", "tigopesa", "anton". Do not translate them into a canonical value: the server decides whether the words name a legal answer to the question actually on the table, and refuses if they do not. '
-      + 'numeric_candidate is your reading of a number, and the server re-reads the wording itself and asks again if the two disagree. '
-      + 'If the message changes the subject instead of answering, do NOT use this — answer the new subject, and the server releases the parked question.',
+    'Use ONLY when Risip has asked a question and this message answers it. The pending question and the answers it accepts are stated in the context above. '
+      + 'YOU decide what the trader meant — the server no longer reads their words at all. Send canonical_value as one of the allowed values for that field, and raw_wording as what they actually typed so the shop can be shown its own words back. '
+      + 'For a quantity send numeric_value: "thelathini" is 30, "mbili na nusu" is 2.5. For a product or a person, canonical_value is the name as they said it and the server resolves it against this shop\'s own catalogue and customers. '
+      + 'Answer several fields at once when one message settles several — "mpesa na ilikuwa jana", "hisense kilo tatu" — and the server takes each one it can. '
+      + 'If the message changes the subject instead of answering, do NOT use this: answer the new subject, and the server releases the parked question.',
     {
-      field: {
-        type: 'string',
-        enum: ['price_band', 'quantity', 'unit', 'product', 'payment_method', 'event_type', 'party'],
-        description: 'Which of the pending questions this message answers. It must be one Risip is actually waiting for.',
+      answers: {
+        type: 'array',
+        description: 'One entry per fact this message settles. Usually one.',
+        items: {
+          type: 'object',
+          properties: {
+            field: {
+              type: 'string',
+              enum: ['price_band', 'quantity', 'unit', 'product', 'payment_method', 'event_type', 'party'],
+              description: 'Which pending question this answers.',
+            },
+            canonical_value: {
+              type: ['string', 'null'],
+              description: 'THE MEANING. price_band: retail|wholesale. event_type: sale|stock_purchase|stock_count. payment_method: cash|mobile_money|bank|other. unit: the measure name. product/party: the name as said. Null only when the answer is purely a number.',
+            },
+            numeric_value: {
+              type: ['number', 'null'],
+              description: 'For a quantity, the number you read. Null otherwise.',
+            },
+            raw_wording: {
+              type: ['string', 'null'],
+              description: "What the trader actually typed, for the record. Never parsed.",
+            },
+          },
+          required: ['field', 'canonical_value', 'numeric_value', 'raw_wording'],
+          additionalProperties: false,
+        },
       },
-      wording: { type: 'string', description: "The trader's own words for the answer, copied, not interpreted." },
-      numeric_candidate: { type: ['number', 'null'], description: 'Your reading of the number, or null. The server verifies it against the wording.' },
     },
-    ['field', 'wording', 'numeric_candidate'],
+    ['answers'],
   ),
   tool(
     'respond_conversationally',

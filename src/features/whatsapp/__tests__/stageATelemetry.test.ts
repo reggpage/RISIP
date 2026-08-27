@@ -188,7 +188,10 @@ describe('Stage A changed no behaviour', () => {
     // Stage A froze this line because Stage A changed nothing. The routing
     // correction moved it deliberately: the parked-conversation blanket became
     // a narrow "does this answer the question we just asked?".
-    expect(webhook).toContain('&& !answersPendingQuestion(convo, body)');
+    // The eligibility test is one call now — messageGoesToModel, named once in
+    // the router so every branch asks the same question and gets the same
+    // answer. It used to be an inline chain here.
+    expect(webhook).toContain('const aiEligible = messageGoesToModel(convo, body, systemCommand)');
     expect(webhook).toContain("&& !isDailyRecordConfirmation(body ?? '')");
   });
 

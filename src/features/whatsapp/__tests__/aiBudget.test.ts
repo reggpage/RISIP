@@ -38,9 +38,13 @@ describe('A2 AI fallback budget boundary', () => {
     // model — only a message that actually answers the question it asked does.
     // A shop asked "Rejareja au jumla?" that instead types "leo nimeuza
     // shingapi" has changed the subject, and a changed subject is a sentence.
-    expect(webhook).toContain('&& !answersPendingQuestion(convo, body)');
-    expect(webhook).toContain("&& !isDailyRecordConfirmation(body ?? '')");
-    expect(webhook).toContain("&& !isDailyRecordRejection(body ?? '')");
+    // The eligibility test is one call now — messageGoesToModel, named once in
+    // the router so every branch asks the same question and gets the same
+    // answer. It used to be an inline chain here.
+    expect(webhook).toContain('const aiEligible = messageGoesToModel(convo, body, systemCommand)');
+    // They live in systemCommand now, hoisted above every branch.
+    expect(webhook).toContain("|| isDailyRecordConfirmation(body ?? '')");
+    expect(webhook).toContain("|| isDailyRecordRejection(body ?? '')");
     expect(webhook).not.toContain('&& !deterministicRecord');
   });
 

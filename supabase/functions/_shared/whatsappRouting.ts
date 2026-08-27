@@ -115,6 +115,28 @@ export function answersPendingQuestion(convo: PendingConversation, said: string 
 }
 
 /**
+ * Will the model see this message?
+ *
+ * The eligibility test used to live inline in the message loop, hundreds of
+ * lines below branches that were quietly consuming messages before it ever ran.
+ * parsePaymentMethodAnswer was one: "mpesa" beside a pending draft was read by
+ * a phrase list of Tanzanian mobile-money brands, eight hundred lines above the
+ * gate that was supposed to decide who reads what.
+ *
+ * Naming it once means every branch can ask the same question and get the same
+ * answer, and a test can prove they do.
+ */
+export function messageGoesToModel(
+  convo: PendingConversation,
+  said: string | null | undefined,
+  systemCommand: boolean,
+): boolean {
+  return Boolean(String(said ?? '').trim())
+    && !answersPendingQuestion(convo, said)
+    && !systemCommand;
+}
+
+/**
  * The parsers that must never stand in front of Claude again.
  *
  * Named here so a test can assert their absence from the eligibility gate

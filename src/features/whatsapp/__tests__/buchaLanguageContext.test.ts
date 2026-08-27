@@ -78,10 +78,14 @@ describe('answering the question on the screen', () => {
   });
 
   it('applies the answer to the pending draft and asks again', () => {
-    expect(webhook).toContain('const answeredMethod = parsePaymentMethodAnswer(body);');
+    // OUTAGE PATH. "Mpesa" beside a pending draft is read by the model now and
+    // returned through resolve_pending_clarification; this phrase list of
+    // Tanzanian mobile-money brands runs only when the model was never
+    // consulted. What it does once it runs is unchanged.
+    expect(webhook).toContain('const answeredMethod = messageGoesToModel(convo, body, systemCommand)');
     expect(webhook).toContain("await db.rpc('wa_set_draft_payment_method', {");
     // Nothing is saved a moment earlier than it would have been.
-    const branch = webhook.slice(webhook.indexOf('const answeredMethod = parsePaymentMethodAnswer(body);'));
+    const branch = webhook.slice(webhook.indexOf('const answeredMethod = messageGoesToModel(convo, body, systemCommand)'));
     expect(branch.slice(0, 1600)).toContain('buildDailyRecordConfirmation(withMethod, lang)');
     expect(branch.slice(0, 1600)).not.toContain('wa_confirm_daily_record');
   });

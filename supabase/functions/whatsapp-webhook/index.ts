@@ -212,13 +212,13 @@ import {
   paymentWordingQuestion,
 } from '../_shared/whatsappPaymentMethod.ts';
 // Who sees a message first: the line between a sentence and a protocol answer.
-import { answersPendingQuestion } from '../_shared/whatsappRouting.ts';
+import { answersPendingQuestion, messageGoesToModel } from '../_shared/whatsappRouting.ts';
 import {
-  canonicalBand,
-  canonicalEventType,
-  checkQuantity,
+  asBand,
+  checkCanonicalValue,
+  checkNumber,
   describePending,
-  validateClarificationAnswer,
+  validateClarificationAnswers,
   type PendingClarification,
 } from '../_shared/whatsappClarification.ts';
 import type { MessageRoute } from '../_shared/whatsappRouting.ts';
@@ -2670,7 +2670,6 @@ async function priceAndDraftSale(
     sale: QuantitySale;
     credit: { party: string } | null;
     paymentMethod: DailyRecordPaymentMethod | null;
-    bandWording: string | null;
     occurredAt: string | null;
     said?: string;
   },
@@ -2693,7 +2692,9 @@ async function priceAndDraftSale(
     // MEASURED REGRESSION, twice: "nimeuza nguvu ya sala 7 jumla" was asked
     // which band it wanted, by a sentence that had already said it. The word is
     // mapped here; only an absent or unmapped band reaches the question.
-    const chosen = bandFromWording(args.bandWording);
+    // A band question that reaches here was never answered, so nothing is
+    // pre-filled. The model settles it through resolve_pending_clarification.
+    const chosen = null;
     const state: PriceBandPending = {
       kind: 'price_band_choice', sale: priced.sale, choices: priced.choices,
       answered: priced.choices.map(() => chosen), sourceMessageId: waMessageId,
@@ -2753,11 +2754,15 @@ function pendingClarificationOf(convo: { awaiting?: string | null; options?: unk
       field: 'price_band',
       intent: 'sale',
       product: choices.map((choice) => choice?.productName).filter(Boolean).join(', ') || null,
-      allowedValues: ['retail', 'wholesale'],
     };
   }
+  if (awaiting === 'payment_source' && kind === 'daily_record_confirmation') {
+    // The draft is on the screen. NDIYO and HAPANA stay deterministic; how it
+    // was paid is a sentence, and sentences belong to the model.
+    return { field: 'payment_method', intent: 'sale' };
+  }
   if (awaiting === 'product_cost' && kind === 'quantity_meaning') {
-    return { field: 'event_type', intent: 'unknown', allowedValues: ['sale', 'stock_purchase', 'stock_count'] };
+    return { field: 'event_type', intent: 'unknown' };
   }
   return null;
 }
@@ -2770,8 +2775,8 @@ async function executeClarification(
   input: Record<string, unknown>,
   said?: string,
 ): Promise<AssistantToolExecution> {
-  const answer = validateClarificationAnswer(input);
-  if (!answer) {
+  const answers = validateClarificationAnswers(input);
+  if (answers.length === 0) {
     return askBack(lang === 'sw'
       ? 'Sijaelewa jibu lako. Niandikie tena kwa maneno mengine.'
       : 'I did not catch that answer. Say it another way.');
@@ -2786,17 +2791,23 @@ async function executeClarification(
       ? 'Sina swali linalosubiri jibu kwa sasa. Niambie unachotaka kufanya.'
       : 'I am not waiting on an answer right now. Tell me what you would like to do.');
   }
-  if (pending.field !== answer.field) {
+
+  const options = (convo?.options ?? {}) as Record<string, unknown>;
+  // One message can settle several facts — "mpesa na ilikuwa jana", "hisense
+  // kilo tatu". Each is taken on its own; whatever is valid survives even when
+  // something else in the same breath does not.
+  const byField = new Map(answers.map((answer) => [answer.field, answer]));
+  const main = byField.get(pending.field);
+  if (!main) {
     return askBack(lang === 'sw'
       ? `Nilikuwa naulizia ${pending.field}. Naomba unijibu hilo kwanza.`
       : `I was asking about ${pending.field}. Answer that one first.`);
   }
 
-  const options = (convo?.options ?? {}) as Record<string, unknown>;
-
   // ── which price the shop meant ───────────────────────────────────────────
-  if (answer.field === 'price_band') {
-    const band = canonicalBand(answer.wording);
+  if (pending.field === 'price_band') {
+    const checked = checkCanonicalValue('price_band', main.canonicalValue);
+    const band = checked.kind === 'ok' ? asBand(checked.value) : null;
     if (!band) {
       const question = priceBandQuestion((options.choices ?? []) as PriceBandChoice[], lang);
       return { content: question, terminalReply: question };
@@ -2810,47 +2821,51 @@ async function executeClarification(
     return await priceAndDraftSale(db, identity, waMessageId, lang, {
       sale: { ...bandPending.sale, items: applyPriceBands(bandPending.sale.items, choices, settled) },
       credit: bandPending.credit ?? null,
-      paymentMethod: bandPending.paymentMethod ?? null,
-      bandWording: answer.wording,
+      paymentMethod: paymentFrom(byField) ?? bandPending.paymentMethod ?? null,
       occurredAt: bandPending.occurredAt ?? null,
       said,
     });
   }
 
-  // ── how many ─────────────────────────────────────────────────────────────
-  if (answer.field === 'quantity') {
-    const read = checkQuantity(answer.wording, answer.numericCandidate, (phrase) => {
-      const normalized = normalizeNumberWords(phrase.toLowerCase());
-      const found = /-?\d+(?:[.,]\d+)?/u.exec(normalized.replace(/(\d),(\d{3})\b/gu, '$1$2'));
-      if (!found) return null;
-      const value = Number(found[0].replace(',', '.'));
-      return Number.isFinite(value) ? value : null;
-    });
+  // ── how many, and in what measure ────────────────────────────────────────
+  if (pending.field === 'quantity') {
+    const read = checkNumber(main.numericValue);
     if (read.kind === 'ask') {
       return askBack(lang === 'sw'
         ? 'Sijaelewa idadi. Niandikie kwa tarakimu, mfano *3*.'
         : 'I could not read the quantity. Write it in digits, for example *3*.');
     }
     const wanted = options as unknown as QuantityWanted;
+    // A unit answered in the same breath rides along: "kilo tatu" settles both.
+    const unit = byField.get('unit')?.canonicalValue ?? main.canonicalValue ?? null;
     await clearConversation(db, identity.id as string);
     return await priceAndDraftSale(db, identity, waMessageId, lang, {
       sale: {
         kind: 'quantity_sale',
-        items: [{ product: wanted.product, quantity: read.value, band: null }],
+        items: [{
+          product: wanted.product,
+          quantity: read.value,
+          band: null,
+          ...(unit ? { spokenUnit: unit } : {}),
+        }],
         expenses: [],
       },
       credit: wanted.ledger === 'debt_issued' && wanted.party ? { party: wanted.party } : null,
-      paymentMethod: wanted.paymentMethod ?? null,
-      bandWording: null,
+      paymentMethod: paymentFrom(byField) ?? wanted.paymentMethod ?? null,
       occurredAt: wanted.occurredAt ?? null,
       said,
     });
   }
 
   // ── what kind of movement a bare list was ────────────────────────────────
-  if (answer.field === 'event_type') {
-    const kind = canonicalEventType(answer.wording);
-    if (kind !== 'sale') {
+  if (pending.field === 'event_type') {
+    const checked = checkCanonicalValue('event_type', main.canonicalValue);
+    if (checked.kind !== 'ok') {
+      return askBack(lang === 'sw'
+        ? 'Hizo ni mauzo, manunuzi, au unahesabu stock?'
+        : 'Are those sales, purchases, or a stock count?');
+    }
+    if (checked.value !== 'sale') {
       // Only a sale can be finished from here. A purchase needs its cost and a
       // count needs its own confirmation, and neither is safe to infer from a
       // single word.
@@ -2862,16 +2877,74 @@ async function executeClarification(
     if (!meaning.sale) return askBack(lang === 'sw' ? 'Sina orodha inayosubiri.' : 'I have no parked list.');
     await clearConversation(db, identity.id as string);
     return await priceAndDraftSale(db, identity, waMessageId, lang, {
-      sale: meaning.sale, credit: null, paymentMethod: null,
-      bandWording: null, occurredAt: null, said,
+      sale: meaning.sale, credit: null, paymentMethod: paymentFrom(byField),
+      occurredAt: null, said,
     });
   }
 
-  // Product, unit, payment method and party clarifications are understood but
-  // not yet resumable from here; they are answered by the ordinary tools.
+  // ── how it was paid, on a draft already on the screen ────────────────────
+  //
+  // MEASURED: "mpesa" arriving beside a pending draft used to be read by
+  // parsePaymentMethodAnswer, a phrase list of Tanzanian mobile-money brands
+  // sitting in the normal path. The model decides the method now; this only
+  // checks it is one of the four the ledger accepts, and updates the SAME
+  // draft so nothing is saved a moment earlier than it would have been.
+  if (pending.field === 'payment_method') {
+    const checked = checkCanonicalValue('payment_method', main.canonicalValue);
+    if (checked.kind !== 'ok') {
+      return askBack(lang === 'sw'
+        ? 'Ulilipwa kwa njia gani — taslimu, simu, au benki?'
+        : 'How were you paid — cash, mobile money, or bank?');
+    }
+    const draft = options as unknown as DailyRecordConversation;
+    if (!draft?.dailyRecordId) {
+      return askBack(lang === 'sw' ? 'Sina draft inayosubiri.' : 'I have no draft waiting.');
+    }
+    const { data: methodSet } = await db.rpc('wa_set_draft_payment_method', {
+      p_profile_id: identity.profile_id,
+      p_company_id: identity.company_id,
+      p_daily_record_id: draft.dailyRecordId,
+      p_payment_method: checked.value,
+    });
+    if (!(methodSet as Record<string, unknown> | null)?.updated) {
+      return askBack(lang === 'sw'
+        ? 'Sikuweza kuweka njia ya malipo kwenye draft hii.'
+        : 'I could not set the payment method on this draft.');
+    }
+    const withMethod = {
+      ...draft.record,
+      paymentMethod: checked.value as DailyRecordPaymentMethod,
+    };
+    await pendingDraftState(db, identity, draft.dailyRecordId, waMessageId, withMethod);
+    const confirmation = buildDailyRecordConfirmation(withMethod, lang);
+    return { content: confirmation, fallbackReply: confirmation };
+  }
+
+  // ── which product, and which measure, when the shop has said ─────────────
+  //
+  // Neither of these parks a state of its own today: an ambiguous product ends
+  // the sale rather than holding it, and a unit rides on the quantity question.
+  // Answering here would mean inventing a draft that was never saved, so the
+  // honest thing is to say what was understood and ask for it once.
+  const understood = main.canonicalValue ?? main.rawWording ?? '';
   return askBack(lang === 'sw'
-    ? 'Nimekuelewa. Niandikie tena ujumbe kamili ili niweze kuukamilisha.'
-    : 'Understood. Send the whole message again so I can complete it.');
+    ? `Nimeelewa: ${understood}. Niandikie ujumbe kamili ili niukamilishe.`
+    : `Understood: ${understood}. Send the whole message so I can complete it.`);
+}
+
+/**
+ * A payment method settled in the same breath as something else.
+ *
+ * Checked, not read: the model decided what the trader meant, and this only
+ * confirms it is one of the four the ledger accepts.
+ */
+function paymentFrom(
+  byField: Map<string, { canonicalValue: string | null }>,
+): DailyRecordPaymentMethod | null {
+  const answered = byField.get('payment_method');
+  if (!answered) return null;
+  const checked = checkCanonicalValue('payment_method', answered.canonicalValue);
+  return checked.kind === 'ok' ? checked.value as DailyRecordPaymentMethod : null;
 }
 
 async function executeBusinessEvent(
@@ -2923,7 +2996,7 @@ async function executeBusinessEvent(
       : null;
     return await priceAndDraftSale(db, identity, waMessageId, lang, {
       sale, credit: credit as never, paymentMethod,
-      bandWording: event.priceBandWording, occurredAt: date.occurredAt, said,
+      occurredAt: date.occurredAt, said,
     });
   }
 
@@ -4772,6 +4845,18 @@ Deno.serve(async (req) => {
           awaitingClarification: Boolean(convo),
         });
 
+        // The system commands that must never cost a model call. Computed here,
+        // above every branch, so nothing below can quietly consume a message the
+        // model was going to read — which is exactly what the payment-method
+        // phrase list was doing eight hundred lines further down.
+        const systemCommand = isSwitchRequest(body)
+          || isLoginRequest(body)
+          || Boolean(parseLanguageCommand(body))
+          || intent === 'cancel_action'
+          || intent === 'change_language'
+          || isDailyRecordConfirmation(body ?? '')
+          || isDailyRecordRejection(body ?? '');
+
         if (intent === 'link_account') {
           const reply = await handleLink(db, phone, String(message?.from ?? ''), linkToken!);
           await replyQuietly(phone, reply);
@@ -5978,7 +6063,12 @@ Deno.serve(async (req) => {
           //
           // The draft is updated and the SAME confirmation is shown again, so
           // nothing is saved a moment earlier than it would have been.
-          const answeredMethod = parsePaymentMethodAnswer(body);
+          // OUTAGE ONLY. The model reads "mpesa" now and returns it through
+          // resolve_pending_clarification; this phrase list of Tanzanian
+          // mobile-money brands runs when the model was never consulted.
+          const answeredMethod = messageGoesToModel(convo, body, systemCommand)
+            ? null
+            : parsePaymentMethodAnswer(body);
           if (answeredMethod && !isDailyRecordConfirmation(body) && !isDailyRecordRejection(body)) {
             const { data: methodSet } = await db.rpc('wa_set_draft_payment_method', {
               p_profile_id: identity.profile_id,
@@ -6801,15 +6891,7 @@ Deno.serve(async (req) => {
         // narrow: a shop asked "Rejareja au jumla?" that instead types "leo
         // nimeuza shingapi" has changed the subject, and changing the subject
         // goes to Claude like any other sentence.
-        const aiEligible = Boolean(body?.trim())
-          && !answersPendingQuestion(convo, body)
-          && !isSwitchRequest(body)
-          && !isLoginRequest(body)
-          && !parseLanguageCommand(body)
-          && intent !== 'cancel_action'
-          && intent !== 'change_language'
-          && !isDailyRecordConfirmation(body ?? '')
-          && !isDailyRecordRejection(body ?? '');
+        const aiEligible = messageGoesToModel(convo, body, systemCommand);
         // Watched in production: ai_primary is what an ordinary business
         // message must be. If parsers ever start eating them again, this is
         // where it shows first.

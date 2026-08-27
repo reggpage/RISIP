@@ -1,70 +1,78 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { answersPendingQuestion } from '../../../../supabase/functions/_shared/whatsappRouting';
+import { answersPendingQuestion, messageGoesToModel } from '../../../../supabase/functions/_shared/whatsappRouting';
 import {
+  ALLOWED_VALUES,
   CLARIFICATION_FIELDS,
-  canonicalBand,
-  canonicalEventType,
-  checkQuantity,
+  asBand,
+  checkCanonicalValue,
+  checkNumber,
   describePending,
-  validateClarificationAnswer,
+  validateClarificationAnswers,
 } from '../../../../supabase/functions/_shared/whatsappClarification';
 import { ASSISTANT_TOOLS } from '../../../../supabase/functions/_shared/whatsappAssistant';
-import { normalizeNumberWords } from '../../../../supabase/functions/_shared/whatsappDailyRecords';
 
-// THE LAST TWO BRAINS.
+// CODE DOES NOT READ WHAT A PERSON MEANT — BEFORE OR AFTER THE MODEL.
 //
-// A shop met a language model when it opened a subject and a regular expression
-// when it answered the follow-up:
+// The first repair moved three parsers from in front of the model to behind it,
+// and that was not enough. This module briefly held canonicalBand() and
+// canonicalEventType(), which read "reja" and "mauzo" out of the trader's own
+// words to decide what they meant:
 //
-//   parseQuantityAnswer         "tano", "thelathini", "mbili na nusu"
-//   parsePriceBandAnswer        "reja", "rejarej", "jumla"
-//   parseQuantityMeaningAnswer  "mauzo", "manunuzi", "hesabu"
+//   /\b(jumla|jumlla|wholesale|bulk)\b/
+//   /\b(rejareja|rejarej|reja\s*reja|reja|retail)\b/
+//   /\b(mauzo|nimeuza|sale|sales|sold)\b/
 //
-// Nothing the shopkeeper could see decided which brain answered — only whether
-// a question happened to be parked. "Namaanisha anton" fell through all three
-// lists and got the same question a third time.
-//
-// Those lists are still in the codebase, and they still do useful work: given a
-// phrase the model has already identified as the answer to a specific question,
-// they decide whether it names a legal value. That is a bounds check. What they
-// no longer do is decide what a sentence is about.
+// Same job, later in the pipeline. A word list does not stop being a word list
+// because it runs second. The model returns the MEANING now, and what is left
+// here is a membership test against the answers the parked question allows —
+// which no wording, in any language or spelling, can change.
 
 const webhook = readFileSync(resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
 const routing = readFileSync(resolve(process.cwd(), 'supabase/functions/_shared/whatsappRouting.ts'), 'utf8');
-const readNumber = (phrase: string) => {
-  const normalized = normalizeNumberWords(phrase.toLowerCase());
-  const found = /-?\d+(?:[.,]\d+)?/u.exec(normalized.replace(/(\d),(\d{3})\b/gu, '$1$2'));
-  return found ? Number(found[0].replace(',', '.')) : null;
-};
+const clarification = readFileSync(resolve(process.cwd(), 'supabase/functions/_shared/whatsappClarification.ts'), 'utf8');
 
-describe('no clarification parser stands in front of the model', () => {
-  it('leaves only yes and no in the gate', () => {
-    // Executable lines only. The comment inside names all three parsers on
-    // purpose, so the next reader can see what used to stand here and why it
-    // went — asserting on the whole slice would fight that documentation.
-    const gate = routing
-      .slice(
-        routing.indexOf('export function answersPendingQuestion'),
-        routing.indexOf('export const PARSERS_BEHIND_CLAUDE'),
-      )
-      .split(/\r?\n/)
-      .filter((line) => !line.trim().startsWith('//'))
-      .join('\n');
+/** Executable lines only: the comments quote the removed parsers on purpose. */
+const code = (source: string) => source
+  .split(/\r?\n/)
+  .filter((line) => {
+    const trimmed = line.trim();
+    return trimmed !== '' && !trimmed.startsWith('//') && !trimmed.startsWith('*') && !trimmed.startsWith('/*');
+  })
+  .join('\n');
+
+describe('no code reads the trader’s wording, at any point', () => {
+  it('has no word list left in the clarification path', () => {
+    const executable = code(clarification);
+    for (const gone of ['BAND_WORDS', 'EVENT_WORDS', 'canonicalBand(wording', 'canonicalEventType(wording']) {
+      expect(executable, `${gone} still reads wording`).not.toContain(gone);
+    }
+    // The regexes themselves, not just their names.
+    expect(executable).not.toMatch(/jumla\|/);
+    expect(executable).not.toMatch(/rejareja\|/);
+    expect(executable).not.toMatch(/mauzo\|/);
+  });
+
+  it('keeps no clarification parser in front of the model either', () => {
+    const gate = code(routing.slice(
+      routing.indexOf('export function answersPendingQuestion'),
+      routing.indexOf('export function messageGoesToModel'),
+    ));
     for (const parser of [
-      'parseQuantityAnswer', 'parsePriceBandAnswer', 'parseQuantityMeaningAnswer',
-      'parsePaymentMethodAnswer',
+      'parseQuantityAnswer', 'parsePriceBandAnswer', 'parseQuantityMeaningAnswer', 'parsePaymentMethodAnswer',
     ]) {
       expect(gate, `${parser} still reads human language before the model`).not.toContain(parser);
     }
     expect(gate).toContain('isDailyRecordConfirmation(text) || isDailyRecordRejection(text)');
   });
 
-  it('stops importing them here at all', () => {
-    for (const parser of ['parseQuantityAnswer', 'parsePriceBandAnswer', 'parseQuantityMeaningAnswer']) {
-      expect(routing, `${parser} is still imported by the router`).not.toContain(parser.concat(' }'));
-    }
+  it('runs the payment phrase list only when the model was never consulted', () => {
+    // MEASURED: "mpesa" beside a pending draft was read by a list of Tanzanian
+    // mobile-money brands eight hundred lines ABOVE the gate that decides who
+    // reads what.
+    expect(webhook).toContain('const answeredMethod = messageGoesToModel(convo, body, systemCommand)');
+    expect(webhook).toContain('? null\n            : parsePaymentMethodAnswer(body);');
   });
 });
 
@@ -72,28 +80,24 @@ describe('§17 acceptance matrix: none of these is a protocol answer', () => {
   const PARKED = [
     { awaiting: 'product_cost', options: { kind: 'price_band_choice', choices: [{ productName: 'nyama' }] } },
     { awaiting: 'daily_record_quantity', options: { product: 'nyama', ledger: 'sale' } },
+    { awaiting: 'payment_source', options: { kind: 'daily_record_confirmation', dailyRecordId: 'x' } },
   ];
 
   const LANGUAGE = [
-    // price band
     'reja', 'rejarej', 'rejareja', 'jumla', 'jumlla',
-    // quantity
     '5', 'thelathini', 'mbili na nusu', 'kilo tatu',
-    // product
     'anton', 'namaanisha anton', 'ile ya hisense', 'huyo wa kwanza',
-    // payment
     'cash', 'mpesa', 'tigopesa', 'bank',
-    // a change of subject
+    'mauzo', 'ni manunuzi', 'nimehesabu stock tu',
+    'Juma', 'hisense',
     'leo nimeuza shingapi',
   ];
 
   it('sends every one of them to the model, whatever is parked', () => {
     for (const convo of PARKED) {
       for (const said of LANGUAGE) {
-        expect(
-          answersPendingQuestion(convo, said),
-          `${said} (parked: ${convo.awaiting})`,
-        ).toBe(false);
+        expect(answersPendingQuestion(convo, said), `${said} (parked: ${convo.awaiting})`).toBe(false);
+        expect(messageGoesToModel(convo, said, false), `${said} would not reach the model`).toBe(true);
       }
     }
   });
@@ -102,22 +106,31 @@ describe('§17 acceptance matrix: none of these is a protocol answer', () => {
     for (const convo of PARKED) {
       for (const said of ['NDIYO', 'ndiyo', 'HAPANA', 'hapana', 'ghairi']) {
         expect(answersPendingQuestion(convo, said), said).toBe(true);
+        expect(messageGoesToModel(convo, said, false), said).toBe(false);
       }
     }
   });
 });
 
 describe('the model is told what it is being asked', () => {
-  it('describes the parked question without carrying a figure', () => {
-    const described = describePending({
-      field: 'price_band', intent: 'sale', product: 'Nguvu ya Sala',
-      allowedValues: ['retail', 'wholesale'],
-    });
+  it('names the field and the answers it accepts, without a figure', () => {
+    const described = describePending({ field: 'price_band', intent: 'sale', product: 'Nguvu ya Sala' });
     expect(described).toContain('field=price_band');
     expect(described).toContain('allowed_values=retail|wholesale');
     expect(described).toContain('Nguvu ya Sala');
-    // No price, no total, no balance, ever.
     expect(described).not.toMatch(/\d{3,}/);
+  });
+
+  it('tells the model that the decision is its own', () => {
+    const described = describePending({ field: 'event_type', intent: 'unknown' })!;
+    expect(described).toMatch(/the server no longer reads their words at all/i);
+  });
+
+  it('offers a unit question the measures the product is actually sold in', () => {
+    const described = describePending({
+      field: 'unit', intent: 'sale', product: 'mafuta', choices: ['lita', 'robo'],
+    });
+    expect(described).toContain('allowed_values=lita|robo');
   });
 
   it('says nothing when nothing is parked', () => {
@@ -130,77 +143,96 @@ describe('the model is told what it is being asked', () => {
   });
 });
 
-describe('the resume tool carries words, not decisions', () => {
+describe('the tool carries meaning, not wording to be parsed', () => {
   const tool = ASSISTANT_TOOLS.find((entry) => entry.name === 'resolve_pending_clarification');
+  const item = (tool!.input_schema as {
+    properties: { answers: { items: { properties: Record<string, { enum?: string[] }> } } };
+  }).properties.answers.items;
 
-  it('is on the menu, with three bounded fields', () => {
-    expect(tool).toBeDefined();
-    const properties = Object.keys((tool!.input_schema as { properties: Record<string, unknown> }).properties);
-    expect(properties).toEqual(['field', 'wording', 'numeric_candidate']);
+  it('asks for a canonical value the model decided', () => {
+    expect(Object.keys(item.properties)).toEqual(['field', 'canonical_value', 'numeric_value', 'raw_wording']);
+    expect(item.properties.field.enum).toEqual([...CLARIFICATION_FIELDS]);
   });
 
-  it('accepts only the questions Risip knows how to ask', () => {
-    const field = (tool!.input_schema as { properties: { field: { enum: string[] } } }).properties.field;
-    expect(field.enum).toEqual([...CLARIFICATION_FIELDS]);
+  it('says plainly that the server no longer reads the words', () => {
+    expect(tool!.description).toMatch(/YOU decide what the trader meant/i);
+    expect(tool!.description).toMatch(/the server no longer reads their words/i);
   });
 
-  it('tells the model to send words rather than a canonical value', () => {
-    expect(tool!.description).toMatch(/OWN WORDS/);
-    expect(tool!.description).toMatch(/Do not translate them into a canonical value/i);
+  it('accepts several facts settled in one breath', () => {
+    // "mpesa na ilikuwa jana", "hisense kilo tatu".
+    expect(tool!.description).toMatch(/Answer several fields at once/i);
+    const answers = validateClarificationAnswers({
+      answers: [
+        { field: 'quantity', numeric_value: 3, canonical_value: null, raw_wording: 'tatu' },
+        { field: 'unit', canonical_value: 'kilo', numeric_value: null, raw_wording: 'kilo' },
+      ],
+    });
+    expect(answers.map((answer) => answer.field)).toEqual(['quantity', 'unit']);
   });
 
-  it('refuses an answer to a question nobody asked', () => {
-    expect(validateClarificationAnswer({ field: 'nonsense', wording: 'reja' })).toBeNull();
-    expect(validateClarificationAnswer({ field: 'price_band' })).toBeNull();
-    expect(validateClarificationAnswer({ field: 'price_band', wording: 'null' })).toBeNull();
+  it('drops an entry that names no question and no value', () => {
+    expect(validateClarificationAnswers({ answers: [{ field: 'nonsense', canonical_value: 'retail' }] })).toEqual([]);
+    expect(validateClarificationAnswers({ answers: [{ field: 'price_band' }] })).toEqual([]);
+    expect(validateClarificationAnswers({ answers: [{ field: 'price_band', canonical_value: 'null' }] })).toEqual([]);
   });
 
   it('carries no identity, price or confirmation', () => {
     const schema = JSON.stringify(tool!.input_schema);
-    // Exact field names: 'price' on its own would match price_band, which is
-    // the whole point of the tool.
     for (const forbidden of ['"company_id"', '"profile_id"', '"role"', '"price"', '"total"', '"confirmed"']) {
       expect(schema, forbidden).not.toContain(forbidden);
     }
   });
 });
 
-describe('the server decides what the words are worth', () => {
-  it('maps band wording, including the way people mistype it', () => {
-    for (const said of ['reja', 'rejarej', 'rejareja', 'reja reja', 'retail']) {
-      expect(canonicalBand(said), said).toBe('retail');
+describe('the server checks bounds, which is not reading language', () => {
+  it('accepts a meaning the question allows', () => {
+    expect(checkCanonicalValue('price_band', 'retail')).toEqual({ kind: 'ok', value: 'retail' });
+    expect(checkCanonicalValue('event_type', 'stock_count')).toEqual({ kind: 'ok', value: 'stock_count' });
+    expect(checkCanonicalValue('payment_method', 'mobile_money')).toEqual({ kind: 'ok', value: 'mobile_money' });
+  });
+
+  it('refuses a meaning it does not', () => {
+    expect(checkCanonicalValue('price_band', 'discount')).toEqual({ kind: 'reject', reason: 'not_allowed' });
+    expect(checkCanonicalValue('payment_method', 'bitcoin')).toEqual({ kind: 'reject', reason: 'not_allowed' });
+    expect(checkCanonicalValue('price_band', null)).toEqual({ kind: 'reject', reason: 'missing' });
+  });
+
+  it('is a membership test, so wording cannot move it', () => {
+    // The point of the whole change: these are the trader's words, and none of
+    // them is a legal MEANING. The server does not know what they mean and does
+    // not try — that was the model's job and it has already been done.
+    for (const wording of ['reja', 'rejareja', 'jumla', 'mauzo', 'mpesa', 'tigopesa']) {
+      expect(checkCanonicalValue('price_band', wording).kind, wording).toBe('reject');
     }
-    for (const said of ['jumla', 'jumlla', 'wholesale']) {
-      expect(canonicalBand(said), said).toBe('wholesale');
-    }
-    expect(canonicalBand('sijui')).toBeNull();
   });
 
-  it('maps what a bare list turned out to be', () => {
-    expect(canonicalEventType('mauzo')).toBe('sale');
-    expect(canonicalEventType('manunuzi')).toBe('stock_purchase');
-    expect(canonicalEventType('hesabu')).toBe('stock_count');
-    expect(canonicalEventType('sijui')).toBeNull();
+  it('leaves open-ended fields to the company’s own data', () => {
+    // A product or a person has no enum. The catalogue and the customer list
+    // decide, not a word list.
+    expect(ALLOWED_VALUES.product).toBeUndefined();
+    expect(ALLOWED_VALUES.party).toBeUndefined();
+    expect(checkCanonicalValue('product', 'Anton wa Padua')).toEqual({ kind: 'ok', value: 'Anton wa Padua' });
   });
 
-  it('re-reads a quantity rather than trusting the model', () => {
-    expect(checkQuantity('thelathini', 30, readNumber)).toEqual({ kind: 'value', value: 30 });
-    expect(checkQuantity('mbili na nusu', 2.5, readNumber)).toEqual({ kind: 'value', value: 2.5 });
-    expect(checkQuantity('5', 5, readNumber)).toEqual({ kind: 'value', value: 5 });
+  it('range-checks a number rather than re-reading the sentence', () => {
+    expect(checkNumber(30)).toEqual({ kind: 'value', value: 30 });
+    expect(checkNumber(2.5)).toEqual({ kind: 'value', value: 2.5 });
+    expect(checkNumber(0)).toEqual({ kind: 'ask', reason: 'out_of_range' });
+    expect(checkNumber(-3)).toEqual({ kind: 'ask', reason: 'out_of_range' });
+    expect(checkNumber(null)).toEqual({ kind: 'ask', reason: 'missing' });
   });
 
-  it('asks again when the two readings disagree', () => {
-    // The words are the evidence. Guessing which of the two misread the
-    // sentence is not a decision a ledger should make.
-    expect(checkQuantity('thelathini', 3, readNumber)).toEqual({ kind: 'ask', reason: 'disagreement' });
-    expect(checkQuantity('sijui', null, readNumber)).toEqual({ kind: 'ask', reason: 'unreadable' });
-    expect(checkQuantity('0', 0, readNumber)).toEqual({ kind: 'ask', reason: 'out_of_range' });
+  it('narrows a band to the two the ledger stores', () => {
+    expect(asBand('retail')).toBe('retail');
+    expect(asBand('wholesale')).toBe('wholesale');
+    expect(asBand('reja')).toBeNull();
   });
 });
 
 describe('resuming re-derives everything financial', () => {
   it('refuses to resume a question that is not the one on the table', () => {
-    expect(webhook).toContain('if (pending.field !== answer.field)');
+    expect(webhook).toContain('Naomba unijibu hilo kwanza');
   });
 
   it('refuses to resume when nothing is parked', () => {
@@ -208,15 +240,24 @@ describe('resuming re-derives everything financial', () => {
   });
 
   it('prices through the one shared path, not a second copy', () => {
-    // Two copies of a pricing path is how the same sale gets drafted two
-    // different ways depending on which door it came through.
     expect(webhook).toContain('async function priceAndDraftSale');
-    const calls = (webhook.match(/await priceAndDraftSale\(/g) ?? []).length;
-    expect(calls).toBeGreaterThanOrEqual(3);
+    expect((webhook.match(/await priceAndDraftSale\(/g) ?? []).length).toBeGreaterThanOrEqual(3);
   });
 
-  it('clears the parked question before it drafts', () => {
-    const branch = webhook.slice(webhook.indexOf('async function executeClarification'));
-    expect(branch.slice(0, 4000)).toContain('await clearConversation(db, identity.id as string);');
+  it('resumes the payment method on the same draft, without re-drafting', () => {
+    const branch = webhook.slice(webhook.indexOf("if (pending.field === 'payment_method')"));
+    expect(branch.slice(0, 1600)).toContain("db.rpc('wa_set_draft_payment_method'");
+    expect(branch.slice(0, 1600)).toContain('await pendingDraftState(');
+  });
+
+  it('lets a unit settled in the same breath ride with the quantity', () => {
+    const branch = webhook.slice(webhook.indexOf("if (pending.field === 'quantity')"));
+    expect(branch.slice(0, 1600)).toContain("byField.get('unit')");
+    expect(branch.slice(0, 1600)).toContain('spokenUnit: unit');
+  });
+
+  it('takes a payment method settled alongside any other answer', () => {
+    expect(webhook).toContain('function paymentFrom(');
+    expect((webhook.match(/paymentFrom\(byField\)/g) ?? []).length).toBeGreaterThanOrEqual(3);
   });
 });

@@ -33,33 +33,46 @@ import {
 const webhook = readFileSync(resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
 
 /** The eligibility gate, sliced out so assertions are about routing only. */
+// The eligibility test is one call now: messageGoesToModel, named once in the
+// router so every branch asks the same question. What used to be inline here is
+// asserted against that function instead.
 const gate = webhook.slice(
-  webhook.indexOf('const aiEligible = Boolean(body?.trim())'),
+  webhook.indexOf('const aiEligible = messageGoesToModel'),
   webhook.indexOf('let messageRoute'),
 );
+const routing = readFileSync(resolve(process.cwd(), 'supabase/functions/_shared/whatsappRouting.ts'), 'utf8');
 
 describe('nothing that reads business language stands in front of Claude', () => {
   it('has a gate to test at all', () => {
-    expect(gate.length).toBeGreaterThan(80);
-    expect(gate).toContain('answersPendingQuestion(convo, body)');
+    expect(gate).toContain('messageGoesToModel(convo, body, systemCommand)');
+    expect(routing).toContain('export function messageGoesToModel');
   });
 
   it('consults no business parser before the model', () => {
+    const predicate = routing.slice(
+      routing.indexOf('export function messageGoesToModel'),
+      routing.indexOf('export const PARSERS_BEHIND_CLAUDE'),
+    );
     for (const parser of PARSERS_BEHIND_CLAUDE) {
       expect(gate, `${parser} still gates the model`).not.toContain(parser);
+      expect(predicate.slice(0, 900), `${parser} is in the predicate`).not.toContain(parser);
     }
   });
 
   it('keeps only security, transport and protocol answers in front', () => {
     // Each of these is a system command or an exact state answer. None of them
     // is a sentence about the business.
+    // They moved into systemCommand, hoisted above every branch so nothing
+    // below can consume a message the model was going to read.
+    const command = webhook.slice(webhook.indexOf('const systemCommand = isSwitchRequest(body)'));
     for (const allowed of [
-      'answersPendingQuestion', 'isSwitchRequest', 'isLoginRequest',
-      'parseLanguageCommand', 'cancel_action', 'change_language',
+      'isSwitchRequest', 'isLoginRequest', 'parseLanguageCommand',
+      'cancel_action', 'change_language',
       'isDailyRecordConfirmation', 'isDailyRecordRejection',
     ]) {
-      expect(gate, `${allowed} should still guard the model`).toContain(allowed);
+      expect(command.slice(0, 600), `${allowed} should still guard the model`).toContain(allowed);
     }
+    expect(routing).toContain('!answersPendingQuestion(convo, said)');
   });
 
   it('no longer lets any parked conversation hold a new sentence', () => {

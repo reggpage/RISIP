@@ -174,7 +174,7 @@ describe('WhatsApp mixed daily-record batches', () => {
     // model before Haiku could decompose it into a sale and a purchase.
     expect(webhook).toContain('parseDailyRecordBatch');
     const gate = webhook.slice(
-      webhook.indexOf('const aiEligible = Boolean(body?.trim())'),
+      webhook.indexOf('const aiEligible = messageGoesToModel'),
       webhook.indexOf('let messageRoute'),
     );
     expect(gate).not.toContain('parseDailyRecordBatch');

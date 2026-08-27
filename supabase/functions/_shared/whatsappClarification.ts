@@ -2,8 +2,8 @@
  * ONE CONTRACT FOR EVERY UNFINISHED QUESTION.
  *
  * Risip parks a question when it cannot safely finish a record: which band,
- * how many, which product, paid how. Until now each of those questions owned
- * its own parser, and those parsers stood in front of the model:
+ * how many, which product, paid how. Each of those questions used to own its
+ * own parser, and those parsers stood in front of the model:
  *
  *   parsePriceBandAnswer     "reja", "rejarej", "jumla"
  *   parseQuantityAnswer      "tano", "thelathini", "mbili na nusu"
@@ -11,13 +11,21 @@
  *
  * So a shop met a language model when it opened a subject and a regular
  * expression when it answered a follow-up — two brains, switching on nothing
- * the shopkeeper could see. "Namaanisha anton" fell through every one of those
- * lists and got the same question a third time.
+ * the shopkeeper could see.
  *
- * Now there is one shape. The pending question is described to the model, the
- * model returns which field it thinks was answered and in what words, and the
- * server decides whether that is a legal value for the question actually on the
- * table. Claude interprets wording. Code validates canonical values.
+ * Moving those parsers to AFTER the model was not enough, and the audit that
+ * caught it was right. This module briefly held canonicalBand() and
+ * canonicalEventType(), which read "reja" and "mauzo" out of the trader's own
+ * words to decide what they meant. Later in the pipeline, same job: code
+ * deciding what a person meant. A word list does not stop being a word list
+ * because it runs second.
+ *
+ * So the model now returns the MEANING and the words it read it from. This file
+ * checks that the meaning is one of the answers the parked question actually
+ * allows. That is the whole difference:
+ *
+ *   language parsing   does "reja" mean retail?          -> Claude
+ *   bounds checking    is "retail" a legal answer here?   -> here
  *
  * WHAT THIS DELIBERATELY NEVER CARRIES: a price, a total, a stock level, a
  * balance, a company, a profile, a role, or a confirmation. Those are re-derived
@@ -38,6 +46,21 @@ export const CLARIFICATION_FIELDS = [
 ] as const;
 export type ClarificationField = typeof CLARIFICATION_FIELDS[number];
 
+/**
+ * The answers each closed question accepts.
+ *
+ * These are ENUMS, not vocabulary. Nothing here is matched against what the
+ * trader typed — the model has already decided what they meant, and this is the
+ * list of meanings the question can accept at all. A field absent from this map
+ * is open-ended (a product name, a person's name) and is validated against the
+ * company's own data instead.
+ */
+export const ALLOWED_VALUES: Partial<Record<ClarificationField, readonly string[]>> = {
+  price_band: ['retail', 'wholesale'],
+  event_type: ['sale', 'stock_purchase', 'stock_count'],
+  payment_method: ['cash', 'mobile_money', 'bank', 'other'],
+};
+
 /** What Risip is waiting for, described so a model can read it. */
 export type PendingClarification = {
   field: ClarificationField;
@@ -45,8 +68,8 @@ export type PendingClarification = {
   intent: string;
   /** The product under discussion, when the question is about one. */
   product?: string | null;
-  /** The only answers this question can have, when it is a closed set. */
-  allowedValues?: readonly string[];
+  /** For a unit question: the measures this product is actually sold in. */
+  choices?: readonly string[];
 };
 
 /**
@@ -58,28 +81,33 @@ export type PendingClarification = {
  */
 export function describePending(pending: PendingClarification | null): string | null {
   if (!pending) return null;
+  const allowed = ALLOWED_VALUES[pending.field] ?? pending.choices;
   const parts = [
     `RISIP IS WAITING FOR AN ANSWER: field=${pending.field}`,
     `pending_intent=${pending.intent}`,
   ];
   if (pending.product) parts.push(`about_product=${pending.product}`);
-  if (pending.allowedValues?.length) parts.push(`allowed_values=${pending.allowedValues.join('|')}`);
+  if (allowed?.length) parts.push(`allowed_values=${allowed.join('|')}`);
   parts.push(
-    'If this message answers that question, call resolve_pending_clarification with the field and the'
-    + " trader's own words. If it changes the subject instead, treat it as a new message and answer that;"
-    + ' the server releases the parked question.',
+    'If this message answers that question, call resolve_pending_clarification. Send canonical_value as'
+    + " one of the allowed values above — YOU decide which of them the trader's words mean, because the"
+    + ' server no longer reads their words at all. Send raw_wording as what they actually typed, so the'
+    + ' shop can be shown its own words back. If the message changes the subject instead, treat it as a'
+    + ' new message and answer that; the server releases the parked question.',
   );
   return parts.join('\n');
 }
 
-// ── what the model may send back ────────────────────────────────────────────
+// ── what the model sends back ───────────────────────────────────────────────
 
 export type ClarificationAnswer = {
   field: ClarificationField;
-  /** The trader's own words. The evidence. */
-  wording: string;
-  /** The model's reading of a number, cross-checked by the server. */
-  numericCandidate: number | null;
+  /** What the trader typed. Evidence and audit trail, never parsed. */
+  rawWording: string | null;
+  /** THE MEANING, decided by the model. */
+  canonicalValue: string | null;
+  /** A number, decided by the model and range-checked here. */
+  numericValue: number | null;
 };
 
 const text = (value: unknown, max = 120): string | null => {
@@ -88,71 +116,70 @@ const text = (value: unknown, max = 120): string | null => {
   return said.slice(0, max);
 };
 
-export function validateClarificationAnswer(input: unknown): ClarificationAnswer | null {
-  if (!input || typeof input !== 'object') return null;
+/** One answer, or several when a trader settles two facts in one breath. */
+export function validateClarificationAnswers(input: unknown): ClarificationAnswer[] {
+  if (!input || typeof input !== 'object') return [];
   const row = input as Record<string, unknown>;
-  const field = String(row.field ?? '') as ClarificationField;
-  if (!(CLARIFICATION_FIELDS as readonly string[]).includes(field)) return null;
-  const wording = text(row.wording);
-  if (!wording) return null;
-  const candidate = typeof row.numeric_candidate === 'number' && Number.isFinite(row.numeric_candidate)
-    ? row.numeric_candidate
-    : null;
-  return { field, wording, numericCandidate: candidate };
+  const raw = Array.isArray(row.answers) ? row.answers : [row];
+  const answers: ClarificationAnswer[] = [];
+  for (const entry of raw.slice(0, 6)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const one = entry as Record<string, unknown>;
+    const field = String(one.field ?? '') as ClarificationField;
+    if (!(CLARIFICATION_FIELDS as readonly string[]).includes(field)) continue;
+    const numeric = typeof one.numeric_value === 'number' && Number.isFinite(one.numeric_value)
+      ? one.numeric_value
+      : null;
+    const canonical = text(one.canonical_value, 60);
+    if (canonical === null && numeric === null) continue;
+    answers.push({
+      field,
+      rawWording: text(one.raw_wording),
+      canonicalValue: canonical,
+      numericValue: numeric,
+    });
+  }
+  return answers;
 }
 
-// ── canonicalising an answer, once the model has read it ────────────────────
-//
-// These are VALIDATORS, not routers. They receive a phrase the model has
-// already identified as the answer to a specific question and decide whether it
-// names a legal value for that question. The difference matters: the same
-// function that decides "is this sentence about a price band?" is a language
-// router, and the one that decides "does this phrase name retail or wholesale?"
-// is a bounds check.
+// ── bounds checking, which is not language ─────────────────────────────────
 
-const BAND_WORDS: Array<{ re: RegExp; band: Band }> = [
-  { re: /\b(jumla|jumlla|wholesale|bulk)\b/iu, band: 'wholesale' },
-  { re: /\b(rejareja|rejarej|reja\s*reja|reja|retail)\b/iu, band: 'retail' },
-];
-
-export function canonicalBand(wording: string): Band | null {
-  const said = String(wording ?? '').toLowerCase();
-  for (const { re, band } of BAND_WORDS) if (re.test(said)) return band;
-  return null;
-}
-
-const EVENT_WORDS: Array<{ re: RegExp; kind: 'sale' | 'stock_purchase' | 'stock_count' }> = [
-  { re: /\b(mauzo|nimeuza|sale|sales|sold)\b/iu, kind: 'sale' },
-  { re: /\b(manunuzi|nimenunua|purchase|bought|stock)\b/iu, kind: 'stock_purchase' },
-  { re: /\b(hesabu|kuhesabu|count|stock\s*count)\b/iu, kind: 'stock_count' },
-];
-
-export function canonicalEventType(wording: string): 'sale' | 'stock_purchase' | 'stock_count' | null {
-  const said = String(wording ?? '').toLowerCase();
-  for (const { re, kind } of EVENT_WORDS) if (re.test(said)) return kind;
-  return null;
-}
+export type ValueCheck =
+  | { kind: 'ok'; value: string }
+  | { kind: 'reject'; reason: 'not_allowed' | 'missing' };
 
 /**
- * A number the server worked out for itself, or a reason to ask again.
+ * Is this MEANING one the parked question can accept?
  *
- * The model's candidate never wins alone. It confirms a reading reached here
- * independently, and a disagreement is a question rather than a coin toss —
- * the same rule the Stage B language contract uses for every other figure.
+ * A membership test against a closed list. It never looks at what the trader
+ * typed, so no wording — however it is spelled, whatever language it is in —
+ * changes the outcome.
  */
+export function checkCanonicalValue(field: ClarificationField, value: string | null): ValueCheck {
+  if (!value) return { kind: 'reject', reason: 'missing' };
+  const allowed = ALLOWED_VALUES[field];
+  if (!allowed) return { kind: 'ok', value };
+  return allowed.includes(value) ? { kind: 'ok', value } : { kind: 'reject', reason: 'not_allowed' };
+}
+
+export const asBand = (value: string): Band | null =>
+  value === 'retail' || value === 'wholesale' ? value : null;
+
 export type NumberCheck =
   | { kind: 'value'; value: number }
-  | { kind: 'ask'; reason: 'unreadable' | 'disagreement' | 'out_of_range' };
+  | { kind: 'ask'; reason: 'missing' | 'out_of_range' };
 
-export function checkQuantity(
-  wording: string,
-  candidate: number | null,
-  readNumber: (said: string) => number | null,
-): NumberCheck {
-  const mine = readNumber(wording);
-  if (mine === null) return { kind: 'ask', reason: 'unreadable' };
-  if (!(mine > 0) || mine > 1_000_000) return { kind: 'ask', reason: 'out_of_range' };
-  if (candidate === null) return { kind: 'value', value: mine };
-  const agrees = Math.abs(candidate - mine) <= Math.max(0.001, Math.abs(mine) * 1e-9);
-  return agrees ? { kind: 'value', value: mine } : { kind: 'ask', reason: 'disagreement' };
+/**
+ * A range check on a number the model has already read.
+ *
+ * MEASURED, and the reason this is a check rather than a second reading: the
+ * server used to re-parse "thelathini" itself and compare. That was two
+ * language readings of one sentence, and it disagreed with itself on wording
+ * neither list had seen. Safety here comes from the range, from the preview the
+ * shop is shown, and from NDIYO — not from parsing the sentence twice.
+ */
+export function checkNumber(value: number | null, max = 1_000_000): NumberCheck {
+  if (value === null) return { kind: 'ask', reason: 'missing' };
+  if (!(value > 0) || value > max) return { kind: 'ask', reason: 'out_of_range' };
+  return { kind: 'value', value };
 }
