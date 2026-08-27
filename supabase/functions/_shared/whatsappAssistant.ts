@@ -26,6 +26,15 @@ export type AssistantIdentityContext = {
   reversalEnabled: boolean;
   payoutsEnabled: boolean;
   /**
+   * The question Risip is waiting on, if any.
+   *
+   * Without this the model is being asked to recognise an answer to a question
+   * it cannot see — which is how "reja" ended up needing a parser in the first
+   * place. It carries the field, the intent and the legal values; never a
+   * price, a total or a balance.
+   */
+  pendingClarification?: string;
+  /**
    * The words THIS shop uses, and nothing else. Aliases and taught meanings
    * only — never prices, stock or customers, which are read through tools that
    * can be checked. A price in a prompt is a price the model can restate
@@ -178,6 +187,9 @@ export const ASSISTANT_TOOL_NAMES = [
   // Stage C. Answering in prose stops being the silent default and becomes an
   // explicit, bounded choice the telemetry can count.
   'respond_conversationally',
+  // One way back from every parked question, so no clarification needs its own
+  // parser standing in front of the model.
+  'resolve_pending_clarification',
 ] as const;
 
 function tool(
@@ -536,6 +548,23 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
     false,
   ),
   tool(
+    'resolve_pending_clarification',
+    'Use ONLY when Risip has asked a question and this message answers it. The pending question and what would count as an answer are stated in the context above. '
+      + 'Send the field being answered and the trader\'s OWN WORDS — "reja", "thelathini", "tigopesa", "anton". Do not translate them into a canonical value: the server decides whether the words name a legal answer to the question actually on the table, and refuses if they do not. '
+      + 'numeric_candidate is your reading of a number, and the server re-reads the wording itself and asks again if the two disagree. '
+      + 'If the message changes the subject instead of answering, do NOT use this — answer the new subject, and the server releases the parked question.',
+    {
+      field: {
+        type: 'string',
+        enum: ['price_band', 'quantity', 'unit', 'product', 'payment_method', 'event_type', 'party'],
+        description: 'Which of the pending questions this message answers. It must be one Risip is actually waiting for.',
+      },
+      wording: { type: 'string', description: "The trader's own words for the answer, copied, not interpreted." },
+      numeric_candidate: { type: ['number', 'null'], description: 'Your reading of the number, or null. The server verifies it against the wording.' },
+    },
+    ['field', 'wording', 'numeric_candidate'],
+  ),
+  tool(
     'respond_conversationally',
     'Use ONLY for a message that needs no business data at all: a greeting, small talk, a question about something outside this shop, or telling somebody that a protected action lives in the Risip app. '
       + 'Never use this because you are unsure which business tool fits, and never use it to ask for a missing detail — a message that describes a business event goes to a proposing tool with the gaps named in missing_fields, and the server asks. '
@@ -651,7 +680,7 @@ LIVE CONTEXT
 - Approval flow enabled: ${context.approvalFlowEnabled}
 - Reversal enabled: ${context.reversalEnabled}
 - Payouts enabled: ${context.payoutsEnabled}
-${context.vocabulary ? `\n${context.vocabulary}\n` : ''}
+${context.pendingClarification ? `\n${context.pendingClarification}\n` : ''}${context.vocabulary ? `\n${context.vocabulary}\n` : ''}
 - You may use the user’s first name occasionally when it makes a greeting, confirmation or explanation warmer. Do not use it in every reply, do not invent a name, and never treat another person mentioned in the conversation as the user.
 
 EVERY TURN ENDS IN A CAPABILITY

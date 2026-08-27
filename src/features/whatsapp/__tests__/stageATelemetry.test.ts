@@ -197,7 +197,7 @@ describe('Stage A changed no behaviour', () => {
     // widened the LANGUAGE contract deliberately: three tools added, and the
     // two they supersede hidden from the model but kept as executors.
     // Stage C added one more, and it is the one that can do nothing.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(26);
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(27);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('propose_business_event');
     expect(shown).toContain('propose_money_event');

@@ -85,7 +85,11 @@ describe('the model cannot confirm anything', () => {
     // here and pinned separately as powerless below.
     const writers = (ASSISTANT_TOOL_NAMES as readonly string[])
       .filter((name) => !name.startsWith('get_') && !name.startsWith('search_'))
-      .filter((name) => name !== 'respond_conversationally');
+      .filter((name) => name !== 'respond_conversationally')
+      // Neither a read nor a write: it carries the model's reading of an answer
+      // to a question the server itself asked, and the server decides whether
+      // those words name a legal value before anything moves.
+      .filter((name) => name !== 'resolve_pending_clarification');
     expect(writers.length).toBeGreaterThan(0);
     for (const name of writers) expect(name).toMatch(/^propose_/);
   });
@@ -94,6 +98,11 @@ describe('the model cannot confirm anything', () => {
     const conversational = TOOL_FIELDS.get('respond_conversationally');
     // One bounded field, and it names a reason. Nothing else.
     expect(conversational).toEqual(['reason']);
+  });
+
+  it('lets the resume tool carry words and a checkable number, and nothing else', () => {
+    expect(TOOL_FIELDS.get('resolve_pending_clarification'))
+      .toEqual(['field', 'wording', 'numeric_candidate']);
   });
 });
 

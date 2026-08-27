@@ -54,6 +54,7 @@ import {
   buildDailyRecordPending,
   dailyRecordStorageDescription,
   isDailyRecordCandidate,
+  normalizeNumberWords,
   isDailyRecordConfirmation,
   isDailyRecordRejection,
   parseDailyRecordPriceChoice,
@@ -212,6 +213,14 @@ import {
 } from '../_shared/whatsappPaymentMethod.ts';
 // Who sees a message first: the line between a sentence and a protocol answer.
 import { answersPendingQuestion } from '../_shared/whatsappRouting.ts';
+import {
+  canonicalBand,
+  canonicalEventType,
+  checkQuantity,
+  describePending,
+  validateClarificationAnswer,
+  type PendingClarification,
+} from '../_shared/whatsappClarification.ts';
 import type { MessageRoute } from '../_shared/whatsappRouting.ts';
 // STAGE B — the wide language contract. The model sends the trader's words;
 // these decide what they are worth.
@@ -1253,7 +1262,13 @@ async function loadVocabularyContext(db: Admin, identity: ResolvedWhatsAppIdenti
   return [vocabulary, catalogue].filter(Boolean).join('\n\n').slice(0, 6000);
 }
 
-function assistantIdentityContext(identity: ResolvedWhatsAppIdentity, vocabulary?: string): AssistantIdentityContext {
+function assistantIdentityContext(
+  identity: ResolvedWhatsAppIdentity,
+  vocabulary?: string,
+  // A model cannot recognise the answer to a question it was never shown. That
+  // is exactly why "reja" used to need a parser standing in front of it.
+  pending?: PendingClarification | null,
+): AssistantIdentityContext {
   return {
     identityId: identity.id,
     profileId: identity.profile_id,
@@ -1266,6 +1281,7 @@ function assistantIdentityContext(identity: ResolvedWhatsAppIdentity, vocabulary
     reversalEnabled: identity.reversal_enabled,
     payoutsEnabled: identity.payouts_enabled,
     ...(vocabulary ? { vocabulary } : {}),
+    ...(pending ? { pendingClarification: describePending(pending) ?? undefined } : {}),
   };
 }
 
@@ -2636,6 +2652,228 @@ function unknownProductMessage(
     : `${understood}I could not find ${missing} in this business catalogue. Register ${missing} first or use its registered name.`;
 }
 
+/**
+ * Price a quantity sale against the shop's own list and draft it.
+ *
+ * Shared by two callers that must behave identically: the business-event tool,
+ * when the trader states everything at once, and the clarification tool, when
+ * they finish a question Risip had parked. The resume used to live in local
+ * variables inside the message loop, which is precisely why a parked question
+ * needed its own parser — nothing outside that loop could finish the sale.
+ */
+async function priceAndDraftSale(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  waMessageId: string,
+  lang: Lang,
+  args: {
+    sale: QuantitySale;
+    credit: { party: string } | null;
+    paymentMethod: DailyRecordPaymentMethod | null;
+    bandWording: string | null;
+    occurredAt: string | null;
+    said?: string;
+  },
+): Promise<AssistantToolExecution> {
+  const notUnderstood = lang === 'sw'
+    ? 'Sijaelewa bidhaa, idadi au kipimo kwa uhakika. Niandikie bidhaa na idadi yake.'
+    : 'I could not safely understand the product, quantity or unit. State the product and its quantity.';
+  const notSaved = lang === 'sw'
+    ? 'Sikuweza kuhifadhi draft hii. Hakuna rekodi iliyothibitishwa; jaribu tena.'
+    : 'I could not save this draft. Nothing was confirmed; please try again.';
+
+  const priced = await priceQuantitySale(
+    db, identity, args.sale, lang, [], args.credit as never, args.occurredAt,
+  );
+  if (priced.kind === 'blocked') return askBack(priced.message);
+  if (priced.kind === 'unknown') {
+    return askBack(unknownProductMessage(priced.products, priced.resolvedProducts, lang));
+  }
+  if (priced.kind === 'band') {
+    // MEASURED REGRESSION, twice: "nimeuza nguvu ya sala 7 jumla" was asked
+    // which band it wanted, by a sentence that had already said it. The word is
+    // mapped here; only an absent or unmapped band reaches the question.
+    const chosen = bandFromWording(args.bandWording);
+    const state: PriceBandPending = {
+      kind: 'price_band_choice', sale: priced.sale, choices: priced.choices,
+      answered: priced.choices.map(() => chosen), sourceMessageId: waMessageId,
+      credit: args.credit as never, paymentMethod: args.paymentMethod, occurredAt: args.occurredAt,
+    };
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+      awaiting: 'product_cost', receipt_id: null, options: state,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+    const question = priceBandQuestion(priced.choices, lang);
+    return { content: question, terminalReply: question };
+  }
+  if (priced.kind !== 'priced') return askBack(notUnderstood);
+
+  const saleRecord = args.paymentMethod ? { ...priced.record, paymentMethod: args.paymentMethod } : priced.record;
+  const guarded = await addHistoricalPriceWarnings(db, identity.company_id, saleRecord);
+  const created = await createDailyRecordDraft(db, identity, waMessageId, guarded, lang, args.said);
+  if (created.error || !created.id) return askBack(notSaved);
+  await pendingDraftState(db, identity, created.id, waMessageId, guarded);
+  const confirmation = `${identity.company_name} — ${quantitySaleConfirmation(priced.lines, lang, [], priced.notCounted)}`;
+  return { content: confirmation, fallbackReply: confirmation };
+}
+
+/**
+ * Finish a question Risip had parked, using the model's reading of the answer.
+ *
+ * The model says WHICH question it thinks was answered and in WHAT WORDS. This
+ * decides whether those words name a legal value for the question actually on
+ * the table — and refuses if the model has answered a question nobody asked.
+ *
+ * Every figure is re-derived: the price comes from the ledger, the product from
+ * the catalogue, the permission from the identity. Nothing financial travels
+ * through the parked state or through the model.
+ */
+/**
+ * What Risip is waiting for, read off the parked conversation row.
+ *
+ * One function, so the description the model sees and the validation the
+ * resume performs can never drift apart — they are the same source.
+ */
+function pendingClarificationOf(convo: { awaiting?: string | null; options?: unknown } | null): PendingClarification | null {
+  const awaiting = String(convo?.awaiting ?? '');
+  const options = (convo?.options ?? {}) as Record<string, unknown>;
+  const kind = String(options.kind ?? '');
+
+  if (awaiting === 'daily_record_quantity') {
+    return {
+      field: 'quantity',
+      intent: String((options as { ledger?: string }).ledger ?? 'sale'),
+      product: String((options as { product?: string }).product ?? '') || null,
+    };
+  }
+  if (awaiting === 'product_cost' && kind === 'price_band_choice') {
+    const choices = Array.isArray(options.choices) ? options.choices as Array<{ productName?: string }> : [];
+    return {
+      field: 'price_band',
+      intent: 'sale',
+      product: choices.map((choice) => choice?.productName).filter(Boolean).join(', ') || null,
+      allowedValues: ['retail', 'wholesale'],
+    };
+  }
+  if (awaiting === 'product_cost' && kind === 'quantity_meaning') {
+    return { field: 'event_type', intent: 'unknown', allowedValues: ['sale', 'stock_purchase', 'stock_count'] };
+  }
+  return null;
+}
+
+async function executeClarification(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  waMessageId: string,
+  lang: Lang,
+  input: Record<string, unknown>,
+  said?: string,
+): Promise<AssistantToolExecution> {
+  const answer = validateClarificationAnswer(input);
+  if (!answer) {
+    return askBack(lang === 'sw'
+      ? 'Sijaelewa jibu lako. Niandikie tena kwa maneno mengine.'
+      : 'I did not catch that answer. Say it another way.');
+  }
+
+  const convo = await loadConversation(db, identity.id as string);
+  const pending = pendingClarificationOf(convo);
+  if (!pending) {
+    // The model answered a question nobody had asked. Say so plainly rather
+    // than inventing a state to fit it.
+    return askBack(lang === 'sw'
+      ? 'Sina swali linalosubiri jibu kwa sasa. Niambie unachotaka kufanya.'
+      : 'I am not waiting on an answer right now. Tell me what you would like to do.');
+  }
+  if (pending.field !== answer.field) {
+    return askBack(lang === 'sw'
+      ? `Nilikuwa naulizia ${pending.field}. Naomba unijibu hilo kwanza.`
+      : `I was asking about ${pending.field}. Answer that one first.`);
+  }
+
+  const options = (convo?.options ?? {}) as Record<string, unknown>;
+
+  // ── which price the shop meant ───────────────────────────────────────────
+  if (answer.field === 'price_band') {
+    const band = canonicalBand(answer.wording);
+    if (!band) {
+      const question = priceBandQuestion((options.choices ?? []) as PriceBandChoice[], lang);
+      return { content: question, terminalReply: question };
+    }
+    const bandPending = options as unknown as PriceBandPending;
+    const choices = bandPending.choices ?? [];
+    // The word answers every band still open. A shop that says "jumla" to two
+    // products means jumla for both; it does not mean the first one only.
+    const settled = choices.map((_, at) => bandPending.answered?.[at] ?? band);
+    await clearConversation(db, identity.id as string);
+    return await priceAndDraftSale(db, identity, waMessageId, lang, {
+      sale: { ...bandPending.sale, items: applyPriceBands(bandPending.sale.items, choices, settled) },
+      credit: bandPending.credit ?? null,
+      paymentMethod: bandPending.paymentMethod ?? null,
+      bandWording: answer.wording,
+      occurredAt: bandPending.occurredAt ?? null,
+      said,
+    });
+  }
+
+  // ── how many ─────────────────────────────────────────────────────────────
+  if (answer.field === 'quantity') {
+    const read = checkQuantity(answer.wording, answer.numericCandidate, (phrase) => {
+      const normalized = normalizeNumberWords(phrase.toLowerCase());
+      const found = /-?\d+(?:[.,]\d+)?/u.exec(normalized.replace(/(\d),(\d{3})\b/gu, '$1$2'));
+      if (!found) return null;
+      const value = Number(found[0].replace(',', '.'));
+      return Number.isFinite(value) ? value : null;
+    });
+    if (read.kind === 'ask') {
+      return askBack(lang === 'sw'
+        ? 'Sijaelewa idadi. Niandikie kwa tarakimu, mfano *3*.'
+        : 'I could not read the quantity. Write it in digits, for example *3*.');
+    }
+    const wanted = options as unknown as QuantityWanted;
+    await clearConversation(db, identity.id as string);
+    return await priceAndDraftSale(db, identity, waMessageId, lang, {
+      sale: {
+        kind: 'quantity_sale',
+        items: [{ product: wanted.product, quantity: read.value, band: null }],
+        expenses: [],
+      },
+      credit: wanted.ledger === 'debt_issued' && wanted.party ? { party: wanted.party } : null,
+      paymentMethod: wanted.paymentMethod ?? null,
+      bandWording: null,
+      occurredAt: wanted.occurredAt ?? null,
+      said,
+    });
+  }
+
+  // ── what kind of movement a bare list was ────────────────────────────────
+  if (answer.field === 'event_type') {
+    const kind = canonicalEventType(answer.wording);
+    if (kind !== 'sale') {
+      // Only a sale can be finished from here. A purchase needs its cost and a
+      // count needs its own confirmation, and neither is safe to infer from a
+      // single word.
+      return askBack(lang === 'sw'
+        ? 'Sawa. Niandikie tena ukiwa na maelezo kamili — kwa manunuzi niambie ulilipa kiasi gani, na kwa hesabu niambie idadi iliyopo.'
+        : 'Understood. Send it again with the detail — for a purchase tell me what you paid, and for a count tell me what is on the shelf.');
+    }
+    const meaning = options as unknown as { sale?: QuantitySale };
+    if (!meaning.sale) return askBack(lang === 'sw' ? 'Sina orodha inayosubiri.' : 'I have no parked list.');
+    await clearConversation(db, identity.id as string);
+    return await priceAndDraftSale(db, identity, waMessageId, lang, {
+      sale: meaning.sale, credit: null, paymentMethod: null,
+      bandWording: null, occurredAt: null, said,
+    });
+  }
+
+  // Product, unit, payment method and party clarifications are understood but
+  // not yet resumable from here; they are answered by the ordinary tools.
+  return askBack(lang === 'sw'
+    ? 'Nimekuelewa. Niandikie tena ujumbe kamili ili niweze kuukamilisha.'
+    : 'Understood. Send the whole message again so I can complete it.');
+}
+
 async function executeBusinessEvent(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
@@ -2683,40 +2921,10 @@ async function executeBusinessEvent(
     const credit = event.kind === 'credit_sale'
       ? { partyName: event.partyWording ?? null, wording: event.creditWording ?? null }
       : null;
-    const priced = await priceQuantitySale(
-      db, identity, sale, lang, [], credit as never, date.occurredAt,
-    );
-    if (priced.kind === 'blocked') return askBack(priced.message);
-    if (priced.kind === 'unknown') {
-      return askBack(unknownProductMessage(priced.products, priced.resolvedProducts, lang));
-    }
-    if (priced.kind === 'band') {
-      // MEASURED REGRESSION, twice: "nimeuza nguvu ya sala 7 jumla" was asked
-      // which band it wanted, by a sentence that had already said. The word is
-      // mapped here; only an absent or unmapped band reaches the question.
-      const chosen = bandFromWording(event.priceBandWording);
-      const state: PriceBandPending = {
-        kind: 'price_band_choice', sale: priced.sale, choices: priced.choices,
-        answered: priced.choices.map(() => chosen), sourceMessageId: waMessageId,
-        credit: credit as never, paymentMethod, occurredAt: date.occurredAt,
-      };
-      await db.from('whatsapp_conversations').upsert({
-        identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
-        awaiting: 'product_cost', receipt_id: null, options: state,
-        expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
-      }, { onConflict: 'identity_id' });
-      const question = priceBandQuestion(priced.choices, lang);
-      return { content: question, terminalReply: question };
-    }
-    if (priced.kind !== 'priced') return askBack(notUnderstood);
-
-    const saleRecord = paymentMethod ? { ...priced.record, paymentMethod } : priced.record;
-    const guardedSale = await addHistoricalPriceWarnings(db, identity.company_id, saleRecord);
-    const createdSale = await createDailyRecordDraft(db, identity, waMessageId, guardedSale, lang, said);
-    if (createdSale.error || !createdSale.id) return askBack(notSaved);
-    await pendingDraftState(db, identity, createdSale.id, waMessageId, guardedSale);
-    const confirmation = `${identity.company_name} — ${quantitySaleConfirmation(priced.lines, lang, [], priced.notCounted)}`;
-    return { content: confirmation, fallbackReply: confirmation };
+    return await priceAndDraftSale(db, identity, waMessageId, lang, {
+      sale, credit: credit as never, paymentMethod,
+      bandWording: event.priceBandWording, occurredAt: date.occurredAt, said,
+    });
   }
 
   // ── goods taken from a supplier on credit ────────────────────────────────
@@ -3490,6 +3698,9 @@ async function executeAssistantTool(
   }
   if (name === 'propose_money_event') {
     return await executeMoneyEvent(db, identity, waMessageId, lang, input, said);
+  }
+  if (name === 'resolve_pending_clarification') {
+    return await executeClarification(db, identity, waMessageId, lang, input, said);
   }
   if (name === 'respond_conversationally') {
     // Zero side effects, by construction: no database call, no read, no draft.
@@ -6618,7 +6829,11 @@ Deno.serve(async (req) => {
             // time it answers. Raised again so the wait is visible.
             await showTyping(waMessageId);
             const assistant = await runConversationalAssistant({
-              context: assistantIdentityContext(identity, await loadVocabularyContext(db, identity)),
+              context: assistantIdentityContext(
+                identity,
+                await loadVocabularyContext(db, identity),
+                pendingClarificationOf(convo),
+              ),
               history,
               userText: body!,
               executeTool: (name, input) => executeAssistantTool(db, identity, waMessageId, lang, name, input, body!),

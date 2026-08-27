@@ -44,6 +44,8 @@ export type SemanticIntent =
   | 'petty_cash_query' | 'reimbursement_query' | 'businesses_query'
   | 'approvals_query' | 'hypothetical_profit' | 'help'
   | 'conversational'
+  // A parked question answered through the model rather than by a parser.
+  | 'clarification_answer'
   | 'no_tool' | 'unknown';
 
 /** Every read tool maps to exactly one question the shop was asking. */
@@ -69,6 +71,7 @@ const TOOL_INTENT: Record<string, SemanticIntent> = {
   search_risip_help: 'help',
   get_supplier_payables: 'payables_query',
   respond_conversationally: 'conversational',
+  resolve_pending_clarification: 'clarification_answer',
   propose_product_cost: 'product_cost_setup',
 };
 

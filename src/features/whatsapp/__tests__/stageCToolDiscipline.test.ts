@@ -140,7 +140,9 @@ describe('the distinctions that were being confused', () => {
 
 describe('nothing about financial authority moved', () => {
   it('added exactly one tool, and it is the powerless one', () => {
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(26);
+    // Plus resolve_pending_clarification, which is how a parked question gets
+    // answered now that no parser stands in front of one.
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(27);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('respond_conversationally');
     expect(shown).not.toContain('propose_catalogue_transaction');

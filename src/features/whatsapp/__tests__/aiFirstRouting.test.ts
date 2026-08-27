@@ -80,17 +80,30 @@ describe('an answer to a question Risip asked stays deterministic', () => {
     }
   });
 
-  it('owns a band answer while a band was asked', () => {
+  it('no longer owns a band answer — that is language', () => {
+    // "Reja", "rejarej", "jumla" are things a person says. Code was reading
+    // them, so a shop met a language model when it opened a subject and a
+    // regular expression when it answered the follow-up. The model reads them
+    // now and returns them through resolve_pending_clarification.
     const band = { awaiting: 'product_cost', options: { choices: [{ productName: 'nyama' }] } };
-    for (const said of ['jumla', 'rejareja', 'reja']) {
-      expect(answersPendingQuestion(band, said), said).toBe(true);
+    for (const said of ['jumla', 'rejareja', 'reja', 'rejarej', 'jumlla']) {
+      expect(answersPendingQuestion(band, said), said).toBe(false);
     }
   });
 
-  it('owns a bare quantity while a quantity was asked', () => {
+  it('no longer owns a quantity answer — that is language too', () => {
     const quantity = { awaiting: 'daily_record_quantity', options: {} };
-    expect(answersPendingQuestion(quantity, '5')).toBe(true);
-    expect(answersPendingQuestion(quantity, 'tano')).toBe(true);
+    for (const said of ['5', 'tano', 'thelathini', 'mbili na nusu', 'kilo tatu']) {
+      expect(answersPendingQuestion(quantity, said), said).toBe(false);
+    }
+  });
+
+  it('still owns yes and no on top of a parked question', () => {
+    // The one bypass that survives, in every parked state that can carry a
+    // draft: drift on the step that writes to a ledger is not worth it.
+    const band = { awaiting: 'product_cost', options: { choices: [] } };
+    expect(answersPendingQuestion(band, 'ndiyo')).toBe(true);
+    expect(answersPendingQuestion(band, 'hapana')).toBe(true);
   });
 
   it('owns the destructive confirmations outright', () => {
@@ -123,6 +136,8 @@ describe('changing the subject escapes the pending question', () => {
     // "Acha" is not a topic switch — it is a cancel, and it belongs to the
     // deterministic path for the same reason NDIYO does.
     expect(answersPendingQuestion(quantity, 'acha kabisa')).toBe(true);
+    // And the answers themselves now go to the model.
+    expect(answersPendingQuestion(quantity, 'thelathini')).toBe(false);
   });
 
   it('holds nothing when nothing was asked', () => {

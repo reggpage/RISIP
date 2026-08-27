@@ -36,9 +36,6 @@
  * risks semantic drift on the one step where drift writes to a ledger.
  */
 
-import { parsePriceBandAnswer } from './whatsappPriceBand.ts';
-import { parseQuantityAnswer } from './whatsappMissingQuantity.ts';
-import { parseQuantityMeaningAnswer } from './whatsappConversationMemory.ts';
 import { isDailyRecordConfirmation, isDailyRecordRejection } from './whatsappDailyRecords.ts';
 
 /** How a message was routed, for telemetry and for tests. */
@@ -97,31 +94,24 @@ export function answersPendingQuestion(convo: PendingConversation, said: string 
   // business language, and a wrong reading changes an identity or deletes data.
   if (PROTOCOL_ONLY_STATES.has(awaiting)) return true;
 
-  // A drafted record is waiting for a yes or a no. Anything else is a new
-  // message: the shop that answers a confirmation with "hapana, ilikuwa nne"
-  // is correcting, not confirming, and Claude should hear it.
-  if (isDailyRecordConfirmation(text) || isDailyRecordRejection(text)) return true;
-
-  if (awaiting === 'daily_record_quantity') {
-    return parseQuantityAnswer(text) !== null;
-  }
-
-  if (awaiting === 'product_cost') {
-    // Three different questions park here. Each has its own bounded answer, and
-    // a message that is none of them is a new subject.
-    //
-    // The band parser needs the choices it offered, which live in the parked
-    // state. One placeholder choice is enough to decide whether the text names
-    // a band at all — which is the only question being asked here.
-    const choices = Array.isArray((convo as { options?: { choices?: unknown[] } })?.options?.choices)
-      ? (convo as { options: { choices: unknown[] } }).options.choices
-      : [null];
-    if (parsePriceBandAnswer(text, choices as never) !== null) return true;
-    if (parseQuantityMeaningAnswer(text) !== null) return true;
-    return false;
-  }
-
-  return false;
+  // A drafted record is waiting for a yes or a no, and semantic drift on the
+  // one step that writes to a ledger is not worth the intelligence it would
+  // buy. This is the ONLY conversational bypass left.
+  //
+  // What used to be here as well:
+  //
+  //   parseQuantityAnswer(text)          "tano", "thelathini", "mbili na nusu"
+  //   parsePriceBandAnswer(text, ...)    "reja", "rejarej", "jumla"
+  //   parseQuantityMeaningAnswer(text)   "mauzo", "manunuzi", "hesabu"
+  //
+  // Those are human business language, and code was reading them. It meant a
+  // shop met a language model when it opened a subject and a regular expression
+  // when it answered the follow-up — two brains, switching on nothing the
+  // shopkeeper could see. They are gone from the normal path. The model reads
+  // the answer now and returns it through resolve_pending_clarification, and
+  // the same word lists survive as validators of a value the model has already
+  // identified, which is a bounds check rather than a language router.
+  return isDailyRecordConfirmation(text) || isDailyRecordRejection(text);
 }
 
 /**
