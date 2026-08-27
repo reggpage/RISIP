@@ -21,8 +21,8 @@
  * and 20 on others. A version that states a number would be wrong on one of
  * them, and a telemetry label that lies is worse than one that says less.
  */
-export const PROMPT_VERSION = 'risip-agent-v1';
-export const TOOL_SCHEMA_VERSION = 'tools-stage-b';
+export const PROMPT_VERSION = 'risip-agent-v2-tool-discipline';
+export const TOOL_SCHEMA_VERSION = 'tools-stage-c';
 
 /**
  * What the assistant was asked to do, derived from the tool it actually called.
@@ -43,6 +43,7 @@ export type SemanticIntent =
   | 'cost_query' | 'advice' | 'receipts_query' | 'invoice_query'
   | 'petty_cash_query' | 'reimbursement_query' | 'businesses_query'
   | 'approvals_query' | 'hypothetical_profit' | 'help'
+  | 'conversational'
   | 'no_tool' | 'unknown';
 
 /** Every read tool maps to exactly one question the shop was asking. */
@@ -65,6 +66,7 @@ const TOOL_INTENT: Record<string, SemanticIntent> = {
   get_stock_on_hand: 'stock_query',
   search_risip_help: 'help',
   get_supplier_payables: 'payables_query',
+  respond_conversationally: 'conversational',
   propose_product_cost: 'product_cost_setup',
 };
 

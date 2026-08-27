@@ -79,11 +79,21 @@ describe('the model cannot confirm anything', () => {
 
   it('only ever proposes', () => {
     // Every writing tool is named for what it does: it drafts. The verb is the
-    // contract.
+    // contract. Stage C added respond_conversationally, which is neither a read
+    // nor a write — it exists so that answering in prose becomes an explicit
+    // choice the baseline can count instead of a silent default. It is exempt
+    // here and pinned separately as powerless below.
     const writers = (ASSISTANT_TOOL_NAMES as readonly string[])
-      .filter((name) => !name.startsWith('get_') && !name.startsWith('search_'));
+      .filter((name) => !name.startsWith('get_') && !name.startsWith('search_'))
+      .filter((name) => name !== 'respond_conversationally');
     expect(writers.length).toBeGreaterThan(0);
     for (const name of writers) expect(name).toMatch(/^propose_/);
+  });
+
+  it('gives the one non-proposing, non-reading tool nothing to act with', () => {
+    const conversational = TOOL_FIELDS.get('respond_conversationally');
+    // One bounded field, and it names a reason. Nothing else.
+    expect(conversational).toEqual(['reason']);
   });
 });
 

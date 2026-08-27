@@ -65,6 +65,9 @@ async function askModel(
   model: string,
   context: AssistantIdentityContext,
   say: string,
+  // Stage C compares 'auto' against 'any'. Forced tool choice is a design to be
+  // measured, not assumed: it can also turn a correct silence into a wrong call.
+  force: boolean,
 ): Promise<Omit<EvalResult, 'id'>> {
   const startedAt = Date.now();
   const base = {
@@ -92,7 +95,7 @@ async function askModel(
         system: [{ type: 'text', text: buildAssistantSystemPrompt(context), cache_control: { type: 'ephemeral' } }],
         tools: toolsForModel(model),
         tool_choice: {
-          type: requiresCurrentBusinessDataTool(say) ? 'any' : 'auto',
+          type: force || requiresCurrentBusinessDataTool(say) ? 'any' : 'auto',
           disable_parallel_tool_use: false,
         },
         messages: [{ role: 'user', content: say }],
@@ -160,7 +163,7 @@ Deno.serve(async (request) => {
     });
   }
 
-  let body: { token?: string; context?: Partial<AssistantIdentityContext>; cases?: EvalCase[] };
+  let body: { token?: string; context?: Partial<AssistantIdentityContext>; cases?: EvalCase[]; force_tool_choice?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -180,6 +183,7 @@ Deno.serve(async (request) => {
     });
   }
 
+  const forceToolChoice = body.force_tool_choice === true;
   const cases = (body.cases ?? []).slice(0, MAX_CASES_PER_BATCH);
   if (cases.length === 0) {
     return new Response(JSON.stringify({ error: 'no_cases' }), {
@@ -214,7 +218,7 @@ Deno.serve(async (request) => {
   for (const testCase of cases) {
     const say = String(testCase.say ?? '').trim().slice(0, 2000);
     if (!say) continue;
-    const outcome = await askModel(apiKey, model, { ...context, lang: testCase.lang ?? context.lang }, say);
+    const outcome = await askModel(apiKey, model, { ...context, lang: testCase.lang ?? context.lang }, say, forceToolChoice);
     results.push({ id: String(testCase.id), ...outcome });
   }
 

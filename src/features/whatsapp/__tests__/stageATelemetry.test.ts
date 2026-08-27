@@ -157,8 +157,8 @@ describe('telemetry never costs a shop its answer', () => {
   });
 
   it('records a version so a later regression can be attributed', () => {
-    expect(PROMPT_VERSION).toBe('risip-agent-v1');
-    expect(TOOL_SCHEMA_VERSION).toBe('tools-stage-b');
+    expect(PROMPT_VERSION).toBe('risip-agent-v2-tool-discipline');
+    expect(TOOL_SCHEMA_VERSION).toBe('tools-stage-c');
     expect(webhook).toContain('p_prompt_version: PROMPT_VERSION');
     expect(webhook).toContain('p_tool_schema_version: TOOL_SCHEMA_VERSION');
   });
@@ -191,7 +191,8 @@ describe('Stage A changed no behaviour', () => {
     // Stage A froze this at twenty because Stage A changed nothing. Stage B
     // widened the LANGUAGE contract deliberately: three tools added, and the
     // two they supersede hidden from the model but kept as executors.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(23);
+    // Stage C added one more, and it is the one that can do nothing.
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(24);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('propose_business_event');
     expect(shown).toContain('propose_money_event');

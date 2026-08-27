@@ -45,6 +45,24 @@ try {
   output = `${failure.stdout ?? ''}${failure.stderr ?? ''}`;
 }
 
+/**
+ * A file that does not parse.
+ *
+ * MEASURED FAILURE, the third time this file has been extended by an outage.
+ * A tool executor was inserted through a shell heredoc and the template literal
+ * inside it was eaten, leaving `content: ,` in the middle of the webhook. Every
+ * check stayed green — this script only looked for TS2304, tsc does not cover
+ * supabase/functions, and the test suite does not import the webhook — and the
+ * deploy failed at the bundler with "Expression expected". The old worker kept
+ * serving, so the 401 probe still looked healthy and the deploy looked done.
+ *
+ * TS1xxx is the syntax family. Nothing here is tolerable: a file that cannot be
+ * parsed cannot boot, whatever else is true about it.
+ */
+const syntaxErrors = output
+  .split(/\r?\n/)
+  .filter((line) => /error TS1\d{3}:/.test(line));
+
 // TS2304: Cannot find name 'x'.  TS2552: Cannot find name 'x'. Did you mean…?
 const undefinedNames = output
   .split(/\r?\n/)
@@ -85,7 +103,16 @@ for (const path of entrypoints) {
   }
 }
 
-if (undefinedNames.length > 0 || duplicateImports.length > 0) {
+if (syntaxErrors.length > 0 || undefinedNames.length > 0 || duplicateImports.length > 0) {
+  if (syntaxErrors.length > 0) {
+    console.error(`
+${syntaxErrors.length} syntax error(s):
+`);
+    for (const line of syntaxErrors) console.error(`  ${line.trim()}`);
+    console.error(`
+The bundler refuses these outright, so the deploy fails and the OLD worker keeps serving. A healthy-looking 401 probe proves nothing here.
+`);
+  }
   if (undefinedNames.length > 0) {
     console.error(`\n${undefinedNames.length} name(s) used but never defined:\n`);
     for (const line of undefinedNames) console.error(`  ${line.trim()}`);

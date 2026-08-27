@@ -3398,6 +3398,18 @@ async function executeAssistantTool(
   if (name === 'propose_money_event') {
     return await executeMoneyEvent(db, identity, waMessageId, lang, input, said);
   }
+  if (name === 'respond_conversationally') {
+    // Zero side effects, by construction: no database call, no read, no draft.
+    // Its whole purpose is to make "I will just talk" an explicit choice the
+    // baseline can count, instead of the silent default it used to be.
+    const reason = String(input.reason ?? 'off_topic');
+    return {
+      content: `conversational_reason=${reason}`,
+      fallbackReply: lang === 'sw'
+        ? 'Niko hapa. Niandikie mauzo, matumizi, deni au swali kuhusu biashara yako.'
+        : 'I am here. Send me a sale, an expense, a debt, or a question about your business.',
+    };
+  }
   if (name === 'get_supplier_payables') {
     // The opposite ledger from get_open_debts. Stage A.1 found every payable
     // question landing on receivables because no payables tool existed at all.
