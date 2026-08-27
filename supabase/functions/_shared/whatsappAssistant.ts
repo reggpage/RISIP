@@ -217,13 +217,18 @@ const CONTRACTOR_TOOLS = new Set([
 const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
   tool(
     'get_business_summary',
-    'Read confirmed daily-record sales, expenses, customer payments, debt issued, stock purchases and cash-movement estimate. Use for how the business performed in a period. Never use old chat numbers.',
+    'Reads confirmed sales, expenses, customer payments, debt issued, stock purchases and the cash-movement estimate for a period. '
+      + 'Use it for WHAT HAPPENED — an overview, a recap, how the period went. A summary is not a review: it reports, it does not recommend. Only reach for get_business_advice when the trader is asking what they should DO. '
+      + 'Never use figures from earlier in the chat.',
     { period: periodSchema, when: whenSchema },
     ['period', 'when'],
   ),
   tool(
     'get_product_performance',
-    'Read confirmed product quantities, revenue or estimated margin. Use for top-selling products, a named product, comparisons, and follow-ups such as “jumla yake?”, “faida yake?” or “what about last week?”. product_names must come from the conversation; use an empty array for a ranking across all products. '
+    'Reads confirmed product figures for one product, several, or a ranking across all of them (empty array). Product names come from the message or the conversation. '
+      + 'THE METRIC IS THE QUESTION. quantity is HOW MANY left the shelf — pieces, kilos, litres. revenue is HOW MUCH MONEY those sales brought in. margin is what was left after cost. '
+      + 'WHEN IN DOUBT IT IS MONEY. A shopkeeper asking about their own sales usually means the takings, so a question that does not name a counting word is revenue. Quantity is what a question asks for when it names the thing being counted — pieces, kilos, litres, how many. Answering a money question with a piece-count is a different question answered confidently, which is worse than asking. '
+      + 'Follow-ups inherit the product and period already under discussion and only change the metric. '
       + 'ALWAYS set direction to "worst" with metric "margin" for any question about LOSS — “je kuna hasara?”, “bidhaa gani inaleta hasara”, “what am I losing money on”, “below cost”. Sales minus expenses can never show a loss on a product; only this can.',
     {
       metric: { type: 'string', enum: ['quantity', 'revenue', 'margin'] },
@@ -246,7 +251,9 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
   ),
   tool(
     'get_business_advice',
-    'Gather the whole business in one verified payload — period sales and expenses, top movers, every product sold BELOW COST, dead stock, what has run out, what is running low, products with no buying cost, and outstanding debts — and write it back as an adviser. Use for “nipe ushauri”, “biashara yangu ikoje”, “nifanye nini”, “how is my business doing”. The result carries the voice and format to answer in; follow it exactly and never add a figure it does not contain.',
+    'Gathers the whole business in one verified payload — period sales and expenses, top movers, every product sold BELOW COST, dead stock, what has run out, what is running low, products with no buying cost, and outstanding debts. '
+      + 'Use it when the trader wants to know WHAT TO DO: a recommendation, a decision, how to improve something, how to reach a target. It is not the tool for "what happened" — a recap of the period is get_business_summary, and answering a recap with a management review is answering a question nobody asked. '
+      + 'The payload is evidence, not an answer. Read it, work out what actually matters for the question in front of you, and say that in your own words. Never state a figure it does not contain.',
     {},
     [],
   ),
@@ -276,7 +283,7 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
   ),
   tool(
     'get_hypothetical_product_profit',
-    'Deterministically estimate profit if every currently-on-hand unit of one named product were sold. The server reads physical stock, buying cost and current retail/wholesale prices and performs the arithmetic. Use for “zikiuza zote nitapata faida gani?” or “if I sell all of them?”. Never improvise this calculation with chat numbers.',
+    'Estimates profit that has NOT happened yet: what every unit currently on the shelf would make if it were all sold. A question about profit a product has ALREADY made is history and belongs to get_product_performance with metric "margin". Deterministically estimate profit if every currently-on-hand unit of one named product were sold. The server reads physical stock, buying cost and current retail/wholesale prices and performs the arithmetic. Use for “zikiuza zote nitapata faida gani?” or “if I sell all of them?”. Never improvise this calculation with chat numbers.',
     { product_name: { type: 'string', description: 'One explicit or conversation-resolved product name. The server resolves it against the active company catalogue.' } },
     ['product_name'],
   ),
@@ -450,7 +457,7 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
           'stock_loss', 'owner_use', 'stock_count',
           'whole_animal_procurement', 'whole_animal_breakdown',
         ],
-        description: 'credit_sale is a CUSTOMER taking goods on credit. supplier_credit_purchase is THIS SHOP taking goods from a supplier on credit. owner_use is the owner taking stock for themselves — never a sale, an expense or a loss.',
+        description: 'CREDIT HAS A DIRECTION, and WHO IS DOING THE TAKING decides it. When the trader speaks about themselves — I took, I received, I collected — the goods came INTO the shop and the other party is a supplier: supplier_credit_purchase, and the shop owes. When a NAMED PERSON is the one taking, the goods LEFT the shop to a customer: credit_sale, and the shop is owed. Swahili marks this on the verb itself, first person against third, and it is the most reliable signal in the sentence. owner_use is stock leaving for the owner household with no sale at all — never a sale, an expense or a loss.',
       },
       lines: {
         type: 'array',
@@ -662,9 +669,16 @@ GROUNDING AND TOOLS
 - Never invent money, quantities, statuses, people, products, dates or balances. Every figure must come from a tool result. If a tool fails, say you could not retrieve the information.
 - You MAY add up figures a tool returned when the user asks for a total, and you should — answering “what is my total?” with a list the user has to add up themselves is not an answer. Say what you added.
 - Do not subtract your way to profit. Historical margin comes from product performance; a sell-all-stock estimate comes from get_hypothetical_product_profit. Both use server data. Sales minus expenses is a different number and must never be presented as profit.
-- A LOSS QUESTION IS A MARGIN QUESTION. "Je kuna hasara?", "bidhaa gani inaleta hasara", "am I losing money" — call get_product_performance with metric "margin" and direction "worst". Sales minus expenses can be comfortably positive while products are being sold below cost every day, so "mauzo ni makubwa kuliko matumizi, hakuna hasara" is not an answer to this question; it is the wrong number. Say plainly whether any product sold below cost, name them with their figures, and only then add context.
-- CHEAPEST IS A PRICE QUESTION, NOT A LOSS QUESTION. “Bei ya chini”, “cheapest” or “lowest price” means rank the current configured selling prices with get_product_price_comparison. “Inauzwa chini ya gharama”, “hasara” or “negative margin” means historical product-performance margin. Never substitute one for the other.
-- MISSING PRICE IS A NARROW CATALOGUE QUESTION. “Bidhaa gani haina bei?” means products missing a configured selling price; call get_products_missing_selling_price and return only that list. It does not mean missing buying cost, below-cost sales or a business summary.
+- LOSS, CHEAPEST AND MISSING PRICE ARE THREE DIFFERENT QUESTIONS.
+  A loss question asks which products sell below what they cost: that is
+  get_product_performance with metric "margin" and direction "worst". Never
+  answer it from cash — sales can exceed expenses while every kilo leaves the
+  shop at a loss, so "hakuna hasara" from a positive balance is the wrong
+  number, not a rough one.
+  A cheapest question asks which configured selling price is lowest today:
+  get_product_price_comparison. It is about prices, not margins.
+  A missing-price question asks which products have no selling price set:
+  get_products_missing_selling_price, and that list is the whole answer.
 - Keep confirmed and pending apart when you total anything. Only confirmed records count towards a real total; mention anything still pending separately, with its own figure, so the user can see both.
 - You may call more than one read tool when the question needs it. Do not call a tool unrelated to the question.
 - Receipts, invoices, petty cash, reimbursements and approvals are not part of this WhatsApp assistant. Do not offer them, do not explain them, and do not suggest them as a next step. If somebody asks, say briefly that it lives in the Risip app and move on.
@@ -703,41 +717,26 @@ ${BUSINESS_RULES}
 
 ${ADVISOR_VOICE}
 
-WHAT THIS SHOP CAN ASK YOU
-Everything below already works. Never tell somebody to open the app for one of
-these, and when a question is close to one of them, answer it rather than asking
-what they mean.
+WHAT THIS SHOP CAN DO FROM WHATSAPP
+All of this already works here. Never send somebody to the app for one of them,
+and when a message is close to one of them, do it rather than asking what they
+meant.
 
-  RECORDING (all confirmed before saving)
-  · a sale, priced from the shop's own list — "nimeuza daftari 5"
-  · a sale that names its money — "nimeuza daftari 5 kwa 7500"
-  · a till roll, one product per line, thirty lines if they like
-  · a purchase — "nimenunua daftari 20 kwa 35000"
-  · spending — "nimelipa umeme 20000", "nauli 3000"
-  · a debt — "Juma amechukua sukari 12000"; a repayment — "Juma amelipa 5000"
-  · a stock count — "nina daftari 90", "daftari zimebaki 90", "daftari ziwe 400"
-  · a selling price — "bei ya daftari rejareja 1500 jumla 1300 kuanzia 12"
-  · two prices at once — "bei ya velvet iwe 4000 na sodaa iwe 2000"
-  · a buying cost — "daftari nimenunua kwa 1000 kila moja"
-  · a new product, by pricing something the catalogue does not have yet
-  · a photo of a receipt, sent straight to this chat
+  RECORDING, each confirmed before it saves: sales priced from the shop's own
+  list; sales that name their own money; a whole till roll, one product a line;
+  purchases; expenses; a customer's debt and their repayments; goods taken from
+  a supplier on credit and payments to that supplier; spoilage; stock the owner
+  took home; a stock count; a selling price, or several at once; a buying cost;
+  a new product, created by pricing something the catalogue does not have; a
+  whole animal bought, and later butchered into its cuts; a photo of a receipt.
 
-  ASKING
-  · what is on the shelf, whole or one product — "daftari ziko ngapi", "stock yangu ikoje"
-  · what has run out — "nini kimeisha"
-  · a price — "bei ya daftari ni ngapi", "daftari ni bei gani"
-  · a buying cost, and the margin between them
-  · the day, week, month or year's takings — "leo nimeuza kiasi gani"
-  · profit, and which products carry it
-  · which products sell most, by quantity, revenue or margin
-  · WHICH PRODUCTS LOSE MONEY — "je kuna hasara", never answered from cash
-  · why sales moved — get_sales_trend
-  · who owes money, and how much, and for how long
-  · what the whole business needs today — get_business_advice
-  · "if I sold every one on the shelf, what would I make?"
-  · how Risip itself works
-  · a login link to the web app — "login"
-  · which businesses they belong to, and switching between them
+  ASKING: what is on the shelf; what has run out; a price; a buying cost and the
+  margin between them; takings for a day, week, month or year; profit and which
+  products carry it; which products sell most by quantity, revenue or margin;
+  which products LOSE money; why sales moved; who owes the shop and for how
+  long; what the shop owes its suppliers; what the business should do next; what
+  selling the whole shelf would make; how Risip itself works; a login link;
+  which businesses they belong to, and switching between them.
 
 SCOPE
 - You can explain Risip and offer ordinary small-business guidance. Do not give tax, legal, investment or regulated financial advice; suggest a qualified professional where appropriate.

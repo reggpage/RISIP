@@ -60,7 +60,17 @@ describe('Stage D semantic boundaries', () => {
       identityId: 'i', profileId: 'p', companyId: 'c', companyName: 'Duka', userName: null,
       role: 'owner', lang: 'sw', approvalFlowEnabled: false, reversalEnabled: false, payoutsEnabled: false,
     });
-    expect(prompt).toContain('CHEAPEST IS A PRICE QUESTION');
-    expect(prompt).toContain('MISSING PRICE IS A NARROW');
+    // The three distinctions survive; the three separate headings do not. They
+    // were stated once as prose with example sentences and again as a tool
+    // mapping just below, and the example sentences were teaching a Swahili
+    // speaker how Swahili speakers phrase a question. What matters is that the
+    // shop cannot be handed the wrong one of the three, so that is what is
+    // asserted — the concept, not the heading it used to sit under.
+    expect(prompt).toContain('LOSS, CHEAPEST AND MISSING PRICE ARE THREE DIFFERENT QUESTIONS');
+    expect(prompt).toContain('get_product_price_comparison');
+    expect(prompt).toContain('get_products_missing_selling_price');
+    expect(prompt).toMatch(/metric "margin" and direction "worst"/);
+    // The reasoning behind the loss rule is judgement, not vocabulary, and stays.
+    expect(prompt).toMatch(/sales can exceed expenses while every kilo leaves the\s+shop at a loss/);
   });
 });

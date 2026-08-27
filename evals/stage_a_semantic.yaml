@@ -676,3 +676,145 @@ cases:
     expect_intent: credit_sale
     expect_party: "Juma"
     backend_should: accept
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # STAGE D — the model is a brain, not a printer.
+  #
+  # Every case here comes from a real production message, and each one failed
+  # because something in the codebase was answering FOR the model: a mandatory
+  # three-section adviser template, a tool description that said "follow it
+  # exactly", a summary tool whose examples overlapped the adviser's, or a
+  # rendered sentence returned as terminalReply so the model never got to think.
+  #
+  # expect_metric is new. Tool choice alone cannot tell these apart: asking what
+  # a product SOLD FOR and asking HOW MANY it sold are the same tool and
+  # different questions, and answering one with the other is how "Nguvu ya Sala
+  # ina mauzo ya shingapi" came back as "62 vipande".
+  # ══════════════════════════════════════════════════════════════════════════
+
+  # ── summary is not advice ─────────────────────────────────────────────────
+  - id: 9300
+    say: "Naomba summary ya dukan langu"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: business_summary
+    backend_should: accept
+    note: "PRODUCTION FAILURE: returned the MD adviser template — Tathmini ya takwimu / Ushauri wa MD / Anza na hili — because the adviser tool's description listed 'biashara yangu ikoje' among its triggers. A recap is not a review."
+  - id: 9301
+    say: "biashara ilikuwaje wiki hii"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: business_summary
+    backend_should: accept
+  - id: 9302
+    say: "nifanye nini kuboresha biashara"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: advice
+    backend_should: accept
+  - id: 9303
+    say: "nishauri kuhusu duka langu"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: advice
+    backend_should: accept
+
+  # ── revenue is not quantity ───────────────────────────────────────────────
+  - id: 9310
+    say: "Nguvu ya Sala ina mauzo ya shingapi"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: product_performance
+    expect_metric: revenue
+    backend_should: accept
+    note: "PRODUCTION FAILURE: answered '62 vipande'. The trader asked how much money the product brought in and was given a piece-count, confidently."
+  - id: 9311
+    say: "Nguvu ya Sala imeingiza shilingi ngapi"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: product_performance
+    expect_metric: revenue
+    backend_should: accept
+  - id: 9312
+    say: "mauzo ya soseji ni kiasi gani"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: product_performance
+    expect_metric: revenue
+    backend_should: accept
+  - id: 9313
+    say: "Nguvu ya Sala imeuza vipande vingapi"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: product_performance
+    expect_metric: quantity
+    backend_should: accept
+  - id: 9314
+    say: "nyama imeuza kilo ngapi mwezi huu"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: product_performance
+    expect_metric: quantity
+    backend_should: accept
+  - id: 9315
+    say: "faida ya Nguvu ya Sala"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: product_performance
+    expect_metric: margin
+    backend_should: accept
+
+  # ── three questions that are not each other ───────────────────────────────
+  - id: 9320
+    say: "bidhaa gani ina bei ya chini sana"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: price_comparison
+    backend_should: accept
+    note: "Cheapest is a price question. It is not a loss question."
+  - id: 9321
+    say: "bidhaa gani inauzwa chini ya gharama"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: product_performance
+    expect_metric: margin
+    backend_should: accept
+  - id: 9322
+    say: "bidhaa gani haina bei"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: missing_selling_price
+    backend_should: accept
+    note: "A narrow catalogue question. The answer is that list, not a business summary."
+
+  # ── answer what was asked, without asking back ────────────────────────────
+  - id: 9330
+    say: "Nini kiliuzika jana"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: product_performance
+    backend_should: accept
+    note: "PRODUCTION FAILURE: asked 'Unaomba kuona bidhaa gani hasa?'. The question already names the set — every product sold yesterday. The user answered 'Ndiyo' and got a generic help menu."
+  - id: 9331
+    say: "nini kimeisha"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: stock_query
+    backend_should: accept
+
+  # ── the words a shop uses to continue a thought ───────────────────────────
+  - id: 9340
+    say: "na mapato yake?"
+    lang: sw
+    fixture: live_sandbox
+    expect_intent: product_performance
+    expect_metric: revenue
+    backend_should: accept
+    note: "A follow-up: same products, same period, different metric."
+  - id: 9341
+    say: "na Musa je?"
+    lang: sw
+    fixture: live_sandbox
+    backend_should: clarify
+    expect_clarification: party
+    note: "Musa could be a customer or a supplier. Answering the opposite ledger reads as a confident answer."

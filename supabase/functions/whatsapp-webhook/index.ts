@@ -3201,17 +3201,22 @@ async function executeAssistantTool(
       };
     });
     if (name === 'get_products_missing_selling_price') {
+      // STAGE D. The rendered sentence becomes the FALLBACK, not the answer.
+      // A terminalReply on a success path hands the shop a pre-written line
+      // and stops the model reasoning, so "bidhaa gani haina bei?" and
+      // "ni bidhaa ngapi hazina bei?" got the same paragraph. The facts go
+      // to the model; the rendering survives only if the model cannot finish.
       const reply = missingSellingPriceReply(rows, lang);
-      return { content: reply, terminalReply: reply };
+      return { content: reply, fallbackReply: reply };
     }
     const direction = input.direction === 'highest' ? 'highest' as const : 'lowest' as const;
     const reply = productPriceComparisonReply(rows, direction, lang);
-    return { content: reply, terminalReply: reply };
+    return { content: reply, fallbackReply: reply };
   }
   if (name === 'get_hypothetical_product_profit') {
     const productName = typeof input.product_name === 'string' ? input.product_name : '';
     const result = await hypotheticalProfitToolReply(db, identity, productName, lang);
-    return { content: result.text, terminalReply: result.text };
+    return { content: result.text, fallbackReply: result.text };
   }
   if (name === 'get_open_debts') {
     const partyName = typeof input.party_name === 'string' ? input.party_name.trim().slice(0, 100) || null : null;

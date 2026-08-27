@@ -58,7 +58,13 @@ describe('deterministic hypothetical product profit', () => {
     expect(deterministic).toBeGreaterThan(-1);
     expect(deterministic).toBeGreaterThan(assistant);
     expect(webhook).toContain("if (name === 'get_hypothetical_product_profit')");
-    expect(webhook).toContain('return { content: result.text, terminalReply: result.text };');
+    // Stage D: the rendered sentence became the FALLBACK rather than the answer.
+    // A terminalReply on a success path hands the shop a pre-written line and
+    // stops the model reasoning about what was actually asked. What this test
+    // guards is unchanged and is the part that matters: the arithmetic is still
+    // the tool's, and the model still cannot compute a profit of its own.
+    expect(webhook).toContain('return { content: result.text, fallbackReply: result.text };');
+    expect(webhook).not.toContain('return { content: result.text, terminalReply: result.text };');
   });
 
   it('uses base-unit cost and only complete portions in a sell-all estimate', () => {

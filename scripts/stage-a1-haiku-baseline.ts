@@ -48,6 +48,7 @@ type Case = {
   expectPayment?: string;
   expectBand?: string;
   expectWhen?: string;
+  expectMetric?: string;
   expectLines: Line[];
   backendShould?: string;
   history: AssistantHistoryMessage[];
@@ -85,7 +86,7 @@ function loadCases(): Case[] {
   const cases: Case[] = [];
   for (const file of readdirSync(dir).filter((name) => name.endsWith('.yaml'))) {
     const source = readFileSync(resolve(dir, file), 'utf8');
-    for (const block of source.split(/\n\s+- id:\s*/).slice(1)) {
+    for (const block of source.split(/\n\s*- id:[ \t]*/).slice(1)) {
       const id = block.match(/^([^\s#]+)/)?.[1];
       const say = block.match(/^\s+say:\s*"((?:[^"\\]|\\.)*)"/m)?.[1]
         ?? block.match(/^\s+say:\s*'([^']*)'/m)?.[1];
@@ -106,6 +107,7 @@ function loadCases(): Case[] {
         expectPayment: str('expect_payment_wording'),
         expectBand: str('expect_price_band_wording'),
         expectWhen: str('expect_occurred_at_wording'),
+        expectMetric: str('expect_metric'),
         expectLines: parseLines(block),
         backendShould: str('backend_should'),
         history: parseHistory(block),
@@ -242,6 +244,7 @@ function labelOf(testCase: Case): Label {
 // ── §4 categories ───────────────────────────────────────────────────────────
 
 const FAMILY: Record<string, string> = {
+
   sale: 'sales', credit_sale: 'credit sales', customer_payment: 'customer payments',
   expense: 'expenses', stock_purchase: 'stock purchases',
   supplier_credit_purchase: 'supplier credit', supplier_payment: 'supplier payments',
@@ -421,6 +424,7 @@ const ENUM_FIELDS = new Set(['payment_method']);
 
 /** Stage B renamed every carried value to the word the trader used. */
 const FIELD_ALIASES: Record<string, string[]> = {
+  metric: ['metric'],
   party: ['party_wording', 'supplier_wording', 'party_name'],
   payment: ['payment_wording', 'payment_method'],
   price_band: ['price_band_wording'],
@@ -429,7 +433,7 @@ const FIELD_ALIASES: Record<string, string[]> = {
 
 const FIELD_OF: Record<string, string> = {
   party: 'party_name', payment: 'payment_method',
-  price_band: 'price_band_wording', occurred_at: 'occurred_at_wording',
+  price_band: 'price_band_wording', metric: 'metric', occurred_at: 'occurred_at_wording',
 };
 
 type EntityCheck = { field: string; expected: string; actual: string; ok: boolean; representable: boolean };
@@ -458,6 +462,8 @@ function checkEntities(testCase: Case, input: Record<string, unknown> | null, to
     }
     return undefined;
   };
+  // STAGE D: the metric IS the question. Same tool, three different answers.
+  add('metric', testCase.expectMetric, (input ?? {}).metric);
   add('party', testCase.expectParty, valueFor('party'));
   add('payment', testCase.expectPayment, valueFor('payment'));
   add('price_band', testCase.expectBand, valueFor('price_band'));
