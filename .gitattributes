@@ -1,0 +1,8 @@
+# Keep the repo LF everywhere. A tool rewrote 22 files to CRLF once and the
+# diff became 6,300 lines of noise around a 100-line change.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.docx binary
+*.pdf binary

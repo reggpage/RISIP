@@ -50,6 +50,7 @@ type EvalCase = {
   id: string;
   say?: string;
   expectTool: string | null;
+  expectIntent: string | null;
   hasHistory: boolean;
   history: string[];
   hasRole: boolean;
@@ -82,6 +83,10 @@ function extractCases(file: string, source: string): EvalCase[] {
       // would have had me chasing a wrong total that was my own extractor's.
       say: unescape(block.match(/^\s+say:\s*(["'])([\s\S]*?)\1\s*$/m)),
       expectTool: tool === 'null' || tool === undefined ? null : tool,
+      // The semantic intent from whatsappTelemetry.ts. Present only on cases
+      // whose deterministic route has been handed to the model — see
+      // MODEL_ROUTED_INTENT below.
+      expectIntent: block.match(/^\s+expect_intent:\s*([a-z_]+)\s*(?:#.*)?$/m)?.[1] ?? null,
       hasHistory: /^\s+history:/m.test(block),
       // history: ["first turn", "the answer it got"] — the turns before this one.
       history: [...(block.match(/^\s+history:\s*\[(.*)\]\s*$/m)?.[1] ?? '')
@@ -151,6 +156,53 @@ const SATISFIES: Record<string, string[]> = {
   search_risip_help: ['conversational_ai'],
   knowledge_reply: ['conversational_ai'],
 };
+
+/**
+ * Read questions the AI-first webhook no longer routes deterministically.
+ *
+ * These expectations were written when a parser owned each read tool. Since the
+ * inversion, `route()` answers `conversational_ai` for them and the MODEL picks
+ * the tool — which calls the same function and reaches the same figures by a
+ * different path. Reporting that as a FAILURE is a stale label, not a defect.
+ *
+ * Reporting it as a PASS would be worse. This runner holds no model, so it
+ * cannot see which tool was chosen; claiming otherwise is exactly the flattery
+ * the header of this file was written against. So they get their own bucket:
+ * checked as far as this runner can see, and verified for real by
+ * `stage-a-baseline.ts --ai`, which does call the model.
+ *
+ * The deferral is not blanket. A case only qualifies when it declares the
+ * semantic intent it must end in AND that intent matches the one its old
+ * expect_tool stood for — so a read question that silently starts landing in
+ * the wrong tool still fails here.
+ */
+const MODEL_ROUTED_INTENT: Record<string, string> = {
+  ai_my_receipts: 'receipts_query',
+  get_my_receipts: 'receipts_query',
+  ai_petty_cash_balance: 'petty_cash_query',
+  get_my_petty_cash_balance: 'petty_cash_query',
+  ai_owed_to_me: 'reimbursement_query',
+  ai_pending_approvals: 'approvals_query',
+  ai_debtors: 'receivables_query',
+  get_open_debts: 'receivables_query',
+  ai_business_summary: 'business_summary',
+  get_business_summary: 'business_summary',
+  ai_my_businesses: 'businesses_query',
+  ai_top_products: 'product_performance',
+  get_product_performance: 'product_performance',
+  daily_profit_estimate: 'profit_query',
+  get_product_cost: 'cost_query',
+  get_selling_price: 'price_query',
+  get_stock_on_hand: 'stock_query',
+  search_risip_help: 'help',
+};
+
+/** True when the model, not a parser, is now responsible for this expectation. */
+function deferredToModel(c: EvalCase, got: string): boolean {
+  if (got !== 'conversational_ai') return false;
+  if (!c.expectTool || !c.expectIntent) return false;
+  return MODEL_ROUTED_INTENT[c.expectTool] === c.expectIntent;
+}
 
 /**
  * Onboarding is a state machine, not a route, so route() can never judge it —
@@ -223,6 +275,7 @@ const cases = FILES.flatMap((file) =>
   extractCases(file, readFileSync(resolve(process.cwd(), 'evals', file), 'utf8')));
 
 let passed = 0;
+const deferred: EvalCase[] = [];
 const failures: { c: EvalCase; got: string }[] = [];
 const unchecked: { c: EvalCase; why: string }[] = [];
 let amountsRight = 0;
@@ -245,8 +298,10 @@ for (const c of cases) {
   if (c.hasRole && c.expectTool !== null) {
     const verdict = rolePasses(c.expectTool, c.role ?? '', c.say);
     if (verdict === null) { unchecked.push({ c, why: `${c.expectTool} needs the webhook, not a route` }); continue; }
-    if (verdict) passed += 1;
-    else failures.push({ c, got: `role ${c.role}: ${route(c.say)}` });
+    if (verdict) { passed += 1; continue; }
+    const gotForRole = route(c.say);
+    if (deferredToModel(c, gotForRole)) { deferred.push(c); continue; }
+    failures.push({ c, got: `role ${c.role}: ${gotForRole}` });
     continue;
   }
   if (c.expectTool === null) {
@@ -292,6 +347,7 @@ for (const c of cases) {
     const resumed = c.hasHistory ? followUpRoute(c.history, c.say) : null;
     if (resumed && (resumed === c.expectTool || allowed.includes(resumed))) { passed += 1; continue; }
     if (c.hasHistory) { unchecked.push({ c, why: 'needs a prior turn' }); continue; }
+    if (deferredToModel(c, got)) { deferred.push(c); continue; }
     failures.push({ c, got });
     continue;
   }
@@ -309,13 +365,14 @@ for (const c of cases) {
   else amountsWrong.push({ c, amount });
 }
 
-const checked = passed + failures.length;
+const checked = passed + failures.length + deferred.length;
 const pct = (n: number) => `${Math.round((n / cases.length) * 100)}%`;
 
 console.log(`\n${cases.length} eval cases\n`);
 console.log(`  checked    ${String(checked).padStart(3)}  (${pct(checked)})`);
 console.log(`  passed     ${String(passed).padStart(3)}`);
 console.log(`  FAILED     ${String(failures.length).padStart(3)}`);
+console.log(`  deferred   ${String(deferred.length).padStart(3)}  (the model now owns the tool choice)`);
 console.log(`  unchecked  ${String(unchecked.length).padStart(3)}  (${pct(unchecked.length)})`);
 
 const why = new Map<string, number>();
@@ -323,6 +380,14 @@ for (const item of unchecked) why.set(item.why, (why.get(item.why) ?? 0) + 1);
 console.log('\nUnchecked, by reason:');
 for (const [reason, count] of [...why].sort((a, b) => b[1] - a[1])) {
   console.log(`  ${String(count).padStart(3)}  ${reason}`);
+}
+
+if (deferred.length > 0) {
+  console.log(`\nDeferred to the model (${deferred.length}) \u2014 route is conversational_ai by design:`);
+  for (const c of deferred) {
+    console.log(`  ${c.file}#${c.id}  ${c.expectTool} \u2192 expect_intent: ${c.expectIntent}`);
+  }
+  console.log('  Verify these for real with:  npx vite-node scripts/stage-a-baseline.ts --ai');
 }
 
 if (showUnchecked) {

@@ -199,6 +199,13 @@ import {
 } from '../_shared/whatsappProductSetup.ts';
 import { extractPaymentMethod, parsePaymentMethodAnswer } from '../_shared/whatsappPaymentMethod.ts';
 import {
+  PROMPT_VERSION,
+  TOOL_SCHEMA_VERSION,
+  buildInterpretation,
+  type BackendOutcome,
+  type FallbackReason,
+} from '../_shared/whatsappTelemetry.ts';
+import {
   parseWholeAnimalProcurement,
   wholeAnimalProcurementConfirmation,
 } from '../_shared/whatsappWholeAnimalProcurement.ts';
@@ -5868,6 +5875,10 @@ Deno.serve(async (req) => {
           const budget = await consumeAiBudget(db, identity, contextChars);
           if (budget.allowed) {
             let assistantFailure = 'unknown_failure';
+            // STAGE A: how long the model and its tool loop actually took.
+            // Measured here rather than around the whole message so latency is
+            // attributable to the interpreter, not to the ledger writes after it.
+            const aiStartedAt = Date.now();
             // The model and its tool loop are the slowest thing here, and the
             // indicator raised at the top of the request has long expired by the
             // time it answers. Raised again so the wait is visible.
@@ -5893,8 +5904,49 @@ Deno.serve(async (req) => {
             // An apology is not an answer. When the model comes back with
             // nothing, say nothing here and let the deterministic branches
             // below have their turn — one of them almost always knows.
+            // ── STAGE A telemetry ────────────────────────────────────────────
+            //
+            // What the assistant DID, never what the trader wrote. Codes only:
+            // no message text, no product wording, no names, no prices. It is
+            // written after the reply has gone out, and it cannot fail loudly —
+            // a telemetry row must never cost a shop its answer.
+            const aiLatencyMs = Date.now() - aiStartedAt;
+            const recordInterpretation = async (
+              outcome: BackendOutcome, reason: FallbackReason | null,
+            ) => {
+              try {
+                const row = buildInterpretation({
+                  waMessageId,
+                  toolNames: assistant ? assistant.toolNames : null,
+                  lastToolInput: assistant ? assistant.lastToolInput ?? null : null,
+                  latencyMs: aiLatencyMs,
+                  backendOutcome: outcome,
+                  fallbackReason: reason,
+                  providerFailure: assistant ? null : assistantFailure,
+                });
+                await db.rpc('wa_record_ai_interpretation', {
+                  p_company_id: identity.company_id,
+                  p_wa_message_id: row.waMessageId,
+                  p_model: assistant ? assistant.model : null,
+                  p_prompt_version: PROMPT_VERSION,
+                  p_tool_schema_version: TOOL_SCHEMA_VERSION,
+                  p_chosen_tool: row.chosenTool,
+                  p_semantic_intent: row.semanticIntent,
+                  p_tool_rounds: row.toolRounds,
+                  p_latency_ms: row.latencyMs,
+                  p_backend_outcome: row.backendOutcome,
+                  p_rejection_code: row.rejectionCode,
+                  p_clarification_field: row.clarificationField,
+                  p_fallback_used: row.fallbackUsed,
+                  p_fallback_reason: row.fallbackReason,
+                  p_provider_failure_code: row.providerFailureCode,
+                });
+              } catch { /* telemetry is never allowed to break a message */ }
+            };
+
             if (assistant && assistant.unavailable) {
               assistantCameBackEmpty = true;
+              await recordInterpretation('fallback', 'model_empty');
               await audit(db, identity, waMessageId, 'conversational_ai', 'empty', 'fallback');
             } else if (assistant && !unsafeRecordProse) {
               await reply(phone, assistant.reply);
@@ -5909,14 +5961,47 @@ Deno.serve(async (req) => {
                 assistant.toolNames.join(',') || 'answer',
                 remembered ? (assistant.usedSafeFallback ? 'safe_fallback' : 'applied') : 'memory_failed',
               );
+              // A proposing tool leaves a pending draft; everything else answered
+              // a question. The difference is the whole point of measuring outcome
+              // separately from tool choice.
+              await recordInterpretation(
+                assistant.toolNames.some((tool) => tool.startsWith('propose_')) ? 'drafted' : 'answered',
+                'model_success',
+              );
               await finish('skipped');
               continue;
             }
             if (!assistant) {
+              await recordInterpretation('provider_failed',
+                /timeout/i.test(assistantFailure) ? 'provider_timeout'
+                  : /schema|tools./i.test(assistantFailure) ? 'invalid_tool_schema'
+                  : 'provider_error');
               await audit(db, identity, waMessageId, 'conversational_ai', 'provider', assistantFailure);
             }
           } else {
             conversationalAiBudgetBlock = budget;
+            // The cap is a business decision, not a model failure. Recorded
+            // separately so a quiet month of budget blocks can never be read as
+            // the assistant getting worse.
+            try {
+              await db.rpc('wa_record_ai_interpretation', {
+                p_company_id: identity.company_id,
+                p_wa_message_id: waMessageId,
+                p_model: null,
+                p_prompt_version: PROMPT_VERSION,
+                p_tool_schema_version: TOOL_SCHEMA_VERSION,
+                p_chosen_tool: null,
+                p_semantic_intent: 'unknown',
+                p_tool_rounds: null,
+                p_latency_ms: null,
+                p_backend_outcome: 'budget_blocked',
+                p_rejection_code: budget.reason ?? null,
+                p_clarification_field: null,
+                p_fallback_used: true,
+                p_fallback_reason: 'budget_block',
+                p_provider_failure_code: null,
+              });
+            } catch { /* telemetry is never allowed to break a message */ }
             await audit(db, identity, waMessageId, 'conversational_ai', 'budget', 'fallback');
           }
         }

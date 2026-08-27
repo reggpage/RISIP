@@ -341,12 +341,14 @@ cases:
     lang: sw
     fixture: live_sandbox
     expect_tool: ai_my_receipts
+    expect_intent: receipts_query
     must_be_read_only: true
   - id: 1048
     say: "show my confirmed receipts"
     lang: en
     fixture: live_sandbox
     expect_tool: ai_my_receipts
+    expect_intent: receipts_query
     expect_status: confirmed
     must_reply_in: en
   - id: 1049
@@ -354,30 +356,35 @@ cases:
     lang: sw
     fixture: live_sandbox
     expect_tool: ai_my_receipts
+    expect_intent: receipts_query
     must_not: [show_other_worker_receipts]
   - id: 1050
     say: "salio la petty cash"
     lang: sw
     fixture: live_sandbox
     expect_tool: ai_petty_cash_balance
+    expect_intent: petty_cash_query
     must_be_read_only: true
   - id: 1051
     say: "what is my petty cash balance"
     lang: en
     fixture: live_sandbox
     expect_tool: ai_petty_cash_balance
+    expect_intent: petty_cash_query
     must_reply_in: en
   - id: 1052
     say: "ninaidai Risip kiasi gani?"
     lang: sw
     fixture: live_sandbox
     expect_tool: ai_owed_to_me
+    expect_intent: reimbursement_query
     must_not: [include_reimbursed_receipts]
   - id: 1053
     say: "what does Risip owe me"
     lang: en
     fixture: live_sandbox
     expect_tool: ai_owed_to_me
+    expect_intent: reimbursement_query
     must_reply_in: en
   - id: 1054
     say: "biashara zangu"
@@ -396,6 +403,7 @@ cases:
     lang: en
     fixture: live_sandbox
     expect_tool: ai_pending_approvals
+    expect_intent: approvals_query
     role: accountant
     must_be_read_only: true
   - id: 1057
@@ -403,6 +411,7 @@ cases:
     lang: sw
     fixture: live_sandbox
     expect_tool: ai_pending_approvals
+    expect_intent: approvals_query
     role: owner
     must_be_read_only: true
   - id: 1058

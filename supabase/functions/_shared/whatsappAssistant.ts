@@ -99,6 +99,14 @@ export type AssistantRunResult = {
   unavailable?: boolean;
   memory: AssistantMemoryPatch;
   toolNames: string[];
+  /**
+   * The arguments of the LAST tool call, for stage-A telemetry only.
+   *
+   * A proposing tool is only as specific as its `kind`, so without this a sale
+   * and a credit sale are indistinguishable in the baseline. Nothing reads
+   * merchant wording out of it — only that one enum field.
+   */
+  lastToolInput?: Record<string, unknown> | null;
   model: string;
   usedSafeFallback: boolean;
 };
@@ -842,6 +850,7 @@ export async function runConversationalAssistant(args: {
           reply: gathered || unavailable(args.context.lang),
           memory: inferAssistantMemory(executed),
           toolNames: executed.map((call) => call.name),
+          lastToolInput: executed.length > 0 ? executed[executed.length - 1].input : null,
           model,
           usedSafeFallback: true,
           unavailable: !gathered,
@@ -851,6 +860,7 @@ export async function runConversationalAssistant(args: {
         reply,
         memory: inferAssistantMemory(executed),
         toolNames: executed.map((call) => call.name),
+          lastToolInput: executed.length > 0 ? executed[executed.length - 1].input : null,
         model,
         usedSafeFallback: false,
         unavailable: !modelText,
@@ -869,6 +879,7 @@ export async function runConversationalAssistant(args: {
         reply: gathered || unavailable(args.context.lang),
         memory: inferAssistantMemory(executed),
         toolNames: executed.map((call) => call.name),
+          lastToolInput: executed.length > 0 ? executed[executed.length - 1].input : null,
         model,
         usedSafeFallback: true,
         unavailable: !gathered,
@@ -902,6 +913,7 @@ export async function runConversationalAssistant(args: {
         reply: terminal,
         memory: inferAssistantMemory(executed),
         toolNames: executed.map((call) => call.name),
+          lastToolInput: executed.length > 0 ? executed[executed.length - 1].input : null,
         model,
         usedSafeFallback: false,
       };

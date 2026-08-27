@@ -1,0 +1,22 @@
+-- STAGE A — put the telemetry table in the same locked drawer as its siblings.
+--
+-- 0140 enabled RLS and wrote no policy, which is this repo's deny posture and is
+-- what actually stops a client reading the table. But Supabase grants anon and
+-- authenticated the ordinary table privileges by default, and every other
+-- WhatsApp AI operational table in this database has had those revoked:
+-- whatsapp_ai_messages, whatsapp_ai_threads, whatsapp_ai_usage_daily,
+-- whatsapp_notification_deliveries. 0140 left them in place, which made this the
+-- odd one out.
+--
+-- The grants are inert while RLS is on with no policy. That is exactly why this
+-- matters: the day someone adds a policy to this table for a debugging view,
+-- the inert grant stops being inert. Revoking now means that day requires a
+-- deliberate grant rather than inheriting one nobody remembers.
+--
+-- Separate migration rather than an edit to 0140, because 0140 has already been
+-- applied to production and a migration file must keep saying what it ran.
+--
+-- ROLLBACK:
+--   grant select, insert, update, delete on public.whatsapp_ai_interpretations to anon, authenticated;
+
+revoke all on public.whatsapp_ai_interpretations from anon, authenticated;
