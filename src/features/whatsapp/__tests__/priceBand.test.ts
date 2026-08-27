@@ -73,6 +73,7 @@ describe('reading the answer', () => {
     ['rejareja', 'retail'],
     ['jumla', 'wholesale'],
     ['jumlla', 'wholesale'],
+    ['jumal', 'wholesale'],
   ] as const)('accepts bounded natural/typo answer %s as %s', (answer, band) => {
     expect(parsePriceBandAnswer(answer, two)).toEqual([band, band]);
   });

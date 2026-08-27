@@ -110,6 +110,10 @@ const BAND_ALIASES: { band: Band; values: string[] }[] = [
 function editDistanceAtMostOne(a: string, b: string): boolean {
   if (a === b) return true;
   if (Math.abs(a.length - b.length) > 1) return false;
+  for (let at = 0; at + 1 < a.length; at += 1) {
+    if (a[at] !== b[at + 1] || a[at + 1] !== b[at]) continue;
+    if (a.slice(0, at) === b.slice(0, at) && a.slice(at + 2) === b.slice(at + 2)) return true;
+  }
   let left = 0;
   let right = 0;
   let edits = 0;
