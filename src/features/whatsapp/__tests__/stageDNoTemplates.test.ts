@@ -158,7 +158,13 @@ describe('the prompt got shorter, not longer', () => {
   it('holds the policy manual under a budget', () => {
     // 18,655 characters before Stage D. Attention spent matching a manual is
     // attention not spent on the trader's sentence.
-    expect(prompt.length).toBeLessThan(17_500);
+    //
+    // Raised by 250 once, deliberately: the rule about quoting a figure exactly
+    // rather than rounding it fixes a measured failure — "about 3.1M" is a
+    // different number from 3,121,150 and the shop cannot check it. A ceiling
+    // that never moves for a real fix is a ceiling that gets ignored; one that
+    // moves without a reason is not a ceiling.
+    expect(prompt.length).toBeLessThan(17_750);
   });
 
   it('states the loss/cheapest/missing-price distinction once', () => {
