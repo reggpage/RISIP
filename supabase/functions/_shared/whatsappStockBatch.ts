@@ -8,7 +8,7 @@
 // trigger by accident: the message has to announce itself, and every line has to
 // be a product and a number. Half a list is refused rather than half applied.
 
-import type { Lang } from './whatsappIntent.ts';
+import { pendingEscapeHint, type Lang } from './whatsappIntent.ts';
 import { PRICE_TALK } from './whatsappStock.ts';
 
 export type StockCountItem = { product: string; quantity: number; unit: string | null };
@@ -180,10 +180,10 @@ export function stockCountBatchConfirmation(batch: StockCountBatch, lang: Lang):
   return lang === 'sw'
     ? `Stock itakayowekwa — bidhaa ${batch.counts.length}:\n${rows}${problem}\n\n`
       + 'Hizi ni idadi zilizopo sasa; si manunuzi mapya.\n\n'
-      + 'Niweke? NDIYO / HAPANA'
+      + `Niweke? NDIYO / HAPANA. ${pendingEscapeHint(lang)}`
     : `Stock on hand — ${batch.counts.length} products:\n${rows}${problem}\n\n`
       + 'This becomes the new anchor: from here I keep count as you sell and restock.\n\n'
-      + 'Save them all? YES / NO';
+      + `Save them all? YES / NO. ${pendingEscapeHint(lang)}`;
 }
 
 export function stockCountBatchSaved(saved: number, businessName: string, lang: Lang): string {

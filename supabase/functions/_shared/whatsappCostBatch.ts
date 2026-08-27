@@ -14,7 +14,7 @@
 // quietly is worse than one that is refused loudly, because every future profit
 // figure is built on these numbers.
 
-import type { Lang } from './whatsappIntent.ts';
+import { pendingEscapeHint, type Lang } from './whatsappIntent.ts';
 import { type ProductCost, parseProductCost } from './whatsappProductCosts.ts';
 
 export type ProductCostBatch = {
@@ -88,10 +88,10 @@ export function costBatchConfirmation(batch: ProductCostBatch, lang: Lang): stri
   return lang === 'sw'
     ? `Bei za kununua ${batch.costs.length}:\n${rows}${problem}\n\n`
       + 'Hizi zitabadilisha makisio ya faida yanayofuata. Rekodi za nyuma hazitaguswa.\n\n'
-      + 'Nihifadhi zote? NDIYO / HAPANA'
+      + `Nihifadhi zote? NDIYO / HAPANA. ${pendingEscapeHint(lang)}`
     : `${batch.costs.length} buying prices:\n${rows}${problem}\n\n`
       + 'These change the profit estimates that follow. Past records are untouched.\n\n'
-      + 'Save them all? YES / NO';
+      + `Save them all? YES / NO. ${pendingEscapeHint(lang)}`;
 }
 
 export function costBatchSaved(saved: number, businessName: string, lang: Lang): string {

@@ -11,7 +11,7 @@
 //     vanishes quietly is worse than one refused loudly, because every quote and
 //     every margin after it is built on a number nobody checked.
 
-import type { Lang } from './whatsappIntent.ts';
+import { pendingEscapeHint, type Lang } from './whatsappIntent.ts';
 import { type SellingPrice, parseSellingPrice } from './whatsappSellingPrice.ts';
 import { SALE_HEADER } from './whatsappQuantitySale.ts';
 
@@ -153,10 +153,10 @@ export function sellingPriceBatchConfirmation(
   return lang === 'sw'
     ? `Bei za kuuza — bidhaa ${batch.prices.length}:\n${rows}${problem}${trouble}\n\n`
       + 'Nitazitumia mtu akituma mauzo bila kutaja bei.\n\n'
-      + 'Nihifadhi zote? NDIYO / HAPANA'
+      + `Nihifadhi zote? NDIYO / HAPANA. ${pendingEscapeHint(lang)}`
     : `Selling prices — ${batch.prices.length} products:\n${rows}${problem}${trouble}\n\n`
       + 'I will use these when a sale names no price.\n\n'
-      + 'Save them all? YES / NO';
+      + `Save them all? YES / NO. ${pendingEscapeHint(lang)}`;
 }
 
 /**

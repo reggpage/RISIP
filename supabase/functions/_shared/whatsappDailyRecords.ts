@@ -1,4 +1,4 @@
-import type { Lang } from './whatsappIntent.ts';
+import { pendingEscapeHint, type Lang } from './whatsappIntent.ts';
 import { correctControlWords } from './whatsappSpelling.ts';
 import { UNITS } from './whatsappStock.ts';
 
@@ -1019,8 +1019,8 @@ export function buildDailyRecordConfirmation(record: ParsedDailyRecord, lang: La
   }
   lines.push((lang === 'sw' ? 'Jumla' : 'Total') + ': *' + money(record.amount, lang) + '*', '');
   lines.push(lang === 'sw'
-    ? 'Jibu *NDIYO* kuthibitisha, au *HAPANA* kughairi.'
-    : 'Reply *YES* to confirm, or *NO* to cancel.');
+    ? `Jibu *NDIYO* kuthibitisha, au *HAPANA* kughairi. ${pendingEscapeHint(lang)}`
+    : `Reply *YES* to confirm, or *NO* to cancel. ${pendingEscapeHint(lang)}`);
   return lines.join('\n');
 }
 

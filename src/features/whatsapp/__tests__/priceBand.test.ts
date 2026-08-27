@@ -8,6 +8,9 @@ import {
   priceBandQuestion,
 } from '../../../../supabase/functions/_shared/whatsappPriceBand';
 import { parseQuantityOnlySale, priceLine } from '../../../../supabase/functions/_shared/whatsappQuantitySale';
+import { isPendingEscape, pendingEscapeHint } from '../../../../supabase/functions/_shared/whatsappIntent';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 const choice = (over: Partial<PriceBandChoice> = {}): PriceBandChoice => ({
   index: 0, product: 'Viberiti', quantity: 2, retail: 500, wholesale: 400, ...over,
@@ -61,6 +64,17 @@ describe('reading the answer', () => {
     expect(parsePriceBandAnswer('rejareja', two)).toEqual(['retail', 'retail']);
     expect(parsePriceBandAnswer('REJA REJA', two)).toEqual(['retail', 'retail']);
     expect(parsePriceBandAnswer('wholesale', two)).toEqual(['wholesale', 'wholesale']);
+  });
+
+  it.each([
+    ['reja', 'retail'],
+    ['rejarej', 'retail'],
+    ['reja reja', 'retail'],
+    ['rejareja', 'retail'],
+    ['jumla', 'wholesale'],
+    ['jumlla', 'wholesale'],
+  ] as const)('accepts bounded natural/typo answer %s as %s', (answer, band) => {
+    expect(parsePriceBandAnswer(answer, two)).toEqual([band, band]);
   });
 
   it('takes the row numbers when the sale was mixed', () => {
@@ -154,6 +168,7 @@ describe('the way out of the question', () => {
   it('teaches the header that stops it being asked again', () => {
     const two = [choice(), choice({ index: 1, product: 'Daftari', quantity: 10, retail: 1000, wholesale: 800 })];
     expect(priceBandQuestion(two, 'sw')).toContain('Mauzo ya leo rejareja');
+    expect(priceBandQuestion(two, 'sw')).toContain('andika *GHAIRI*');
   });
 
   it('is answered by the header itself, before the question is ever asked', () => {
@@ -162,5 +177,27 @@ describe('the way out of the question', () => {
     const sale = parseQuantityOnlySale('Mauzo ya leo jumla\ndaftari 10\nkalamu 4')!;
     expect(sale.items.map((item) => item.band)).toEqual(['wholesale', 'wholesale']);
     expect(sale.items.every((item) => !needsBandChoice(item.band, { retail: 1000, wholesale: 800 }))).toBe(true);
+  });
+});
+
+describe('pending conversation escapes and topic switches', () => {
+  it('recognises every explicit pending escape deterministically', () => {
+    for (const answer of ['ghairi', 'cancel', 'acha', 'sitisha', 'anza upya']) {
+      expect(isPendingEscape(answer)).toBe(true);
+    }
+    expect(pendingEscapeHint('sw')).toContain('GHAIRI');
+  });
+
+  it('cancels before a price-band answer is parsed and releases a new topic', () => {
+    const webhook = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+    const stop = webhook.indexOf('if (isStopCommand(body)) {');
+    const bandSwitch = webhook.indexOf('const bandSwitchesTopic =');
+    const bandParser = webhook.indexOf('const bandAnswer = parsePriceBandAnswer(body, bandPending.choices);');
+    expect(stop).toBeGreaterThan(-1);
+    expect(stop).toBeLessThan(bandParser);
+    expect(bandSwitch).toBeLessThan(bandParser);
+    expect(webhook.slice(bandSwitch, bandParser)).toContain('convo = null;');
+    expect(webhook).toContain("isProactiveNotificationStop(body) && !(convo && isPendingEscape(body))");
   });
 });

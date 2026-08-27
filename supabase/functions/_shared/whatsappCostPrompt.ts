@@ -9,7 +9,7 @@
 // A prompt that came back after every sale would teach people to stop reading
 // confirmations, which costs far more than a late price.
 
-import type { Lang } from './whatsappIntent.ts';
+import { pendingEscapeHint, type Lang } from './whatsappIntent.ts';
 
 export type CostPrompt = {
   kind: 'cost_prompt';
@@ -68,10 +68,10 @@ export function costQuestion(prompt: CostPrompt, lang: Lang): string {
   return lang === 'sw'
     ? `${sold}Unainunua kwa shingapi ${prompt.product}?\n\n`
       + 'Nikijua hili, nitaweza kukuambia faida yako halisi.\n'
-      + 'Andika bei tu, mfano 7000 — au andika RUKA.'
+      + `Andika bei tu, mfano 7000 — au andika RUKA. ${pendingEscapeHint(lang)}`
     : `${sold}What do you buy ${prompt.product} for?\n\n`
       + 'Once I know this, I can tell you your real profit.\n'
-      + 'Just send the price, for example 7000 — or send SKIP.';
+      + `Just send the price, for example 7000 — or send SKIP. ${pendingEscapeHint(lang)}`;
 }
 
 /**
@@ -109,6 +109,6 @@ export function costSkipped(lang: Lang): string {
 /** An answer that was neither a price nor a skip. Asked once more, then dropped. */
 export function costUnclear(prompt: CostPrompt, lang: Lang): string {
   return lang === 'sw'
-    ? `Sikupata bei. Andika namba tu, mfano 7000, kwa ${prompt.product} — au RUKA.`
-    : `I did not catch a price. Just the number, for example 7000, for ${prompt.product} — or SKIP.`;
+    ? `Sikupata bei. Andika namba tu, mfano 7000, kwa ${prompt.product} — au RUKA. ${pendingEscapeHint(lang)}`
+    : `I did not catch a price. Just the number, for example 7000, for ${prompt.product} — or SKIP. ${pendingEscapeHint(lang)}`;
 }

@@ -1,4 +1,4 @@
-import type { Lang } from './whatsappIntent.ts';
+import { pendingEscapeHint, type Lang } from './whatsappIntent.ts';
 import { UNITS } from './whatsappStock.ts';
 import {
   MAX_DAILY_RECORD_AMOUNT,
@@ -280,13 +280,13 @@ export function buildBatchDebtClarification(state: DailyRecordBatchClarification
   const questions = [
     missingDirection
       ? (sw
-        ? `1. Je ${state.debt.partyName} amechukua bidhaa kwako kwa mkopo, au wewe umechukua kwa ${state.debt.partyName}?`
-        : `1. Did ${state.debt.partyName} take the goods from you on credit, or did you take them from ${state.debt.partyName}?`)
+        ? `1. Je ${state.debt.partyName} amechukua bidhaa kwako kwa mkopo, au wewe umechukua kwa ${state.debt.partyName}? ${pendingEscapeHint(state.lang)}`
+        : `1. Did ${state.debt.partyName} take the goods from you on credit, or did you take them from ${state.debt.partyName}? ${pendingEscapeHint(state.lang)}`)
       : null,
     missingPrice
       ? (sw
-        ? `2. ${money(state.debt.quotedAmount, state.lang)} ni bei ya kila ${state.debt.itemDescription} au jumla ya ${state.debt.quantity}?`
-        : `2. Is ${money(state.debt.quotedAmount, state.lang)} the price for each ${state.debt.itemDescription}, or the total for ${state.debt.quantity}?`)
+        ? `2. ${money(state.debt.quotedAmount, state.lang)} ni bei ya kila ${state.debt.itemDescription} au jumla ya ${state.debt.quantity}? ${pendingEscapeHint(state.lang)}`
+        : `2. Is ${money(state.debt.quotedAmount, state.lang)} the price for each ${state.debt.itemDescription}, or the total for ${state.debt.quantity}? ${pendingEscapeHint(state.lang)}`)
       : null,
   ].filter(Boolean).join('\n');
   const example = sw
@@ -446,8 +446,8 @@ export function resumeDailyRecordBatchClarification(
       kind: 'unsupported_payable',
       state,
       message: state.lang === 'sw'
-        ? `Nimeelewa kuwa biashara yako ndiyo inamdaiwa ${state.debt.partyName}. Risip bado haina supplier-payable record kwenye Rekodi za Siku, kwa hiyo sitaiandikisha kimakosa kama matumizi au deni la mteja. Jibu *ENDELEA BILA MKOPO* kuhifadhi mauzo na matumizi pekee, au *HAPANA* kughairi yote.`
-        : `I understand that your business owes ${state.debt.partyName}. Daily Records does not yet support supplier payables, so I will not misclassify it as an expense or customer debt. Reply *CONTINUE WITHOUT THE DEBT* to save only sales and expenses, or *NO* to cancel everything.`,
+        ? `Nimeelewa kuwa biashara yako ndiyo inamdaiwa ${state.debt.partyName}. Risip bado haina supplier-payable record kwenye Rekodi za Siku, kwa hiyo sitaiandikisha kimakosa kama matumizi au deni la mteja. Jibu *ENDELEA BILA MKOPO* kuhifadhi mauzo na matumizi pekee, au *HAPANA* kughairi yote. ${pendingEscapeHint(state.lang)}`
+        : `I understand that your business owes ${state.debt.partyName}. Daily Records does not yet support supplier payables, so I will not misclassify it as an expense or customer debt. Reply *CONTINUE WITHOUT THE DEBT* to save only sales and expenses, or *NO* to cancel everything. ${pendingEscapeHint(state.lang)}`,
     };
   }
   if (!state.debt.direction || !state.debt.priceChoice) {
@@ -485,8 +485,8 @@ export function buildDailyRecordBatchConfirmation(records: ParsedDailyRecord[], 
     : `I understood ${records.length} separate records. Each will be saved separately:`;
   const summaries = records.map((record, index) => `${index + 1}. ${withoutConfirmationPrompt(record, lang)}`);
   const confirm = lang === 'sw'
-    ? `Jibu *NDIYO* kuthibitisha rekodi zote ${records.length}, au *HAPANA* kughairi zote.`
-    : `Reply *YES* to confirm all ${records.length} records, or *NO* to cancel all of them.`;
+    ? `Jibu *NDIYO* kuthibitisha rekodi zote ${records.length}, au *HAPANA* kughairi zote. ${pendingEscapeHint(lang)}`
+    : `Reply *YES* to confirm all ${records.length} records, or *NO* to cancel all of them. ${pendingEscapeHint(lang)}`;
   return [intro, ...summaries, confirm].join('\n\n');
 }
 

@@ -64,6 +64,22 @@ export function isCancel(text: string | null | undefined): boolean {
   return /^(cancel|ghairi|toka|futa|start over|anza upya|acha|sitisha)\b/.test(t);
 }
 
+/**
+ * An explicit escape from a live pending question.
+ *
+ * This is intentionally a closed control vocabulary. It is not a general
+ * sentence parser and it never decides which financial action to take.
+ */
+export function isPendingEscape(text: string | null | undefined): boolean {
+  return isCancel(text);
+}
+
+export function pendingEscapeHint(lang: Lang): string {
+  return lang === 'sw'
+    ? 'Ukiamua kuacha, andika *GHAIRI*.'
+    : 'If you want to stop, reply *CANCEL*.';
+}
+
 export function isConfirm(text: string | null | undefined): boolean {
   const t = correctControlWords(text).toLowerCase().trim();
   return /^(yes|ok|okay|confirm|sawa|ndio|ndiyo|thibitisha|hakika)\b/.test(t);

@@ -21,7 +21,7 @@
 // is unknown, is reported back to the caller to be asked about — once — and the
 // answer is what gets saved.
 
-import type { Lang } from './whatsappIntent.ts';
+import { pendingEscapeHint, type Lang } from './whatsappIntent.ts';
 
 /** One product of the company, as the splitter needs to see it. */
 export type ComboCandidate = {
@@ -345,13 +345,13 @@ export function comboQuestion(
     ? `“${split.phrase}” ${qty(orders)} — nimeisoma kama: *${reading}*.\n\n`
       + `Nieleze haya:\n${rows}\n\n`
       + (open.length === 1
-        ? 'Jibu kwa neno moja, mfano: _nusu_ au _2_.'
-        : 'Jibu kwa namba, mfano: _1 nusu, 2 2_.')
+        ? `Jibu kwa neno moja, mfano: _nusu_ au _2_. ${pendingEscapeHint(lang)}`
+        : `Jibu kwa namba, mfano: _1 nusu, 2 2_. ${pendingEscapeHint(lang)}`)
     : `“${split.phrase}” ${qty(orders)} — I read it as: *${reading}*.\n\n`
       + `Tell me these:\n${rows}\n\n`
       + (open.length === 1
-        ? 'One word is enough, e.g. _nusu_ or _2_.'
-        : 'Answer by number, e.g. _1 nusu, 2 2_.');
+        ? `One word is enough, e.g. _nusu_ or _2_. ${pendingEscapeHint(lang)}`
+        : `Answer by number, e.g. _1 nusu, 2 2_. ${pendingEscapeHint(lang)}`);
 }
 
 /**
@@ -524,8 +524,8 @@ export function applyOrderQuantity(split: ComboSplit, quantity: number): { order
 export function comboVariantQuestion(phrase: string, token: string, candidates: string[], lang: Lang): string {
   const rows = candidates.map((name, index) => `${index + 1}. ${name}`).join('\n');
   return lang === 'sw'
-    ? `“${phrase}” — *${token}* ipi?\n${rows}\n\nJibu kwa jina au namba, mfano: _${candidates[0] ?? ''}_.`
-    : `“${phrase}” — which *${token}*?\n${rows}\n\nAnswer by name or number, e.g. _${candidates[0] ?? ''}_.`;
+    ? `“${phrase}” — *${token}* ipi?\n${rows}\n\nJibu kwa jina au namba, mfano: _${candidates[0] ?? ''}_. ${pendingEscapeHint(lang)}`
+    : `“${phrase}” — which *${token}*?\n${rows}\n\nAnswer by name or number, e.g. _${candidates[0] ?? ''}_. ${pendingEscapeHint(lang)}`;
 }
 
 /** Reads which one they meant, or null. */

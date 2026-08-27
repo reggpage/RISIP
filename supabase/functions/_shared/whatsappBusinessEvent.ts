@@ -30,6 +30,7 @@
  */
 
 import { normalizeNumberWords } from './whatsappDailyRecords.ts';
+import { pendingEscapeHint } from './whatsappIntent.ts';
 
 /** Events that move products or stock. */
 export const BUSINESS_EVENT_KINDS = [
@@ -325,5 +326,5 @@ export function numberQuestion(
       out_of_range: 'That number of animals is not possible. Write the real number.',
     },
   };
-  return (lang === 'sw' ? sw : en)[field][reading.reason];
+  return `${(lang === 'sw' ? sw : en)[field][reading.reason]} ${pendingEscapeHint(lang)}`;
 }

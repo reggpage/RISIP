@@ -1,4 +1,5 @@
 import type { DailyRecordPaymentMethod } from './whatsappDailyRecords.ts';
+import { pendingEscapeHint } from './whatsappIntent.ts';
 
 /**
  * How the trader says they were paid.
@@ -145,6 +146,6 @@ export function canonicalPaymentWording(wording: string | null | undefined): Pay
 /** What to ask when a payment word is not recognised. */
 export function paymentWordingQuestion(said: string, lang: 'sw' | 'en'): string {
   return lang === 'sw'
-    ? `Sijaelewa *${said}* ni njia gani ya malipo. Ni *cash*, *mpesa/tigopesa/airtel*, au *benki*?`
-    : `I do not recognise *${said}* as a payment method. Was it *cash*, *mobile money*, or *bank*?`;
+    ? `Sijaelewa *${said}* ni njia gani ya malipo. Ni *cash*, *mpesa/tigopesa/airtel*, au *benki*? ${pendingEscapeHint(lang)}`
+    : `I do not recognise *${said}* as a payment method. Was it *cash*, *mobile money*, or *bank*? ${pendingEscapeHint(lang)}`;
 }

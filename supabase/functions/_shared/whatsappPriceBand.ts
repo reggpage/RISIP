@@ -16,7 +16,7 @@
 // message, listing only the lines that are genuinely open, because a
 // thirty-line till roll must never become thirty questions.
 
-import type { Lang } from './whatsappIntent.ts';
+import { pendingEscapeHint, type Lang } from './whatsappIntent.ts';
 
 export type PriceBandChoice = {
   /** Index into the sale's items, so the answer lands on the right line. */
@@ -71,11 +71,11 @@ export function priceBandQuestion(choices: PriceBandChoice[], lang: Lang): strin
       ? `*${one.product}* ${qty(one.quantity)}${unit(one)} — umeuza kwa bei gani?\n\n`
         + `• rejareja ${money(one.retail)} = ${money(one.quantity * one.retail)}\n`
         + `• jumla ${money(one.wholesale)} = ${money(one.quantity * one.wholesale)}\n\n`
-        + 'Jibu *REJAREJA* au *JUMLA*.'
+        + `Jibu *REJAREJA* au *JUMLA*. ${pendingEscapeHint(lang)}`
       : `*${one.product}* ${qty(one.quantity)}${unit(one)} — which price did you sell at?\n\n`
         + `• retail ${money(one.retail)} = ${money(one.quantity * one.retail)}\n`
         + `• wholesale ${money(one.wholesale)} = ${money(one.quantity * one.wholesale)}\n\n`
-        + 'Reply *REJAREJA* or *JUMLA*.';
+        + `Reply *REJAREJA* or *JUMLA*. ${pendingEscapeHint(lang)}`;
   }
 
   const rows = choices.map((choice, index) => (lang === 'sw'
@@ -90,25 +90,69 @@ export function priceBandQuestion(choices: PriceBandChoice[], lang: Lang): strin
     ? `Hizi zina bei mbili, na hujasema uliyotumia:\n${rows}\n\n`
       + 'Kama zote ni bei moja, jibu *REJAREJA* au *JUMLA*.\n'
       + 'Kama zimechanganyika, andika namba: _1 rejareja, 2 jumla_\n\n'
-      + '_Ukiandika "Mauzo ya leo rejareja" juu ya orodha, sitauliza tena._'
+      + `_Ukiandika "Mauzo ya leo rejareja" juu ya orodha, sitauliza tena._\n${pendingEscapeHint(lang)}`
     : `These have two prices, and the message did not say which:\n${rows}\n\n`
       + 'If they are all the same, reply *REJAREJA* or *JUMLA*.\n'
       + 'If they are mixed, use the numbers: _1 rejareja, 2 jumla_\n\n'
-      + '_Head the list "Mauzo ya leo rejareja" and I will not ask again._';
+      + `_Head the list "Mauzo ya leo rejareja" and I will not ask again._\n${pendingEscapeHint(lang)}`;
 }
 
-// Built from regex literals, never from strings. A pattern assembled out of
-// string pieces has to double every backslash, and this file has already lost
-// one that way — `reja\s*reja` became `reja s*reja` and "REJA REJA" stopped
-// being an answer at all.
-const TOKEN = /([0-9]{1,2})|(rejareja|reja\s+reja|retail|kawaida|jumla|wholesale|bulk)/gi;
-const ANY_BAND = /(rejareja|reja\s+reja|retail|kawaida|jumla|wholesale|bulk)/i;
-const IS_WHOLESALE = /^(?:jumla|wholesale|bulk)$/i;
-
 const normalize = (value: string | null | undefined) =>
-  String(value ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  String(value ?? '').toLocaleLowerCase('sw-TZ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/g, ' ').trim();
 
-const bandOf = (word: string): Band => (IS_WHOLESALE.test(normalize(word)) ? 'wholesale' : 'retail');
+const BAND_ALIASES: { band: Band; values: string[] }[] = [
+  { band: 'retail', values: ['rejareja', 'reja reja', 'reja', 'rejarej', 'retail', 'kawaida'] },
+  { band: 'wholesale', values: ['jumla', 'wholesale', 'bulk'] },
+];
+
+function editDistanceAtMostOne(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let left = 0;
+  let right = 0;
+  let edits = 0;
+  while (left < a.length && right < b.length) {
+    if (a[left] === b[right]) { left += 1; right += 1; continue; }
+    edits += 1;
+    if (edits > 1) return false;
+    if (a.length > b.length) left += 1;
+    else if (b.length > a.length) right += 1;
+    else { left += 1; right += 1; }
+  }
+  return edits + (a.length - left) + (b.length - right) <= 1;
+}
+
+/** Resolve only against the two small enums represented by the open question. */
+function resolveBandWord(value: string): Band | null {
+  const said = normalize(value);
+  if (!said) return null;
+  const compact = said.replace(/\s/g, '');
+  for (const group of BAND_ALIASES) {
+    if (group.values.includes(said)) return group.band;
+  }
+  // Fuzzy matching is limited to the canonical long words. Short aliases are
+  // exact-only so a product/person name cannot be silently turned into a band.
+  for (const group of BAND_ALIASES) {
+    for (const alias of group.values.filter((word) => word.length >= 5 && !word.includes(' '))) {
+      if (editDistanceAtMostOne(compact, alias)) return group.band;
+    }
+  }
+  return null;
+}
+
+function bandWords(text: string): Band[] {
+  const words = normalize(text).split(' ').filter(Boolean);
+  const found: Band[] = [];
+  for (let at = 0; at < words.length; at += 1) {
+    const pair = at + 1 < words.length ? resolveBandWord(`${words[at]} ${words[at + 1]}`) : null;
+    if (pair) { found.push(pair); at += 1; continue; }
+    const single = resolveBandWord(words[at]);
+    if (single) found.push(single);
+  }
+  return found;
+}
 
 /**
  * Reads the answer, or null when the message was not one.
@@ -131,18 +175,18 @@ export function parsePriceBandAnswer(
 ): (Band | null)[] | null {
   const said = normalize(text);
   if (!said || choices.length === 0) return null;
-  if (!ANY_BAND.test(said)) return null;
+  if (bandWords(said).length === 0) return null;
   const answers: (Band | null)[] = choices.map(() => null);
   let touched = false;
 
   // 1. By name. Segmented, so "viberiti jumla, daftari rejareja" is two
   // statements rather than one holding two contradictory words.
   for (const segment of said.split(/[,;\n]+|\bna\b|\band\b/).map((part) => part.trim())) {
-    const found = ANY_BAND.exec(segment);
-    if (!found) continue;
+    const found = bandWords(segment);
+    if (found.length === 0) continue;
     for (const [at, choice] of choices.entries()) {
       if (!segment.includes(normalize(choice.product))) continue;
-      answers[at] = bandOf(found[1]);
+      answers[at] = found[0];
       touched = true;
     }
   }
@@ -152,9 +196,14 @@ export function parsePriceBandAnswer(
   // both "1 rejareja 2 jumla" and "rejareja 1, jumla 2" come out the same.
   if (!touched) {
     type Token = { row: number; band: null } | { row: null; band: Band };
-    const tokens: Token[] = [...said.matchAll(TOKEN)].map((match) => (match[1]
-      ? { row: Number(match[1]), band: null }
-      : { row: null, band: bandOf(match[2]) }));
+    const tokens: Token[] = [];
+    for (const word of said.split(' ')) {
+      if (/^[0-9]{1,2}$/.test(word)) tokens.push({ row: Number(word), band: null });
+      else {
+        const band = resolveBandWord(word);
+        if (band) tokens.push({ row: null, band });
+      }
+    }
     for (const [at, token] of tokens.entries()) {
       if (token.band === null) continue;
       const near = [tokens[at - 1], tokens[at + 1]]
@@ -169,9 +218,9 @@ export function parsePriceBandAnswer(
 
   // 3. One band word with nothing to attach it to: it covers everything open.
   if (!touched) {
-    const found = ANY_BAND.exec(said);
-    if (!found) return null;
-    const band = bandOf(found[1]);
+    const found = bandWords(said);
+    if (found.length === 0) return null;
+    const band = found[0];
     for (const [at] of choices.entries()) answers[at] = band;
     touched = true;
   }

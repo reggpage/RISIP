@@ -37,6 +37,8 @@ import {
   detectLanguage,
   isHelp,
   isCancel,
+  isPendingEscape,
+  pendingEscapeHint,
   parseLanguageCommand,
   parseProjectChoice,
   routeIntent,
@@ -1307,7 +1309,7 @@ function appUrl(): string {
 }
 
 function isStopCommand(text: string | null | undefined): boolean {
-  return /^(?:toka|futa|cancel|ghairi|start over|anza upya|acha|sitisha)\b/i.test(String(text ?? '').trim());
+  return isPendingEscape(text);
 }
 
 /** Live conversation state, or null when nothing is pending or it has expired. */
@@ -4507,7 +4509,7 @@ Deno.serve(async (req) => {
         // STOP/SITISHA applies only to proactive summaries and debt reminders.
         // It must run before the generic cancel router, which also recognises
         // "sitisha", and it must not revoke the identity or block normal chats.
-        if (isProactiveNotificationStop(body)) {
+        if (isProactiveNotificationStop(body) && !(convo && isPendingEscape(body))) {
           const { error } = await db.rpc('wa_stop_proactive_notifications', { p_phone: phone });
           await replyQuietly(phone, error
             ? (lang === 'sw' ? 'Sikuweza kuzima taarifa sasa. Jaribu tena.' : 'I could not turn off notifications right now. Try again.')
@@ -4884,8 +4886,10 @@ Deno.serve(async (req) => {
               p_daily_record_ids: dailyBatchConversation.dailyRecordIds,
               p_reason: 'WhatsApp user cancelled daily record batch',
             });
-            await clearConversation(db, identity.id as string);
-            await clearAssistantMemory(db, identity);
+            if (!error) {
+              await clearConversation(db, identity.id as string);
+              await clearAssistantMemory(db, identity);
+            }
             await replyQuietly(phone, error
               ? buildDailyRecordBatchPending(dailyBatchConversation.records, lang)
               : (lang === 'sw' ? 'Sawa. Rekodi zote za ujumbe huu zimeghairiwa.' : 'Okay. All records from this message were cancelled.'));
@@ -4897,10 +4901,27 @@ Deno.serve(async (req) => {
               p_daily_record_id: dailyConversation.dailyRecordId,
               p_reason: 'WhatsApp user cancelled daily record draft',
             });
-            await clearConversation(db, identity.id as string);
-            await clearAssistantMemory(db, identity);
+            if (!error) {
+              await clearConversation(db, identity.id as string);
+              await clearAssistantMemory(db, identity);
+            }
             await replyQuietly(phone, error ? buildDailyRecordPending(dailyConversation.record, lang) : t('cancelled', lang));
             await audit(db, identity, waMessageId, 'cancel_action', 'daily_record', error ? 'failed' : 'voided');
+          } else if (breakdownConfirmation) {
+            const { error } = await db.rpc('wa_cancel_daily_record_draft', {
+              p_profile_id: identity.profile_id,
+              p_company_id: identity.company_id,
+              p_daily_record_id: breakdownConfirmation.dailyRecordId,
+              p_reason: 'WhatsApp user cancelled whole-animal breakdown draft',
+            });
+            if (!error) {
+              await clearConversation(db, identity.id as string);
+              await clearAssistantMemory(db, identity);
+            }
+            await replyQuietly(phone, error
+              ? wholeAnimalBreakdownConfirmation(breakdownConfirmation.outputs, lang)
+              : (lang === 'sw' ? 'Sawa. Breakdown imeghairiwa; stock haijabadilika.' : 'Okay. Breakdown cancelled; stock was unchanged.'));
+            await audit(db, identity, waMessageId, 'cancel_action', 'whole_animal_breakdown', error ? 'failed' : 'voided');
           } else {
             await clearConversation(db, identity.id as string);
             await clearAssistantMemory(db, identity);
@@ -5257,12 +5278,14 @@ Deno.serve(async (req) => {
         // Which of the two prices was this sold at? The sale waits here, whole,
         // until the answer comes back, and then goes through pricing again as
         // though the message had said "jumla" in the first place.
-        const bandAnswer = bandPending
-          ? parsePriceBandAnswer(body, bandPending.choices) : null;
-        if (bandPending && !bandAnswer && releasesParkedQuestion(body ?? '')) {
+        const bandSwitchesTopic = Boolean(bandPending && releasesParkedQuestion(body ?? ''));
+        if (bandSwitchesTopic) {
           await clearConversation(db, identity.id as string);
+          await clearAssistantMemory(db, identity);
           await audit(db, identity, waMessageId, 'price_band', 'abandoned', 'skipped');
+          convo = null;
         } else if (bandPending) {
+          const bandAnswer = parsePriceBandAnswer(body, bandPending.choices);
           const heard = bandAnswer;
           if (!heard) {
             await reply(phone, priceBandQuestion(bandPending.choices, lang));
@@ -5625,8 +5648,8 @@ Deno.serve(async (req) => {
             }
           }
           await replyQuietly(phone, lang === 'sw'
-            ? 'Jibu *bei ya kila moja* au *jumla* ili niendelee na mauzo haya.'
-            : 'Reply *unit price* or *total* so I can continue this sale.');
+            ? `Jibu *bei ya kila moja* au *jumla* ili niendelee na mauzo haya. ${pendingEscapeHint(lang)}`
+            : `Reply *unit price* or *total* so I can continue this sale. ${pendingEscapeHint(lang)}`);
           await finish('skipped');
           continue;
         }
@@ -6329,8 +6352,8 @@ Deno.serve(async (req) => {
                 updated_at: new Date().toISOString(),
               }, { onConflict: 'identity_id' });
               await replyQuietly(phone, lang === 'sw'
-                ? `Unainunua “${product}” kwa bei gani? Jibu kiasi, kwa mfano: *10,000 kwa kilo*.`
-                : `What do you pay for “${product}”? Reply with the amount, for example: *10,000 per kilo*.`);
+                ? `Unainunua “${product}” kwa bei gani? Jibu kiasi, kwa mfano: *10,000 kwa kilo*. ${pendingEscapeHint(lang)}`
+                : `What do you pay for “${product}”? Reply with the amount, for example: *10,000 per kilo*. ${pendingEscapeHint(lang)}`);
               await audit(db, identity, waMessageId, 'add_product', 'cost_asked', 'clarification');
               await finish('skipped');
               continue;
@@ -6349,8 +6372,8 @@ Deno.serve(async (req) => {
                 convo = null;
               } else {
                 await replyQuietly(phone, lang === 'sw'
-                  ? `Sijapata bei ya kununua “${addProductSetupPending.product}”. Jibu kiasi, kwa mfano: *10,000 kwa kilo*.`
-                  : `I did not get the buying cost for “${addProductSetupPending.product}”. Reply with an amount, for example: *10,000 per kilo*.`);
+                  ? `Sijapata bei ya kununua “${addProductSetupPending.product}”. Jibu kiasi, kwa mfano: *10,000 kwa kilo*. ${pendingEscapeHint(lang)}`
+                  : `I did not get the buying cost for “${addProductSetupPending.product}”. Reply with an amount, for example: *10,000 per kilo*. ${pendingEscapeHint(lang)}`);
                 await audit(db, identity, waMessageId, 'add_product', 'cost_reask', 'clarification');
                 await finish('skipped');
                 continue;

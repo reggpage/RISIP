@@ -64,8 +64,8 @@ describe('the quantity follow-up', () => {
       expect(parseQuantityAnswer(said)).toBeNull();
     });
 
-  it('asks the single configured unit concisely', () => {
-    expect(quantityQuestion('Nyama', 'kilo', 'sw')).toBe('*Nyama* kilo ngapi?');
+  it('asks the single configured unit concisely and shows the escape', () => {
+    expect(quantityQuestion('Nyama', 'kilo', 'sw')).toBe('*Nyama* kilo ngapi? Ukiamua kuacha, andika *GHAIRI*.');
   });
 
   it('asks for the unit when the catalogue has several valid choices', () => {

@@ -1,4 +1,4 @@
-import type { Lang } from './whatsappIntent.ts';
+import { pendingEscapeHint, type Lang } from './whatsappIntent.ts';
 import type { DailyRecordPaymentMethod } from './whatsappDailyRecords.ts';
 import { normalizeNumberWords } from './whatsappDailyRecords.ts';
 import { canonicalUnitWord, isUnitWord, UNITS } from './whatsappStock.ts';
@@ -170,10 +170,12 @@ export function quantityQuestion(
 ): string {
   if (lang === 'sw') {
     return unit
-      ? `*${productName}* ${unit} ngapi?`
-      : `*${productName}* ngapi?`;
+      ? `*${productName}* ${unit} ngapi? ${pendingEscapeHint(lang)}`
+      : `*${productName}* ngapi? ${pendingEscapeHint(lang)}`;
   }
-  return unit ? `How many ${unit} of *${productName}*?` : `How many *${productName}*?`;
+  return unit
+    ? `How many ${unit} of *${productName}*? ${pendingEscapeHint(lang)}`
+    : `How many *${productName}*? ${pendingEscapeHint(lang)}`;
 }
 
 /** The shop sells this in several ways and the message named none of them. */
@@ -184,12 +186,12 @@ export function quantityUnitQuestion(
 ): string {
   const list = units.join(', ');
   return lang === 'sw'
-    ? `*${productName}* unauza kwa ${list}. Umeuza kiasi gani, na kwa kipimo kipi?\n\nMfano: _${units[0]} 2_`
-    : `You sell *${productName}* by ${list}. How much, and in which measure?\n\nFor example: _${units[0]} 2_`;
+    ? `*${productName}* unauza kwa ${list}. Umeuza kiasi gani, na kwa kipimo kipi?\n\nMfano: _${units[0]} 2_. ${pendingEscapeHint(lang)}`
+    : `You sell *${productName}* by ${list}. How much, and in which measure?\n\nFor example: _${units[0]} 2_. ${pendingEscapeHint(lang)}`;
 }
 
 export function quantityNotUnderstood(productName: string, lang: Lang): string {
   return lang === 'sw'
-    ? `Sijapata idadi ya *${productName}*. Andika namba tu, mfano: _5_.`
-    : `I did not get the quantity for *${productName}*. Just the number, for example: _5_.`;
+    ? `Sijapata idadi ya *${productName}*. Andika namba tu, mfano: _5_. ${pendingEscapeHint(lang)}`
+    : `I did not get the quantity for *${productName}*. Just the number, for example: _5_. ${pendingEscapeHint(lang)}`;
 }

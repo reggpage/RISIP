@@ -1,4 +1,4 @@
-import type { Lang } from './whatsappIntent.ts';
+import { pendingEscapeHint, type Lang } from './whatsappIntent.ts';
 
 export type PortionPriceDraft = {
   unit: string;
@@ -173,11 +173,11 @@ export function portionSizeQuestion(draft: PortionSetupDraft, lang: Lang): strin
       ? `Nimeona bei za vipimo vya ${draft.product}, lakini sitakisia ukubwa wake.\n`
         + `Kila kipimo ni ${base} kiasi gani?\n\n`
         + `Jibu kwa muundo huu:\n${examples}\n\n`
-        + 'Huu ni mfano tu. Weka namba halisi za bidhaa yako.'
+        + `Huu ni mfano tu. Weka namba halisi za bidhaa yako. ${pendingEscapeHint(lang)}`
       : `I found the portion prices for ${draft.product}, but I will not guess their sizes.\n`
         + `How much of a ${base} is each portion?\n\n`
         + `Reply like this:\n${examples}\n\n`
-        + 'This is only an example. Put in the real numbers for your product.';
+        + `This is only an example. Put in the real numbers for your product. ${pendingEscapeHint(lang)}`;
   }
   const purchaseExample = 20;
   const exampleTail = examples ? `; ${examples}` : '';
@@ -185,11 +185,11 @@ export function portionSizeQuestion(draft: PortionSetupDraft, lang: Lang): strin
     ? `Nimeona bei za vipimo vya ${draft.product}, lakini sitakisia ukubwa wake.\n`
       + `${draft.purchaseUnit} moja ina unit ya msingi ngapi? Na kila kipimo ni kiasi gani cha unit hiyo?\n\n`
       + `Jibu kwa muundo huu:\n${draft.purchaseUnit} = ${purchaseExample} ${base}${exampleTail}\n\n`
-      + `Huu ni mfano tu. Badilisha "${base}" na namba hizo ziwe vipimo halisi vya bidhaa yako.`
+      + `Huu ni mfano tu. Badilisha "${base}" na namba hizo ziwe vipimo halisi vya bidhaa yako. ${pendingEscapeHint(lang)}`
     : `I found the portion prices for ${draft.product}, but I will not guess their sizes.\n`
       + `How many base units are in one ${draft.purchaseUnit}, and how much of that base unit is each selling portion?\n\n`
       + `Reply like this:\n${draft.purchaseUnit} = ${purchaseExample} ${base}${exampleTail}\n\n`
-      + `This is only an example. Replace "${base}" and the numbers with the real measurements for your product.`;
+      + `This is only an example. Replace "${base}" and the numbers with the real measurements for your product. ${pendingEscapeHint(lang)}`;
 }
 
 type SizeStatement = { unit: string; quantity: number; baseUnit: string };
@@ -353,13 +353,13 @@ export function parsePortionQuantityAnswer(text: string | null | undefined): num
 
 export function portionQuantityQuestion(prompt: PortionQuantityPrompt, lang: Lang): string {
   return lang === 'sw'
-    ? `Umeuza ${prompt.unitName} ngapi za ${prompt.productName}?\nMfano: "nimeuza ${prompt.productName} ${prompt.unitName} 3".`
-    : `How many ${prompt.unitName} portions of ${prompt.productName} did you sell?\nExample: "sold ${prompt.productName} ${prompt.unitName} 3".`;
+    ? `Umeuza ${prompt.unitName} ngapi za ${prompt.productName}?\nMfano: "nimeuza ${prompt.productName} ${prompt.unitName} 3". ${pendingEscapeHint(lang)}`
+    : `How many ${prompt.unitName} portions of ${prompt.productName} did you sell?\nExample: "sold ${prompt.productName} ${prompt.unitName} 3". ${pendingEscapeHint(lang)}`;
 }
 
 export function portionUnitRequired(product: string, units: string[], lang: Lang): string {
   const choices = units.map((unit) => `• ${unit}`).join('\n');
   return lang === 'sw'
-    ? `${product} ina vipimo zaidi ya kimoja. Umeuza kwa kipimo gani?\n${choices}\n\nMfano: "nimeuza ${product} ${units[0]} 3".`
-    : `${product} has more than one selling unit. Which unit did you sell?\n${choices}\n\nExample: "sold ${product} ${units[0]} 3".`;
+    ? `${product} ina vipimo zaidi ya kimoja. Umeuza kwa kipimo gani?\n${choices}\n\nMfano: "nimeuza ${product} ${units[0]} 3". ${pendingEscapeHint(lang)}`
+    : `${product} has more than one selling unit. Which unit did you sell?\n${choices}\n\nExample: "sold ${product} ${units[0]} 3". ${pendingEscapeHint(lang)}`;
 }
