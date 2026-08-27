@@ -2057,6 +2057,13 @@ async function buildAdvisorPayload(
     .sort((a, b) => (a.retail - a.cost) - (b.retail - b.cost));
 
   const items = aggregateProducts(replyData, costs);
+  // Margin already carries the buying cost, so this is revenue - COGS -
+  // expenses over rows we have in hand: the same arithmetic as
+  // calculateProfitEstimate, without a second round trip.
+  const costedItems = items.filter((item) => item.costed && item.margin !== null);
+  const soldRevenue = items.reduce((sum, item) => sum + item.revenue, 0);
+  const costedRevenue = costedItems.reduce((sum, item) => sum + item.revenue, 0);
+  const grossMargin = costedItems.reduce((sum, item) => sum + (item.margin ?? 0), 0);
   const sold = new Set(items.map((item) => productKey(item.product)));
   const byRevenue = rankProducts(items, 'revenue', [], 'best');
   const belowCost = rankProducts(items, 'margin', [], 'worst').filter((item) => (item.margin ?? 0) < 0);
@@ -2093,6 +2100,10 @@ async function buildAdvisorPayload(
     periodLabel,
     revenue: total('sale'),
     expenses: total('expense'),
+    estimatedProfit: costedItems.length > 0
+      ? Math.round(grossMargin - total('expense'))
+      : null,
+    profitCoverage: soldRevenue > 0 ? Math.round((costedRevenue / soldRevenue) * 100) / 100 : 0,
     debtIssued: total('debt_issued'),
     customerPayments: total('customer_payment'),
     topMovers: byRevenue.slice(0, 3).map((item) => ({

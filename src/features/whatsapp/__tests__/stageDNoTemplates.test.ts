@@ -164,7 +164,22 @@ describe('the prompt got shorter, not longer', () => {
     // different number from 3,121,150 and the shop cannot check it. A ceiling
     // that never moves for a real fix is a ceiling that gets ignored; one that
     // moves without a reason is not a ceiling.
-    expect(prompt.length).toBeLessThan(17_750);
+    // Raised by 350 a second time, and this one bought back every adviser turn.
+    // The evidence carried revenue and expenses and no profit, so "what you
+    // kept" needed a subtraction the guard refuses — correctly, since revenue
+    // minus expenses ignores what the stock cost. Four turns in a row died as
+    // model_reply_deferred_for_safety over one seven-digit figure. The server
+    // computes the profit now, and this rule is what stops the model deriving
+    // it by hand anyway.
+    expect(prompt.length).toBeLessThan(18_100);
+  });
+
+  it('tells the model profit is handed to it, not worked out', () => {
+    expect(ADVISOR_VOICE).toContain('PROFIT IS GIVEN, NEVER DERIVED');
+    expect(ADVISOR_VOICE).toContain('estimated_profit');
+    // Coverage travels with the figure: a profit over half the catalogue must
+    // not be quoted as if it were the whole shop.
+    expect(ADVISOR_VOICE).toContain('profit_coverage_pct');
   });
 
   it('states the loss/cheapest/missing-price distinction once', () => {

@@ -36,6 +36,23 @@ export type AdvisorPayload = {
   periodLabel: string;
   revenue: number;
   expenses: number;
+  /**
+   * What the shop actually kept: revenue, less what the sold stock cost, less
+   * expenses.
+   *
+   * MEASURED, and it killed every adviser turn for a day. The evidence carried
+   * revenue and expenses and NO profit, so the most ordinary sentence an
+   * adviser writes — what the shop is left with — required subtracting one from
+   * the other. The grounding guard refuses that subtraction and is right to:
+   * revenue minus expenses ignores what the stock cost, so it reads high and it
+   * reads like profit. Four turns in a row died over a seven-digit figure.
+   *
+   * Null when no sold product has a buying cost. An "estimated profit" over
+   * zero known costs is revenue wearing the word profit.
+   */
+  estimatedProfit: number | null;
+  /** Share of sold revenue whose buying cost is known, 0-1. */
+  profitCoverage: number;
   debtIssued: number;
   customerPayments: number;
   /** Ranked by revenue, best first. */
@@ -300,6 +317,15 @@ export function advisorEvidence(payload: AdvisorPayload): string {
     `period=${payload.periodLabel}`,
     `revenue=${Math.round(payload.revenue)}`,
     `expenses=${Math.round(payload.expenses)}`,
+    // Given, never left to the model to derive. Coverage travels with it so a
+    // profit computed over half the catalogue is not quoted as if it were the
+    // whole shop.
+    payload.estimatedProfit === null
+      ? 'estimated_profit=unknown_no_buying_costs_recorded'
+      : `estimated_profit=${Math.round(payload.estimatedProfit)}`,
+    payload.estimatedProfit === null
+      ? 'profit_coverage_pct=0'
+      : `profit_coverage_pct=${Math.round(payload.profitCoverage * 100)}`,
     `debt_issued=${Math.round(payload.debtIssued)}`,
     `customer_payments=${Math.round(payload.customerPayments)}`,
     `outstanding_debt=${Math.round(payload.outstandingDebt)}`,
@@ -413,6 +439,11 @@ export const ADVISOR_VOICE = `ADVISER FACTS (get_business_advice)
   on every sale. Never tell somebody to raise a price they have already raised:
   if the second list is empty, say the loss was made before the price was fixed
   and move on.
+- PROFIT IS GIVEN, NEVER DERIVED. Quote estimated_profit. Revenue minus
+  expenses is not profit — it ignores what the stock cost — and such an answer
+  is refused before the shop sees it. If it reads unknown_no_buying_costs_recorded,
+  say the buying costs are missing; if profit_coverage_pct is under 80, say the
+  figure covers only that share of sales.
 - Every number must come from the tool result. Do not add, subtract, project or
   estimate beyond it. If a figure is absent, say it is not recorded yet and say
   what to send to record it.

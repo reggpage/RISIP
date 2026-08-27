@@ -33,6 +33,9 @@ const EVIDENCE = [[
   'period=mwezi huu',
   'revenue=3121150',
   'expenses=25700',
+  // The figure whose absence killed four adviser turns in a row.
+  'estimated_profit=1842300',
+  'profit_coverage_pct=71',
   'top_product=nguvu ya sala|616500',
   'sold_below_cost_in_period=Velvet napkin|-1200',
   'sold_below_cost_in_period=Sodaa|-100',
@@ -70,6 +73,28 @@ describe('arithmetic over the ledger’s own figures is grounded', () => {
 
   it('still allows a numbered list', () => {
     expect(findUngroundedNumbers('1. Nunua Birika\n2. Acha dead stock', EVIDENCE)).toEqual([]);
+  });
+});
+
+describe('the profit sentence, which is why the adviser kept failing', () => {
+  // rejection_code said "1x7": one seven-digit token, refused. That is
+  // 3,121,150 - 25,700 = 3,095,450 — the model deriving what the shop kept,
+  // because the evidence gave it revenue and expenses and no profit at all.
+  //
+  // The fix was not to allow the subtraction. Revenue minus expenses ignores
+  // what the stock cost: it reads high and it reads like profit. The server
+  // computes the real figure now and hands it over.
+  it('lets the adviser state what the shop kept', () => {
+    expect(findUngroundedNumbers('Faida yako mwezi huu ni TSh 1,842,300.', EVIDENCE)).toEqual([]);
+  });
+
+  it('still refuses revenue minus expenses, the figure that was being derived', () => {
+    expect(findUngroundedNumbers('Umebakiwa na TSh 3,095,450 baada ya matumizi.', EVIDENCE))
+      .toContain('3095450');
+  });
+
+  it('lets the adviser state how much of the shop that figure covers', () => {
+    expect(findUngroundedNumbers('Takwimu hii inagusa 71% ya mauzo yako.', EVIDENCE)).toEqual([]);
   });
 });
 
