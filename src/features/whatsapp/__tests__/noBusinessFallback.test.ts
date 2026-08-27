@@ -64,8 +64,27 @@ describe('no business prose can stand in for an answer', () => {
 
   it('fails the turn when the model states a figure no tool returned', () => {
     const branch = assistant.slice(assistant.indexOf('if (ungrounded.length > 0)'));
-    expect(branch.slice(0, 900)).toContain("args.onFailure?.('model_ungrounded_number')");
-    expect(branch.slice(0, 900)).toContain('unavailable: true');
+    // The code now carries the SHAPE of the refused token — digit-widths, never
+    // the value — because "deferred for safety" three times in a row named the
+    // symptom and not one thing that would fix it. Still one failure, still no
+    // answer: what changed is that the next one is diagnosable.
+    expect(branch.slice(0, 2200)).toContain('model_ungrounded_number:');
+    expect(branch.slice(0, 2200)).toContain('args.onFailure?.(');
+    expect(branch.slice(0, 2200)).toContain('unavailable: true');
+  });
+
+  it('records the refused figure as digits-wide, never as a figure', () => {
+    // rejection_code is capped at 64 characters and this is why it may hold a
+    // shape at all: "1x7" is one seven-digit token. A price, a balance or a
+    // total cannot be reconstructed from a width.
+    const at = assistant.indexOf('if (ungrounded.length > 0)');
+    const branch = assistant.slice(at, at + 1400);
+    // Widths are counted; the tokens themselves are never interpolated.
+    expect(branch).toContain('token.replace');
+    expect(branch).toContain('widths.filter');
+    expect(branch).not.toContain('${ungrounded}');
+    expect(branch).not.toContain("ungrounded.join(");
+    expect(webhook).toContain("rejectionCode: assistantFailure?.startsWith('model_ungrounded_number:')");
   });
 
   it('tells the shop which honest thing went wrong', () => {

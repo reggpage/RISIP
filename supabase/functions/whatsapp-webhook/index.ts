@@ -6961,6 +6961,15 @@ Deno.serve(async (req) => {
                   latencyMs: aiLatencyMs,
                   backendOutcome: outcome,
                   fallbackReason: reason,
+                  // The SHAPE of the figure the grounding guard refused, when the
+                  // guard is what stopped the answer. providerFailure is null on
+                  // this path — the model DID reply and we declined it — so
+                  // without this the one detail that separates an over-strict
+                  // guard from a model inventing a total never reaches the table,
+                  // and three refusals in a row said only "deferred for safety".
+                  rejectionCode: assistantFailure?.startsWith('model_ungrounded_number:')
+                    ? assistantFailure.slice('model_ungrounded_number:'.length)
+                    : null,
                   providerFailure: assistant ? null : assistantFailure,
                 });
                 await db.rpc('wa_record_ai_interpretation', {

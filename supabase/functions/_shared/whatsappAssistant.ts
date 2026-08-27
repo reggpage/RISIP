@@ -1303,7 +1303,21 @@ export async function runConversationalAssistant(args: {
       if (ungrounded.length > 0) {
         // The model stated a figure no tool returned. The answer cannot go out,
         // and neither can a template pretending to be one.
-        args.onFailure?.('model_ungrounded_number');
+        // WHICH figure was rejected, as a SHAPE rather than a value.
+        //
+        // Digit-lengths only: "1x1" is a single one-digit token — a count or an
+        // ordinal — and "1x7" is a seven-digit money figure. Enough to tell an
+        // over-strict guard apart from a model actually inventing a total, and
+        // it carries no price, no balance, and nothing a shop could be
+        // identified by. Three refusals in a row on the adviser reported only
+        // 'model_reply_deferred_for_safety', which named the symptom and not
+        // one thing that would fix it.
+        const widths = ungrounded.map((token) => token.replace('.', '').length);
+        const shape = [...new Set(widths)]
+          .sort((left, right) => left - right)
+          .map((digits) => `${widths.filter((width) => width === digits).length}x${digits}`)
+          .join(',');
+        args.onFailure?.(`model_ungrounded_number:${shape}`.slice(0, 60));
         return {
           reply: unavailable(args.context.lang),
           memory: inferAssistantMemory(executed),
