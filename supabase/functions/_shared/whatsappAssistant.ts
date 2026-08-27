@@ -587,7 +587,8 @@ function modelSupportsStrictTools(model: string): boolean {
   return /(?:haiku-4-5|sonnet-4-5|sonnet-4-6|sonnet-5|opus-4-[5-9]|opus-5|fable-5|mythos-5)/i.test(model);
 }
 
-function toolsForModel(model: string): ToolDefinition[] {
+/** Exported so the Stage A evaluator measures the real contract, not a copy of it. */
+export function toolsForModel(model: string): ToolDefinition[] {
   const strict = modelSupportsStrictTools(model);
   return ASSISTANT_TOOLS.map((definition, index) => ({
     ...definition,
