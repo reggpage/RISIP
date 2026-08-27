@@ -40,8 +40,16 @@ describe('A1 deterministic read-only WhatsApp tools', () => {
       { kind: 'customer_payment', status: 'confirmed', amount: 20000 },
       { kind: 'sale', status: 'voided', amount: 9000 },
     ]);
-    expect(summary).toMatchObject({ sales: 190000, cashSales: 140000, expenses: 10000, debtIssued: 50000, customerPayments: 20000, cashMovement: 150000 });
-    expect(buildBusinessSummaryReply(summary, 'today', 'sw')).toContain('si fedha iliyopokelewa');
+    // paidSales, not cashSales. MEASURED: the owner's screen read
+    // "Cash: TSh 3,121,150" above "Njia: cash TSh 0", because the first figure
+    // was every sale not on credit and the second was the payment methods
+    // actually recorded — nearly all of them NULL. Credit status and payment
+    // method are two different dimensions and this one is the former.
+    expect(summary).toMatchObject({ sales: 190000, paidSales: 140000, expenses: 10000, debtIssued: 50000, customerPayments: 20000, cashMovement: 150000 });
+    expect(summary).not.toHaveProperty('cashSales');
+    const prose = buildBusinessSummaryReply(summary, 'today', 'sw');
+    expect(prose).toContain('si fedha iliyopokelewa');
+    expect(prose).not.toMatch(/\bCash:/);
   });
 
   it('shows only open confirmed customer debts', () => {

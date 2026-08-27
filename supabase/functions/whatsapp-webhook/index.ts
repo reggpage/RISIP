@@ -456,6 +456,7 @@ import {
 import {
   buildBusinessesReply,
   buildBusinessSummaryReply,
+  businessSummaryFacts,
   buildDebtorDetailReply,
   buildDebtorsReply,
   buildOwedToMeReply,
@@ -476,7 +477,7 @@ import {
   type ReceiptDetail,
   type InvoiceDetail,
 } from '../_shared/whatsappReadTools.ts';
-import { buildBuchaReportReply, type BuchaReportingSnapshot } from '../_shared/whatsappBuchaReports.ts';
+import { buchaReportFacts, buildBuchaReportReply, type BuchaReportingSnapshot } from '../_shared/whatsappBuchaReports.ts';
 import {
   isProjectSetupState,
   parseProjectSetupChoice,
@@ -2359,7 +2360,7 @@ async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest,
   const { from, to } = readPeriodBounds(request);
   const companyId = String(identity.company_id);
   const profileId = String(identity.profile_id);
-  const financeOnly = new Set(['ai_business_summary', 'ai_debtors', 'ai_debtor_detail', 'daily_profit_estimate', 'ai_stock_loss', 'ai_owner_use', 'ai_whole_animals', 'ai_pending_approvals']);
+  const financeOnly = new Set(['ai_business_summary', 'ai_business_summary_facts', 'ai_debtors', 'ai_debtor_detail', 'daily_profit_estimate', 'ai_stock_loss', 'ai_owner_use', 'ai_whole_animals', 'ai_pending_approvals']);
   if (financeOnly.has(request.tool) && !canUseCompanyFinanceReads(String(identity.role ?? 'worker'))) {
     return lang === 'sw'
       ? 'Taarifa za kampuni nzima zinaonekana kwa owner au accountant tu. Unaweza kuniuliza kuhusu risiti zako, petty cash yako au reimbursement yako.'
@@ -2413,7 +2414,7 @@ async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest,
     return error ? (lang === 'sw' ? 'Sikuweza kupata approvals zinazosubiri.' : 'I could not load pending approvals.') : buildPendingApprovalsReply(count ?? 0, lang);
   }
 
-  const snapshotTools = new Set(['ai_business_summary', 'ai_debtors', 'daily_profit_estimate', 'ai_stock_loss', 'ai_owner_use', 'ai_whole_animals']);
+  const snapshotTools = new Set(['ai_business_summary', 'ai_business_summary_facts', 'ai_debtors', 'daily_profit_estimate', 'ai_stock_loss', 'ai_owner_use', 'ai_whole_animals']);
   if (snapshotTools.has(request.tool)) {
     const allTime = request.tool === 'ai_debtors';
     const { data, error } = await db.rpc('wa_bucha_reporting_snapshot', {
@@ -2423,6 +2424,11 @@ async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest,
       p_to: allTime ? null : to,
     });
     if (error) return lang === 'sw' ? 'Sikuweza kupata report hiyo sasa.' : 'I could not load that report right now.';
+    // The model reads evidence; the paragraph is what the shop sees only if the
+    // model cannot finish.
+    if (request.tool === 'ai_business_summary_facts') {
+      return buchaReportFacts(data as BuchaReportingSnapshot, request.period, lang, request.range);
+    }
     return buildBuchaReportReply(data as BuchaReportingSnapshot, request.tool, request.period, lang, request.range);
   }
 
@@ -2438,6 +2444,9 @@ async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest,
   })) as ReadDailyRow[];
 
   if (request.tool === 'ai_business_summary') return buildBusinessSummaryReply(calculateBusinessSummary(rows), request.period, lang, request.range);
+  if (request.tool === 'ai_business_summary_facts') {
+    return businessSummaryFacts(calculateBusinessSummary(rows), request.period, lang, request.range);
+  }
   if (request.tool === 'ai_debtors' || request.tool === 'ai_debtor_detail') {
     const debtors = calculateDebtors(rows);
     if (request.tool === 'ai_debtor_detail') {
@@ -3061,7 +3070,15 @@ async function executeAssistantTool(
   said?: string,
 ): Promise<AssistantToolExecution> {
   if (name === 'get_business_summary') {
-    return { content: await readOnlyToolReply(db, identity, { tool: 'ai_business_summary', period: assistantPeriod(input.period), range: assistantRange(input.when) }, lang) };
+    // STAGE: the model gets EVIDENCE and writes the answer; the paragraph is
+    // what the shop sees only if the model cannot finish. Asked "Biashara
+    // inaendaje so far", the old path returned the same fixed monthly ledger
+    // block whatever had been asked — right figures, wrong answer.
+    const summaryRequest = { period: assistantPeriod(input.period), range: assistantRange(input.when) };
+    return {
+      content: await readOnlyToolReply(db, identity, { tool: 'ai_business_summary_facts', ...summaryRequest }, lang),
+      fallbackReply: await readOnlyToolReply(db, identity, { tool: 'ai_business_summary', ...summaryRequest }, lang),
+    };
   }
   if (name === 'get_product_performance') {
     const metric = input.metric === 'revenue' || input.metric === 'margin' ? input.metric : 'quantity';
@@ -4167,6 +4184,36 @@ Deno.serve(async (req) => {
 
   let db: Admin;
   try { db = admin(); } catch { return new Response('misconfigured', { status: 500 }); }
+
+  // MEASURED, and it is why a shop sometimes gets nothing at all.
+  //
+  //   whatsapp_messages   pending | retries=0 | last_error NULL | audit rows 0
+  //
+  // Three of them: 3.8 hours old, 23.8 hours old, and 265 hours old. The loop
+  // below is wrapped in a try/catch that records the reason and tells the shop,
+  // so a THROW cannot produce this. What produces it is the worker ending
+  // outside JavaScript's control — an eviction, a wall-clock limit, an isolate
+  // torn down mid-await. No catch can run, so the row stays exactly as it was
+  // inserted and the shopkeeper is simply never answered.
+  //
+  // A message may fail. It may not disappear. Anything still pending well past
+  // the point where processing could plausibly still be running is marked, so
+  // the row carries its own explanation instead of sitting silent for eleven
+  // days waiting for somebody to notice.
+  //
+  // Deliberately NOT replying to these: an answer to an eleven-day-old question
+  // is its own kind of confusing. The record is for whoever looks.
+  try {
+    await db.from('whatsapp_messages')
+      .update({
+        status: 'failed',
+        last_error: 'worker_ended_before_completion',
+        processed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('status', 'pending')
+      .lt('created_at', new Date(Date.now() - 10 * 60_000).toISOString());
+  } catch { /* the sweep must never stop the message in front of us */ }
 
   const entries = Array.isArray(payload?.entry) ? payload.entry : [];
   for (const entry of entries) {

@@ -254,3 +254,34 @@ describe('a parked question releases unless the message answers it', () => {
     expect(quantityBranch).not.toContain('quantityNotUnderstood');
   });
 });
+
+describe('no message disappears', () => {
+  // MEASURED. Three rows in whatsapp_messages, stuck on 'pending' with
+  // retries=0, last_error NULL and zero audit rows — 3.8 hours old, 23.8 hours
+  // old, and 265 hours old. The message loop is wrapped in a try/catch that
+  // records the reason and tells the shop, so a throw cannot produce that
+  // signature. What produces it is the worker ending outside JavaScript's
+  // control, where no catch can run.
+  it('marks a message the worker never finished', () => {
+    expect(webhook).toContain("last_error: 'worker_ended_before_completion'");
+    expect(webhook).toContain(".eq('status', 'pending')");
+  });
+
+  it('sweeps before the loop, not inside it', () => {
+    // Inside the loop it would be racing the message being processed.
+    const sweep = webhook.indexOf("last_error: 'worker_ended_before_completion'");
+    const loop = webhook.indexOf('for (const message of messages)');
+    expect(sweep).toBeGreaterThan(-1);
+    expect(sweep).toBeLessThan(loop);
+  });
+
+  it('never lets the sweep break the message in front of it', () => {
+    expect(webhook).toContain('/* the sweep must never stop the message in front of us */');
+  });
+
+  it('leaves recent messages alone', () => {
+    // Ten minutes is well past the point where processing could plausibly
+    // still be running, and well short of anything a live request would hit.
+    expect(webhook).toMatch(/Date\.now\(\) - 10 \* 60_000/);
+  });
+});

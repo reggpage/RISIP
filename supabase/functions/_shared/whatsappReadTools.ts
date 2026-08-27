@@ -10,6 +10,9 @@ import { correctControlWords } from './whatsappSpelling.ts';
 
 export type ReadToolName =
   | 'ai_business_summary'
+  // The same data as evidence rather than as a paragraph. The model reads this
+  // and writes the answer; the paragraph is the outage reply.
+  | 'ai_business_summary_facts'
   | 'ai_debtors'
   | 'daily_profit_estimate'
   | 'ai_stock_loss'
@@ -60,7 +63,13 @@ export type ReadProductCost = {
 
 export type BusinessSummary = {
   sales: number;
-  cashSales: number;
+  /**
+   * Sales that were NOT on credit — money owed at the moment of sale, not money
+   * of any particular kind. It is deliberately no longer called cash: how the
+   * shop was actually paid lives in payment_method, and most records do not
+   * state it at all.
+   */
+  paidSales: number;
   expenses: number;
   debtIssued: number;
   customerPayments: number;
@@ -281,21 +290,26 @@ export function calculateBusinessSummary(rows: ReadDailyRow[]): BusinessSummary 
     .filter((row) => row.kind === kind)
     .reduce((sum, row) => sum + Math.max(0, Number(row.amount) || 0), 0);
   const sales = total('sale');
-  const cashSales = sales;
+  // Not "cash". A sale that is not on credit was settled at the counter by
+  // SOME means, and unless the trader said which, that means is unknown.
+  const paidSales = sales;
   const creditSales = total('debt_issued');
   const expenses = total('expense');
   const debtIssued = total('debt_issued');
   const customerPayments = total('customer_payment');
   const stockPurchases = total('stock_purchase');
   return {
-    sales: cashSales + creditSales,
-    cashSales,
+    sales: paidSales + creditSales,
+    paidSales,
     expenses,
     debtIssued,
     customerPayments,
     stockPurchases,
-    byPaymentMethod: { cash: cashSales, credit: creditSales },
-    cashMovement: cashSales + customerPayments - expenses - stockPurchases,
+    // Credit status, which is not a payment method. A caller that wants to
+    // know how the shop was paid must read payment_method and will find most
+    // of it unstated.
+    byPaymentMethod: { paid: paidSales, credit: creditSales },
+    cashMovement: paidSales + customerPayments - expenses - stockPurchases,
   };
 }
 
@@ -358,12 +372,45 @@ export function calculateProfitEstimate(
   };
 }
 
+/**
+ * The same summary, as evidence rather than as a paragraph.
+ *
+ * MEASURED. Asked "Biashara inaendaje so far", the shop received a fixed
+ * monthly ledger block: the same headings, the same five lines, the same
+ * closing sentence, whatever had been asked. The figures were right and the
+ * answer was not, because the question was about how the business is DOING and
+ * what came back was a printout.
+ *
+ * The model gets this instead and writes the answer itself. The paragraph
+ * survives as the outage reply, where a fixed layout beats silence.
+ */
+export function businessSummaryFacts(
+  summary: BusinessSummary,
+  period: ReadPeriod,
+  lang: 'sw' | 'en',
+  range?: ResolvedRange | null,
+): string {
+  return [
+    `period=${periodLabel(period, lang, range)}`,
+    `total_sales=${summary.sales}`,
+    `sales_not_on_credit=${summary.paidSales}`,
+    `credit_sales=${summary.debtIssued}`,
+    `expenses=${summary.expenses}`,
+    `customer_payments=${summary.customerPayments}`,
+    `stock_purchases=${summary.stockPurchases}`,
+    `estimated_cash_movement=${summary.cashMovement}`,
+    // Said plainly so the model cannot report a payment mix nobody recorded.
+    'note=sales_not_on_credit means settled at the counter, NOT that the payment method was cash. Payment method is a separate field and is unstated on most records; never report it as cash.',
+    'note=these are daily records; receipt expenses are counted separately.',
+  ].join('\n');
+}
+
 export function buildBusinessSummaryReply(summary: BusinessSummary, period: ReadPeriod, lang: 'sw' | 'en', range?: ResolvedRange | null): string {
   const label = periodLabel(period, lang, range);
   if (lang === 'sw') {
-    return `Muhtasari wa ${label}:\nMauzo yote: ${money(summary.sales, lang)}\n  Cash: ${money(summary.cashSales, lang)} · Mkopo: ${money(summary.debtIssued, lang)} (si fedha iliyopokelewa)\nMatumizi ya rekodi za siku: ${money(summary.expenses, lang)}\nMalipo ya wateja: ${money(summary.customerPayments, lang)}\nMabadiliko ya fedha yanayokadiriwa: ${money(summary.cashMovement, lang)}\n\nHaya ni rekodi za siku; gharama za risiti zinaonyeshwa kando.`;
+    return `Muhtasari wa ${label}:\nMauzo yote: ${money(summary.sales, lang)}\n  Yaliyolipwa: ${money(summary.paidSales, lang)} · Mkopo: ${money(summary.debtIssued, lang)} (si fedha iliyopokelewa)\nMatumizi ya rekodi za siku: ${money(summary.expenses, lang)}\nMalipo ya wateja: ${money(summary.customerPayments, lang)}\nMabadiliko ya fedha yanayokadiriwa: ${money(summary.cashMovement, lang)}\n\nHaya ni rekodi za siku; gharama za risiti zinaonyeshwa kando.`;
   }
-  return `Summary for ${label}:\nTotal sales: ${money(summary.sales, lang)}\n  Cash: ${money(summary.cashSales, lang)} · Credit: ${money(summary.debtIssued, lang)} (not cash received)\nDaily-record expenses: ${money(summary.expenses, lang)}\nCustomer payments: ${money(summary.customerPayments, lang)}\nEstimated cash movement: ${money(summary.cashMovement, lang)}\n\nThese are daily records; receipt expenses are shown separately.`;
+  return `Summary for ${label}:\nTotal sales: ${money(summary.sales, lang)}\n  Paid: ${money(summary.paidSales, lang)} · Credit: ${money(summary.debtIssued, lang)} (not cash received)\nDaily-record expenses: ${money(summary.expenses, lang)}\nCustomer payments: ${money(summary.customerPayments, lang)}\nEstimated cash movement: ${money(summary.cashMovement, lang)}\n\nThese are daily records; receipt expenses are shown separately.`;
 }
 
 export function buildDebtorsReply(debtors: Debtor[], lang: 'sw' | 'en'): string {

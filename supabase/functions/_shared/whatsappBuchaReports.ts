@@ -19,6 +19,50 @@ function money(value: unknown): string {
   return `TSh ${Math.round(Number(value ?? 0)).toLocaleString('en-US')}`;
 }
 
+/**
+ * The snapshot as evidence rather than as a paragraph.
+ *
+ * MEASURED. Asked "Biashara inaendaje so far", the shop got the fixed monthly
+ * ledger block below — same headings, same five lines, same closing sentence,
+ * whatever had been asked. The figures were right and the answer was not: the
+ * question was about how the business is DOING, and a printout is not an
+ * assessment.
+ *
+ * The model reads this and writes the answer. The paragraph stays as the outage
+ * reply, where a fixed layout beats silence.
+ */
+export function buchaReportFacts(
+  snapshot: BuchaReportingSnapshot,
+  period: ReadPeriod,
+  lang: 'sw' | 'en',
+  range?: ResolvedRange | null,
+): string {
+  const sales = snapshot.sales ?? {};
+  const methods = sales.by_payment_method ?? {};
+  const profit = snapshot.profit ?? {};
+  const lines = [
+    `period=${periodLabel(period, lang, range)}`,
+    `total_sales=${Number(sales.total ?? 0)}`,
+    `sales_not_on_credit=${Number(sales.cash_sales ?? 0)}`,
+    `credit_sales=${Number(sales.credit_sales ?? 0)}`,
+    `expenses=${Number(snapshot.expenses ?? 0)}`,
+    `customer_payments=${Number(snapshot.customer_payments ?? 0)}`,
+    `payment_method_cash=${Number(methods.cash ?? 0)}`,
+    `payment_method_mobile_money=${Number(methods.mobile_money ?? 0)}`,
+    `payment_method_bank=${Number(methods.bank ?? 0)}`,
+    `payment_method_not_stated=${Number(methods.unstated ?? 0)}`,
+  ];
+  if (profit.estimated_profit !== undefined) {
+    lines.push(`estimated_profit=${Number(profit.estimated_profit ?? 0)}`);
+    lines.push(`cogs=${Number(profit.cogs ?? 0)}`);
+    lines.push(`cost_coverage=${Number(profit.coverage ?? 0)}`);
+  }
+  // Said plainly, because the two were conflated on the owner's own screen.
+  lines.push('note=sales_not_on_credit means settled at the moment of sale. It does NOT mean the payment method was cash. Payment method is a separate field and payment_method_not_stated is usually the largest of them; never report unstated as cash.');
+  lines.push('note=these are confirmed records only.');
+  return lines.join('\n');
+}
+
 export function buildBuchaReportReply(
   snapshot: BuchaReportingSnapshot,
   tool: ReadToolName,
@@ -38,8 +82,8 @@ export function buildBuchaReportReply(
     const sales = snapshot.sales ?? {};
     const methods = sales.by_payment_method ?? {};
     return lang === 'sw'
-      ? `Muhtasari wa ${label}:\nMauzo yote: ${money(sales.total)}\n  Cash: ${money(sales.cash_sales)} · Mkopo: ${money(sales.credit_sales)} (si fedha iliyopokelewa)\n  Njia: cash ${money(methods.cash)} · mobile ${money(methods.mobile_money)} · bank ${money(methods.bank)}\nMatumizi: ${money(snapshot.expenses)}\nMalipo ya wateja: ${money(snapshot.customer_payments)}\n\nHizi ni namba za rekodi zilizothibitishwa.`
-      : `Summary for ${label}:\nTotal sales: ${money(sales.total)}\n  Cash: ${money(sales.cash_sales)} · Credit: ${money(sales.credit_sales)} (not cash received)\n  Methods: cash ${money(methods.cash)} · mobile ${money(methods.mobile_money)} · bank ${money(methods.bank)}\nExpenses: ${money(snapshot.expenses)}\nCustomer payments: ${money(snapshot.customer_payments)}\n\nThese figures use confirmed records.`;
+      ? `Muhtasari wa ${label}:\nMauzo yote: ${money(sales.total)}\n  Yaliyolipwa: ${money(sales.cash_sales)} · Mkopo: ${money(sales.credit_sales)} (si fedha iliyopokelewa)\n  Njia iliyorekodiwa: cash ${money(methods.cash)} · mobile ${money(methods.mobile_money)} · bank ${money(methods.bank)} · haijarekodiwa ${money(methods.unstated)}\nMatumizi: ${money(snapshot.expenses)}\nMalipo ya wateja: ${money(snapshot.customer_payments)}\n\nHizi ni namba za rekodi zilizothibitishwa.`
+      : `Summary for ${label}:\nTotal sales: ${money(sales.total)}\n  Paid at the counter: ${money(sales.cash_sales)} · Credit: ${money(sales.credit_sales)} (not cash received)\n  Recorded method: cash ${money(methods.cash)} · mobile ${money(methods.mobile_money)} · bank ${money(methods.bank)} · not stated ${money(methods.unstated)}\nExpenses: ${money(snapshot.expenses)}\nCustomer payments: ${money(snapshot.customer_payments)}\n\nThese figures use confirmed records.`;
   }
   if (tool === 'daily_profit_estimate') {
     const profit = snapshot.profit ?? {};
