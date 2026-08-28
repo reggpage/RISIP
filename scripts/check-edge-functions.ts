@@ -63,6 +63,25 @@ const syntaxErrors = output
   .split(/\r?\n/)
   .filter((line) => /error TS1\d{3}:/.test(line));
 
+/**
+ * The same name declared twice in one scope.
+ *
+ * MEASURED FAILURE, the fourth time this file has been extended by an outage,
+ * and this one was mine. salesTrendToolReply already had `const span` — the
+ * elapsed milliseconds — and I added a `const span` helper for date ranges
+ * forty lines below it. Two block-scoped declarations of one name is a
+ * SyntaxError, so the module never parsed and the worker returned BOOT_ERROR:
+ * not one feature broken but every WhatsApp message dead, and the shopkeeper
+ * found it before any check did.
+ *
+ * Every gate stayed green. tsc does not cover supabase/functions, the suite
+ * does not import the webhook, and TS2451 is not in the TS1xxx syntax family
+ * this script was watching. It is now.
+ */
+const redeclarations = output
+  .split(/\r?\n/)
+  .filter((line) => /error TS(?:2451|2300|2393):/.test(line));
+
 // TS2304: Cannot find name 'x'.  TS2552: Cannot find name 'x'. Did you mean…?
 const undefinedNames = output
   .split(/\r?\n/)
@@ -103,7 +122,8 @@ for (const path of entrypoints) {
   }
 }
 
-if (syntaxErrors.length > 0 || undefinedNames.length > 0 || duplicateImports.length > 0) {
+if (syntaxErrors.length > 0 || redeclarations.length > 0
+  || undefinedNames.length > 0 || duplicateImports.length > 0) {
   if (syntaxErrors.length > 0) {
     console.error(`
 ${syntaxErrors.length} syntax error(s):
@@ -112,6 +132,11 @@ ${syntaxErrors.length} syntax error(s):
     console.error(`
 The bundler refuses these outright, so the deploy fails and the OLD worker keeps serving. A healthy-looking 401 probe proves nothing here.
 `);
+  }
+  if (redeclarations.length > 0) {
+    console.error(`\n${redeclarations.length} redeclared name(s):\n`);
+    for (const line of redeclarations) console.error(`  ${line.trim()}`);
+    console.error('\nTwo declarations of one name will not parse. The worker returns BOOT_ERROR and EVERY message dies, not just the feature.\n');
   }
   if (undefinedNames.length > 0) {
     console.error(`\n${undefinedNames.length} name(s) used but never defined:\n`);
@@ -126,4 +151,4 @@ The bundler refuses these outright, so the deploy fails and the OLD worker keeps
   process.exit(1);
 }
 
-console.log(`\n${entrypoints.length} edge functions checked. No undefined names, no duplicate imports.\n`);
+console.log(`\n${entrypoints.length} edge functions checked. No undefined names, no redeclarations, no duplicate imports.\n`);

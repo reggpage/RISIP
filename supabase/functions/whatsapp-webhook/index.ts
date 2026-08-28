@@ -2250,15 +2250,15 @@ async function salesTrendToolReply(
   const asDay = (value: Date) => new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Africa/Dar_es_Salaam', year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(value);
-  const span = (from: Date, to: Date) => {
+  const daySpan = (from: Date, to: Date) => {
     const first = asDay(from);
     const last = asDay(new Date(to.getTime() - 1));
     return first === last ? first : `${first}..${last}`;
   };
 
   return salesTrendReply({
-    periodLabel: `${label} (${span(start, now)})`,
-    previousLabel: `${previousLabel} (${span(previousStart, start)})`,
+    periodLabel: `${label} (${daySpan(start, now)})`,
+    previousLabel: `${previousLabel} (${daySpan(previousStart, start)})`,
     revenue: [...after.values()].reduce((sum, item) => sum + item.revenue, 0),
     previousRevenue: [...before.values()].reduce((sum, item) => sum + item.revenue, 0),
     fell: moved.filter((item) => item.delta < 0).sort((a, b) => a.delta - b.delta),
