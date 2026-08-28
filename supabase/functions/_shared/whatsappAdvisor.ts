@@ -34,6 +34,8 @@ export type AdvisorPayload = {
   businessName: string;
   /** "wiki hii", "mwezi huu" — the window every figure below belongs to. */
   periodLabel: string;
+  /** The same window as dates the shop can check: "2026-08-01..2026-08-28". */
+  periodDates: string;
   revenue: number;
   expenses: number;
   /**
@@ -315,6 +317,7 @@ export function advisorEvidence(payload: AdvisorPayload): string {
   const rows: string[] = [
     `business=${payload.businessName}`,
     `period=${payload.periodLabel}`,
+    `period_dates=${payload.periodDates}`,
     `revenue=${Math.round(payload.revenue)}`,
     `expenses=${Math.round(payload.expenses)}`,
     // Given, never left to the model to derive. Coverage travels with it so a

@@ -6,6 +6,7 @@
 // treating a model response as an accounting source.
 
 import { type ResolvedRange, resolveDateRange } from './whatsappDateRange.ts';
+import { type ProductPeriod, periodStart } from './whatsappProductAnalytics.ts';
 import { correctControlWords } from './whatsappSpelling.ts';
 
 export type ReadToolName =
@@ -284,6 +285,34 @@ export function periodLabel(period: ReadPeriod, lang: 'sw' | 'en', range?: Resol
   return labels[period];
 }
 
+/**
+ * The actual days a period covers, as dates the shop can check.
+ *
+ * MEASURED, from the owner: "haijui siku kabisa, inasema juma, sasa hii ndio
+ * nini, haijui hata tarehe exactly." Every tool result said "wiki hii" or
+ * "juzi" and nothing said WHICH days, so an answer could name a day it had no
+ * way to place. The prompt knows today; the figures did not know their own
+ * window.
+ */
+export function periodDates(
+  period: ReadPeriod,
+  range?: ResolvedRange | null,
+  now = new Date(),
+): string {
+  const day = (value: Date) => new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Dar_es_Salaam', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(value);
+  if (range) {
+    // `to` is exclusive, so step back an instant to name the last real day.
+    const first = day(range.from);
+    const last = day(new Date(range.to.getTime() - 1));
+    return first === last ? first : `${first}..${last}`;
+  }
+  const today = day(now);
+  const first = day(periodStart(period as ProductPeriod, now));
+  return first === today ? today : `${first}..${today}`;
+}
+
 export function calculateBusinessSummary(rows: ReadDailyRow[]): BusinessSummary {
   const confirmed = rows.filter((row) => row.status === 'confirmed');
   const total = (kind: string) => confirmed
@@ -392,6 +421,7 @@ export function businessSummaryFacts(
 ): string {
   return [
     `period=${periodLabel(period, lang, range)}`,
+    `period_dates=${periodDates(period, range)}`,
     `total_sales=${summary.sales}`,
     `sales_not_on_credit=${summary.paidSales}`,
     `credit_sales=${summary.debtIssued}`,

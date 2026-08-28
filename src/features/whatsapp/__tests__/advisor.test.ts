@@ -97,8 +97,15 @@ describe('a question about loss', () => {
 const payload: AdvisorPayload = {
   businessName: 'St. Ritha bookshop',
   periodLabel: 'mwezi huu',
+  // The label alone is what the owner objected to: "haijui hata tarehe
+  // exactly". A figure has to belong to days the shop can check.
+  periodDates: '2026-08-01..2026-08-28',
   revenue: 2_393_250,
   expenses: 25_700,
+  // Given by the server, never derived by the model. Revenue minus expenses
+  // ignores what the stock cost, and quoting it was killing every advice turn.
+  estimatedProfit: 1_189_110,
+  profitCoverage: 0.71,
   debtIssued: 0,
   customerPayments: 0,
   topMovers: [{ name: 'nguvu ya sala', quantity: 47, revenue: 542_300, margin: 102_300 }],

@@ -267,6 +267,11 @@ describe('Risip conversational AI core', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({
         stop_reason: 'end_turn',
         content: [{ type: 'text', text: 'Nguvu ya sala imeuza vipande 70.' }],
+      }), { status: 200 }))
+      // The corrective round. The model repeats itself, so the answer dies.
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'Nguvu ya sala imeuza vipande 70.' }],
       }), { status: 200 }));
 
     const evidence = 'Nguvu ya sala imeuza vipande 7 leo.';
@@ -283,6 +288,78 @@ describe('Risip conversational AI core', () => {
     // one. The shop is told the AI could not finish.
     expect(result).toMatchObject({ usedSafeFallback: false, unavailable: true });
     expect(result?.reply).not.toBe(evidence);
+  });
+
+  it('asks the model to fix an ungrounded figure before giving up', async () => {
+    // MEASURED, and the owner counted them: seven turns died at this guard and
+    // every one told him "something went wrong on my side". Two different
+    // faults wore that sentence — a three-month forecast the ledger cannot
+    // support, and a stray enumeration digit in an answer that was otherwise
+    // right. Both were recoverable without troubling him: the model already had
+    // the evidence and only had to stay inside it.
+    (globalThis as { Deno?: unknown }).Deno = {
+      env: { get: (name: string) => name === 'ANTHROPIC_API_KEY' ? 'test-key' : undefined },
+    };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'claude-sonnet-5' }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        stop_reason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'tool-1', name: 'get_product_performance', input: { metric: 'quantity', period: 'today', product_names: [] } }],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'Nguvu ya sala imeuza vipande 70.' }],
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        stop_reason: 'end_turn',
+        content: [{ type: 'text', text: 'Nguvu ya sala imeuza vipande 7 leo.' }],
+      }), { status: 200 }));
+
+    const result = await runConversationalAssistant({
+      context,
+      history: [],
+      userText: 'Bidhaa gani imeuza sana leo?',
+      executeTool: async () => ({ content: 'Nguvu ya sala imeuza vipande 7 leo.' }),
+    });
+
+    expect(result?.reply).toBe('Nguvu ya sala imeuza vipande 7 leo.');
+    expect(result?.unavailable).toBeFalsy();
+
+    // Not a blind retry: the correction names the refused figure and the rule.
+    const sent = JSON.parse(String(fetchSpy.mock.calls[3]?.[1]?.body ?? '{}'));
+    const correction = JSON.stringify(sent.messages?.at(-1) ?? '');
+    expect(correction).toContain('70');
+    expect(correction).toMatch(/forecast/i);
+  });
+
+  it('spends the corrective round at most once per turn', async () => {
+    (globalThis as { Deno?: unknown }).Deno = {
+      env: { get: (name: string) => name === 'ANTHROPIC_API_KEY' ? 'test-key' : undefined },
+    };
+    // A fresh Response each call: a body can only be read once.
+    const invented = () => new Response(JSON.stringify({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: 'Nguvu ya sala imeuza vipande 70.' }],
+    }), { status: 200 });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'claude-sonnet-5' }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        stop_reason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'tool-1', name: 'get_product_performance', input: { metric: 'quantity', period: 'today', product_names: [] } }],
+      }), { status: 200 }))
+      .mockImplementation(async () => invented());
+
+    const result = await runConversationalAssistant({
+      context,
+      history: [],
+      userText: 'Bidhaa gani imeuza sana leo?',
+      executeTool: async () => ({ content: 'Nguvu ya sala imeuza vipande 7 leo.' }),
+    });
+
+    expect(result).toMatchObject({ unavailable: true });
+    // model list + tool round + first answer + ONE correction. Not a loop
+    // burning the shop's credits on the same refusal.
+    expect(fetchSpy.mock.calls.length).toBe(4);
   });
 
   it('reports a safe provider failure code without exposing prompts or secrets', async () => {

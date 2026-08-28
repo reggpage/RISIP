@@ -68,9 +68,13 @@ describe('no business prose can stand in for an answer', () => {
     // the value — because "deferred for safety" three times in a row named the
     // symptom and not one thing that would fix it. Still one failure, still no
     // answer: what changed is that the next one is diagnosable.
-    expect(branch.slice(0, 2200)).toContain('model_ungrounded_number:');
-    expect(branch.slice(0, 2200)).toContain('args.onFailure?.(');
-    expect(branch.slice(0, 2200)).toContain('unavailable: true');
+    // One corrective round comes first now — the model is told which figure
+    // was refused and asked to answer inside the evidence. If it repeats
+    // itself the turn still dies, and the shop is still told so.
+    expect(branch.slice(0, 3400)).toContain('if (corrections === 0)');
+    expect(branch.slice(0, 3400)).toContain('model_ungrounded_number:');
+    expect(branch.slice(0, 3400)).toContain('args.onFailure?.(');
+    expect(branch.slice(0, 3400)).toContain('unavailable: true');
   });
 
   it('records the refused figure as digits-wide, never as a figure', () => {

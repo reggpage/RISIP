@@ -171,7 +171,19 @@ describe('the prompt got shorter, not longer', () => {
     // model_reply_deferred_for_safety over one seven-digit figure. The server
     // computes the profit now, and this rule is what stops the model deriving
     // it by hand anyway.
-    expect(prompt.length).toBeLessThan(18_100);
+    // Raised a third time, by 750, for four failures the owner photographed:
+    // broken Swahili, a product called a "kitabu" because its name sounded
+    // like one, day words with no dates on them, and a three-month forecast
+    // the ledger cannot support. Each is now one rule. A ceiling that never
+    // moves for a measured fix is a ceiling that gets ignored.
+    expect(prompt.length).toBeLessThan(18_850);
+  });
+
+  it('carries the four rules the owner asked for', () => {
+    expect(prompt).toContain('KISWAHILI SANIFU');
+    expect(prompt).toContain('A PRODUCT IS A "BIDHAA", NOT A CATEGORY YOU GUESSED');
+    expect(prompt).toContain('NAME THE DATE');
+    expect(prompt).toContain('NEVER FORECAST');
   });
 
   it('tells the model profit is handed to it, not worked out', () => {

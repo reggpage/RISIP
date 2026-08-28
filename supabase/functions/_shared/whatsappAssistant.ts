@@ -807,6 +807,18 @@ UNDERSTANDING
 - A bare product-and-quantity list has no direction. Never call it a stock purchase from quantity alone; keep it for the sales/incoming-stock/count choice. Keep different movements separate.
 - Treat greetings and ordinary small talk as conversation. Reply naturally and briefly; do not dump a static help menu unless the user asks for help or commands.
 - Reply in ${language}, the user’s saved language. Keep WhatsApp replies clear and natural; do not use markdown tables.
+- KISWAHILI SANIFU. Correct noun-class and verb agreement; no invented or
+  word-by-word-translated terms. If unsure of a word, use the plain everyday
+  one. Expenses are "matumizi", never "fidia"; restock is "nunua tena"; unsold
+  is "hazijauzwa".
+- A PRODUCT IS A "BIDHAA", NOT A CATEGORY YOU GUESSED. The catalogue gives you
+  names, not kinds. "Rosali ya Maria" is not a "kitabu". Calling a product a
+  book, a drink or a tool invents a fact about the shop's stock.
+- NAME THE DATE. When you say leo, jana, juzi, wiki hii or mwezi huu, put the
+  date beside it — "jana (27 Ago)". period_dates in the tool result tells you
+  which days the figures cover.
+- NEVER FORECAST. The ledger holds no future figure. Asked what is coming, say
+  it records only what has happened, then give the trend it does show.
 
 ANSWER FIRST, AND STOP
 The owner's words: "mtu kauliza kitu flani go straight, maneno mengi ni usenge."
@@ -1216,6 +1228,8 @@ export async function runConversationalAssistant(args: {
   const mustGroundWithTool = requiresCurrentBusinessDataTool(userText);
 
   const turnStartedAt = Date.now();
+  // One corrective round per turn, spent only on a refused answer.
+  let corrections = 0;
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
     // Three rounds of a slow provider is longer than anybody will wait staring
     // at a WhatsApp thread. Past this the answer is late enough to be useless,
@@ -1317,6 +1331,31 @@ export async function runConversationalAssistant(args: {
           .sort((left, right) => left - right)
           .map((digits) => `${widths.filter((width) => width === digits).length}x${digits}`)
           .join(',');
+        // ONE corrective round, and it is not a blind retry.
+        //
+        // MEASURED: seven turns died here and the shop was told "something went
+        // wrong on my side" every time. Two different faults wore that one
+        // sentence — a three-month forecast the ledger cannot support, and a
+        // stray enumeration digit in an otherwise correct answer. Neither
+        // needed a new question from the owner: the model had the evidence and
+        // only had to stay inside it.
+        //
+        // A blind retry would spend a call to get the same answer back. This
+        // one changes the instruction — it names the refused figures and the
+        // rule they broke — and it runs at most once per turn.
+        if (corrections === 0) {
+          corrections += 1;
+          messages.push({ role: 'assistant', content: payload.content ?? [] });
+          messages.push({
+            role: 'user',
+            content: `Your answer stated figures no tool returned: ${ungrounded.join(', ')}. `
+              + 'Rewrite it using ONLY figures that appear in the tool results above. Do not '
+              + 'derive, subtract, project, forecast or round. If answering properly needs a '
+              + 'figure you were not given, say plainly that it is not recorded, and answer '
+              + 'with what you do have.',
+          });
+          continue;
+        }
         args.onFailure?.(`model_ungrounded_number:${shape}`.slice(0, 60));
         return {
           reply: unavailable(args.context.lang),
