@@ -237,7 +237,7 @@ begin
         'costLimit', coalesce(c.ai_daily_cost_limit, 0.150000)
       ),
       'members', coalesce((select jsonb_agg(jsonb_build_object('id', m.profile_id, 'role', m.role, 'joinedAt', m.joined_at, 'deactivatedAt', m.deactivated_at) order by m.joined_at) from public.company_members m where m.company_id = c.id), '[]'::jsonb),
-      'failures', coalesce((select jsonb_agg(jsonb_build_object('id', m.id, 'kind', 'whatsapp_message', 'status', m.status, 'code', left(m.last_error, 120), 'createdAt', m.created_at) order by m.created_at desc) from public.whatsapp_messages m where m.company_id = c.id and m.status = 'failed' limit 20), '[]'::jsonb)
+      'failures', coalesce((select jsonb_agg(jsonb_build_object('id', m.id, 'kind', 'whatsapp_message', 'status', m.status, 'code', left(coalesce(i.provider_failure_code, 'worker_failed'), 120), 'createdAt', m.created_at) order by m.created_at desc) from public.whatsapp_messages m left join public.whatsapp_ai_interpretations i on i.wa_message_id = m.wa_message_id where m.company_id = c.id and m.status = 'failed' limit 20), '[]'::jsonb)
     )
     from public.companies c left join public.company_platform_controls pc on pc.company_id = c.id
     where c.id = p_company_id
