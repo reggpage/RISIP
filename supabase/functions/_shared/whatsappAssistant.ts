@@ -1,4 +1,4 @@
-import { resolveAnthropicModel } from './anthropicModel.ts';
+import { resolveAnthropicModel, resolveProseModel } from './anthropicModel.ts';
 import type { Lang } from './whatsappIntent.ts';
 import { ADVISOR_VOICE, BUSINESS_RULES } from './whatsappAdvisor.ts';
 import { WHATSAPP_RECEIPTS_ENABLED } from './whatsappReadTools.ts';
@@ -1217,6 +1217,12 @@ export async function runConversationalAssistant(args: {
     Deno.env.get('ANTHROPIC_ASSISTANT_MODEL') || 'claude-haiku-4-5-20251001',
     true,
   );
+  // Round 0 decides WHAT the answer is and costs Haiku prices. Every round
+  // after it WRITES, and writes in the shopkeeper's own language, which is the
+  // half the owner could see going wrong. Falls back to Haiku if the account
+  // has no Sonnet, so a missing model degrades the Kiswahili and nothing else.
+  const proseModel = resolveProseModel(model);
+  const modelFor = (round: number) => (round === 0 ? model : proseModel);
   const messages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [
     ...normalizeAssistantHistory(args.history).map((message) => ({ role: message.role, content: message.content })),
     { role: 'user', content: userText },
@@ -1252,10 +1258,10 @@ export async function runConversationalAssistant(args: {
           'anthropic-version': '2023-06-01',
         },
         body: JSON.stringify({
-          model,
+          model: modelFor(round),
           max_tokens: 900,
           system: [{ type: 'text', text: buildAssistantSystemPrompt(args.context), cache_control: { type: 'ephemeral' } }],
-          tools: toolsForModel(model),
+          tools: toolsForModel(modelFor(round)),
           // STAGE C, MEASURED. The first turn must end in an explicit
           // capability. On the same 175 cases, forcing a choice beat letting
           // the model decide on every axis at once:
@@ -1362,7 +1368,7 @@ export async function runConversationalAssistant(args: {
           memory: inferAssistantMemory(executed),
           toolNames: executed.map((call) => call.name),
           lastToolInput: executed.length > 0 ? executed[executed.length - 1].input : null,
-          model,
+          model: modelFor(round),
           usedSafeFallback: false,
           unavailable: true,
         };
@@ -1372,7 +1378,7 @@ export async function runConversationalAssistant(args: {
         memory: inferAssistantMemory(executed),
         toolNames: executed.map((call) => call.name),
           lastToolInput: executed.length > 0 ? executed[executed.length - 1].input : null,
-        model,
+        model: modelFor(round),
         usedSafeFallback: false,
         unavailable: !modelText,
       };
@@ -1391,7 +1397,7 @@ export async function runConversationalAssistant(args: {
         memory: inferAssistantMemory(executed),
         toolNames: executed.map((call) => call.name),
         lastToolInput: executed.length > 0 ? executed[executed.length - 1].input : null,
-        model,
+        model: modelFor(round),
         usedSafeFallback: false,
         unavailable: true,
       };
@@ -1424,7 +1430,7 @@ export async function runConversationalAssistant(args: {
         memory: inferAssistantMemory(executed),
         toolNames: executed.map((call) => call.name),
           lastToolInput: executed.length > 0 ? executed[executed.length - 1].input : null,
-        model,
+        model: modelFor(round),
         usedSafeFallback: false,
       };
     }

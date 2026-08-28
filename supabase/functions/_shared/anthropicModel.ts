@@ -57,7 +57,11 @@ export async function resolveAnthropicModel(
     });
     if (response.ok) {
       const payload = await response.json() as { data?: Array<{ id?: string }> };
-      const available = new Set((payload.data ?? []).map((model) => model.id).filter(Boolean));
+      const ids = (payload.data ?? []).map((model) => model.id).filter(Boolean) as string[];
+      // Kept so resolveProseModel costs nothing: one catalogue call per turn,
+      // not two. An extra round trip here would show up on every reply.
+      catalogue = ids;
+      const available = new Set(ids);
       const match = preferred.find((model) => available.has(model));
       if (match) return match;
       // No Haiku in this account's catalogue. The pinned id is returned anyway
@@ -70,4 +74,40 @@ export async function resolveAnthropicModel(
   }
 
   return preferred[0] ?? PINNED;
+}
+
+/**
+ * The model that WRITES the answer, once Haiku has decided what the answer is.
+ *
+ * THE OWNER'S DECISION, and his reason, from his own WhatsApp: "ai inatumia
+ * kiswahili kibovu sana why not speak fluent swahili like u". He was right that
+ * it is bad and right that it is not a bug — "Uzazi tena hiyo" for "buy it
+ * again", "Fidia" for expenses, "karani ndogo lakini kuanza" — that is Haiku
+ * 4.5's Kiswahili, and a prompt rule narrows it without fixing it.
+ *
+ * So the split follows the work rather than the message: Haiku still reads the
+ * trader's sentence and picks the tool, which is the cheap, high-volume half
+ * and the half it is good at. Only the round that produces PROSE is Sonnet, and
+ * only after a tool has already returned the figures — roughly one call per
+ * business question, not one per message.
+ *
+ * This deliberately does NOT widen resolveAnthropicModel. The receipt pipeline
+ * passes a model straight through from its request body, and that door stays
+ * shut: nothing there can reach Sonnet by asking for it.
+ */
+const PROSE_MODEL = 'claude-sonnet-5';
+
+/** What the account actually offers, filled in by the call above. */
+let catalogue: string[] | null = null;
+
+export function resolveProseModel(fallback: string): string {
+  const wanted = Deno.env.get('ANTHROPIC_PROSE_MODEL') || PROSE_MODEL;
+  // Sonnet or nothing. An env var must not be able to reach Opus from here.
+  if (!/(^|[^a-z])sonnet([^a-z]|$)/i.test(wanted)) return fallback;
+  // No catalogue means resolveAnthropicModel could not reach the API either.
+  // Writing in Haiku's Kiswahili beats not answering at all.
+  if (!catalogue) return fallback;
+  return catalogue.includes(wanted)
+    ? wanted
+    : catalogue.find((id) => /sonnet-5/i.test(id)) ?? fallback;
 }

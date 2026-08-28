@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { toWhatsAppText } from '../../../../supabase/functions/_shared/whatsappMarkdown';
 import { periodDates } from '../../../../supabase/functions/_shared/whatsappReadTools';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 // FOUR THINGS THE OWNER PHOTOGRAPHED, in his own order.
 //
@@ -71,5 +73,56 @@ describe('a figure has to belong to a day the shop can check', () => {
     // ndio nini". The label stays; the dates travel with it.
     expect(facts).toContain('period=mwezi huu');
     expect(facts).toMatch(/period_dates=\d{4}-\d{2}-\d{2}/);
+  });
+});
+
+describe('who decides and who writes', () => {
+  // THE OWNER'S CALL, and his reason: "ai inatumia kiswahili kibovu sana why
+  // not speak fluent swahili like u". Haiku 4.5's Kiswahili is genuinely weak
+  // — "Uzazi tena hiyo" for buy-it-again, "Fidia" for expenses — and that is
+  // the model, not a bug a prompt rule can finish off. So the split follows
+  // the work: Haiku reads the sentence and picks the tool, Sonnet writes.
+  const assistant = readFileSync(
+    resolve(process.cwd(), 'supabase/functions/_shared/whatsappAssistant.ts'), 'utf8');
+  const resolver = readFileSync(
+    resolve(process.cwd(), 'supabase/functions/_shared/anthropicModel.ts'), 'utf8');
+
+  it('sends round 0 to Haiku and every writing round to Sonnet', () => {
+    expect(assistant).toContain('const modelFor = (round: number) => (round === 0 ? model : proseModel);');
+    expect(assistant).toContain('model: modelFor(round),');
+    expect(assistant).toContain('tools: toolsForModel(modelFor(round)),');
+  });
+
+  it('costs no extra round trip', () => {
+    // A second catalogue call would land on every single reply. The prose
+    // resolver reads the list the Haiku resolver already fetched.
+    expect(resolver).toContain('export function resolveProseModel(fallback: string): string');
+    const prose = resolver.slice(resolver.indexOf('export function resolveProseModel'));
+    expect(prose).not.toContain('fetch(');
+    expect(prose).not.toContain('await');
+  });
+
+  it('will not reach past Sonnet, whatever the environment says', () => {
+    expect(resolver).toContain("ANTHROPIC_PROSE_MODEL");
+    expect(resolver).toContain('if (!/(^|[^a-z])sonnet([^a-z]|$)/i.test(wanted)) return fallback;');
+  });
+
+  it('leaves the receipt pipeline on Haiku only', () => {
+    // extract-receipt passes a model straight through from its request body.
+    // That door stays shut: resolveAnthropicModel is untouched.
+    expect(resolver).toContain('/** Only a Haiku may be asked for. Anything else is ignored, not obeyed. */');
+    const haikuResolver = resolver
+      .slice(resolver.indexOf('export async function resolveAnthropicModel'),
+        resolver.indexOf('const PROSE_MODEL'))
+      // Its comments discuss the Sonnet swap CLAUDE.md used to allow. The code
+      // is what must not be able to reach one.
+      .split('\n').filter((line) => !/^\s*(\/\/|\/?\*)/.test(line)).join('\n');
+    expect(haikuResolver).not.toMatch(/sonnet/i);
+    expect(haikuResolver).not.toContain('PROSE_MODEL');
+  });
+
+  it('falls back to Haiku rather than failing when no Sonnet is offered', () => {
+    expect(resolver).toContain('if (!catalogue) return fallback;');
+    expect(resolver).toContain("catalogue.find((id) => /sonnet-5/i.test(id)) ?? fallback");
   });
 });
