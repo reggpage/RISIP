@@ -126,3 +126,37 @@ describe('who decides and who writes', () => {
     expect(resolver).toContain("catalogue.find((id) => /sonnet-5/i.test(id)) ?? fallback");
   });
 });
+
+describe('an empty AI account says so', () => {
+  // MEASURED, from the probe: the provider answered EVERY call, "hi" included,
+  // with 400 invalid_request_error and the message "Your credit balance is too
+  // low to access the Anthropic API." The classifier saw "invalid_request",
+  // filed it as our own tool schema, and the shop was told "something went
+  // wrong on my side" — which is not actionable and is not even true.
+  it('classifies a spent balance as its own failure, not our bug', async () => {
+    const { classifyAssistantFailure, assistantFailureMessage } =
+      await import('../../../../supabase/functions/_shared/whatsappAssistant');
+    const real = 'provider_400_invalid_request_error_Your_credit_balance_is_too_low_to'
+      + '_access_the_Anthropic_API._Please_go_to_Plans_-_Billing_to_upgrade';
+    expect(classifyAssistantFailure(real)).toBe('provider_credit_exhausted');
+    // Not the tool-schema bucket it was landing in.
+    expect(classifyAssistantFailure(real)).not.toBe('invalid_tool_schema');
+
+    for (const lang of ['sw', 'en'] as const) {
+      const said = assistantFailureMessage('provider_credit_exhausted', lang);
+      expect(said).not.toMatch(/something went wrong on my side|hitilafu kwa upande wangu/);
+      // The shop is told its records are safe, because the obvious fear when
+      // the assistant stops answering is that the books went with it.
+      expect(said).toMatch(/salama|are safe/);
+    }
+    expect(assistantFailureMessage('provider_credit_exhausted', 'sw')).toContain('salio');
+  });
+
+  it('still tells a real schema bug apart from an empty wallet', async () => {
+    // The 400 that IS ours must keep its own class.
+    const { classifyAssistantFailure } =
+      await import('../../../../supabase/functions/_shared/whatsappAssistant');
+    expect(classifyAssistantFailure('provider_400_invalid_request_error_tools.12.custom_Invalid_schema'))
+      .toBe('invalid_tool_schema');
+  });
+});

@@ -43,6 +43,7 @@ export type AssistantFailureClass =
   | 'provider_5xx'
   | 'provider_4xx'
   | 'invalid_tool_schema'
+  | 'provider_credit_exhausted'
   | 'model_empty'
   | 'model_invalid_tool'
   | 'tool_execution_failure'
@@ -70,6 +71,17 @@ export function classifyAssistantFailure(code: string | null | undefined): Assis
   if (said.includes('tool_round_limit') || said.includes('tool_loop_exhausted')) return 'tool_round_limit';
   if (said.includes('missing_required_tool_call') || said.includes('ungrounded')) return 'model_invalid_tool';
   if (said.includes('turn_deadline')) return 'runtime_deadline';
+  // MEASURED, and it cost the owner a morning. The provider answered every
+  // single call with
+  //   400 invalid_request_error
+  //   "Your credit balance is too low to access the Anthropic API."
+  // and this classifier saw the words "invalid_request", called it our own
+  // tool schema, and had the shop told "something went wrong on my side".
+  // Nobody can act on that. They CAN act on "the credit has run out", which is
+  // the only thing that brings the AI back.
+  if (said.includes('credit_balance') || said.includes('billing')) {
+    return 'provider_credit_exhausted';
+  }
   if (/provider_4\d\d/.test(said)) {
     // A 400 caused by our own tool schema is our bug, not the provider's, and
     // it is the one that returned on EVERY conversational call for a day while
@@ -99,6 +111,15 @@ export function assistantFailureMessage(failure: AssistantFailureClass, lang: La
       return sw
         ? 'Samahani, AI ya Risip imechukua muda mrefu kuliko kawaida kujibu. Tafadhali jaribu tena.'
         : 'Sorry — Risip AI took longer than usual to answer. Please try again.';
+    case 'provider_credit_exhausted':
+      // Named plainly. The owner asked "ai imeisha ama" hours before this
+      // became true, and when it did become true he was told something else
+      // entirely and spent the morning thinking the code had broken.
+      return sw
+        ? 'AI ya Risip imesimama kwa sababu salio la akaunti ya AI limeisha. '
+          + 'Ongeza salio ili irudi kufanya kazi. Kumbukumbu zako zote za biashara ziko salama.'
+        : 'Risip AI has stopped because the AI account has run out of credit. '
+          + 'Top it up and it will work again. All your business records are safe.';
     case 'ai_budget_block':
       return sw
         ? 'AI ya Risip imefikia kikomo chake cha matumizi kwa sasa. Itaweza kutumika tena kikomo kitakaporejeshwa.'
