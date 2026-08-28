@@ -85,3 +85,43 @@ describe('A2 AI fallback budget boundary', () => {
     expect(migration).toContain("'reset_at', v_reset_at");
   });
 });
+
+describe('the monthly ceiling', () => {
+  // The subscription is monthly; the cost is not. A shop can sit under every
+  // daily cap and still cost more in a month than it pays: at the measured
+  // $0.012 a message, a 28,000 TZS plan breaks even near 873 messages and the
+  // daily cap of 30 permits 900. NULL means no ceiling, so shipping it changed
+  // nothing for anybody.
+  const resetAt = '2026-09-01T00:00:00.000Z';
+
+  it('does not send the shop back into the same wall tomorrow', () => {
+    const sw = aiBudgetMessage('sw', resetAt, 'monthly_request_limit');
+    const en = aiBudgetMessage('en', resetAt, 'monthly_request_limit');
+    // The daily wording promises a reset that will not come.
+    expect(sw).not.toContain('kwa sasa. Utaweza kutumia AI tena');
+    expect(sw).toContain('mwezi huu');
+    expect(en).toContain("this month's AI messages");
+  });
+
+  it('names the reset and a way out', () => {
+    const sw = aiBudgetMessage('sw', resetAt, 'monthly_request_limit');
+    // Rendered in the shop's own timezone, like every other reset label.
+    expect(sw).toMatch(/Septemba|September/);
+    expect(sw).toContain('EAT');
+    expect(sw).toContain('kifurushi');
+    expect(aiBudgetMessage('en', resetAt, 'monthly_request_limit')).toContain('move up a plan');
+  });
+
+  it('still says the rest of Risip works', () => {
+    for (const lang of ['sw', 'en'] as const) {
+      const said = aiBudgetMessage(lang, resetAt, 'monthly_request_limit');
+      expect(said).toMatch(/Amri za kawaida|standard commands/);
+    }
+  });
+
+  it('leaves the daily wording alone', () => {
+    const daily = aiBudgetMessage('sw', '2026-08-29T00:00:00.000Z', 'daily_request_limit');
+    expect(daily).toContain('Utaweza kutumia AI tena');
+    expect(daily).not.toContain('mwezi huu');
+  });
+});

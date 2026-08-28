@@ -67,6 +67,21 @@ export function aiBudgetMessage(lang: Lang, resetAt: string, reason?: string): s
   }
 
   const reset = localResetLabel(resetAt, lang);
+
+  // The MONTHLY ceiling needs its own sentence. "Come back tomorrow" is what
+  // the daily cap says, and it is a lie when the whole month is spent —
+  // tomorrow refuses too, and being walked into the same wall each morning is
+  // worse than being told plainly where the limit is and who can lift it.
+  if (reason === 'monthly_request_limit') {
+    return lang === 'sw'
+      ? `Umetumia ujumbe wote wa AI wa mwezi huu. Utaanza upya ${reset}. `
+        + 'Ukihitaji zaidi kabla ya hapo, wasiliana na Risip kupandisha kifurushi chako. '
+        + 'Amri za kawaida za Risip bado zinafanya kazi.'
+      : `You have used this month's AI messages. They reset on ${reset}. `
+        + 'If you need more before then, contact Risip to move up a plan. '
+        + 'Risip’s standard commands are still working.';
+  }
+
   return lang === 'sw'
     ? `Umefikia kikomo cha msaada wa AI kwa sasa. Utaweza kutumia AI tena ${reset}. Amri za kawaida za Risip bado zinafanya kazi.`
     : `You have reached the current AI assistance limit. You can use AI again on ${reset}. Risip’s standard commands are still working.`;
