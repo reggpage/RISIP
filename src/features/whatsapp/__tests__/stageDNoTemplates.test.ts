@@ -176,7 +176,21 @@ describe('the prompt got shorter, not longer', () => {
     // like one, day words with no dates on them, and a three-month forecast
     // the ledger cannot support. Each is now one rule. A ceiling that never
     // moves for a measured fix is a ceiling that gets ignored.
-    expect(prompt.length).toBeLessThan(18_850);
+    // Raised by 100 for a change that makes the prompt CHEAPER, not longer.
+    // The clock used to be rendered here to the minute, which invalidated the
+    // cached prefix 1,440 times a day and re-billed five thousand tokens at
+    // full price on every message. Moving it into the trader's message, where
+    // nothing is cached anyway, costs one short sentence here and removes that
+    // entirely. A ceiling that blocks a fix which pays for itself many times
+    // over is not protecting anything.
+    expect(prompt.length).toBeLessThan(18_950);
+  });
+
+  it('keeps the volatile clock out of the cached prefix', () => {
+    // The invalidator, and the test that stops it coming back: nothing in the
+    // system prompt may carry a minute or a second.
+    expect(prompt).not.toMatch(/d{1,2}:d{2}/);
+    expect(prompt).toContain('Today in the shop');
   });
 
   it('carries the four rules the owner asked for', () => {

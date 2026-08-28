@@ -247,11 +247,18 @@ describe('Risip conversational AI core', () => {
     const firstMessageRequest = JSON.parse(String(fetchMock.mock.calls[1][1]?.body));
     expect(firstMessageRequest.tool_choice).toEqual({ type: 'any', disable_parallel_tool_use: false });
     expect(firstMessageRequest).not.toHaveProperty('disable_parallel_tool_use');
-    expect(firstMessageRequest.messages.map((message: { content: string }) => message.content)).toEqual([
+    const sent = firstMessageRequest.messages.map((message: { content: string }) => message.content);
+    // History is passed through untouched.
+    expect(sent.slice(0, 2)).toEqual([
       'Nguvu ya sala imeuzwa ngapi leo?',
       'Imeuza vipande 7 leo.',
-      'Jumla yake?',
     ]);
+    // The live clock rides with the trader's message, which is AFTER every
+    // cache breakpoint. It used to sit in the system prompt, rendered to the
+    // minute, where it threw the cached prefix away 1,440 times a day.
+    expect(sent[2]).toContain('Jumla yake?');
+    expect(sent[2]).toMatch(/Right now in the shop it is \d{2}:\d{2}/);
+    expect(String(firstMessageRequest.system[0].text)).not.toMatch(/\d{1,2}:\d{2}/);
   });
 
   it('refuses the answer outright when model prose invents a figure', async () => {

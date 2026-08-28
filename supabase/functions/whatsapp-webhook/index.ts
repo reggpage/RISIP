@@ -7441,6 +7441,12 @@ Deno.serve(async (req) => {
                   p_fallback_reason: row.fallbackReason,
                   p_provider_failure_code: row.providerFailureCode,
                   p_route: messageRoute,
+                  // Proof, rather than belief, that the cached prefix is being
+                  // reused. Reads with no writes is a warm cache; writes with
+                  // no reads means something upstream changed between calls and
+                  // the cache was paid for and thrown away.
+                  p_cache_read_tokens: assistant?.cache?.read ?? null,
+                  p_cache_write_tokens: assistant?.cache?.written ?? null,
                 });
               } catch { /* telemetry is never allowed to break a message */ }
             };

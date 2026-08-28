@@ -229,6 +229,8 @@ export type AssistantToolExecutor = (
 
 export type AssistantRunResult = {
   reply: string;
+  /** Cached and freshly written prefix tokens across the whole turn. */
+  cache?: AssistantCacheUsage;
   /**
    * True when `reply` is the "I could not answer" text rather than an answer.
    *
@@ -284,7 +286,24 @@ type AnthropicResponse = {
   content?: AnthropicBlock[];
   stop_reason?: string;
   error?: { message?: string };
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
 };
+
+/**
+ * Whether the cache is actually working, in numbers rather than in belief.
+ *
+ * The owner asked the right question — "je Risip inatumia cache kweli?" — and
+ * the honest answer was that nobody had ever measured it. Reading these two
+ * fields costs nothing and settles it permanently: reads mean the prefix was
+ * reused, writes with no reads mean something upstream is changing between
+ * calls and the cache is being paid for and thrown away.
+ */
+export type AssistantCacheUsage = { read: number; written: number };
 
 const periodSchema = { type: 'string', enum: ['today', 'week', 'month', 'year'] };
 
@@ -842,15 +861,39 @@ export function shouldDeferRecordLikeReply(
   return claimsRecordSaved(replyText);
 }
 
+/**
+ * The clock, delivered outside the cached prefix.
+ *
+ * It belongs with the trader's message rather than in the system prompt for
+ * one reason: everything before the last cache breakpoint has to be byte-stable
+ * or the cache is thrown away. Messages are never cached, so a value that
+ * changes every minute is free here and expensive there.
+ */
+export function assistantClockLine(now = new Date()): string {
+  const time = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Dar_es_Salaam', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(now);
+  return `[Right now in the shop it is ${time}. This line is from the server, not from the trader — never quote it back.]`;
+}
+
 export function buildAssistantSystemPrompt(context: AssistantIdentityContext, now = new Date()): string {
   const language = context.lang === 'sw' ? 'Kiswahili' : 'English';
-  // Computed here rather than passed in, because the clock is the same for
-  // every caller and a field that has to be threaded through six call sites is
-  // a field that will eventually be forgotten at one of them.
+  // THE DATE ONLY. The minute used to be here, and it was silently costing
+  // the shop money on every single message.
+  //
+  // Prompt caching is a PREFIX match: tools, then system, then messages. This
+  // block carries a cache breakpoint, so anything inside it that changes
+  // invalidates the cached copy — and a clock rendered to the minute changes
+  // 1,440 times a day. The tools above it went on caching; these five thousand
+  // tokens were re-billed at full price every time, and written to the cache
+  // again at 1.25x for a copy nothing would ever read.
+  //
+  // The date changes once a day, so it stays. The exact time moves into the
+  // trader's own message, which sits AFTER every breakpoint and is therefore
+  // uncached anyway — so it now costs nothing at all.
   const nowLabel = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Africa/Dar_es_Salaam',
     weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(now);
   return `You are Risip AI, a capable conversational business assistant inside WhatsApp.
 
@@ -884,9 +927,9 @@ The owner's words: "mtu kauliza kitu flani go straight, maneno mengi ni usenge."
 - Ask a clarifying question only when two answers are genuinely possible AND they differ. "Which period?" is worth asking; "what kind of loss do you mean?" is not, when there is exactly one kind the data can show.
 
 LIVE CONTEXT
-- Right now in the shop (Africa/Dar_es_Salaam): ${nowLabel}
+- Today in the shop (Africa/Dar_es_Salaam): ${nowLabel}. The exact time of day is on the first line of the trader's message.
 - Greet by the clock when a greeting is called for — "habari za asubuhi" before noon, "habari za mchana" until four, "habari za jioni" after that. Never greet by the clock in the middle of an answer, and never open every reply with one; a greeting answers a greeting.
-- Time words mean what they mean HERE. "Kesho" is the day after the date above. Do not tell somebody to do something "kesho asubuhi" at seven in the morning — that is today, before they open.
+- Time words mean what they mean HERE. "Kesho" is the day after today's date above. Do not tell somebody to do something "kesho asubuhi" at seven in the morning — that is today, before they open.
 - User’s first name: ${context.userName ?? 'not available'}
 - Active business: ${context.companyName}
 - Active role: ${context.role}
@@ -1279,9 +1322,13 @@ export async function runConversationalAssistant(args: {
   const modelFor = (round: number) => (round === 0 ? model : proseModel);
   const messages: Array<{ role: 'user' | 'assistant'; content: unknown }> = [
     ...normalizeAssistantHistory(args.history).map((message) => ({ role: message.role, content: message.content })),
-    { role: 'user', content: userText },
+    { role: 'user', content: `${assistantClockLine()}
+${userText}` },
   ];
   const executed: Array<{ name: string; input: Record<string, unknown> }> = [];
+  // Accumulated across every round of the turn, so one row says what the whole
+  // exchange cost in cached and uncached tokens.
+  const cache: AssistantCacheUsage = { read: 0, written: 0 };
   const evidence: string[] = [userText];
   // Kept alongside the evidence so a fallback can send the shopkeeper each
   // tool's own human rendering rather than the machine text the model reads.
@@ -1364,6 +1411,8 @@ export async function runConversationalAssistant(args: {
       return null;
     }
     const payload = await response.json() as AnthropicResponse;
+    cache.read += Math.max(0, Number(payload.usage?.cache_read_input_tokens ?? 0));
+    cache.written += Math.max(0, Number(payload.usage?.cache_creation_input_tokens ?? 0));
     const calls = toolCalls(payload.content);
 
     if (calls.length === 0) {
@@ -1423,6 +1472,7 @@ export async function runConversationalAssistant(args: {
           toolNames: executed.map((call) => call.name),
           lastToolInput: executed.length > 0 ? executed[executed.length - 1].input : null,
           model: modelFor(round),
+          cache,
           usedSafeFallback: false,
           unavailable: true,
         };
@@ -1433,6 +1483,7 @@ export async function runConversationalAssistant(args: {
         toolNames: executed.map((call) => call.name),
           lastToolInput: executed.length > 0 ? executed[executed.length - 1].input : null,
         model: modelFor(round),
+        cache,
         usedSafeFallback: false,
         unavailable: !modelText,
       };
@@ -1452,6 +1503,7 @@ export async function runConversationalAssistant(args: {
         toolNames: executed.map((call) => call.name),
         lastToolInput: executed.length > 0 ? executed[executed.length - 1].input : null,
         model: modelFor(round),
+        cache,
         usedSafeFallback: false,
         unavailable: true,
       };
@@ -1485,6 +1537,7 @@ export async function runConversationalAssistant(args: {
         toolNames: executed.map((call) => call.name),
           lastToolInput: executed.length > 0 ? executed[executed.length - 1].input : null,
         model: modelFor(round),
+        cache,
         usedSafeFallback: false,
       };
     }
