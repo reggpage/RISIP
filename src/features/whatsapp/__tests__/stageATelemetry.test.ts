@@ -204,7 +204,12 @@ describe('Stage A changed no behaviour', () => {
     // widened the LANGUAGE contract deliberately: three tools added, and the
     // two they supersede hidden from the model but kept as executors.
     // Stage C added one more, and it is the one that can do nothing.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(27);
+    // 29 since the closing pair. propose_day_close carries ONE field — the
+    // trader's own closing word — and get_day_records carries one date word.
+    // Neither reads a price, neither writes, and neither can close anything on
+    // its own: the server gathers the day, shows it back, and waits for NDIYO.
+    // The surface grew; the authority did not.
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(29);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('propose_business_event');
     expect(shown).toContain('propose_money_event');

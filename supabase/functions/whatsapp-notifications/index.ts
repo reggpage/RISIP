@@ -1,7 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 import {
-  proactiveTemplatePayload,
+  proactiveSendPayload,
   type ClaimedNotification,
 } from '../_shared/whatsappNotifications.ts';
 
@@ -51,6 +51,14 @@ Deno.serve(async (req) => {
   const limit = Math.max(1, Math.min(200, Number(input.limit) || 50));
   const staleDays = Math.max(1, Math.min(365, Number(input.debt_stale_days) || 7));
 
+  // Queue the evening close reminders before claiming, so they go out on the
+  // same run rather than waiting for the next one. Failure here must not stop
+  // the daily summaries, which are the reason this endpoint exists.
+  const { error: reminderError } = await db.rpc('wa_queue_close_reminders', { p_limit: limit });
+  if (reminderError) {
+    console.error('close reminder queue failed', reminderError.code, reminderError.message);
+  }
+
   const { data, error } = await db.rpc('claim_whatsapp_notification_deliveries', {
     p_now: new Date().toISOString(),
     p_debt_stale_days: staleDays,
@@ -75,7 +83,7 @@ Deno.serve(async (req) => {
           authorization: `Bearer ${accessToken}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify(proactiveTemplatePayload(claim)),
+        body: JSON.stringify(proactiveSendPayload(claim)),
       });
       const provider = await response.json().catch(() => ({})) as {
         messages?: Array<{ id?: string }>;

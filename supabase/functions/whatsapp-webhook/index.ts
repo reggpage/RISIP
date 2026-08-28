@@ -37,6 +37,7 @@ import {
   detectLanguage,
   isHelp,
   isCancel,
+  isConfirm,
   isPendingEscape,
   pendingEscapeHint,
   parseLanguageCommand,
@@ -493,6 +494,17 @@ import {
   type InvoiceDetail,
 } from '../_shared/whatsappReadTools.ts';
 import { buchaReportFacts, buildBuchaReportReply, type BuchaReportingSnapshot } from '../_shared/whatsappBuchaReports.ts';
+import {
+  type CloseLine,
+  type CloseWorker,
+  type DayCloseFacts,
+  batchHintReply,
+  closeReminderReply,
+  dayClosedReply,
+  dayDraftReply,
+  nothingToCloseReply,
+  ownerDayListReply,
+} from '../_shared/whatsappDayClose.ts';
 import {
   isProjectSetupState,
   parseProjectSetupChoice,
@@ -1374,6 +1386,73 @@ async function clearConversation(db: Admin, identityId: string): Promise<void> {
  * about. Everything here is best-effort: the sale is already saved, and a
  * failure means only that the question is not asked.
  */
+/**
+ * Once a day, and only when the pattern is already visible: one message can
+ * carry the whole till roll.
+ *
+ * MEASURED, and it is the largest cost lever Risip has. The cached prefix is
+ * paid per MESSAGE, not per item, so twenty items in one message cost 9.6x less
+ * than twenty separate messages. The shopkeeper has no way to know that.
+ *
+ * Everything here is best-effort and silent on failure: the sale is already
+ * saved, and a hint that fails must cost nobody anything. It also refuses to
+ * interrupt — if the save left a question parked, the hint waits for tomorrow,
+ * because two messages where one was expected is how a helpful line becomes
+ * noise people stop reading.
+ */
+async function batchHintFor(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  lang: Lang,
+): Promise<string | null> {
+  try {
+    const parked = await loadConversation(db, identity.id as string);
+    if (parked) return null;
+
+    const day = shopDay();
+    const { data: sales } = await db.from('daily_records')
+      .select('id')
+      .eq('company_id', identity.company_id)
+      .eq('recorded_by', identity.profile_id)
+      .eq('status', 'confirmed')
+      .in('kind', ['sale', 'debt_issued'])
+      .gte('occurred_at', day.from.toISOString())
+      .lt('occurred_at', day.to.toISOString())
+      .limit(50);
+    const soFar = (sales ?? []).length;
+    if (soFar < 5) return null;
+
+    const { data: claimed } = await db.rpc('wa_claim_daily_nudge', {
+      p_identity_id: identity.id,
+      p_business_date: day.date,
+      p_kind: 'batch_hint',
+    });
+    if (claimed !== true) return null;
+
+    // The remaining allowance turns the ceiling into something a shopkeeper can
+    // plan around instead of a surprise at the end of the month. Omitted
+    // entirely when no ceiling is set, rather than shown as a fake number.
+    const { data: company } = await db.from('companies')
+      .select('ai_monthly_request_limit').eq('id', identity.company_id).maybeSingle();
+    const limit = company?.ai_monthly_request_limit == null
+      ? null : Number(company.ai_monthly_request_limit);
+    let remaining: number | null = null;
+    if (limit !== null) {
+      const monthStart = `${day.date.slice(0, 7)}-01`;
+      const { data: usage } = await db.from('whatsapp_ai_usage_daily')
+        .select('fallback_count').eq('company_id', identity.company_id)
+        .gte('usage_day', monthStart).limit(40);
+      const used = (usage ?? []).reduce((sum, row) => sum + Number(row.fallback_count ?? 0), 0);
+      remaining = Math.max(0, limit - used);
+    }
+
+    return batchHintReply(soFar, remaining, limit, lang);
+  } catch {
+    // A hint is never worth failing a saved sale for.
+    return null;
+  }
+}
+
 async function askForBuyingPrice(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
@@ -2019,6 +2098,234 @@ async function productAnalyticsToolReply(
  * summary uses. Nothing new is computed about money here; the adviser's job is
  * to put verified facts in the order that changes a decision.
  */
+/**
+ * The trading day, in the shop's own timezone.
+ *
+ * Africa/Dar_es_Salaam is a fixed +03:00 with no daylight saving, and has been
+ * since 1960 — so the local calendar date is read through Intl (which is
+ * authoritative) and the UTC bounds are derived from it arithmetically. Doing
+ * it the other way round, guessing the date from a UTC timestamp, puts every
+ * sale made between midnight and 3am on the wrong day.
+ */
+const EAT_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+function shopDay(now = new Date()): { date: string; from: Date; to: Date } {
+  const date = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Dar_es_Salaam', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(now);
+  const [year, month, day] = date.split('-').map(Number);
+  const midnightLocal = Date.UTC(year, month - 1, day) - EAT_OFFSET_MS;
+  return { date, from: new Date(midnightLocal), to: new Date(midnightLocal + 86_400_000) };
+}
+
+/**
+ * Today, or the day the trader named.
+ *
+ * The wording is resolved by the same date parser every other read uses, so
+ * "juzi" means here what it means everywhere else in Risip. A range that spans
+ * more than one day is narrowed to its last day: this builds ONE day's list,
+ * and quietly totalling three days under yesterday's heading would be worse
+ * than answering about the wrong one.
+ */
+function resolveShopDay(wording: string | null): { date: string; from: Date; to: Date } {
+  if (!wording) return shopDay();
+  const range = resolveDateRange(wording);
+  if (!range) return shopDay();
+  const last = new Date(range.to.getTime() - 1);
+  const date = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Dar_es_Salaam', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(last);
+  const [year, month, day] = date.split('-').map(Number);
+  const midnightLocal = Date.UTC(year, month - 1, day) - EAT_OFFSET_MS;
+  return { date, from: new Date(midnightLocal), to: new Date(midnightLocal + 86_400_000) };
+}
+
+function shopClock(value: Date, lang: Lang): string {
+  return new Intl.DateTimeFormat(lang === 'sw' ? 'sw-TZ' : 'en-GB', {
+    timeZone: 'Africa/Dar_es_Salaam', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(value);
+}
+
+function shopDateLabel(date: string, lang: Lang): string {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Intl.DateTimeFormat(lang === 'sw' ? 'sw-TZ' : 'en-GB', {
+    timeZone: 'Africa/Dar_es_Salaam', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  }).format(new Date(Date.UTC(year, month - 1, day, 12)));
+}
+
+/**
+ * Everything recorded today, gathered once, for the four messages a closing
+ * produces: the draft, the confirmation, the owner's report and the list.
+ *
+ * Cost of goods comes from calculateProfitEstimate, which prices each sold line
+ * at the buying cost that was effective when it was sold. That is the only
+ * implementation of it in Risip, and this deliberately does not add a second.
+ */
+async function buildDayCloseFacts(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  lang: Lang,
+  /** "jana", "juzi", "tarehe 27" — the trader's own words, or null for today. */
+  dayWording: string | null = null,
+): Promise<DayCloseFacts> {
+  const day = resolveShopDay(dayWording);
+  const companyId = identity.company_id as string;
+
+  const [{ data: todayRows }, { data: allRows }, { data: rawCosts }, { data: shelfRows }] =
+    await Promise.all([
+      db.from('daily_records')
+        .select('id, kind, status, amount, party_name, occurred_at, recorded_by, source')
+        .eq('company_id', companyId).eq('status', 'confirmed')
+        .gte('occurred_at', day.from.toISOString()).lt('occurred_at', day.to.toISOString())
+        .order('occurred_at', { ascending: true }).limit(5000),
+      // Debt is all-time: a debt does not stop being owed because a day ended.
+      db.from('daily_records').select('kind, status, amount, party_name, occurred_at')
+        .eq('company_id', companyId).eq('status', 'confirmed').limit(10000),
+      db.from('product_costs').select('product_key, unit_cost, effective_from')
+        .eq('company_id', companyId).order('effective_from', { ascending: true }).limit(10000),
+      db.rpc('wa_stock_on_hand', { p_company_id: companyId, p_product: null }),
+    ]);
+
+  type RawRow = {
+    id: string; kind: string; status: string; amount: number;
+    party_name: string | null; occurred_at: string; recorded_by: string | null; source: string | null;
+  };
+  const today = (todayRows ?? []) as RawRow[];
+  const ids = today.map((row) => row.id);
+
+  const { data: rawLines } = ids.length > 0
+    ? await db.from('daily_record_lines')
+      .select('daily_record_id, description, quantity, line_total')
+      .in('daily_record_id', ids).order('line_number', { ascending: true }).limit(20000)
+    : { data: [] as Array<Record<string, unknown>> };
+
+  const recorders = [...new Set(today.map((row) => row.recorded_by).filter(Boolean))] as string[];
+  const { data: people } = recorders.length > 0
+    ? await db.from('profiles').select('id, full_name').in('id', recorders)
+    : { data: [] as Array<{ id: string; full_name: string | null }> };
+  const nameOf = new Map((people ?? []).map((row) => [row.id as string, String(row.full_name ?? '').trim()]));
+
+  const rows: ReadDailyRow[] = today.map((row) => ({
+    kind: row.kind, status: row.status, amount: Number(row.amount),
+    partyName: row.party_name, occurredAt: row.occurred_at,
+  }));
+  const occurredById = new Map(today.map((row) => [row.id, row.occurred_at]));
+  const lines: ReadDailyLine[] = ((rawLines ?? []) as Array<Record<string, unknown>>).map((line) => ({
+    description: String(line.description ?? ''),
+    quantity: Number(line.quantity ?? 0),
+    lineTotal: Number(line.line_total ?? 0),
+    occurredAt: occurredById.get(String(line.daily_record_id)) ?? day.from.toISOString(),
+  }));
+  const costs: ReadProductCost[] = ((rawCosts ?? []) as Array<Record<string, unknown>>).map((cost) => ({
+    productKey: String(cost.product_key ?? ''),
+    unitCost: Number(cost.unit_cost ?? 0),
+    effectiveFrom: String(cost.effective_from ?? ''),
+  }));
+
+  const profit = calculateProfitEstimate(rows, lines, costs);
+  const total = (kind: string) => today
+    .filter((row) => row.kind === kind)
+    .reduce((sum, row) => sum + Number(row.amount ?? 0), 0);
+  const count = (kind: string) => today.filter((row) => row.kind === kind).length;
+
+  // One block per person who recorded, in the order they first recorded, each
+  // carrying its own lines. The owner asked for the name against the entry.
+  const byRecorder = new Map<string, CloseWorker>();
+  const linesByRecord = new Map<string, CloseLine[]>();
+  for (const line of ((rawLines ?? []) as Array<Record<string, unknown>>)) {
+    const key = String(line.daily_record_id);
+    const bucket = linesByRecord.get(key) ?? [];
+    bucket.push({
+      description: String(line.description ?? ''),
+      quantity: Number(line.quantity ?? 0),
+      lineTotal: Number(line.line_total ?? 0),
+      kind: '',
+    });
+    linesByRecord.set(key, bucket);
+  }
+  for (const row of today) {
+    const key = row.recorded_by ?? 'unknown';
+    const worker = byRecorder.get(key) ?? {
+      name: nameOf.get(key) || (lang === 'sw' ? 'Haijulikani' : 'Unknown'),
+      source: row.source === 'whatsapp' ? 'WhatsApp' : String(row.source ?? 'Risip'),
+      firstAt: shopClock(new Date(row.occurred_at), lang),
+      lines: [],
+    };
+    const own = linesByRecord.get(row.id) ?? [];
+    if (own.length > 0) {
+      for (const line of own) {
+        worker.lines.push({ ...line, kind: row.kind, partyName: row.party_name });
+      }
+    } else {
+      // An amount with no product lines — an expense, a repayment — still
+      // belongs on the list, or the totals will not add up for the reader.
+      worker.lines.push({
+        description: row.party_name || kindLabelFor(row.kind, lang),
+        quantity: 1,
+        lineTotal: Number(row.amount ?? 0),
+        kind: row.kind,
+        partyName: row.party_name,
+      });
+    }
+    byRecorder.set(key, worker);
+  }
+
+  const newDebtors = new Map<string, number>();
+  for (const row of today) {
+    if (row.kind !== 'debt_issued') continue;
+    const who = String(row.party_name ?? '').trim();
+    if (!who) continue;
+    newDebtors.set(who, (newDebtors.get(who) ?? 0) + Number(row.amount ?? 0));
+  }
+
+  const allTime: ReadDailyRow[] = ((allRows ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    kind: String(row.kind ?? ''), status: String(row.status ?? ''),
+    amount: Number(row.amount ?? 0), partyName: (row.party_name ?? null) as string | null,
+    occurredAt: String(row.occurred_at ?? ''),
+  }));
+  const debtors = calculateDebtors(allTime);
+  const outOfStock = ((shelfRows ?? []) as Array<Record<string, unknown>>)
+    .filter((row) => Boolean(row.has_count) && Number(row.on_hand ?? 0) <= 0)
+    .map((row) => String(row.product_name ?? ''))
+    .filter(Boolean);
+
+  return {
+    businessName: identity.company_name as string,
+    businessDate: day.date,
+    dateLabel: shopDateLabel(day.date, lang),
+    sales: profit.sales,
+    cogs: profit.cogs,
+    profit: profit.estimatedProfit,
+    purchases: total('stock_purchase'),
+    newDebt: total('debt_issued'),
+    debtPaid: total('customer_payment'),
+    saleCount: count('sale'),
+    purchaseCount: count('stock_purchase'),
+    newDebtCount: count('debt_issued'),
+    debtPaidCount: count('customer_payment'),
+    recordCount: today.length,
+    workers: [...byRecorder.values()],
+    newDebtors: [...newDebtors.entries()]
+      .map(([name, amount]) => ({ name, amount }))
+      .sort((a, b) => b.amount - a.amount),
+    outstandingDebt: debtors.reduce((sum, debtor) => sum + debtor.balance, 0),
+    outstandingDebtors: debtors.length,
+    outOfStock,
+    profitCoveragePct: Math.round(profit.coverage * 100),
+  };
+}
+
+function kindLabelFor(kind: string, lang: Lang): string {
+  const sw = lang === 'sw';
+  switch (kind) {
+    case 'expense': return sw ? 'Matumizi' : 'Expense';
+    case 'customer_payment': return sw ? 'Malipo ya deni' : 'Debt repayment';
+    case 'supplier_payment': return sw ? 'Malipo kwa muuzaji' : 'Supplier payment';
+    case 'sale': return sw ? 'Mauzo' : 'Sale';
+    default: return sw ? 'Muamala' : 'Record';
+  }
+}
+
 async function buildAdvisorPayload(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
@@ -3804,6 +4111,62 @@ async function executeAssistantTool(
   }
   if (name === 'resolve_pending_clarification') {
     return await executeClarification(db, identity, waMessageId, lang, input, said);
+  }
+  if (name === 'get_day_records') {
+    // A whole day's entries is a company financial: it shows what every worker
+    // sold and what every customer owes. Same boundary as the summary.
+    if (!canUseCompanyFinanceReads(identity.role)) {
+      const denied = lang === 'sw'
+        ? 'Orodha ya miamala ya siku nzima inaonekana kwa owner au accountant tu.'
+        : 'The full day’s records are available to an owner or accountant only.';
+      return { content: denied, isError: true, terminalReply: denied };
+    }
+    const asked = typeof input.date_wording === 'string' ? input.date_wording.trim() : '';
+    const facts = await buildDayCloseFacts(db, identity, lang, asked || null);
+    if (facts.recordCount === 0) {
+      const none = lang === 'sw'
+        ? `Hakuna kilichorekodiwa ${facts.dateLabel}.`
+        : `Nothing was recorded on ${facts.dateLabel}.`;
+      return { content: none, terminalReply: none };
+    }
+    // terminalReply: the list IS the answer. A model rewriting it would be
+    // retyping forty figures it has no reason to touch.
+    const list = ownerDayListReply(facts, lang);
+    return { content: list, terminalReply: list };
+  }
+  if (name === 'propose_day_close') {
+    // The word was understood by the model; the DAY is assembled here. Nothing
+    // is written yet — this parks a draft and waits for NDIYO, exactly like a
+    // sale does, because closing a day is a write like any other.
+    const facts = await buildDayCloseFacts(db, identity, lang);
+    if (facts.recordCount === 0) {
+      const empty = nothingToCloseReply(facts, lang);
+      return { content: empty, terminalReply: empty };
+    }
+    const { data: already } = await db.from('daily_closures')
+      .select('closed_at').eq('company_id', identity.company_id)
+      .eq('business_date', facts.businessDate).maybeSingle();
+    if (already) {
+      const done = lang === 'sw'
+        ? `Siku ya ${facts.dateLabel} tayari imefungwa saa ${shopClock(new Date(already.closed_at as string), lang)}.`
+        : `${facts.dateLabel} was already closed at ${shopClock(new Date(already.closed_at as string), lang)}.`;
+      return { content: done, terminalReply: done };
+    }
+
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id,
+      company_id: identity.company_id,
+      profile_id: identity.profile_id,
+      awaiting: 'day_close',
+      receipt_id: null,
+      options: { kind: 'day_close', business_date: facts.businessDate },
+      expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    }, { onConflict: 'identity_id' });
+
+    const draft = dayDraftReply(facts, lang);
+    // terminalReply: the draft is the protocol. A model that rewrote it could
+    // drop a line the shopkeeper is about to agree to.
+    return { content: draft, terminalReply: draft };
   }
   if (name === 'respond_conversationally') {
     // Zero side effects, by construction: no database call, no read, no draft.
@@ -6174,6 +6537,11 @@ Deno.serve(async (req) => {
               // is a separate, optional favour — if any of it fails, the sale is
               // still recorded and the person is simply not asked.
               await askForBuyingPrice(db, identity, phone, dailyConversation.dailyRecordId, waMessageId, lang);
+              // And, at most once a day, how to send the whole till roll at
+              // once. It checks for a parked question first, so it can never
+              // land on top of the cost prompt above.
+              const hint = await batchHintFor(db, identity, lang);
+              if (hint) await replyQuietly(phone, hint);
             }
             await finish('skipped');
             continue;
@@ -6648,6 +7016,65 @@ Deno.serve(async (req) => {
           }
           await finish('skipped');
           continue;
+        }
+
+        // THE DAY, waiting to be closed. Parked by propose_day_close; answered
+        // here so the write happens on the shopkeeper's word, never the
+        // model's. A rejection clears the draft and changes nothing — the
+        // records stay exactly as they were.
+        if (convo?.awaiting === 'day_close') {
+          if (isPendingEscape(body) || isCancel(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, lang === 'sw'
+              ? 'Sawa, sijafunga siku. Miamala yako yote ipo pale pale.'
+              : 'Fine, I have not closed the day. All your records are exactly as they were.');
+            await audit(db, identity, waMessageId, 'day_close', 'cancelled', null);
+            await finish('cancelled');
+            continue;
+          }
+          if (isConfirm(body)) {
+            const facts = await buildDayCloseFacts(db, identity, lang);
+            const workerLabel = facts.workers.length === 1
+              ? facts.workers[0].name
+              : (lang === 'sw' ? `Watu ${facts.workers.length}` : `${facts.workers.length} people`);
+            const { data: closed, error: closeError } = await db.rpc('wa_close_business_day', {
+              p_company_id: identity.company_id,
+              p_profile_id: identity.profile_id,
+              p_business_date: facts.businessDate,
+              p_sales: facts.sales,
+              p_cogs: facts.cogs,
+              p_profit: facts.profit,
+              p_purchases: facts.purchases,
+              p_new_debt: facts.newDebt,
+              p_debt_paid: facts.debtPaid,
+              p_record_count: facts.recordCount,
+              p_worker_count: facts.workers.length,
+              p_worker_label: workerLabel,
+            });
+            await clearConversation(db, identity.id as string);
+            if (closeError) {
+              // The ledger is untouched, so say so rather than implying a save.
+              await replyQuietly(phone, lang === 'sw'
+                ? 'Sikuweza kufunga siku sasa. Miamala yako yote ipo salama — jaribu tena baada ya muda mfupi.'
+                : 'I could not close the day just now. All your records are safe — please try again shortly.');
+              await audit(db, identity, waMessageId, 'day_close', 'failed', null);
+              await finish('failed');
+              continue;
+            }
+            const alreadyClosed = Boolean((closed as Record<string, unknown> | null)?.already_closed);
+            await replyQuietly(phone, alreadyClosed
+              ? (lang === 'sw'
+                ? `Siku ya ${facts.dateLabel} tayari ilikuwa imefungwa.`
+                : `${facts.dateLabel} had already been closed.`)
+              : dayClosedReply(facts, shopClock(new Date(), lang), lang));
+            await audit(db, identity, waMessageId, 'day_close',
+              alreadyClosed ? 'duplicate' : 'closed', facts.businessDate);
+            await finish(alreadyClosed ? 'duplicate' : 'closed');
+            continue;
+          }
+          // Anything else is a correction — "sodaa 2 zimebaki". Fall through so
+          // the model reads it as a normal message; the draft stays parked and
+          // the trader can say nafunga again once it is right.
         }
 
         if (costPrompt) {

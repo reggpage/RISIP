@@ -142,7 +142,12 @@ describe('nothing about financial authority moved', () => {
   it('added exactly one tool, and it is the powerless one', () => {
     // Plus resolve_pending_clarification, which is how a parked question gets
     // answered now that no parser stands in front of one.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(27);
+    // 29 since the closing pair. propose_day_close carries ONE field — the
+    // trader's own closing word — and get_day_records carries one date word.
+    // Neither reads a price, neither writes, and neither can close anything on
+    // its own: the server gathers the day, shows it back, and waits for NDIYO.
+    // The surface grew; the authority did not.
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(29);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('respond_conversationally');
     expect(shown).not.toContain('propose_catalogue_transaction');

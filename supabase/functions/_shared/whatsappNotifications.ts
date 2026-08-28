@@ -1,6 +1,7 @@
 import type { Lang } from './whatsappIntent.ts';
+import { closeReminderReply } from './whatsappDayClose.ts';
 
-export type ProactiveNotificationKind = 'daily_summary' | 'debt_reminder';
+export type ProactiveNotificationKind = 'daily_summary' | 'debt_reminder' | 'close_reminder';
 
 export type ClaimedNotification = {
   delivery_id: string;
@@ -63,6 +64,43 @@ export function notificationTemplateParameters(claim: ClaimedNotification): stri
     amount(p.amount),
     localDate(p.recorded_date, claim.lang, false),
   ];
+}
+
+/**
+ * A queued notification that is an ORDINARY message, not a template.
+ *
+ * Only legal because the person messaged today, which is exactly what
+ * wa_queue_close_reminders checks before queueing one: it requires a confirmed
+ * record whose source is whatsapp on the same local day. Inside that 24-hour
+ * window Risip may write freely, so the reminder can say what it needs to say
+ * and costs nothing.
+ *
+ * The other half of this — the person who sent NOTHING today, and therefore has
+ * no window — needs an approved template and is not queued at all yet.
+ */
+export function isPlainTextNotification(claim: ClaimedNotification): boolean {
+  return String((claim.parameters ?? {}).channel ?? '') === 'text';
+}
+
+export function proactiveTextPayload(claim: ClaimedNotification) {
+  const p = claim.parameters ?? {};
+  const name = String(p.full_name ?? '').trim() || null;
+  const recorded = Math.max(0, Math.round(Number(p.recorded_today ?? 0)));
+  const body = closeReminderReply(name, recorded, claim.lang);
+  return {
+    messaging_product: 'whatsapp' as const,
+    recipient_type: 'individual' as const,
+    to: claim.phone_e164.replace(/D/g, ''),
+    type: 'text' as const,
+    text: { body, preview_url: false },
+  };
+}
+
+/** Whichever shape this notification is actually sent as. */
+export function proactiveSendPayload(claim: ClaimedNotification) {
+  return isPlainTextNotification(claim)
+    ? proactiveTextPayload(claim)
+    : proactiveTemplatePayload(claim);
 }
 
 export function proactiveTemplatePayload(claim: ClaimedNotification) {

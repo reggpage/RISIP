@@ -333,6 +333,10 @@ export const ASSISTANT_TOOL_NAMES = [
   // Stage C. Answering in prose stops being the silent default and becomes an
   // explicit, bounded choice the telemetry can count.
   'respond_conversationally',
+  // The end of the trading day, said in any words.
+  'propose_day_close',
+  // Every entry of one day, with who recorded it.
+  'get_day_records',
   // One way back from every parked question, so no clarification needs its own
   // parser standing in front of the model.
   'resolve_pending_clarification',
@@ -731,6 +735,35 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
       },
     },
     ['answers'],
+  ),
+  tool(
+    'get_day_records',
+    'EVERY ENTRY OF ONE DAY, line by line, with the name of the person who recorded each one and the customer on any credit line. '
+      + 'Use when somebody asks to see the day itself rather than its totals: "orodha", "nionyeshe kila kitu", "list", "miamala ya leo", "nani aliuza nini", "show me yesterday". '
+      + 'The owner’s daily report ends by offering this, so a one-word reply asking for it lands here. '
+      + 'A TOTAL is get_business_summary; this is the detail behind the total, and it ends with the totals and the profit so the two can be checked against each other.',
+    {
+      date_wording: {
+        type: ['string', 'null'],
+        description: 'The day as the person said it — "leo", "jana", "juzi", "tarehe 27" — or null for today. Never a date you calculated.',
+      },
+    },
+    ['date_wording'],
+  ),
+  tool(
+    'propose_day_close',
+    'The trader is CLOSING THE SHOP for the day and wants the day totalled and finished. '
+      + 'Any wording, any language: "nafunga", "funga", "tumefunga", "nimemaliza", "closing", "closing up", "done for today", "shop closed". '
+      + 'The server gathers everything recorded today, shows it back, and waits for the trader to confirm before anything is closed — you do not need any figures and must not state any. '
+      + 'If the SAME message ALSO reports sales, purchases or credit, call the proposing tool for those and NOT this one — the trader confirms the records first, and closes the day with one more word. '
+      + 'This is not a request for a summary: get_business_summary reports and changes nothing, this ends the trading day.',
+    {
+      closing_wording: {
+        type: 'string',
+        description: 'The closing word the trader actually used, copied from the message. Never your own paraphrase.',
+      },
+    },
+    ['closing_wording'],
   ),
   tool(
     'respond_conversationally',

@@ -46,6 +46,9 @@ export type SemanticIntent =
   | 'conversational'
   // A parked question answered through the model rather than by a parser.
   | 'clarification_answer'
+  // Ending the trading day, and reading one day back entry by entry.
+  | 'day_close'
+  | 'day_records'
   | 'no_tool' | 'unknown';
 
 /** Every read tool maps to exactly one question the shop was asking. */
@@ -71,6 +74,8 @@ const TOOL_INTENT: Record<string, SemanticIntent> = {
   search_risip_help: 'help',
   get_supplier_payables: 'payables_query',
   respond_conversationally: 'conversational',
+  propose_day_close: 'day_close',
+  get_day_records: 'day_records',
   resolve_pending_clarification: 'clarification_answer',
   propose_product_cost: 'product_cost_setup',
 };
