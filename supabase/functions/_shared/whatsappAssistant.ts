@@ -362,6 +362,8 @@ export const ASSISTANT_TOOL_NAMES = [
   'get_debtor_history',
   // Taking back something already saved, in any words.
   'propose_record_void',
+  // A whole price list, however the shopkeeper happens to phrase it.
+  'propose_price_update',
   // One way back from every parked question, so no clarification needs its own
   // parser standing in front of the model.
   'resolve_pending_clarification',
@@ -760,6 +762,36 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
       },
     },
     ['answers'],
+  ),
+  tool(
+    'propose_price_update',
+    'The trader is SETTING SELLING PRICES, for one product or for many in one message. '
+      + 'Any phrasing: "bei ya birika iwe 5000", "weka bei birika 5000 sodaa 2000 daftari 1500", "panga bei mpya: birika elfu tano na sodaa elfu mbili", a pasted list under a "bei" heading. '
+      + 'Split it into one line per product. price_wording is the amount EXACTLY as the trader wrote it — "5000", "elfu tano" — never your own figure; price_candidate is your reading of those same words and the server checks the two against each other. '
+      + 'This is the price the shop CHARGES. A buying cost is propose_product_cost, and a sale is propose_business_event — a till roll headed "Mauzo" is never a price list. '
+      + 'Nothing is saved by this call: the server resolves every product against the catalogue, re-reads every number, and waits for NDIYO.',
+    {
+      lines: {
+        type: 'array',
+        description: 'One entry per product being priced.',
+        items: {
+          type: 'object',
+          properties: {
+            product_wording: { type: 'string', description: 'The product as the trader named it, copied from the message.' },
+            price_wording: { type: 'string', description: 'The price exactly as said. Never a number you formatted or converted.' },
+            price_candidate: { type: ['number', 'null'], description: 'Your reading of those words, or null. The server verifies it against them.' },
+          },
+          required: ['product_wording', 'price_wording', 'price_candidate'],
+          additionalProperties: false,
+        },
+      },
+    },
+    ['lines'],
+    // Not strict: an array of objects with a union-typed member does not fit
+    // inside the shared strict-schema budget, exactly as propose_business_event
+    // found. additionalProperties stays false and the server re-reads every
+    // number, which is what actually makes this safe.
+    false,
   ),
   tool(
     'propose_record_void',

@@ -128,6 +128,7 @@ import {
   sellingPriceBatchSaved,
   sellingPriceBatchUnknownProducts,
   type SellingPriceBatch,
+  type SellingPrice,
 } from '../_shared/whatsappSellingPriceBatch.ts';
 import {
   inviteCancelled,
@@ -234,6 +235,7 @@ import {
   numberQuestion,
   validateBusinessEvent,
   validateMoneyEvent,
+  readNumber,
 } from '../_shared/whatsappBusinessEvent.ts';
 import type { ValidatedBusinessEvent } from '../_shared/whatsappBusinessEvent.ts';
 import type { DailyRecordPaymentMethod } from '../_shared/whatsappDailyRecords.ts';
@@ -4226,6 +4228,75 @@ async function executeAssistantTool(
   }
   if (name === 'resolve_pending_clarification') {
     return await executeClarification(db, identity, waMessageId, lang, input, said);
+  }
+  if (name === 'propose_price_update') {
+    // The model SPLITS the sentence; the server READS every number. Same
+    // boundary as every proposing tool: price_wording is the trader's own
+    // words, price_candidate is the model's reading of them, and a
+    // disagreement is a question rather than a coin toss.
+    const raw = Array.isArray(input.lines) ? input.lines : [];
+    if (raw.length === 0 || raw.length > 60) {
+      const ask = lang === 'sw'
+        ? 'Niandikie bidhaa na bei yake — mfano: _"bei ya birika iwe 5000, sodaa 2000"_.'
+        : 'Send me the product and its price — for example _"bei ya birika iwe 5000, sodaa 2000"_.';
+      return { content: ask, terminalReply: ask };
+    }
+
+    const unreadable: string[] = [];
+    const wanted: Array<{ asked: string; price: number }> = [];
+    for (const entry of raw) {
+      const line = (entry ?? {}) as Record<string, unknown>;
+      const asked = String(line.product_wording ?? '').trim().slice(0, 80);
+      // Bounded the same way a selling price is bounded everywhere else: a
+      // price of zero is not a price, and eight figures is a typo.
+      const reading = readNumber(line.price_wording, line.price_candidate, { min: 0, max: 100_000_000 });
+      if (!asked || reading.kind !== 'value') {
+        unreadable.push(asked || String(line.price_wording ?? '').slice(0, 40));
+        continue;
+      }
+      wanted.push({ asked, price: reading.value });
+    }
+
+    // Names are resolved before anything is asked, so one uncertain spelling
+    // cannot cost the prices that were never in doubt — the lesson the
+    // deterministic path learned the hard way.
+    const { data: catalogue } = await db.rpc('company_product_names', {
+      p_company_id: identity.company_id,
+    });
+    const known = ((catalogue ?? []) as Array<Record<string, unknown>>)
+      .map((row) => String(row.product_name ?? '').trim()).filter(Boolean);
+    const prices: SellingPrice[] = [];
+    for (const one of wanted) {
+      const needle = one.asked.toLocaleLowerCase('sw-TZ');
+      const exact = known.find((entry) => entry.toLocaleLowerCase('sw-TZ') === needle);
+      const partial = known.filter((entry) => entry.toLocaleLowerCase('sw-TZ').includes(needle));
+      const resolved = exact ?? (partial.length === 1 ? partial[0] : null);
+      if (!resolved) {
+        unreadable.push(one.asked);
+        continue;
+      }
+      prices.push({ product: resolved, retail: one.price, wholesale: null, minQty: null });
+    }
+
+    if (prices.length === 0) {
+      const ask = sellingPriceBatchConfirmation(
+        { kind: 'selling_price_batch', prices: [], unreadable }, lang);
+      return { content: ask, terminalReply: ask };
+    }
+
+    const batch: SellingPriceBatch = { kind: 'selling_price_batch', prices, unreadable };
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id,
+      company_id: identity.company_id,
+      profile_id: identity.profile_id,
+      awaiting: 'product_cost',
+      receipt_id: null,
+      options: batch,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+    const question = sellingPriceBatchConfirmation(batch, lang);
+    return { content: question, terminalReply: question };
   }
   if (name === 'propose_record_void') {
     // Taking money back off the books is as consequential as putting it there,
