@@ -50,6 +50,7 @@ export type SemanticIntent =
   | 'day_close'
   | 'day_records'
   | 'daily_breakdown'
+  | 'debtor_history'
   | 'no_tool' | 'unknown';
 
 /** Every read tool maps to exactly one question the shop was asking. */
@@ -78,6 +79,7 @@ const TOOL_INTENT: Record<string, SemanticIntent> = {
   propose_day_close: 'day_close',
   get_day_records: 'day_records',
   get_daily_breakdown: 'daily_breakdown',
+  get_debtor_history: 'debtor_history',
   resolve_pending_clarification: 'clarification_answer',
   propose_product_cost: 'product_cost_setup',
 };

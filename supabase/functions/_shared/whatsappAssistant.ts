@@ -358,6 +358,8 @@ export const ASSISTANT_TOOL_NAMES = [
   'get_day_records',
   // Day against day, so "which day was best" has somewhere to land.
   'get_daily_breakdown',
+  // How OLD a debt is, and when the customer last paid anything.
+  'get_debtor_history',
   // One way back from every parked question, so no clarification needs its own
   // parser standing in front of the model.
   'resolve_pending_clarification',
@@ -756,6 +758,20 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
       },
     },
     ['answers'],
+  ),
+  tool(
+    'get_debtor_history',
+    'HOW OLD a debt is and WHEN the customer last paid, for one customer or for everybody ranked by age. '
+      + 'Use for "nani amekaa na deni muda mrefu zaidi", "Mama Anna alilipa lini", "deni la Juma ni la lini", "historia ya deni la X", "who has owed the longest", "when did she last pay". '
+      + 'get_open_debts gives balances with no time in them, and a debt with no age is not a debt anybody can chase — use that one only when the question really is just how much. '
+      + 'Payments are settled against the oldest debt first, so days_outstanding is the age of what is genuinely still unpaid.',
+    {
+      party_wording: {
+        type: ['string', 'null'],
+        description: 'The customer name as the trader said it, or null for every debtor ranked by how long they have owed.',
+      },
+    },
+    ['party_wording'],
   ),
   tool(
     'get_daily_breakdown',

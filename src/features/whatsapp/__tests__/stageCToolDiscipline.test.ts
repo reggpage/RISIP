@@ -142,13 +142,17 @@ describe('nothing about financial authority moved', () => {
   it('added exactly one tool, and it is the powerless one', () => {
     // Plus resolve_pending_clarification, which is how a parked question gets
     // answered now that no parser stands in front of one.
-    // 30. The closing pair, plus get_daily_breakdown — which exists because
-    // "siku gani biashara ilifanya vizuri" had nowhere to land: Risip had a
-    // period total and a period-against-period comparison, and nothing in
-    // between, so the owner asked twice in one morning and got the month.
-    // Each of the three carries ONE field, reads no price, and writes nothing.
-    // The surface grew; the authority did not.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(30);
+    // 31, and every one of the four added this week exists because a real
+    // question had nowhere to land: propose_day_close and get_day_records for
+    // ending a trading day, get_daily_breakdown for "siku gani biashara
+    // ilifanya vizuri", and get_debtor_history for "nani amekaa na deni muda
+    // mrefu zaidi" — a balance has no time in it, and a debt with no age is
+    // not a debt anybody can chase.
+    //
+    // Each carries ONE field, and it is the shopkeeper's own wording. None
+    // reads a price, none writes, and none can confirm anything. The surface
+    // grew; the authority did not.
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(31);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('respond_conversationally');
     expect(shown).not.toContain('propose_catalogue_transaction');

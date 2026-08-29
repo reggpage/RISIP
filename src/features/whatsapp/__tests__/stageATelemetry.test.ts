@@ -204,13 +204,17 @@ describe('Stage A changed no behaviour', () => {
     // widened the LANGUAGE contract deliberately: three tools added, and the
     // two they supersede hidden from the model but kept as executors.
     // Stage C added one more, and it is the one that can do nothing.
-    // 30. The closing pair, plus get_daily_breakdown — which exists because
-    // "siku gani biashara ilifanya vizuri" had nowhere to land: Risip had a
-    // period total and a period-against-period comparison, and nothing in
-    // between, so the owner asked twice in one morning and got the month.
-    // Each of the three carries ONE field, reads no price, and writes nothing.
-    // The surface grew; the authority did not.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(30);
+    // 31, and every one of the four added this week exists because a real
+    // question had nowhere to land: propose_day_close and get_day_records for
+    // ending a trading day, get_daily_breakdown for "siku gani biashara
+    // ilifanya vizuri", and get_debtor_history for "nani amekaa na deni muda
+    // mrefu zaidi" — a balance has no time in it, and a debt with no age is
+    // not a debt anybody can chase.
+    //
+    // Each carries ONE field, and it is the shopkeeper's own wording. None
+    // reads a price, none writes, and none can confirm anything. The surface
+    // grew; the authority did not.
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(31);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('propose_business_event');
     expect(shown).toContain('propose_money_event');

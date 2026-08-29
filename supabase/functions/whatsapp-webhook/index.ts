@@ -495,6 +495,13 @@ import {
 } from '../_shared/whatsappReadTools.ts';
 import { buchaReportFacts, buildBuchaReportReply, type BuchaReportingSnapshot } from '../_shared/whatsappBuchaReports.ts';
 import {
+  calculateDebtorHistories,
+  debtorAgeingFacts,
+  debtorAgeingReply,
+  debtorHistoryFacts,
+  debtorHistoryReply,
+} from '../_shared/whatsappDebtors.ts';
+import {
   type CloseLine,
   type CloseWorker,
   type DayCloseFacts,
@@ -4217,6 +4224,56 @@ async function executeAssistantTool(
   }
   if (name === 'resolve_pending_clarification') {
     return await executeClarification(db, identity, waMessageId, lang, input, said);
+  }
+  if (name === 'get_debtor_history') {
+    // Same boundary as every other whole-ledger read: who owes the shop and
+    // for how long is a company financial, not a worker's own record.
+    if (!canUseCompanyFinanceReads(identity.role)) {
+      const denied = lang === 'sw'
+        ? 'Historia ya madeni inaonekana kwa owner au accountant tu.'
+        : 'Debt history is available to an owner or accountant only.';
+      return { content: denied, isError: true, terminalReply: denied };
+    }
+    const { data: rows } = await db.from('daily_records')
+      .select('kind, status, amount, party_name, occurred_at')
+      .eq('company_id', identity.company_id).eq('status', 'confirmed')
+      .in('kind', ['debt_issued', 'customer_payment'])
+      .order('occurred_at', { ascending: true }).limit(20000);
+    const histories = calculateDebtorHistories(
+      ((rows ?? []) as Array<Record<string, unknown>>).map((row) => ({
+        kind: String(row.kind ?? ''), status: String(row.status ?? ''),
+        amount: Number(row.amount ?? 0),
+        partyName: (row.party_name ?? null) as string | null,
+        occurredAt: (row.occurred_at ?? null) as string | null,
+      })),
+    );
+
+    const asked = typeof input.party_wording === 'string' ? input.party_wording.trim() : '';
+    if (!asked) {
+      return {
+        content: debtorAgeingFacts(histories),
+        fallbackReply: debtorAgeingReply(histories, lang),
+      };
+    }
+    // Matched the way every other party lookup matches, so "mama anna" finds
+    // "Mama Anna" and a partial finds the one customer it can only be.
+    const wanted = asked.toLocaleLowerCase('sw-TZ');
+    const hits = histories.filter((one) =>
+      one.partyName.toLocaleLowerCase('sw-TZ').includes(wanted));
+    const one = hits.length === 1 ? hits[0]
+      : hits.find((entry) => entry.partyName.toLocaleLowerCase('sw-TZ') === wanted) ?? null;
+    if (!one && hits.length > 1) {
+      // Two customers share the wording. Naming them is the answer, not a guess.
+      const names = hits.slice(0, 6).map((entry) => entry.partyName).join(', ');
+      const ask = lang === 'sw'
+        ? `Kuna zaidi ya mmoja: ${names}. Ni yupi?`
+        : `More than one matches: ${names}. Which one?`;
+      return { content: ask, terminalReply: ask };
+    }
+    return {
+      content: one ? debtorHistoryFacts(one) : `debtor_not_found=${asked}`,
+      fallbackReply: debtorHistoryReply(one, asked, lang),
+    };
   }
   if (name === 'get_daily_breakdown') {
     if (!canUseCompanyFinanceReads(identity.role)) {
