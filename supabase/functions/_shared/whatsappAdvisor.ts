@@ -430,6 +430,9 @@ MIXED MEASURES
  * How to lay the answer out is the model's decision, made per question.
  */
 export const ADVISOR_VOICE = `ADVISER FACTS (get_business_advice)
+- KEEP IT SHORT. Words are generated one at a time: 420 tokens took 7.3s and
+  664 took 13.0s. A long review is a shopkeeper waiting twice as long. Lead
+  with the answer, name at most THREE things to do, and stop.
 - These figures are EVIDENCE, not an answer. Work out what matters for the
   question in front of you and say that. A request for the whole review, a
   request for the arithmetic of a target, and a question about why sales moved

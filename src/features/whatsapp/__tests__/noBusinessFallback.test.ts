@@ -163,14 +163,26 @@ describe('what the shop is actually told', () => {
 
 describe('a deadline exists at all, which it did not', () => {
   it('bounds one provider call', () => {
-    expect(assistant).toContain('const CALL_DEADLINE_MS = 20_000;');
+    // Raised from twenty on a measurement. The same request, twice: a cold
+    // isolate with a cold cache took 22.9s and the warm repeat took 1.1s, so
+    // twenty guaranteed that the FIRST message after an idle spell was aborted
+    // and the shop was told Risip took longer than usual for something nobody
+    // could avoid. Thirty still bounds a hung provider.
+    expect(assistant).toContain('const CALL_DEADLINE_MS = 30_000;');
     expect(assistant).toContain('new AbortController()');
     expect(assistant).toContain('abort.signal');
   });
 
   it('bounds the whole turn', () => {
-    expect(assistant).toContain('const TURN_DEADLINE_MS = 45_000;');
+    // Still comfortably more than a real turn: round 0 is about a second warm,
+    // and Sonnet writing the answer is 7-13s depending on its length.
+    expect(assistant).toContain('const TURN_DEADLINE_MS = 60_000;');
     expect(assistant).toContain("args.onFailure?.('turn_deadline_exceeded')");
+  });
+
+  it('says why the ceiling moved, so the next person does not lower it', () => {
+    expect(assistant).toContain('cold isolate, cold cache   22.9s');
+    expect(assistant).toContain('warm, identical bytes       1.1s');
   });
 
   it('calls an aborted request a timeout, and only then', () => {

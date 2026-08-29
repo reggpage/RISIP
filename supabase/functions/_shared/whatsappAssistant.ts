@@ -27,9 +27,24 @@ const MAX_TOOL_ROUNDS = 3;
  * for the whole turn leaves room for three tool rounds and the ledger writes
  * between them. Past that the answer is late enough to be useless, and saying
  * so is better than a shopkeeper watching an empty screen.
+ *
+ * RAISED, on a measurement rather than a hunch. The same request, twice:
+ *
+ *   cold isolate, cold cache   22.9s
+ *   warm, identical bytes       1.1s
+ *
+ * Twenty seconds sat between those two numbers, so the FIRST message after an
+ * idle spell was aborted every time and the shop was told "Risip AI took
+ * longer than usual" for something no shopkeeper could avoid — the owner's
+ * 20.9s provider_timeout was exactly this. Thirty still bounds a genuinely
+ * hung provider; it just no longer punishes a cold start.
+ *
+ * Sonnet writing the answer is the other half, and it is linear in length:
+ * 664 output tokens took 13.0s and 420 took 7.3s, both warm. That is fixed by
+ * writing less, not by waiting longer — see ADVISER FACTS.
  */
-const CALL_DEADLINE_MS = 20_000;
-const TURN_DEADLINE_MS = 45_000;
+const CALL_DEADLINE_MS = 30_000;
+const TURN_DEADLINE_MS = 60_000;
 
 /**
  * Why the model did not answer.
