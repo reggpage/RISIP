@@ -113,7 +113,24 @@ export function proactiveTemplatePayload(claim: ClaimedNotification) {
     type: 'template' as const,
     template: {
       name: claim.template_name,
-      language: { code: claim.lang === 'sw' ? 'sw' : 'en_US' },
+      // 'en', NOT 'en_US'.
+      //
+      // Meta treats these as two different languages with no fallback between
+      // them. risip_daily_summary and risip_debt_reminder — the only two
+      // templates this function ever sends — are registered as "English" in
+      // WhatsApp Manager, so 'en_US' returns 132001, "Template name does not
+      // exist in the translation", and the English shop gets nothing.
+      //
+      // It had never shown up because no template had ever been sent: every
+      // row in the Manager read "Messages sent 0". It would have shown up on
+      // the first English shop that closed a day.
+      //
+      // The other templates in the account (risip_start_onboarding,
+      // risip_login_link, hello_world) ARE registered as English (US) — but
+      // nothing here sends them, so they are not this line's business. If one
+      // of these two is ever re-registered as English (US), this must change
+      // with it.
+      language: { code: claim.lang === 'sw' ? 'sw' : 'en' },
       components: [{
         type: 'body' as const,
         parameters: values.map((text) => ({ type: 'text' as const, text })),

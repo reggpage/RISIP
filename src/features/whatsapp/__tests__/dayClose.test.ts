@@ -285,3 +285,35 @@ describe('the ledger, and who may see a whole day', () => {
     expect(webhook).toContain('Miamala yako yote ipo salama — jaribu tena baada ya muda mfupi.');
   });
 });
+
+describe('the template language code', () => {
+  // Meta treats 'en' and 'en_US' as two different languages with no fallback.
+  // Both templates this code sends are registered as "English" in WhatsApp
+  // Manager, so 'en_US' returns 132001 and the English shop gets nothing.
+  // Nobody had noticed because every template still read "Messages sent 0".
+  const template = (lang: 'sw' | 'en') => proactiveSendPayload({
+    delivery_id: 'd', phone_e164: '+255700000000', lang,
+    notification_kind: 'daily_summary' as const, template_name: 'risip_daily_summary',
+    parameters: {
+      business_name: 'Duka la Mfano', business_date: '2026-08-28',
+      sales: 596500, expenses: 197500, note_key: 'no_issues',
+    },
+  }) as { template?: { language: { code: string } } };
+
+  it('sends sw for Swahili', () => {
+    expect(template('sw').template?.language.code).toBe('sw');
+  });
+
+  it('sends en for English, never en_US', () => {
+    expect(template('en').template?.language.code).toBe('en');
+    expect(template('en').template?.language.code).not.toBe('en_US');
+  });
+
+  it('has exactly one place that chooses a language code', () => {
+    // A second one would drift from the first, and the drift would only show
+    // up as a delivery failure on somebody else's phone.
+    const shared = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/_shared/whatsappNotifications.ts'), 'utf8');
+    expect((shared.match(/language: \{ code:/g) ?? []).length).toBe(1);
+  });
+});
