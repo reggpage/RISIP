@@ -40,6 +40,7 @@ import {
   isConfirm,
   isPendingEscape,
   pendingEscapeHint,
+  languageCommandRemainder,
   parseLanguageCommand,
   parseProjectChoice,
   routeIntent,
@@ -4946,9 +4947,9 @@ Deno.serve(async (req) => {
           .is('revoked_at', null)
           .maybeSingle();
 
-        const body: string | null = message?.text?.body ?? null;
+        let body: string | null = message?.text?.body ?? null;
         const identity = await resolveWhatsAppContext(db, rawIdentity as { id: string; revoked_at: string | null } | null);
-        const lang: Lang = identity?.lang ?? detectLanguage(body) ?? 'en';
+        let lang: Lang = identity?.lang ?? detectLanguage(body) ?? 'en';
         const finish = async (status: string, error?: string) => {
           // A second instruction is named on the way out, whichever branch
           // handled the first one. MEASURED FAILURE: the notice used to hang
@@ -5242,6 +5243,24 @@ Deno.serve(async (req) => {
         // above every branch, so nothing below can quietly consume a message the
         // model was going to read — which is exactly what the payment-method
         // phrase list was doing eight hundred lines further down.
+        // "tumia kiswahili na uniambie siku gani biashara ilifanya vizuri" is
+        // TWO things: an instruction and a question. It used to be filed as a
+        // pure system command, so the language changed, the AI never saw the
+        // message, and the owner was told "I did not fully understand that
+        // business question" — in the language he had just asked it to leave.
+        //
+        // Obey the instruction, then carry the rest of the sentence forward as
+        // the real message. A language command with nothing after it behaves
+        // exactly as it always did.
+        const alsoAsked = identity ? languageCommandRemainder(body) : null;
+        if (alsoAsked) {
+          const next = parseLanguageCommand(body)!;
+          await db.rpc('wa_set_language', { p_phone: phone, p_lang: next });
+          await audit(db, identity, waMessageId, 'change_language', next, 'applied');
+          lang = next;
+          body = alsoAsked;
+        }
+
         const systemCommand = isSwitchRequest(body)
           || isLoginRequest(body)
           || Boolean(parseLanguageCommand(body))

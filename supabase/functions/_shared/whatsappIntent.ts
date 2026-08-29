@@ -57,6 +57,36 @@ export function parseLanguageCommand(text: string | null | undefined): Lang | nu
   return null;
 }
 
+/**
+ * What is LEFT of the message once the language instruction is taken out.
+ *
+ * MEASURED, on the owner's own number. He wrote "tumia kiswahili na uniambie
+ * siku gani biashara ilifanya vizuri" — change the language AND tell me which
+ * day the business did well. parseLanguageCommand matched, the whole message
+ * was filed as a system command, the AI never saw it, and he got a generic
+ * "I did not fully understand that business question" in the wrong language.
+ * The instruction was obeyed and the question was thrown away.
+ *
+ * Returns null when the message is ONLY the language instruction, which is the
+ * common case and must keep behaving exactly as it did.
+ */
+export function languageCommandRemainder(text: string | null | undefined): string | null {
+  if (!parseLanguageCommand(text)) return null;
+  const said = String(text ?? '').trim();
+
+  // Cut at the first joining word that separates an instruction from a request.
+  // Anything before it is the instruction; anything after is the real message.
+  const joint = said.match(/\b(?:na|kisha|halafu|and|then|also)\b/i);
+  const rest = joint && joint.index !== undefined
+    ? said.slice(joint.index + joint[0].length).trim()
+    : '';
+
+  // A remainder that is itself just another way of asking for the language is
+  // not a business question — "tumia kiswahili na jibu kwa kiswahili".
+  if (!rest || rest.length < 4 || parseLanguageCommand(rest)) return null;
+  return rest;
+}
+
 export function isCancel(text: string | null | undefined): boolean {
   // A mistyped "ghairi" left the draft standing while the shopkeeper believed
   // they had cancelled it. See whatsappSpelling.ts.

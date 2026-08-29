@@ -317,3 +317,48 @@ describe('the template language code', () => {
     expect((shared.match(/language: \{ code:/g) ?? []).length).toBe(1);
   });
 });
+
+describe('an instruction must not swallow the question with it', () => {
+  // MEASURED, on the owner's own number. He wrote "tumia kiswahili na uniambie
+  // siku gani biashara ilifanya vizuri" — change the language AND tell me which
+  // day the business did well. parseLanguageCommand matched, the whole message
+  // was filed as a system command, the AI never saw it, and he was told "I did
+  // not fully understand that business question" in the language he had just
+  // asked it to leave. Telemetry has no row for that turn at all.
+  it('returns what was asked alongside the language change', async () => {
+    const { languageCommandRemainder } =
+      await import('../../../../supabase/functions/_shared/whatsappIntent');
+    expect(languageCommandRemainder('tumia kiswahili na uniambie siku gani biashara ilifanya vizuri'))
+      .toBe('uniambie siku gani biashara ilifanya vizuri');
+    expect(languageCommandRemainder('change to english and show me my debts'))
+      .toBe('show me my debts');
+  });
+
+  it('leaves a plain language command exactly as it was', async () => {
+    const { languageCommandRemainder } =
+      await import('../../../../supabase/functions/_shared/whatsappIntent');
+    for (const only of ['tumia kiswahili', 'kiswahili tafadhali', 'change to english']) {
+      expect(languageCommandRemainder(only), only).toBeNull();
+    }
+    // Two ways of asking for the same language is not a business question.
+    expect(languageCommandRemainder('tumia kiswahili na jibu kwa kiswahili')).toBeNull();
+  });
+
+  it('is not a language command at all when there is no language word', async () => {
+    const { languageCommandRemainder, parseLanguageCommand } =
+      await import('../../../../supabase/functions/_shared/whatsappIntent');
+    expect(parseLanguageCommand('niambie siku gani biashara ilifanya vizuri')).toBeNull();
+    expect(languageCommandRemainder('niambie siku gani biashara ilifanya vizuri')).toBeNull();
+  });
+
+  it('obeys the instruction and carries the rest to the model', () => {
+    const webhook = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+    expect(webhook).toContain('const alsoAsked = identity ? languageCommandRemainder(body) : null;');
+    // The language is applied, then the remainder becomes the message — so the
+    // eligibility gate below sees a business question, not a system command.
+    expect(webhook).toContain('          body = alsoAsked;');
+    const gate = webhook.indexOf('const systemCommand = isSwitchRequest(body)');
+    expect(webhook.indexOf('const alsoAsked')).toBeLessThan(gate);
+  });
+});
