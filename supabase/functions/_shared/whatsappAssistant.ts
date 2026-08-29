@@ -356,6 +356,8 @@ export const ASSISTANT_TOOL_NAMES = [
   'propose_day_close',
   // Every entry of one day, with who recorded it.
   'get_day_records',
+  // Day against day, so "which day was best" has somewhere to land.
+  'get_daily_breakdown',
   // One way back from every parked question, so no clarification needs its own
   // parser standing in front of the model.
   'resolve_pending_clarification',
@@ -754,6 +756,20 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
       },
     },
     ['answers'],
+  ),
+  tool(
+    'get_daily_breakdown',
+    'DAY AGAINST DAY across a period: each trading day with its own sales and profit, which day was best, which was weakest, and the average trading day. '
+      + 'Use whenever the question is about WHICH DAY rather than a total: "siku gani biashara ilifanya vizuri", "lini biashara ilifanya vizuri", "siku bora ya mwezi", "onyesha kila siku ya wiki hii", "which day was best", "how did each day go". '
+      + 'get_business_summary gives ONE total for a whole period and cannot answer any of those — a total hides the shape, and a month made on four market days looks identical to a steady one. '
+      + 'get_sales_trend compares this period against the previous period, which is also not a day. If somebody asks when the business did well and names no period, use this over the month.',
+    {
+      period_wording: {
+        type: ['string', 'null'],
+        description: 'The period as the person said it — "wiki hii", "mwezi huu", "siku saba zilizopita" — or null for this month. Never a date range you calculated.',
+      },
+    },
+    ['period_wording'],
   ),
   tool(
     'get_day_records',

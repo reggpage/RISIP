@@ -362,3 +362,98 @@ describe('an instruction must not swallow the question with it', () => {
     expect(webhook.indexOf('const alsoAsked')).toBeLessThan(gate);
   });
 });
+
+describe('which day, which Risip could not answer at all', () => {
+  // MEASURED, twice in one morning on the owner's own number. "lini biashara
+  // ilifanya vizuri" and then "niambie siku gani biashara ilifanya vizuri".
+  // Risip had a period total and a period-against-period comparison and
+  // nothing in between, so the honest answer was "I don't have a day-by-day
+  // breakdown" and the dishonest one was today's summary, all zeros.
+  const days = [
+    { date: '2026-08-24', label: 'Jumatatu 24', sales: 120_000, profit: 40_000, recordCount: 4, profitUnknown: false },
+    { date: '2026-08-25', label: 'Jumanne 25', sales: 0, profit: 0, recordCount: 0, profitUnknown: false },
+    { date: '2026-08-26', label: 'Jumatano 26', sales: 596_500, profit: 399_000, recordCount: 18, profitUnknown: false },
+    { date: '2026-08-27', label: 'Alhamisi 27', sales: 88_000, profit: 0, recordCount: 2, profitUnknown: true },
+  ];
+
+  it('names the best day, which is the whole question', async () => {
+    const { dailyBreakdownReply } =
+      await import('../../../../supabase/functions/_shared/whatsappDayClose');
+    const said = dailyBreakdownReply(days, 'wiki hii', 'sw');
+    expect(said).toContain('*Siku bora:* Jumatano 26 — TSh 596,500');
+    expect(said).toContain('Jumatatu 24: TSh 120,000');
+  });
+
+  it('separates a quiet day from a day nobody wrote down', async () => {
+    const { dailyBreakdownReply } =
+      await import('../../../../supabase/functions/_shared/whatsappDayClose');
+    const said = dailyBreakdownReply(days, 'wiki hii', 'sw');
+    // A day with no records is not a day with no sales, and the average must
+    // not be dragged down by a day the shop was shut.
+    expect(said).not.toContain('Jumanne 25');
+    expect(said).toContain('Siku 1 hazina rekodi yoyote');
+    expect(said).toContain('(siku 3)');
+  });
+
+  it('says profit is unknown rather than printing zero', async () => {
+    const { dailyBreakdownReply } =
+      await import('../../../../supabase/functions/_shared/whatsappDayClose');
+    // TSh 0 profit on TSh 88,000 of sales is a claim. "Not known" is the truth.
+    expect(dailyBreakdownReply(days, 'wiki hii', 'sw')).toContain('Alhamisi 27: TSh 88,000 · faida haijulikani');
+  });
+
+  it('hands the model figures, not a table', async () => {
+    const { dailyBreakdownFacts } =
+      await import('../../../../supabase/functions/_shared/whatsappDayClose');
+    const facts = dailyBreakdownFacts(days, 'wiki hii');
+    expect(facts).toContain('best_day=2026-08-26|Jumatano 26|596500');
+    expect(facts).toContain('day=2026-08-25|Jumanne 25|no_records');
+    expect(facts).toContain('profit=unknown');
+    expect(facts).toContain('average_trading_day=');
+    // Evidence, not prose: no rendered money, no emoji, no headings.
+    expect(facts).not.toContain('TSh');
+    expect(facts).not.toContain('🏆');
+  });
+
+  it('is offered to the model as the answer to a WHICH DAY question', () => {
+    const tool = ASSISTANT_TOOLS.find((entry) => entry.name === 'get_daily_breakdown');
+    expect(tool).toBeTruthy();
+    expect(tool?.description).toMatch(/siku gani biashara ilifanya vizuri/);
+    // And why the two neighbouring tools are wrong for it.
+    expect(tool?.description).toMatch(/a total hides the shape/i);
+    expect(tool?.description).toMatch(/compares this period against the previous period/i);
+    const schema = tool?.input_schema as { properties: Record<string, unknown> };
+    expect(Object.keys(schema.properties)).toEqual(['period_wording']);
+  });
+});
+
+describe('a row number typed without a space', () => {
+  // MEASURED, and it cost the owner a whole sale. Shown three lines and told
+  // to answer "1 rejareja, 2 jumla", he typed "1jumla 2 rejareja 3 jumla" —
+  // which is how people type on a phone. Row one was lost and the rest slid
+  // onto the wrong products. "1rejareja 2jumla" was worse: everything came
+  // back retail, silently, which prices a wholesale sale wrong.
+  const choices = [
+    { index: 1, product: 'nguvu ya sala', quantity: 6, retail: 10_600, wholesale: 9_500 },
+    { index: 2, product: 'punch', quantity: 10, retail: 12_000, wholesale: 11_000 },
+    { index: 3, product: 'Rosali ya Maria', quantity: 2, retail: 7_000, wholesale: 6_300 },
+  ];
+
+  it('reads the digits glued to the band word', async () => {
+    const { parsePriceBandAnswer } =
+      await import('../../../../supabase/functions/_shared/whatsappPriceBand');
+    expect(parsePriceBandAnswer('1jumla 2 rejareja 3 jumla', choices))
+      .toEqual(['wholesale', 'retail', 'wholesale']);
+    expect(parsePriceBandAnswer('1rejareja 2jumla', choices))
+      .toEqual(['retail', 'wholesale', null]);
+  });
+
+  it('still reads the spaced forms it always read', async () => {
+    const { parsePriceBandAnswer } =
+      await import('../../../../supabase/functions/_shared/whatsappPriceBand');
+    expect(parsePriceBandAnswer('1 jumla, 2 rejareja, 3 jumla', choices))
+      .toEqual(['wholesale', 'retail', 'wholesale']);
+    expect(parsePriceBandAnswer('jumla', choices))
+      .toEqual(['wholesale', 'wholesale', 'wholesale']);
+  });
+});

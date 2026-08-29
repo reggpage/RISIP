@@ -279,3 +279,131 @@ export function closeReminderReply(
       + `You recorded ${recordedToday} entries today but have not closed the day.\n\n`
       + 'Reply *NAFUNGA* and I will show you everything, or tell me what is left.';
 }
+
+/** One trading day, reduced to what a shopkeeper compares days by. */
+export type DayFigures = {
+  /** Local calendar date, YYYY-MM-DD. */
+  date: string;
+  /** "Ijumaa 28" — short, because these come in lists of thirty. */
+  label: string;
+  sales: number;
+  profit: number;
+  recordCount: number;
+  /** True when no product sold that day had a buying cost recorded. */
+  profitUnknown: boolean;
+};
+
+/**
+ * WHICH DAY, which Risip could not answer at all until now.
+ *
+ * MEASURED, and the owner found it twice in one morning. He asked "lini
+ * biashara ilifanya vizuri" and then "niambie siku gani biashara ilifanya
+ * vizuri" — when did the business do well, which DAY did it do well. Risip has
+ * period totals and a this-period-against-last comparison, and nothing in
+ * between, so the honest answer was "I don't have a day-by-day breakdown" and
+ * the dishonest one was today's summary, all zeros.
+ *
+ * A total hides the shape. Two shops with the same month can be a steady one
+ * and a shop that made everything on four market days, and only one of those
+ * should be buying stock on a Tuesday.
+ */
+export function dailyBreakdownReply(
+  days: DayFigures[],
+  periodLabel: string,
+  lang: Lang,
+): string {
+  const sw = lang === 'sw';
+  const traded = days.filter((day) => day.recordCount > 0);
+  if (traded.length === 0) {
+    return sw
+      ? `Hakuna mauzo yaliyorekodiwa ${periodLabel}.`
+      : `No sales were recorded ${periodLabel}.`;
+  }
+
+  const best = traded.reduce((top, day) => (day.sales > top.sales ? day : top), traded[0]);
+  const worst = traded.reduce((low, day) => (day.sales < low.sales ? day : low), traded[0]);
+  const totalSales = traded.reduce((sum, day) => sum + day.sales, 0);
+  const totalProfit = traded.reduce((sum, day) => sum + day.profit, 0);
+  const average = totalSales / traded.length;
+
+  const out: string[] = [
+    sw ? `*Siku kwa siku — ${periodLabel}*` : `*Day by day — ${periodLabel}*`,
+    '',
+  ];
+  for (const day of traded) {
+    // The best day is marked rather than described, so a list of thirty stays
+    // readable on a phone.
+    const mark = day.date === best.date ? ' 🏆' : '';
+    const profit = day.profitUnknown
+      ? (sw ? 'faida haijulikani' : 'profit unknown')
+      : `${sw ? 'faida' : 'profit'} ${money(day.profit)}`;
+    out.push(`${day.label}: ${money(day.sales)} · ${profit}${mark}`);
+  }
+
+  out.push('');
+  out.push(sw
+    ? `*Siku bora:* ${best.label} — ${money(best.sales)}`
+    : `*Best day:* ${best.label} — ${money(best.sales)}`);
+  if (traded.length > 2 && worst.date !== best.date) {
+    out.push(sw
+      ? `*Siku dhaifu:* ${worst.label} — ${money(worst.sales)}`
+      : `*Weakest day:* ${worst.label} — ${money(worst.sales)}`);
+  }
+  out.push(sw
+    ? `Wastani kwa siku ya biashara: ${money(average)} (siku ${traded.length})`
+    : `Average trading day: ${money(average)} (${traded.length} days)`);
+  out.push(sw
+    ? `Jumla: ${money(totalSales)} · faida ${money(totalProfit)}`
+    : `Total: ${money(totalSales)} · profit ${money(totalProfit)}`);
+
+  const quiet = days.length - traded.length;
+  if (quiet > 0) {
+    // Days with nothing recorded are not days with no sales, and saying so is
+    // the difference between a real pattern and a gap in the bookkeeping.
+    out.push('');
+    out.push(sw
+      ? `_Siku ${quiet} hazina rekodi yoyote — huenda duka lilifungwa, au haikuandikwa._`
+      : `_${quiet} days have no records at all — the shop may have been closed, or it was not written down._`);
+  }
+  return out.join('\n');
+}
+
+/**
+ * The same days, as evidence rather than as a table.
+ *
+ * STAGE D, and the test that caught me shipping it the other way. "Onyesha
+ * kila siku ya wiki hii" wants thirty rows; "siku gani ilikuwa bora" wants one
+ * sentence naming a day. Handing back a rendered table answers the first
+ * question whatever was asked, which is the machine-sounding reply the owner
+ * objected to in the first place.
+ *
+ * So the model gets the figures and decides the shape. The table survives as
+ * the fallback, for when the model cannot answer at all.
+ */
+export function dailyBreakdownFacts(days: DayFigures[], periodLabel: string): string {
+  const traded = days.filter((day) => day.recordCount > 0);
+  const rows = [
+    `period=${periodLabel}`,
+    `trading_days=${traded.length}`,
+    `days_with_no_records=${days.length - traded.length}`,
+  ];
+  for (const day of days) {
+    if (day.recordCount === 0) {
+      rows.push(`day=${day.date}|${day.label}|no_records`);
+      continue;
+    }
+    rows.push(`day=${day.date}|${day.label}|sales=${Math.round(day.sales)}`
+      + `|profit=${day.profitUnknown ? 'unknown' : Math.round(day.profit)}`
+      + `|records=${day.recordCount}`);
+  }
+  if (traded.length > 0) {
+    const best = traded.reduce((top, day) => (day.sales > top.sales ? day : top), traded[0]);
+    const worst = traded.reduce((low, day) => (day.sales < low.sales ? day : low), traded[0]);
+    const total = traded.reduce((sum, day) => sum + day.sales, 0);
+    rows.push(`best_day=${best.date}|${best.label}|${Math.round(best.sales)}`);
+    rows.push(`weakest_day=${worst.date}|${worst.label}|${Math.round(worst.sales)}`);
+    rows.push(`total_sales=${Math.round(total)}`);
+    rows.push(`average_trading_day=${Math.round(total / traded.length)}`);
+  }
+  return rows.join('\n');
+}

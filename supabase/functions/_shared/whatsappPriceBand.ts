@@ -97,9 +97,24 @@ export function priceBandQuestion(choices: PriceBandChoice[], lang: Lang): strin
       + `_Head the list "Mauzo ya leo rejareja" and I will not ask again._\n${pendingEscapeHint(lang)}`;
 }
 
+/**
+ * MEASURED, on the owner's own number, and it cost him a whole sale.
+ *
+ * He was shown three lines and told to answer "1 rejareja, 2 jumla". He typed
+ * "1jumla 2 rejareja 3 jumla" — no space after the first digit, which is how
+ * people type on a phone. The tokeniser below splits on spaces, so "1jumla"
+ * was neither a row number nor a clean band word: row one was lost and the
+ * rest slid onto the wrong products. "1rejareja 2jumla" was worse — it banded
+ * everything retail, silently, which would have priced a wholesale sale wrong.
+ *
+ * A digit against a letter is always two tokens here. There is no word in
+ * either language where they belong together.
+ */
 const normalize = (value: string | null | undefined) =>
   String(value ?? '').toLocaleLowerCase('sw-TZ')
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/(\p{N})(\p{L})/gu, '$1 $2')
+    .replace(/(\p{L})(\p{N})/gu, '$1 $2')
     .replace(/\s+/g, ' ').trim();
 
 const BAND_ALIASES: { band: Band; values: string[] }[] = [

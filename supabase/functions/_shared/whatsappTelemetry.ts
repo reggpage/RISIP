@@ -49,6 +49,7 @@ export type SemanticIntent =
   // Ending the trading day, and reading one day back entry by entry.
   | 'day_close'
   | 'day_records'
+  | 'daily_breakdown'
   | 'no_tool' | 'unknown';
 
 /** Every read tool maps to exactly one question the shop was asking. */
@@ -76,6 +77,7 @@ const TOOL_INTENT: Record<string, SemanticIntent> = {
   respond_conversationally: 'conversational',
   propose_day_close: 'day_close',
   get_day_records: 'day_records',
+  get_daily_breakdown: 'daily_breakdown',
   resolve_pending_clarification: 'clarification_answer',
   propose_product_cost: 'product_cost_setup',
 };

@@ -504,6 +504,9 @@ import {
   dayClosedReply,
   dayDraftReply,
   nothingToCloseReply,
+  type DayFigures,
+  dailyBreakdownFacts,
+  dailyBreakdownReply,
   ownerDayListReply,
 } from '../_shared/whatsappDayClose.ts';
 import {
@@ -2327,6 +2330,109 @@ function kindLabelFor(kind: string, lang: Lang): string {
   }
 }
 
+/**
+ * Every trading day in a period, each with its own sales and profit.
+ *
+ * Costed the same way every other profit figure in Risip is costed: each sold
+ * line priced at the buying cost that was effective when it was sold, through
+ * calculateProfitEstimate. Running it once per day rather than once per period
+ * is the only difference, and it is the whole point — a total hides the shape.
+ */
+async function buildDailyBreakdown(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  lang: Lang,
+  periodWording: string | null,
+): Promise<{ days: DayFigures[]; periodLabel: string }> {
+  const companyId = identity.company_id as string;
+  const range = periodWording ? resolveDateRange(periodWording) : null;
+  const today = shopDay();
+  // Default to this month, which is the window a shopkeeper means by "lini".
+  const from = range ? range.from : new Date(Date.UTC(
+    Number(today.date.slice(0, 4)), Number(today.date.slice(5, 7)) - 1, 1,
+  ) - EAT_OFFSET_MS);
+  const to = range ? range.to : today.to;
+  const periodLabel = range
+    ? (lang === 'sw' ? range.sw : range.en)
+    : (lang === 'sw' ? 'mwezi huu' : 'this month');
+
+  const [{ data: rawRows }, { data: rawCosts }] = await Promise.all([
+    db.from('daily_records').select('id, kind, status, amount, party_name, occurred_at')
+      .eq('company_id', companyId).eq('status', 'confirmed')
+      .gte('occurred_at', from.toISOString()).lt('occurred_at', to.toISOString())
+      .order('occurred_at', { ascending: true }).limit(10000),
+    db.from('product_costs').select('product_key, unit_cost, effective_from')
+      .eq('company_id', companyId).order('effective_from', { ascending: true }).limit(10000),
+  ]);
+
+  type Raw = { id: string; kind: string; status: string; amount: number; party_name: string | null; occurred_at: string };
+  const rows = (rawRows ?? []) as Raw[];
+  const ids = rows.map((row) => row.id);
+  const { data: rawLines } = ids.length > 0
+    ? await db.from('daily_record_lines')
+      .select('daily_record_id, description, quantity, line_total')
+      .in('daily_record_id', ids).limit(40000)
+    : { data: [] as Array<Record<string, unknown>> };
+
+  const costs: ReadProductCost[] = ((rawCosts ?? []) as Array<Record<string, unknown>>).map((cost) => ({
+    productKey: String(cost.product_key ?? ''),
+    unitCost: Number(cost.unit_cost ?? 0),
+    effectiveFrom: String(cost.effective_from ?? ''),
+  }));
+
+  const dayOf = (iso: string) => new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Dar_es_Salaam', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date(iso));
+  const occurredById = new Map(rows.map((row) => [row.id, row.occurred_at]));
+  const dayById = new Map(rows.map((row) => [row.id, dayOf(row.occurred_at)]));
+
+  const rowsByDay = new Map<string, ReadDailyRow[]>();
+  const linesByDay = new Map<string, ReadDailyLine[]>();
+  for (const row of rows) {
+    const day = dayById.get(row.id)!;
+    const bucket = rowsByDay.get(day) ?? [];
+    bucket.push({
+      kind: row.kind, status: row.status, amount: Number(row.amount),
+      partyName: row.party_name, occurredAt: row.occurred_at,
+    });
+    rowsByDay.set(day, bucket);
+  }
+  for (const line of ((rawLines ?? []) as Array<Record<string, unknown>>)) {
+    const day = dayById.get(String(line.daily_record_id));
+    if (!day) continue;
+    const bucket = linesByDay.get(day) ?? [];
+    bucket.push({
+      description: String(line.description ?? ''),
+      quantity: Number(line.quantity ?? 0),
+      lineTotal: Number(line.line_total ?? 0),
+      occurredAt: occurredById.get(String(line.daily_record_id)) ?? from.toISOString(),
+    });
+    linesByDay.set(day, bucket);
+  }
+
+  // Every calendar day in the window, including the silent ones — a day with
+  // no records is not a day with no sales, and the difference matters.
+  const days: DayFigures[] = [];
+  for (let at = new Date(from.getTime()); at < to; at = new Date(at.getTime() + 86_400_000)) {
+    const date = dayOf(at.toISOString());
+    if (days.some((day) => day.date === date)) continue;
+    const dayRows = rowsByDay.get(date) ?? [];
+    const estimate = calculateProfitEstimate(dayRows, linesByDay.get(date) ?? [], costs);
+    const [year, month, dayNumber] = date.split('-').map(Number);
+    days.push({
+      date,
+      label: new Intl.DateTimeFormat(lang === 'sw' ? 'sw-TZ' : 'en-GB', {
+        timeZone: 'Africa/Dar_es_Salaam', weekday: 'short', day: 'numeric',
+      }).format(new Date(Date.UTC(year, month - 1, dayNumber, 12))),
+      sales: estimate.sales,
+      profit: estimate.estimatedProfit,
+      recordCount: dayRows.length,
+      profitUnknown: dayRows.length > 0 && estimate.coverage === 0,
+    });
+  }
+  return { days, periodLabel };
+}
+
 async function buildAdvisorPayload(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
@@ -4112,6 +4218,22 @@ async function executeAssistantTool(
   }
   if (name === 'resolve_pending_clarification') {
     return await executeClarification(db, identity, waMessageId, lang, input, said);
+  }
+  if (name === 'get_daily_breakdown') {
+    if (!canUseCompanyFinanceReads(identity.role)) {
+      const denied = lang === 'sw'
+        ? 'Mchanganuo wa siku kwa siku unaonekana kwa owner au accountant tu.'
+        : 'The day-by-day breakdown is available to an owner or accountant only.';
+      return { content: denied, isError: true, terminalReply: denied };
+    }
+    const asked = typeof input.period_wording === 'string' ? input.period_wording.trim() : '';
+    const { days, periodLabel } = await buildDailyBreakdown(db, identity, lang, asked || null);
+    // STAGE D. "Onyesha kila siku" wants thirty rows; "siku gani ilikuwa bora"
+    // wants one sentence naming a day. A rendered table would answer the first
+    // question whatever was asked, so the model gets the figures and decides
+    // the shape; the table survives only if the model cannot finish.
+    const rendered = dailyBreakdownReply(days, periodLabel, lang);
+    return { content: dailyBreakdownFacts(days, periodLabel), fallbackReply: rendered };
   }
   if (name === 'get_day_records') {
     // A whole day's entries is a company financial: it shows what every worker

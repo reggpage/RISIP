@@ -204,12 +204,13 @@ describe('Stage A changed no behaviour', () => {
     // widened the LANGUAGE contract deliberately: three tools added, and the
     // two they supersede hidden from the model but kept as executors.
     // Stage C added one more, and it is the one that can do nothing.
-    // 29 since the closing pair. propose_day_close carries ONE field — the
-    // trader's own closing word — and get_day_records carries one date word.
-    // Neither reads a price, neither writes, and neither can close anything on
-    // its own: the server gathers the day, shows it back, and waits for NDIYO.
+    // 30. The closing pair, plus get_daily_breakdown — which exists because
+    // "siku gani biashara ilifanya vizuri" had nowhere to land: Risip had a
+    // period total and a period-against-period comparison, and nothing in
+    // between, so the owner asked twice in one morning and got the month.
+    // Each of the three carries ONE field, reads no price, and writes nothing.
     // The surface grew; the authority did not.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(29);
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(30);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('propose_business_event');
     expect(shown).toContain('propose_money_event');
