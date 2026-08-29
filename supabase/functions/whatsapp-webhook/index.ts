@@ -379,14 +379,16 @@ import {
 import {
   findUnregisteredMeasure,
   normalizeVoidTarget,
-  parseVoidRequest,
   unregisteredMeasureQuestion,
   voidCancelled,
+  voidChoiceQuestion,
   voidConfirmation,
   voidDone,
+  voidKindMatches,
   voidNotAllowed,
   voidNothingFound,
   type VoidPending,
+  type VoidTarget,
 } from '../_shared/whatsappVoid.ts';
 import {
   ADVISOR_VOICE,
@@ -4224,6 +4226,76 @@ async function executeAssistantTool(
   }
   if (name === 'resolve_pending_clarification') {
     return await executeClarification(db, identity, waMessageId, lang, input, said);
+  }
+  if (name === 'propose_record_void') {
+    // Taking money back off the books is as consequential as putting it there,
+    // so this only ever DRAFTS: it finds the record, shows it, and parks the
+    // same pending state the wording parser used to park. The write still
+    // happens on the trader's NDIYO and nowhere else.
+    if (!canUseCompanyFinanceReads(identity.role)) {
+      const denied = voidNotAllowed(lang);
+      return { content: denied, isError: true, terminalReply: denied };
+    }
+    const asked = typeof input.target_wording === 'string' ? input.target_wording.trim() : '';
+
+    const { data: recent } = await db.from('daily_records')
+      .select('id, kind, amount, party_name, description, occurred_at')
+      .eq('company_id', identity.company_id).eq('status', 'confirmed')
+      .is('voided_at', null)
+      .order('occurred_at', { ascending: false }).limit(20);
+    const rows = (recent ?? []) as Array<Record<string, unknown>>;
+    if (rows.length === 0) {
+      const none = voidNothingFound(lang);
+      return { content: none, terminalReply: none };
+    }
+
+    const { data: lines } = await db.from('daily_record_lines')
+      .select('daily_record_id, description, quantity')
+      .in('daily_record_id', rows.map((row) => String(row.id))).limit(400);
+    const linesFor = (id: string) => ((lines ?? []) as Array<Record<string, unknown>>)
+      .filter((line) => String(line.daily_record_id) === id)
+      .map((line) => ({
+        description: String(line.description ?? ''),
+        quantity: Number(line.quantity ?? 0),
+      }));
+
+    const candidates = rows.map((row) => normalizeVoidTarget({
+      ...row, lines: linesFor(String(row.id)),
+    })).filter((one): one is VoidTarget => Boolean(one));
+
+    // No wording means the last thing saved, which is what "futa ile" has
+    // always meant. Wording narrows by what the trader can actually see: the
+    // product, the customer, or the kind of record.
+    const wanted = asked.toLocaleLowerCase('sw-TZ');
+    const hits = !wanted ? candidates.slice(0, 1) : candidates.filter((one) =>
+      one.lines.some((line) => line.description.toLocaleLowerCase('sw-TZ').includes(wanted))
+      || String(one.partyName ?? '').toLocaleLowerCase('sw-TZ').includes(wanted)
+      || String(one.description ?? '').toLocaleLowerCase('sw-TZ').includes(wanted)
+      || voidKindMatches(one.kind, wanted));
+
+    if (hits.length === 0) {
+      const none = voidNothingFound(lang);
+      return { content: none, terminalReply: none };
+    }
+    if (hits.length > 1) {
+      // More than one fits. Listing them is the answer; picking one would be
+      // deleting money on a guess.
+      const ask = voidChoiceQuestion(hits.slice(0, 5), lang);
+      return { content: ask, terminalReply: ask };
+    }
+
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id,
+      company_id: identity.company_id,
+      profile_id: identity.profile_id,
+      awaiting: 'product_cost',
+      receipt_id: null,
+      options: { kind: 'void_record', target: hits[0] } satisfies VoidPending,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+    const question = voidConfirmation(hits[0], lang);
+    return { content: question, terminalReply: question };
   }
   if (name === 'get_debtor_history') {
     // Same boundary as every other whole-ledger read: who owes the shop and
@@ -9105,41 +9177,18 @@ Deno.serve(async (req) => {
           }
         }
 
-        // "Futa ile" — taking back a record that was already confirmed. Shown
-        // before anything changes, and confirmed once, because removing money
-        // from the books is as consequential as putting it there.
-        if (!mixed && parseVoidRequest(body)) {
-          if (!canUseCompanyFinanceReads(identity.role)) {
-            await reply(phone, voidNotAllowed(lang));
-            await audit(db, identity, waMessageId, 'void_record', 'denied', 'skipped');
-            await finish('skipped');
-            continue;
-          }
-          const { data: last } = await db.rpc('wa_last_daily_record', {
-            p_company_id: identity.company_id,
-          });
-          const target = normalizeVoidTarget(last);
-          if (!target) {
-            await reply(phone, voidNothingFound(lang));
-            await audit(db, identity, waMessageId, 'void_record', 'none', 'skipped');
-            await finish('skipped');
-            continue;
-          }
-          await db.from('whatsapp_conversations').upsert({
-            identity_id: identity.id,
-            company_id: identity.company_id,
-            profile_id: identity.profile_id,
-            awaiting: 'product_cost',
-            receipt_id: null,
-            options: { kind: 'void_record', target } satisfies VoidPending,
-            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'identity_id' });
-          await reply(phone, voidConfirmation(target, lang));
-          await audit(db, identity, waMessageId, 'void_record', 'pending', 'pending');
-          await finish('skipped');
-          continue;
-        }
+        // "Futa ile" is propose_record_void now, not a regex.
+        //
+        // The parser that used to sit here needed one of nine undo verbs AND
+        // one of a dozen nouns, and could only ever reach the LAST record. So
+        // "nimekosea" reached nothing, "ondoa manunuzi ya feni" reached the
+        // wrong entry, and a shopkeeper who had recorded two more sales since
+        // the mistake had no way back at all.
+        //
+        // The model reads the wording; the server still finds the record,
+        // shows it, and waits for NDIYO. Nothing about who may delete what
+        // moved — the same role check and the same confirmation guard the same
+        // write.
 
         // "Kwa nini mauzo yanashuka?" This period against the one before it.
         // Answered from the ledger, because a fall is arithmetic and the model

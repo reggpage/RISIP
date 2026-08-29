@@ -63,8 +63,20 @@ describe('the model cannot confirm anything', () => {
     // NDIYO comes from the trader's own next message, matched by the webhook.
     // Confirmation is not in the tool list, so it is not a thing the model can
     // decide to do — no prompt can reach a tool that does not exist.
+    //
+    // "propose_" is the one prefix allowed to carry these verbs, and it is
+    // allowed because it is this codebase's own word for a draft. It was
+    // argued for rather than assumed: propose_record_void takes back a saved
+    // record, and naming it something vaguer would have satisfied this line
+    // while changing nothing about what it does. The guard below is what
+    // actually holds — a proposing tool may not carry a field that decides.
     for (const name of ASSISTANT_TOOL_NAMES as readonly string[]) {
+      if (name.startsWith('propose_')) continue;
       expect(name).not.toMatch(/confirm|approve|commit|finali[sz]e|execute|void|delete/i);
+    }
+    // Every proposing tool is still exactly that, in its own words.
+    for (const tool of ASSISTANT_TOOLS.filter((entry) => entry.name.startsWith('propose_'))) {
+      expect(JSON.stringify(tool.input_schema)).not.toContain('"confirmed"');
     }
   });
 

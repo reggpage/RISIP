@@ -152,7 +152,7 @@ describe('nothing about financial authority moved', () => {
     // Each carries ONE field, and it is the shopkeeper's own wording. None
     // reads a price, none writes, and none can confirm anything. The surface
     // grew; the authority did not.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(31);
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(32);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('respond_conversationally');
     expect(shown).not.toContain('propose_catalogue_transaction');
@@ -167,9 +167,28 @@ describe('nothing about financial authority moved', () => {
     ]) {
       expect(schemas).not.toContain(forbidden);
     }
+    // A tool may not be NAMED for the irreversible act — with one carve-out
+    // that had to be argued for rather than assumed. propose_record_void
+    // carries the act in its name because that is what the trader is asking
+    // for, and "propose_" is this codebase's own word for "this only drafts".
+    // The honest name was the right call: renaming it to something vaguer
+    // would have passed this line while changing nothing about what it does.
+    //
+    // So the guard gets narrower instead of weaker: the verbs are allowed only
+    // behind that prefix, and the tool that uses the carve-out is held to
+    // taking no id and no amount, which is what actually stops it deleting
+    // anything the trader did not point at.
     for (const name of ASSISTANT_TOOL_NAMES as readonly string[]) {
+      if (name.startsWith('propose_')) continue;
       expect(name).not.toMatch(/confirm|approve|commit|void|delete/i);
     }
+    const voidTool = ASSISTANT_TOOLS.find((tool) => tool.name === 'propose_record_void');
+    const voidSchema = voidTool?.input_schema as { properties: Record<string, unknown> };
+    expect(Object.keys(voidSchema.properties)).toEqual(['target_wording']);
+    expect(JSON.stringify(voidTool)).not.toContain('"id"');
+    expect(JSON.stringify(voidTool)).not.toContain('"amount"');
+    // And it says out loud that it removes nothing by itself.
+    expect(voidTool?.description).toMatch(/Nothing is removed by this call/i);
   });
 
   it('keeps the human in front of every write', () => {

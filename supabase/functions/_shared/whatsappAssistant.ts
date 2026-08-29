@@ -360,6 +360,8 @@ export const ASSISTANT_TOOL_NAMES = [
   'get_daily_breakdown',
   // How OLD a debt is, and when the customer last paid anything.
   'get_debtor_history',
+  // Taking back something already saved, in any words.
+  'propose_record_void',
   // One way back from every parked question, so no clarification needs its own
   // parser standing in front of the model.
   'resolve_pending_clarification',
@@ -758,6 +760,21 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
       },
     },
     ['answers'],
+  ),
+  tool(
+    'propose_record_void',
+    'The trader is TAKING BACK something already saved: a sale that did not happen, a wrong entry, a duplicate. '
+      + 'Any wording: "futa ile", "nimekosea", "ondoa mauzo ya mwisho", "sikuuza sodaa leo", "that was wrong", "delete the last one", "cancel the birika sale". '
+      + 'target_wording is HOW they pointed at it — a product, a customer, a kind, or nothing at all when they mean the last thing saved. Never an id, never an amount. '
+      + 'The server finds the record, shows it back, and waits for NDIYO; if the wording fits more than one it lists them and asks which. Nothing is removed by this call. '
+      + 'To CHANGE a figure rather than remove it, use this to take the wrong record back — the trader then re-sends the right one, because the ledger is append-only and a correction is a new entry, never an edit.',
+    {
+      target_wording: {
+        type: ['string', 'null'],
+        description: 'How the trader pointed at the record — "ile ya birika", "mauzo ya Mama Anna", "manunuzi" — or null when they mean the last thing saved.',
+      },
+    },
+    ['target_wording'],
   ),
   tool(
     'get_debtor_history',

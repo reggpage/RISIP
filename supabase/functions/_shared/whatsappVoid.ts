@@ -236,3 +236,35 @@ export function unregisteredMeasureQuestion(product: string, lang: Lang): string
     + `• one [big measure] is [how many] ${product}\n\n`
     + 'Once I know, I will record it without asking again.';
 }
+
+/**
+ * Does the trader's wording name this KIND of record?
+ *
+ * "Futa manunuzi" points at a purchase without naming a product, and that is a
+ * perfectly ordinary way to point at something. The words come from the label
+ * table above rather than a second list, so a kind can never be nameable in
+ * the confirmation and unmatchable in the search.
+ */
+export function voidKindMatches(kind: string, wording: string): boolean {
+  const said = clean(wording);
+  if (!said) return false;
+  const label = KIND_LABEL[kind];
+  if (!label) return false;
+  return said.includes(clean(label.sw)) || said.includes(clean(label.en));
+}
+
+/**
+ * More than one record fits what they said.
+ *
+ * Listing them is the answer. Picking one would be deleting money on a guess,
+ * and the trader is the only person who knows which entry was the wrong one.
+ */
+export function voidChoiceQuestion(targets: VoidTarget[], lang: Lang): string {
+  const sw = lang === 'sw';
+  const rows = targets.map((target, at) => `${at + 1}. ${describe(target, lang)}`).join('\n');
+  return sw
+    ? `Kuna rekodi zaidi ya moja zinazolingana:\n${rows}\n\n`
+      + 'Niambie ni ipi kwa namba yake, au eleza zaidi.'
+    : `More than one record matches:\n${rows}\n\n`
+      + 'Tell me which one by its number, or describe it more exactly.';
+}
