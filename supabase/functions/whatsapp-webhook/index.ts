@@ -113,7 +113,6 @@ import {
 } from '../_shared/whatsappProductAnalytics.ts';
 import { interpretDailyRecordWithAi, MAX_INTERPRETATION_CHARS, validateAiCandidate } from '../_shared/whatsappDailyRecordsAi.ts';
 import { validateAiTransactionCandidate } from '../_shared/whatsappTransactionAi.ts';
-import { interpretReadIntentWithAi, shouldInterpretReadWithAi } from '../_shared/whatsappReadIntentAi.ts';
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import { findNameWarnings, nameWarningText, productKey } from '../_shared/whatsappProductNames.ts';
 import {
@@ -5354,12 +5353,13 @@ Deno.serve(async (req) => {
         // ── Text: deterministic routing, no model involved ────────────────
         const linkToken = parseLinkToken(body);
         let convo = identity ? await loadConversation(db, identity.id as string) : null;
-        const intent = routeIntent({
+        const routeFor = (text: string | null) => routeIntent({
           messageType: 'text',
-          text: body,
+          text,
           hasLinkToken: Boolean(linkToken),
           awaitingClarification: Boolean(convo),
         });
+        let intent = routeFor(body);
 
         // The system commands that must never cost a model call. Computed here,
         // above every branch, so nothing below can quietly consume a message the
@@ -5381,6 +5381,12 @@ Deno.serve(async (req) => {
           await audit(db, identity, waMessageId, 'change_language', next, 'applied');
           lang = next;
           body = alsoAsked;
+          // And the intent with it. It was read from the ORIGINAL sentence, so
+          // it still says change_language — which is exactly what put the whole
+          // message into systemCommand and kept the AI away from the question.
+          // Rewriting the body without rewriting this fixes half the bug and
+          // leaves the visible half intact.
+          intent = routeFor(body);
         }
 
         const systemCommand = isSwitchRequest(body)
@@ -9136,34 +9142,25 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        if (!aiEligible && shouldInterpretReadWithAi(body)) {
-          const budget = await consumeAiBudget(db, identity, body.length);
-          if (!budget.allowed) {
-            await reply(phone, aiBudgetMessage(lang, budget.resetAt, budget.reason));
-            await audit(db, identity, waMessageId, 'semantic_read_ai', 'budget', 'blocked');
-            await finish('skipped', 'ai_budget_blocked');
-            continue;
-          }
-          const semanticIntent = await interpretReadIntentWithAi(body, lang);
-          if (semanticIntent?.kind === 'product_analytics') {
-            await answerProductAnalytics(db, identity, phone, semanticIntent.request, lang);
-            await audit(db, identity, waMessageId, 'semantic_read_ai', 'product_analytics', 'applied');
-            await finish('skipped');
-            continue;
-          }
-          if (semanticIntent?.kind === 'read_tool') {
-            await reply(phone, await readOnlyToolReply(db, identity, semanticIntent.request, lang));
-            await audit(db, identity, waMessageId, 'semantic_read_ai', semanticIntent.request.tool, 'applied');
-            await finish('skipped');
-            continue;
-          }
-          await reply(phone, lang === 'sw'
-            ? 'Sijaelewa vizuri swali hilo la biashara. Taja unachotaka kuona, kwa mfano mauzo, bidhaa, deni, risiti au faida.'
-            : 'I did not fully understand that business question. Say what you want to see, for example sales, products, debts, receipts, or profit.');
-          await audit(db, identity, waMessageId, 'semantic_read_ai', 'unknown', 'clarification');
-          await finish('skipped');
-          continue;
-        }
+        // REMOVED: the legacy semantic-read path.
+        //
+        // It ran whenever the model was skipped, read the trader's business
+        // language with its own intent classifier, and answered from a fixed
+        // renderer. That is the parser standing in front of Claude that this
+        // programme spent weeks removing, still breathing behind an
+        // "!aiEligible" guard — and it was still costing real answers: asked
+        // "niambie siku gani biashara ilifanya vizuri", it replied with today's
+        // summary, all zeros, in the voice the owner had objected to.
+        //
+        // Every reason a message could be ineligible now has its own branch
+        // above this line: a parked question is answered by the handler that
+        // parked it, and a system command by the command itself. A language
+        // instruction carrying a question no longer counts as either — the
+        // instruction is obeyed and the question travels on to the model.
+        //
+        // Nothing takes its place on purpose. A business question that reaches
+        // here without being eligible is a routing bug, and it should look like
+        // one rather than be papered over with a template.
 
         if (resumedQuantitySale || isDailyRecordCandidate(writeBody)) {
           // MEASURED FAILURE: a thirty-line till roll naming no money at all was
