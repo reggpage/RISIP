@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildAssistantSystemPrompt,
+  findUnsafeProfitWording,
   findUngroundedNumbers,
   type AssistantIdentityContext,
 } from '../../../../supabase/functions/_shared/whatsappAssistant';
@@ -40,6 +41,16 @@ const EVIDENCE = [[
   'sold_below_cost_in_period=Velvet napkin|-1200',
   'sold_below_cost_in_period=Sodaa|-100',
   'out_of_stock=Birika,daftari,Dumu la maji,Sodaa',
+].join('\n')];
+
+const DAILY_PROFIT_EVIDENCE = [[
+  'period=leo',
+  'sales=105000',
+  'cogs=20750',
+  'gross_profit=84250',
+  'expenses=0',
+  'estimated_profit=84250',
+  'coverage=1',
 ].join('\n')];
 
 describe('arithmetic over the ledger’s own figures is grounded', () => {
@@ -130,5 +141,34 @@ describe('the protection is intact', () => {
 
   it('refuses everything when there is no evidence at all', () => {
     expect(findUngroundedNumbers('Mauzo yako ni TSh 400,000.', [])).toContain('400000');
+  });
+});
+
+describe('daily profit wording stays accounting-precise', () => {
+  it('rejects the live ambiguous COGS/profit sentence', () => {
+    const answer = 'Faida ya leo: TSh 84,250\n\n(Mauzo TSh 105,000, gharama za bidhaa TSh 20,750)';
+    expect(findUnsafeProfitWording(answer, DAILY_PROFIT_EVIDENCE)).toEqual(['cogs_label', 'profit_label']);
+  });
+
+  it('allows precise gross-profit and after-expenses labels', () => {
+    const answer = [
+      'Faida baada ya matumizi yaliyorekodiwa leo (30 Ago): TSh 84,250',
+      'Mauzo: TSh 105,000',
+      'Gharama za bidhaa zilizouzwa (COGS): TSh 20,750',
+      'Faida ghafi: TSh 84,250',
+    ].join('\n');
+    expect(findUnsafeProfitWording(answer, DAILY_PROFIT_EVIDENCE)).toEqual([]);
+  });
+
+  it('teaches the model the labels without turning the answer into a template', () => {
+    const prompt = buildAssistantSystemPrompt({
+      identityId: 'i', profileId: 'p', companyId: 'c', companyName: 'Duka',
+      userName: null, role: 'owner', lang: 'sw',
+      approvalFlowEnabled: false, reversalEnabled: false, payoutsEnabled: false,
+    } as AssistantIdentityContext);
+    expect(prompt).toMatch(/Gharama za bidhaa\s+zilizouzwa \(COGS\)/);
+    expect(prompt).toMatch(/Faida\s+ghafi/);
+    expect(prompt).toMatch(/Faida baada ya matumizi\s+yaliyorekodiwa/);
+    expect(prompt).not.toMatch(/use this exact format|use these headings|say exactly/i);
   });
 });

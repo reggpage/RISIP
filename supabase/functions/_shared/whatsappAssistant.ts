@@ -1074,7 +1074,7 @@ LIVE CONTEXT
 - Reversal enabled: ${context.reversalEnabled}
 - Payouts enabled: ${context.payoutsEnabled}
 ${context.pendingClarification ? `\n${context.pendingClarification}\n` : ''}${context.vocabulary ? `\n${context.vocabulary}\n` : ''}
-- You may use the user’s first name occasionally when it makes a greeting, confirmation or explanation warmer. Do not use it in every reply, do not invent a name, and never treat another person mentioned in the conversation as the user.
+- Do not use it in every reply.
 
 EVERY TURN ENDS IN A CAPABILITY
 - Decide which of these the message is, in this order, and stop at the first that fits:
@@ -1094,6 +1094,9 @@ GROUNDING AND TOOLS
 - After a proposing tool returns a verified pending draft, answer naturally in ${language}: state only its facts and ask for NDIYO/YES. Do not copy a template, add advice, claim it was saved, or change facts. Questions/refusals stay concise.
 - You MAY add up figures a tool returned when the user asks for a total, and you should — answering “what is my total?” with a list the user has to add up themselves is not an answer. Say what you added.
 - Do not subtract your way to profit. Historical margin comes from product performance; a sell-all-stock estimate comes from get_hypothetical_product_profit. Both use server data. Sales minus expenses is a different number and must never be presented as profit.
+- daily_profit_estimate wording: Kiswahili labels are "Gharama za bidhaa
+  zilizouzwa (COGS)", "Faida ghafi", and "Faida baada ya matumizi
+  yaliyorekodiwa"; never "gharama za bidhaa" or bare "Faida ya leo".
 - LOSS, CHEAPEST AND MISSING PRICE ARE THREE DIFFERENT QUESTIONS.
   A loss question asks which products sell below what they cost: that is
   get_product_performance with metric "margin" and direction "worst". Never
@@ -1331,6 +1334,19 @@ function listLengths(evidence: string): Set<string> {
   return counts;
 }
 
+export function findUnsafeProfitWording(answer: string, evidence: string[]): string[] {
+  const joined = evidence.join('\n');
+  if (!/\bestimated_profit\s*=/i.test(joined) || !/\bcogs\s*=/i.test(joined)) return [];
+  const issues: string[] = [];
+  if (/\bgharama za bidhaa\b(?!\s+zilizouzwa|\s*\(cogs\))/iu.test(answer)) {
+    issues.push('cogs_label');
+  }
+  if (/\bfaida ya\b/iu.test(answer) && !/\bfaida\s+(?:ghafi|baada ya matumizi)\b/iu.test(answer)) {
+    issues.push('profit_label');
+  }
+  return issues;
+}
+
 /**
  * Numbers an answer may state without inventing anything.
  *
@@ -1561,7 +1577,8 @@ ${userText}` },
       const modelText = textFrom(payload.content);
       const reply = modelText || unavailable(args.context.lang);
       const ungrounded = findUngroundedNumbers(reply, evidence);
-      if (ungrounded.length > 0) {
+      const unsafeProfitWording = findUnsafeProfitWording(reply, evidence);
+      if (ungrounded.length > 0 || unsafeProfitWording.length > 0) {
         // The model stated a figure no tool returned. The answer cannot go out,
         // and neither can a template pretending to be one.
         // WHICH figure was rejected, as a SHAPE rather than a value.
@@ -1593,17 +1610,24 @@ ${userText}` },
         if (corrections === 0) {
           corrections += 1;
           messages.push({ role: 'assistant', content: payload.content ?? [] });
-          messages.push({
-            role: 'user',
-            content: `Your answer stated figures no tool returned: ${ungrounded.join(', ')}. `
+          const correction = ungrounded.length > 0
+            ? `Your answer stated figures no tool returned: ${ungrounded.join(', ')}. `
               + 'Rewrite it using ONLY figures that appear in the tool results above. Do not '
               + 'derive, subtract, project, forecast or round. If answering properly needs a '
               + 'figure you were not given, say plainly that it is not recorded, and answer '
-              + 'with what you do have.',
+              + 'with what you do have.'
+            : 'Rewrite the daily profit answer with precise accounting labels. In Kiswahili, '
+              + 'cogs must be "Gharama za bidhaa zilizouzwa (COGS)", gross_profit must be '
+              + '"Faida ghafi", and estimated_profit must be "Faida baada ya matumizi '
+              + 'yaliyorekodiwa". Do not shorten cogs to "gharama za bidhaa" and do not '
+              + 'call estimated_profit only "Faida ya leo".';
+          messages.push({
+            role: 'user',
+            content: correction,
           });
           continue;
         }
-        args.onFailure?.(`model_ungrounded_number:${shape}`.slice(0, 60));
+        args.onFailure?.((ungrounded.length > 0 ? `model_ungrounded_number:${shape}` : `model_profit_wording:${unsafeProfitWording.join(',')}`).slice(0, 60));
         return {
           reply: unavailable(args.context.lang),
           memory: inferAssistantMemory(executed),

@@ -63,7 +63,7 @@ describe('no business prose can stand in for an answer', () => {
   });
 
   it('fails the turn when the model states a figure no tool returned', () => {
-    const branch = assistant.slice(assistant.indexOf('if (ungrounded.length > 0)'));
+    const branch = assistant.slice(assistant.indexOf('if (ungrounded.length > 0 || unsafeProfitWording.length > 0)'));
     // The code now carries the SHAPE of the refused token — digit-widths, never
     // the value — because "deferred for safety" three times in a row named the
     // symptom and not one thing that would fix it. Still one failure, still no
@@ -71,23 +71,24 @@ describe('no business prose can stand in for an answer', () => {
     // One corrective round comes first now — the model is told which figure
     // was refused and asked to answer inside the evidence. If it repeats
     // itself the turn still dies, and the shop is still told so.
-    expect(branch.slice(0, 3400)).toContain('if (corrections === 0)');
-    expect(branch.slice(0, 3400)).toContain('model_ungrounded_number:');
-    expect(branch.slice(0, 3400)).toContain('args.onFailure?.(');
-    expect(branch.slice(0, 3400)).toContain('unavailable: true');
+    expect(branch.slice(0, 4600)).toContain('if (corrections === 0)');
+    expect(branch.slice(0, 4600)).toContain('model_ungrounded_number:');
+    expect(branch.slice(0, 4600)).toContain('args.onFailure?.(');
+    expect(branch.slice(0, 4600)).toContain('unavailable: true');
   });
 
   it('records the refused figure as digits-wide, never as a figure', () => {
     // rejection_code is capped at 64 characters and this is why it may hold a
     // shape at all: "1x7" is one seven-digit token. A price, a balance or a
     // total cannot be reconstructed from a width.
-    const at = assistant.indexOf('if (ungrounded.length > 0)');
+    const at = assistant.indexOf('const widths = ungrounded.map');
     const branch = assistant.slice(at, at + 1400);
-    // Widths are counted; the tokens themselves are never interpolated.
+    // Widths are counted for telemetry; the tokens themselves are not written
+    // into the failure code.
     expect(branch).toContain('token.replace');
     expect(branch).toContain('widths.filter');
-    expect(branch).not.toContain('${ungrounded}');
-    expect(branch).not.toContain("ungrounded.join(");
+    expect(branch).not.toContain('model_ungrounded_number:${ungrounded}');
+    expect(branch).not.toContain('model_ungrounded_number:${ungrounded.join');
     expect(webhook).toContain("rejectionCode: assistantFailure?.startsWith('model_ungrounded_number:')");
   });
 
