@@ -3976,7 +3976,60 @@ async function executeMoneyEvent(
   return { content: confirmation, fallbackReply: confirmation };
 }
 
+/**
+ * Every tool result, with one line added when drafts are waiting.
+ *
+ * A QUESTION IS ANSWERED. It is never swallowed.
+ *
+ * MEASURED, within the hour of shipping the queue, and it was my fault. I had
+ * every read flush the queue and return the BATCH instead of the answer, so
+ * "leo ameuza nini na nini" came back as a confirmation list — and asking
+ * again returned the same list, because nothing had been confirmed. Two
+ * questions in, Risip was a wall.
+ *
+ * A pending draft is a fact about the shop, not a reason to refuse it. The
+ * count travels with the evidence so the model can mention it in a line, and
+ * the question gets its answer either way.
+ *
+ * A wrapper rather than an edit to forty return sites: the note has to reach
+ * whatever the tool decided to say, and threading it through each branch is
+ * how one of them would eventually be forgotten.
+ */
 async function executeAssistantTool(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  waMessageId: string,
+  lang: Lang,
+  name: string,
+  input: Record<string, unknown>,
+  said?: string,
+): Promise<AssistantToolExecution> {
+  const result = await runAssistantTool(db, identity, waMessageId, lang, name, input, said);
+  // Only a READ needs the note. A proposing tool is already about the drafts,
+  // and closing the day stops and asks for them outright.
+  if (!name.startsWith('get_')) return result;
+  const ceiling = await recordQueueSize(db, identity.company_id as string);
+  if (ceiling === null) return result;
+  const waiting = await pendingQueue(db, identity);
+  if (waiting.length === 0) return result;
+
+  const note = lang === 'sw'
+    ? `
+
+_Kuna vitu ${waiting.length} vinasubiri kuthibitishwa — jibu *NDIYO* niviingize._`
+    : `
+
+_${waiting.length} records are waiting to be confirmed — reply *NDIYO* to add them._`;
+  return {
+    ...result,
+    content: `${result.content}
+pending_drafts_not_yet_counted=${waiting.length}`,
+    ...(result.terminalReply ? { terminalReply: result.terminalReply + note } : {}),
+    ...(result.fallbackReply ? { fallbackReply: result.fallbackReply + note } : {}),
+  };
+}
+
+async function runAssistantTool(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
   waMessageId: string,
@@ -3997,13 +4050,16 @@ async function executeAssistantTool(
   //
   // A tick is not a question, so nothing was parked; this is the first moment
   // the batch has anything to interrupt.
-  if (name.startsWith('get_') || name === 'propose_day_close') {
+  // Closing the day CANNOT proceed with drafts outstanding — the totals it
+  // writes would be missing them — so that one still stops and asks.
+  if (name === 'propose_day_close') {
     const ceiling = await recordQueueSize(db, identity.company_id as string);
     if (ceiling !== null) {
       const waiting = await pendingQueue(db, identity);
       if (waiting.length > 0) return await askToConfirmQueue(db, identity, lang, waiting);
     }
   }
+
 
   if (name === 'get_business_summary') {
     // STAGE: the model gets EVIDENCE and writes the answer; the paragraph is

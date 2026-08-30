@@ -147,12 +147,31 @@ describe('the safety of shipping it', () => {
     expect(branch).toContain('queueTickReply');
   });
 
-  it('empties the queue before answering any question', () => {
-    // Drafts are not confirmed records, so nothing waiting is in any total. A
-    // shopkeeper who typed four sales and then asks how the day is going would
-    // otherwise be answered about a day missing all four.
-    expect(webhook).toContain("if (name.startsWith('get_') || name === 'propose_day_close') {");
-    expect(webhook).toContain('A QUESTION EMPTIES THE QUEUE FIRST');
+  it('answers a question, and never swallows it', () => {
+    // MEASURED, within the hour of shipping the queue and it was my fault. I
+    // had every read flush the queue and return the BATCH instead of the
+    // answer, so "leo ameuza nini na nini" came back as a confirmation list —
+    // and asking again returned the same list, because nothing had been
+    // confirmed. Two questions in, Risip was a wall.
+    //
+    // A pending draft is a fact about the shop, not a reason to refuse it.
+    expect(webhook).toContain('A QUESTION IS ANSWERED. It is never swallowed.');
+    expect(webhook).toContain('pending_drafts_not_yet_counted=');
+    expect(webhook).toContain('vinasubiri kuthibitishwa');
+  });
+
+  it('still stops before closing the day, because that one cannot be wrong', () => {
+    // The totals a closure writes would be missing whatever is still waiting.
+    const at = webhook.indexOf("if (name === 'propose_day_close') {");
+    expect(at).toBeGreaterThan(0);
+    expect(webhook.slice(at, at + 300)).toContain('askToConfirmQueue');
+  });
+
+  it('adds the note in one place rather than at forty return sites', () => {
+    // Threading it through each branch is how one of them gets forgotten.
+    expect(webhook).toContain('async function runAssistantTool(');
+    expect(webhook).toContain('const result = await runAssistantTool(');
+    expect(webhook).toContain("if (!name.startsWith('get_')) return result;");
   });
 
   it('writes only on NDIYO, and drops everything on HAPANA', () => {
