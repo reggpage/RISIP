@@ -59,6 +59,27 @@ export async function waitForWhatsAppTurn(
   return false;
 }
 
+export function startWhatsAppTypingHeartbeat(
+  showTyping: () => Promise<void> | void,
+  intervalMs = 10_000,
+): () => void {
+  let stopped = false;
+  const pulse = () => {
+    if (stopped) return;
+    try {
+      void Promise.resolve(showTyping()).catch(() => undefined);
+    } catch {
+      // Cosmetic only.
+    }
+  };
+  pulse();
+  const timer = setInterval(pulse, intervalMs);
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
 export async function markWhatsAppTurnProcessing(
   db: TurnDb,
   messageId: string,

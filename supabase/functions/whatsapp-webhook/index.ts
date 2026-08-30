@@ -31,6 +31,7 @@ import { sendWhatsAppText, showTyping, whatsAppDisplayNumber } from '../_shared/
 import {
   markWhatsAppTurnProcessing,
   releaseWhatsAppTurn,
+  startWhatsAppTypingHeartbeat,
   startWhatsAppTurnHeartbeat,
   waitForWhatsAppTurn,
 } from '../_shared/whatsappTurn.ts';
@@ -5636,6 +5637,7 @@ Deno.serve(async (req) => {
         // older turn's conversation state and AI memory ahead of the newer one;
         // it does not serialize different businesses.
         const turnOwner = crypto.randomUUID();
+        const stopTypingHeartbeat = startWhatsAppTypingHeartbeat(() => showTyping(waMessageId));
         let turnAcquired = false;
         try {
           turnAcquired = await waitForWhatsAppTurn(db, phone, waMessageId, turnOwner);
@@ -5647,6 +5649,7 @@ Deno.serve(async (req) => {
             status: 'failed', last_error: 'whatsapp_turn_lock_timeout',
             processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
           }).eq('wa_message_id', waMessageId);
+          stopTypingHeartbeat();
           await sendReplyText(phone,
             'Samahani, ujumbe huu umechelewa kuchakatwa. Tafadhali utume tena baada ya muda mfupi.',
             waMessageId);
@@ -5662,6 +5665,7 @@ Deno.serve(async (req) => {
             status: 'failed', last_error: 'whatsapp_turn_processing_claim_failed',
             processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
           }).eq('wa_message_id', waMessageId);
+          stopTypingHeartbeat();
           await sendReplyText(phone,
             'Samahani, ujumbe huu haukuweza kuanza kuchakatwa. Tafadhali utume tena.',
             waMessageId);
@@ -10426,6 +10430,7 @@ Deno.serve(async (req) => {
             await sendReplyText(phone, 'Samahani, kuna hitilafu kwa upande wangu. Jaribu tena baada ya dakika moja.', waMessageId);
           } catch { /* nothing more can be done for this message */ }
         } finally {
+          stopTypingHeartbeat();
           stopTurnHeartbeat();
           await releaseWhatsAppTurn(db, phone, turnOwner);
         }
