@@ -49,7 +49,7 @@ describe('WhatsApp turn ordering', () => {
   });
 
   it('starts typing only after each message owns its turn', () => {
-    const heartbeat = webhook.indexOf('startWhatsAppTypingHeartbeat(() => showTyping(waMessageId))');
+    const heartbeat = webhook.indexOf('startWhatsAppTypingHeartbeat(() => pulseTyping())');
     const wait = webhook.indexOf('waitForWhatsAppTurn(db, phone, waMessageId, turnOwner)');
     const stop = webhook.indexOf('stopTypingHeartbeat();', heartbeat);
     expect(heartbeat).toBeGreaterThan(-1);
@@ -59,7 +59,7 @@ describe('WhatsApp turn ordering', () => {
   });
 
   it('gives every claimed bubble a visible typing moment before fast replies', () => {
-    const heartbeat = webhook.indexOf('startWhatsAppTypingHeartbeat(() => showTyping(waMessageId))');
+    const heartbeat = webhook.indexOf('startWhatsAppTypingHeartbeat(() => pulseTyping())');
     const pause = webhook.indexOf('await typingVisibilityPause()', heartbeat);
     const resolveIdentity = webhook.indexOf('Resolve identity once', pause);
     expect(webhook).toContain('typingVisibilityPause');

@@ -5254,6 +5254,59 @@ function typingVisibilityPause(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 1500));
 }
 
+/**
+ * How long a QUEUED message waits before spending its indicator.
+ *
+ * Not a general delay, and deliberately not applied to the ordinary case of one
+ * message arriving alone. It exists for one moment: the instant a second
+ * message wins the per-phone turn is the same instant the FIRST message's reply
+ * is being delivered, and a delivered message dismisses whatever indicator is
+ * showing. Raising the indicator into that instant is raising it to be
+ * cancelled a fraction of a second later.
+ */
+const TYPING_SETTLE_MS = 1_200;
+
+/** A wait shorter than this is scheduling noise, not a queue behind somebody. */
+const QUEUED_BEHIND_MS = 400;
+
+function typingSettlePause(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, TYPING_SETTLE_MS));
+}
+
+/**
+ * Ask for "typing…" and write down what Meta said.
+ *
+ * The counter matters as much as the status. If only attempt 1 for a message
+ * ever succeeds, then every heartbeat pulse after it is decoration and the
+ * whole approach of "pulse harder" cannot work — which is the hypothesis this
+ * exists to settle. See migration 0153.
+ */
+function typingRecorder(
+  db: Admin,
+  waMessageId: string,
+  receivedAtMs: number,
+  queuedBehind: boolean,
+): () => Promise<void> {
+  let attempt = 0;
+  return async () => {
+    attempt += 1;
+    const at = attempt;
+    const outcome = await showTyping(waMessageId);
+    try {
+      await db.from('whatsapp_typing_attempts').insert({
+        wa_message_id: waMessageId,
+        attempt: at,
+        http_status: outcome.status,
+        meta_code: outcome.code,
+        ms_since_received: Math.max(0, Date.now() - receivedAtMs),
+        queued_behind_earlier: queuedBehind,
+      });
+    } catch {
+      // A diagnostic must never cost a shop its reply.
+    }
+  };
+}
+
 async function replyDailyRecordConfirmationQuietly(
   to: string,
   record: ParsedDailyRecord,
@@ -5627,12 +5680,34 @@ Deno.serve(async (req) => {
           console.error('message insert failed', dupErr.message);
           continue;
         }
-        incomingMessages.push({ message, waMessageId, phone });
+        // When Meta handed it to us. Every typing pulse is measured from here,
+        // because "the indicator was requested" and "the indicator was
+        // requested eleven seconds in" are different facts.
+        incomingMessages.push({ message, waMessageId, phone, receivedAtMs: Date.now() });
       }
     }
   }
 
-  for (const { message, waMessageId, phone } of incomingMessages) {
+  // ── Answer Meta first, then do the work ──────────────────────────────────
+  //
+  // Processing takes 12 to 20 seconds and Meta's webhook call was being held
+  // open for all of it, which is well past the point where Meta gives up and
+  // redelivers. The idempotency gate above already made a redelivery harmless,
+  // so nothing was ever double-answered — but it is pointless load and it is
+  // not how a webhook is supposed to behave.
+  //
+  // NOT the cause of the typing problem, and the measurements say so plainly:
+  // the second message's row is inserted 0.4 to 1.3 seconds after the first
+  // one's while the first is still 12 seconds from finishing, so Meta is
+  // plainly not waiting for our acknowledgement before delivering the next
+  // message. That hypothesis is dead; this change is worth making on its own
+  // merits and is not the fix.
+  //
+  // The fallback is the part that matters: if this runtime has no waitUntil,
+  // the work is awaited exactly as before. A message may be slow. It may not
+  // be dropped because a convenience was missing.
+  const processAll = async () => {
+  for (const { message, waMessageId, phone, receivedAtMs } of incomingMessages) {
         // MEASURED FAILURE, and the worst kind: total silence.
         //
         //   whatsapp_messages  15:25:32 | text | pending | retries=0 | (no error)
@@ -5652,11 +5727,18 @@ Deno.serve(async (req) => {
         const turnOwner = crypto.randomUUID();
         let stopTypingHeartbeat = () => {};
         let turnAcquired = false;
+        // How long this message stood behind an earlier one from the same
+        // phone. This is the whole difference between the message that shows
+        // typing and the messages that do not.
+        const waitStartedAt = Date.now();
         try {
           turnAcquired = await waitForWhatsAppTurn(db, phone, waMessageId, turnOwner);
         } catch {
           turnAcquired = false;
         }
+        const queuedMs = Date.now() - waitStartedAt;
+        const queuedBehind = queuedMs >= QUEUED_BEHIND_MS;
+        const pulseTyping = typingRecorder(db, waMessageId, receivedAtMs, queuedBehind);
         if (!turnAcquired) {
           await db.from('whatsapp_messages').update({
             status: 'failed', last_error: 'whatsapp_turn_lock_timeout',
@@ -5672,7 +5754,12 @@ Deno.serve(async (req) => {
         try {
           await markWhatsAppTurnProcessing(db, waMessageId);
           stopTurnHeartbeat = startWhatsAppTurnHeartbeat(db, phone, turnOwner);
-          stopTypingHeartbeat = startWhatsAppTypingHeartbeat(() => showTyping(waMessageId));
+          // A message that queued has just watched the previous reply go out.
+          // Meta dismisses the indicator when a message is delivered, so the
+          // instant the turn is released is the worst possible instant to ask
+          // for one. Let that delivery land first, THEN ask.
+          if (queuedBehind) await typingSettlePause();
+          stopTypingHeartbeat = startWhatsAppTypingHeartbeat(() => pulseTyping());
           await typingVisibilityPause();
         } catch {
           await releaseWhatsAppTurn(db, phone, turnOwner);
@@ -5694,7 +5781,7 @@ Deno.serve(async (req) => {
         // slower work. This runs only after signature verification and the
         // idempotency gate, so status webhooks and duplicate deliveries cannot
         // flash a misleading typing indicator.
-        await showTyping(waMessageId);
+        await pulseTyping();
 
         // Resolve identity once; used by both branches below.
         const { data: rawIdentity } = await db
@@ -5804,7 +5891,7 @@ Deno.serve(async (req) => {
           // typing indicator after about twenty-five seconds and it is gone the
           // moment the first message lands, so it has to be raised again or the
           // chat looks finished while Risip is still working.
-          await showTyping(waMessageId);
+          await pulseTyping();
           // Read-only, so it runs now rather than after the confirmation. The
           // notice above already says the figure excludes what is pending.
           const hypotheticalProduct = parseHypotheticalProfitRequest(mixed.question);
@@ -8219,7 +8306,7 @@ Deno.serve(async (req) => {
             // The model and its tool loop are the slowest thing here, and the
             // indicator raised at the top of the request has long expired by the
             // time it answers. Raised again so the wait is visible.
-            await showTyping(waMessageId);
+            await pulseTyping();
             const assistant = await runConversationalAssistant({
               context: assistantIdentityContext(
                 identity,
@@ -10452,6 +10539,18 @@ Deno.serve(async (req) => {
   }
 
   nudgeWorker();
+  };
+
+  const runtime = (globalThis as {
+    EdgeRuntime?: { waitUntil?: (work: Promise<unknown>) => void };
+  }).EdgeRuntime;
+  if (typeof runtime?.waitUntil === 'function') {
+    // Keeps the isolate alive past the response instead of racing its teardown.
+    runtime.waitUntil(processAll());
+  } else {
+    await processAll();
+  }
+
   // Always 200: a non-200 makes Meta retry a payload we have already recorded.
   return new Response(JSON.stringify({ ok: true }), {
     status: 200,

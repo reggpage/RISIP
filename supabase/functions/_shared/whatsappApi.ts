@@ -76,14 +76,26 @@ export async function sendWhatsAppText(
   }
 }
 
+/** What Meta said. Null status means the call never got an answer at all. */
+export type TypingOutcome = {
+  status: number | null;
+  /** Meta's own error code, which is what tells one refusal from another. */
+  code: number | null;
+};
+
 /**
  * Mark the incoming message read and show the "typing…" bubble while we work.
  * This is a status update, not a message, so it costs nothing and does not count
  * against the one-reply budget. Best effort: never let it break processing.
+ *
+ * It RETURNS what happened now. It used to return void and write the status to
+ * stderr, where it could not be reached afterwards — which is how four separate
+ * fixes were aimed at this without one observation of the request that is
+ * supposedly failing. The caller records the outcome; see migration 0153.
  */
-export async function showTyping(messageId: string): Promise<void> {
+export async function showTyping(messageId: string): Promise<TypingOutcome> {
   const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
-  if (!phoneNumberId) return;
+  if (!phoneNumberId) return { status: null, code: null };
   try {
     const res = await fetch(`${apiBase()}/${phoneNumberId}/messages`, {
       method: 'POST',
@@ -94,11 +106,22 @@ export async function showTyping(messageId: string): Promise<void> {
       },
       body: JSON.stringify(typingIndicatorPayload(messageId)),
     });
-    if (!res.ok) {
-      console.error(`whatsapp typing indicator failed: ${res.status}`);
+    if (res.ok) return { status: res.status, code: null };
+    // The code is the whole point: "already read" and "expired token" are the
+    // same 400 and mean completely different things.
+    let code: number | null = null;
+    try {
+      const failure = await res.json();
+      const raw = failure?.error?.code;
+      code = typeof raw === 'number' ? raw : null;
+    } catch {
+      // A non-JSON body tells us nothing beyond the status.
     }
+    console.error(`whatsapp typing indicator failed: ${res.status}`);
+    return { status: res.status, code };
   } catch {
     // Cosmetic only.
+    return { status: null, code: null };
   }
 }
 
