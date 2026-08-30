@@ -40,6 +40,10 @@ export type DayCloseFacts = {
   dateLabel: string;
   sales: number;
   cogs: number;
+  /** Sales minus COGS; this is not net profit. */
+  grossProfit?: number;
+  /** Expenses recorded for the day, kept separate from COGS. */
+  expenses?: number;
   profit: number;
   purchases: number;
   newDebt: number;
@@ -120,7 +124,15 @@ export function dayDraftReply(facts: DayCloseFacts, lang: Lang): string {
   }
 
   lines.push('');
-  lines.push(sw ? `Faida ya leo: *${money(facts.profit)}*` : `Profit today: *${money(facts.profit)}*`);
+  lines.push(sw ? `Faida ghafi: *${money(facts.grossProfit ?? facts.sales - facts.cogs)}*` : `Gross profit: *${money(facts.grossProfit ?? facts.sales - facts.cogs)}*`);
+  if ((facts.expenses ?? 0) > 0) {
+    lines.push(sw
+      ? `Matumizi yaliyorekodiwa: ${money(facts.expenses ?? 0)}`
+      : `Recorded expenses: ${money(facts.expenses ?? 0)}`);
+  }
+  lines.push(sw
+    ? `Faida baada ya matumizi yaliyorekodiwa: *${money(facts.profit)}*`
+    : `Profit after recorded expenses: *${money(facts.profit)}*`);
   if (facts.profitCoveragePct > 0 && facts.profitCoveragePct < 80) {
     lines.push(sw
       ? `_Faida inagusa ${facts.profitCoveragePct}% ya mauzo — bidhaa nyingine hazina gharama ya kununua._`
@@ -141,9 +153,13 @@ export function dayClosedReply(facts: DayCloseFacts, closedAtLabel: string, lang
     `${facts.dateLabel} · ${closedAtLabel}`,
     '',
     sw ? `Mauzo: ${money(facts.sales)}` : `Sales: ${money(facts.sales)}`,
-    sw ? `Gharama ya bidhaa: ${money(facts.cogs)}` : `Cost of goods: ${money(facts.cogs)}`,
-    sw ? `Faida: *${money(facts.profit)}*` : `Profit: *${money(facts.profit)}*`,
+    sw ? `Gharama za bidhaa zilizouzwa (COGS): ${money(facts.cogs)}` : `Cost of goods sold (COGS): ${money(facts.cogs)}`,
+    sw ? `Faida ghafi: *${money(facts.grossProfit ?? facts.sales - facts.cogs)}*` : `Gross profit: *${money(facts.grossProfit ?? facts.sales - facts.cogs)}*`,
   ];
+  if ((facts.expenses ?? 0) > 0) {
+    lines.push(sw ? `Matumizi yaliyorekodiwa: ${money(facts.expenses ?? 0)}` : `Recorded expenses: ${money(facts.expenses ?? 0)}`);
+    lines.push(sw ? `Faida baada ya matumizi: *${money(facts.profit)}*` : `Profit after expenses: *${money(facts.profit)}*`);
+  }
 
   if (facts.outOfStock.length > 0) {
     lines.push('');
@@ -190,8 +206,12 @@ export function ownerDayListReply(facts: DayCloseFacts, lang: Lang): string {
   out.push('━━━━━━━━━━━━━━');
   out.push(sw ? '*JUMLA YA SIKU*' : '*DAY TOTAL*');
   out.push(sw ? `Mauzo: ${money(facts.sales)}` : `Sales: ${money(facts.sales)}`);
-  out.push(sw ? `Gharama ya bidhaa: ${money(facts.cogs)}` : `Cost of goods: ${money(facts.cogs)}`);
-  out.push(sw ? `*Faida: ${money(facts.profit)}*` : `*Profit: ${money(facts.profit)}*`);
+  out.push(sw ? `Gharama za bidhaa zilizouzwa (COGS): ${money(facts.cogs)}` : `Cost of goods sold (COGS): ${money(facts.cogs)}`);
+  out.push(sw ? `*Faida ghafi: ${money(facts.grossProfit ?? facts.sales - facts.cogs)}*` : `*Gross profit: ${money(facts.grossProfit ?? facts.sales - facts.cogs)}*`);
+  if ((facts.expenses ?? 0) > 0) {
+    out.push(sw ? `Matumizi yaliyorekodiwa: ${money(facts.expenses ?? 0)}` : `Recorded expenses: ${money(facts.expenses ?? 0)}`);
+    out.push(sw ? `*Faida baada ya matumizi: ${money(facts.profit)}*` : `*Profit after expenses: ${money(facts.profit)}*`);
+  }
 
   if (facts.purchases > 0) {
     out.push('');

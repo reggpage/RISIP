@@ -6,7 +6,7 @@ export type BuchaReportingSnapshot = {
   expenses?: number;
   customer_payments?: number;
   supplier_payments?: number;
-  profit?: { sales?: number; expenses?: number; cogs?: number; estimated_profit?: number; coverage?: number; products_missing_cost?: string[]; unvalued_stock_losses?: number };
+  profit?: { sales?: number; expenses?: number; cogs?: number; gross_profit?: number; estimated_profit?: number; coverage?: number; products_missing_cost?: string[]; unvalued_stock_losses?: number };
   customer_receivables?: Array<{ party_name: string; outstanding: number }>;
   supplier_payables?: Array<{ supplier_name: string; outstanding: number }>;
   stock?: Array<{ product_name: string; unit?: string | null; on_hand: number }>;
@@ -55,6 +55,7 @@ export function buchaReportFacts(
   if (profit.estimated_profit !== undefined) {
     lines.push(`estimated_profit=${Number(profit.estimated_profit ?? 0)}`);
     lines.push(`cogs=${Number(profit.cogs ?? 0)}`);
+    lines.push(`gross_profit=${Number(profit.gross_profit ?? Number(profit.sales ?? 0) - Number(profit.cogs ?? 0))}`);
     lines.push(`cost_coverage=${Number(profit.coverage ?? 0)}`);
   }
   // Said plainly, because the two were conflated on the owner's own screen.
@@ -93,8 +94,8 @@ export function buildBuchaReportReply(
       ? (lang === 'sw' ? '\nMakisio hayajakamilika: kuna bidhaa/loss ambazo hazina valuation kamili.' : '\nEstimate is incomplete: some products/losses do not have complete valuation.')
       : '';
     return lang === 'sw'
-      ? `Makisio ya faida ya ${label}:\nMauzo: ${money(profit.sales)}\nCOGS: ${money(profit.cogs)}\nMatumizi: ${money(profit.expenses)}\nFaida inayokadiriwa: ${money(profit.estimated_profit)}\nCoverage: ${Math.round(Number(profit.coverage ?? 0) * 100)}%${note}`
-      : `Estimated profit for ${label}:\nSales: ${money(profit.sales)}\nCOGS: ${money(profit.cogs)}\nExpenses: ${money(profit.expenses)}\nEstimated profit: ${money(profit.estimated_profit)}\nCoverage: ${Math.round(Number(profit.coverage ?? 0) * 100)}%${note}`;
+      ? `Makisio ya faida ya ${label}:\nMauzo: ${money(profit.sales)}\nGharama za bidhaa zilizouzwa (COGS): ${money(profit.cogs)}\nFaida ghafi: ${money(profit.gross_profit ?? Number(profit.sales ?? 0) - Number(profit.cogs ?? 0))}\nMatumizi yaliyorekodiwa: ${money(profit.expenses)}\nFaida baada ya matumizi yaliyorekodiwa: ${money(profit.estimated_profit)}\nCoverage: ${Math.round(Number(profit.coverage ?? 0) * 100)}%${note}`
+      : `Estimated profit for ${label}:\nSales: ${money(profit.sales)}\nCost of goods sold (COGS): ${money(profit.cogs)}\nGross profit: ${money(profit.gross_profit ?? Number(profit.sales ?? 0) - Number(profit.cogs ?? 0))}\nRecorded expenses: ${money(profit.expenses)}\nEstimated profit after recorded expenses: ${money(profit.estimated_profit)}\nCoverage: ${Math.round(Number(profit.coverage ?? 0) * 100)}%${note}`;
   }
   if (tool === 'ai_stock_loss') {
     const loss = snapshot.stock_loss ?? {};

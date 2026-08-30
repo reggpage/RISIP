@@ -73,7 +73,7 @@ describe('the draft, which is what somebody is asked to agree to', () => {
     expect(said).toContain('Ijumaa, 28 Agosti 2026');
     expect(said).toContain('Mauzo 14');
     expect(said).toContain('TSh 596,500');
-    expect(said).toContain('Faida ya leo: *TSh 399,000*');
+    expect(said).toContain('Faida ghafi: *TSh 399,000*');
     expect(said).toContain('NDIYO');
   });
 
@@ -113,8 +113,8 @@ describe('what the person who closed is told', () => {
     const said = dayClosedReply(facts, '20:15', 'sw');
     expect(said).toContain('Siku imefungwa');
     expect(said).toContain('Mauzo: TSh 596,500');
-    expect(said).toContain('Gharama ya bidhaa: TSh 197,500');
-    expect(said).toContain('Faida: *TSh 399,000*');
+    expect(said).toContain('Gharama za bidhaa zilizouzwa (COGS): TSh 197,500');
+    expect(said).toContain('Faida ghafi: *TSh 399,000*');
   });
 
   it('carries the two warnings worth carrying', () => {
@@ -147,10 +147,17 @@ describe('the owner’s list', () => {
     // reader do the arithmetic Risip exists to do.
     expect(list).toContain('*JUMLA YA SIKU*');
     expect(list).toContain('Mauzo: TSh 596,500');
-    expect(list).toContain('*Faida: TSh 399,000*');
+    expect(list).toContain('*Faida ghafi: TSh 399,000*');
     expect(list).toContain('Madeni mapya: TSh 45,000');
     expect(list).toContain('• *Mama Anna* — TSh 45,000');
     expect(list).toContain('Miamala 18 · watu 2');
+  });
+
+  it('keeps recorded expenses distinct from gross profit', () => {
+    const said = dayClosedReply({ ...facts, expenses: 5_000, profit: 394_000 }, '20:15', 'sw');
+    expect(said).toContain('Faida ghafi: *TSh 399,000*');
+    expect(said).toContain('Matumizi yaliyorekodiwa: TSh 5,000');
+    expect(said).toContain('Faida baada ya matumizi: *TSh 394,000*');
   });
 });
 

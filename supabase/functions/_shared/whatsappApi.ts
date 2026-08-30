@@ -3,6 +3,7 @@
 
 import { typingIndicatorPayload } from './whatsappApiPayloads.ts';
 import { toWhatsAppText } from './whatsappMarkdown.ts';
+import { whatsappTextPayload } from './whatsappTextPayload.ts';
 
 const DEFAULT_API_VERSION = 'v21.0';
 
@@ -53,7 +54,11 @@ export async function whatsAppDisplayNumber(): Promise<string | null> {
  * window — every reply we send is a direct answer to the user's own message, so
  * this MVP never needs a paid template.
  */
-export async function sendWhatsAppText(toE164: string, body: string): Promise<void> {
+export async function sendWhatsAppText(
+  toE164: string,
+  body: string,
+  options: { replyToMessageId?: string | null } = {},
+): Promise<void> {
   const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
   if (!phoneNumberId) throw new Error('WHATSAPP_PHONE_NUMBER_ID not set');
 
@@ -63,17 +68,7 @@ export async function sendWhatsAppText(toE164: string, body: string): Promise<vo
       authorization: `Bearer ${accessToken()}`,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      // Cloud API accepts E.164 without the leading '+'.
-      to: toE164.replace(/^\+/, ''),
-      type: 'text',
-      // Every outbound message goes through this. The model writes Markdown and
-      // WhatsApp is not Markdown, so "**Record transactions**" reached the owner
-      // as a literal star, bold text, and another literal star.
-      text: { preview_url: true, body: toWhatsAppText(body) },
-    }),
+    body: JSON.stringify(whatsappTextPayload(toE164, toWhatsAppText(body), options)),
   });
   if (!res.ok) {
     // Never echo the message body or number into logs.

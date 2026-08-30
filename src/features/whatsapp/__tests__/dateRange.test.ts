@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   isFuture,
   parseTimeOfDay,
+  dateWordingStatus,
   resolveDateRange,
+  resolveTransactionDate,
   withinTimeOfDay,
 } from '../../../../supabase/functions/_shared/whatsappDateRange';
 import { parseReadRequest, periodLabel } from '../../../../supabase/functions/_shared/whatsappReadTools';
@@ -149,6 +151,33 @@ describe('a date said outright', () => {
     const en = range('sales from May 7 2025 to May 10 2025');
     expect(localDay(en.from)).toBe('2025-05-07');
     expect(localDay(new Date(en.to.getTime() - 1))).toBe('2025-05-10');
+  });
+
+  it('resolves bare day-of-month wording in Dar es Salaam', () => {
+    const lateAugust = new Date('2026-08-30T11:30:00Z');
+    expect(localDay(resolveDateRange('tarehe 23', lateAugust)!.from)).toBe('2026-08-23');
+    expect(localDay(resolveDateRange('tarehe 23 mwezi huu', lateAugust)!.from)).toBe('2026-08-23');
+    const previous = resolveDateRange('tarehe 23 mwezi uliopita', lateAugust)!;
+    expect(localDay(previous.from)).toBe('2026-07-23');
+    expect(localDay(new Date(previous.to.getTime() - 1))).toBe('2026-07-23');
+  });
+
+  it('handles bare dates across a month and year boundary', () => {
+    const newYear = new Date('2027-01-05T09:00:00Z');
+    expect(localDay(resolveDateRange('tarehe 31', newYear)!.from)).toBe('2026-12-31');
+    expect(localDay(resolveDateRange('tarehe 31 mwezi uliopita', newYear)!.from)).toBe('2026-12-31');
+    expect(localDay(resolveDateRange('tarehe 2 mwezi huu', newYear)!.from)).toBe('2027-01-02');
+  });
+
+  it('rejects impossible explicit dates instead of rolling them into another day', () => {
+    const february = new Date('2027-02-05T09:00:00Z');
+    expect(resolveDateRange('tarehe 31 mwezi huu', february)).toBeNull();
+    expect(resolveDateRange('tarehe 31 februari 2026', NOW)).toBeNull();
+    expect(resolveDateRange('2026-02-29', NOW)).toBeNull();
+    expect(resolveDateRange('29 februari 2028', NOW)).not.toBeNull();
+    expect(dateWordingStatus('tarehe 31 februari 2026', NOW)).toBe('invalid');
+    expect(dateWordingStatus('faida ya wiki hii', NOW)).toBe('none');
+    expect(resolveTransactionDate('tarehe 31 februari 2026', NOW)).toEqual({ kind: 'invalid', reason: 'range' });
   });
 });
 

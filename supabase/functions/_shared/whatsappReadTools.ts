@@ -5,7 +5,7 @@
 // arithmetic without a service-role client and keep the assistant from ever
 // treating a model response as an accounting source.
 
-import { type ResolvedRange, resolveDateRange } from './whatsappDateRange.ts';
+import { dateWordingStatus, type ResolvedRange, resolveDateRange } from './whatsappDateRange.ts';
 import { type ProductPeriod, periodStart } from './whatsappProductAnalytics.ts';
 import { correctControlWords } from './whatsappSpelling.ts';
 
@@ -39,6 +39,8 @@ export type ReadRequest = {
    * nothing that already worked has to change.
    */
   range?: ResolvedRange | null;
+  /** True when the user named a date-shaped window that could not be resolved. */
+  invalidTime?: boolean;
 };
 
 export type ReadDailyRow = {
@@ -90,6 +92,7 @@ export type ProfitEstimate = {
   sales: number;
   expenses: number;
   cogs: number;
+  grossProfit: number;
   costedSales: number;
   coverage: number;
   estimatedProfit: number;
@@ -181,7 +184,10 @@ export function parseReadRequest(input: string | null | undefined, now = new Dat
   const period = parsePeriod(text);
   // The person's own words about time win over the four coarse buckets.
   const range = resolveDateRange(String(input ?? ''), now);
-  const withRange = (request: Omit<ReadRequest, 'range'>): ReadRequest => ({ ...request, range });
+  const invalidTime = dateWordingStatus(String(input ?? ''), now) === 'invalid';
+  const withRange = (request: Omit<ReadRequest, 'range'>): ReadRequest => ({
+    ...request, range, ...(invalidTime ? { invalidTime: true } : {}),
+  });
 
   if (WHATSAPP_RECEIPTS_ENABLED
     && hasAny(text, ['ninaidai risip', 'risip inanidai', 'my reimbursement', 'reimbursements yangu', 'risip owe', 'risip owes', 'owe me', 'nirudishiwe'])) {
@@ -394,6 +400,7 @@ export function calculateProfitEstimate(
     sales,
     expenses,
     cogs: Math.round(cogs * 100) / 100,
+    grossProfit: Math.round((sales - cogs) * 100) / 100,
     costedSales: Math.round(costedSales * 100) / 100,
     coverage: sales > 0 ? Math.round((costedSales / sales) * 10000) / 10000 : 0,
     estimatedProfit: Math.round((sales - cogs - expenses) * 100) / 100,
@@ -474,8 +481,8 @@ export function buildProfitReply(profit: ProfitEstimate, period: ReadPeriod, lan
       : `\nBuying costs are missing for: ${profit.productsMissingCost.join(', ')}. This estimate is therefore incomplete.`)
     : '';
   return lang === 'sw'
-    ? `Makisio ya faida ya ${label}:\nMauzo: ${money(profit.sales, lang)}\nCOGS iliyokadiriwa: ${money(profit.cogs, lang)}\nMatumizi: ${money(profit.expenses, lang)}\nFaida inayokadiriwa: ${money(profit.estimatedProfit, lang)}\nCoverage ya mauzo: ${coverage}%${missing}`
-    : `Estimated profit for ${label}:\nSales: ${money(profit.sales, lang)}\nEstimated COGS: ${money(profit.cogs, lang)}\nExpenses: ${money(profit.expenses, lang)}\nEstimated profit: ${money(profit.estimatedProfit, lang)}\nSales coverage: ${coverage}%${missing}`;
+    ? `Makisio ya faida ya ${label}:\nMauzo: ${money(profit.sales, lang)}\nGharama za bidhaa zilizouzwa (COGS): ${money(profit.cogs, lang)}\nFaida ghafi: ${money(profit.grossProfit, lang)}\nMatumizi yaliyorekodiwa: ${money(profit.expenses, lang)}\nFaida baada ya matumizi yaliyorekodiwa: ${money(profit.estimatedProfit, lang)}\nCoverage ya mauzo: ${coverage}%${missing}`
+    : `Estimated profit for ${label}:\nSales: ${money(profit.sales, lang)}\nCost of goods sold (COGS): ${money(profit.cogs, lang)}\nGross profit: ${money(profit.grossProfit, lang)}\nRecorded expenses: ${money(profit.expenses, lang)}\nEstimated profit after recorded expenses: ${money(profit.estimatedProfit, lang)}\nSales coverage: ${coverage}%${missing}`;
 }
 
 /**

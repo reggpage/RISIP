@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ASSISTANT_TOOLS, buildAssistantSystemPrompt } from '../../../../supabase/functions/_shared/whatsappAssistant';
 import { calculateProfitEstimate } from '../../../../supabase/functions/_shared/whatsappReadTools';

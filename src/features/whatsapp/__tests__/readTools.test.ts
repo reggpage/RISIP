@@ -75,8 +75,11 @@ describe('A1 deterministic read-only WhatsApp tools', () => {
       [{ description: 'unga', quantity: 10, lineTotal: 100000, occurredAt: '2026-01-01T00:00:00.000Z' }],
       [{ productKey: 'unga', unitCost: 7000, effectiveFrom: '2025-01-01T00:00:00.000Z' }],
     );
-    expect(profit).toMatchObject({ cogs: 70000, costedSales: 100000, coverage: 1, estimatedProfit: 25000 });
+    expect(profit).toMatchObject({ cogs: 70000, grossProfit: 30000, costedSales: 100000, coverage: 1, estimatedProfit: 25000 });
     expect(buildProfitReply(profit, 'today', 'sw')).toContain('25,000');
+    expect(buildProfitReply(profit, 'today', 'sw')).toContain('Faida ghafi: TSh 30,000');
+    expect(buildProfitReply(profit, 'today', 'sw')).toContain('Gharama za bidhaa zilizouzwa (COGS): TSh 70,000');
+    expect(buildProfitReply(profit, 'today', 'sw')).toContain('Matumizi yaliyorekodiwa: TSh 5,000');
 
     const incomplete = calculateProfitEstimate(
       [{ kind: 'sale', status: 'confirmed', amount: 100000 }],
@@ -85,6 +88,11 @@ describe('A1 deterministic read-only WhatsApp tools', () => {
     );
     expect(incomplete.productsMissingCost).toEqual(['sukari']);
     expect(buildProfitReply(incomplete, 'today', 'sw')).toContain('sukari');
+  });
+
+  it('marks an unresolvable date so callers cannot query today by accident', () => {
+    const request = parseReadRequest('faida ya tarehe 31 februari 2026', new Date('2026-08-14T11:30:00Z'));
+    expect(request).toMatchObject({ tool: 'daily_profit_estimate', invalidTime: true, range: null });
   });
 });
 

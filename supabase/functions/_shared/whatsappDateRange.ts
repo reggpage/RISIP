@@ -51,6 +51,17 @@ function midnight(year: number, month: number, day: number): Date {
   return new Date(Date.UTC(year, month - 1, day) - OFFSET);
 }
 
+function validMidnight(year: number, month: number, day: number): Date | null {
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const start = midnight(year, month, day);
+  const local = new Date(start.getTime() + OFFSET);
+  return local.getUTCFullYear() === year
+    && local.getUTCMonth() + 1 === month
+    && local.getUTCDate() === day
+    ? start
+    : null;
+}
+
 function startOfToday(now: Date): Date {
   const { year, month, day } = localParts(now);
   return midnight(year, month, day);
@@ -94,6 +105,14 @@ const MONTH_LABEL_EN = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
+
+const EXPLICIT_DATE_SIGNAL = new RegExp(
+  `\\btarehe\\b|\\bon the\\s+\\d{1,2}(?:st|nd|rd|th)?\\b`
+  + `|\\b\\d{4}-\\d{1,2}-\\d{1,2}\\b|\\b\\d{1,2}[/.]\\d{1,2}(?:[/.]\\d{2,4})?\\b`
+  + `|\\b(?:\\d{1,2}\\s+(?:${Object.keys(MONTHS).join('|')})|(?:${Object.keys(MONTHS).join('|')})\\s+\\d{1,2})\\b`,
+);
+
+export type DateWordingStatus = 'none' | 'valid' | 'invalid';
 
 const SMALL_COUNTS: Record<string, number> = {
   moja: 1, mmoja: 1, one: 1,
@@ -231,7 +250,8 @@ function explicitDate(said: string, now: Date): ResolvedRange | null {
     const day = Number(dayFirst ? first : second);
     if (month && day >= 1 && day <= 31) {
       const year = named[3] ? Number(named[3]) : localParts(now).year;
-      const start = midnight(year, month, day);
+      const start = validMidnight(year, month, day);
+      if (!start) return null;
       const label = formatDay(start);
       return dayRange(start, label.sw, label.en);
     }
@@ -241,7 +261,8 @@ function explicitDate(said: string, now: Date): ResolvedRange | null {
   // here; the ISO form is recognised by its four-digit year coming first.
   const iso = said.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);
   if (iso) {
-    const start = midnight(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+    const start = validMidnight(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+    if (!start) return null;
     const label = formatDay(start);
     return dayRange(start, label.sw, label.en);
   }
@@ -252,7 +273,51 @@ function explicitDate(said: string, now: Date): ResolvedRange | null {
     if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
       const raw = slashed[3] ? Number(slashed[3]) : localParts(now).year;
       const year = raw < 100 ? 2000 + raw : raw;
-      const start = midnight(year, month, day);
+      const start = validMidnight(year, month, day);
+      if (!start) return null;
+      const label = formatDay(start);
+      return dayRange(start, label.sw, label.en);
+    }
+  }
+
+  // A DAY OF THE MONTH WITH NO MONTH NAMED.
+  //
+  // MEASURED, and it answered the wrong day with a straight face: "niambie
+  // tarehe 23 mwezi huu rekod zilikuwaje" came back with today's records and
+  // today's date printed at the top, identical to the answer before it. Two
+  // faults met here. Nothing matched a bare "tarehe 23" at all, and "tarehe 23
+  // mwezi huu" DID match — further down, on "mwezi huu", which is a range that
+  // ends now, so the day it resolved to was today.
+  //
+  // It sits after the fully written dates on purpose: "tarehe 7 mei" must
+  // still be read as May, and this is only the fallback when no month is named.
+  //
+  // Anchored on the word "tarehe" and never on a bare number: in this shop's
+  // messages a loose 23 is nearly always a quantity or a price.
+  const bare = said.match(/\btarehe\s+(\d{1,2})\b/)
+    ?? said.match(/\bon the\s+(\d{1,2})(?:st|nd|rd|th)?\b/);
+  if (bare) {
+    const day = Number(bare[1]);
+    const here = localParts(now);
+    const lastMonth = /\bmwezi\s+(?:uliopita|jana|uliyopita)\b|\blast month\b/.test(said);
+    let year = here.year;
+    let month = here.month - (lastMonth ? 1 : 0);
+    if (month < 1) { month = 12; year -= 1; }
+    let start = validMidnight(year, month, day);
+    if (!start) return null;
+    // Roll-over guard: "tarehe 31" in a thirty-day month is not the 1st of the
+    // next one, it is a date that does not exist.
+    const landed = new Date(start.getTime() + OFFSET);
+    if (day >= 1 && day <= 31 && landed.getUTCDate() === day) {
+      // A shopkeeper asking about a date is asking about the past. The 23rd,
+      // asked on the 5th, means last month's 23rd — there are no records from
+      // a day that has not arrived yet.
+      const currentMonthWasNamed = /\bmwezi\s+huu\b|\bthis\s+month\b/.test(said);
+      if (!lastMonth && !currentMonthWasNamed && start.getTime() > now.getTime()) {
+        const back = month === 1 ? { y: year - 1, m: 12 } : { y: year, m: month - 1 };
+        start = validMidnight(back.y, back.m, day);
+        if (!start) return null;
+      }
       const label = formatDay(start);
       return dayRange(start, label.sw, label.en);
     }
@@ -363,6 +428,10 @@ export function resolveDateRange(text: string | null | undefined, now = new Date
   // ── An explicit date beats every relative phrase ──────────────────────────
   const explicit = explicitDate(said, now);
   if (explicit) return withTime(explicit);
+  // A date-shaped request that did not resolve is not a request for the loose
+  // month/week default below. Returning null lets callers ask for clarification
+  // instead of answering today's or this month's figures under a false label.
+  if (EXPLICIT_DATE_SIGNAL.test(said)) return null;
 
   // ── Rolling windows ───────────────────────────────────────────────────────
   const rolling = said.match(new RegExp(`\\b(?:siku|days?)\\s+(${COUNT_WORDS})\\s*(?:zilizopita|iliyopita|ago|last)?\\b`))
@@ -429,6 +498,16 @@ export function resolveDateRange(text: string | null | undefined, now = new Date
   return null;
 }
 
+/** Distinguish no time wording from a date the parser could not safely resolve. */
+export function dateWordingStatus(
+  text: string | null | undefined,
+  now = new Date(),
+): DateWordingStatus {
+  const said = normalise(String(text ?? ''));
+  if (!said || !EXPLICIT_DATE_SIGNAL.test(said)) return 'none';
+  return resolveDateRange(said, now) ? 'valid' : 'invalid';
+}
+
 export function rangeLabel(range: ResolvedRange, lang: Lang): string {
   return lang === 'sw' ? range.sw : range.en;
 }
@@ -448,6 +527,9 @@ export function resolveTransactionDate(
   text: string | null | undefined,
   now = new Date(),
 ): TransactionDateResolution {
+  if (dateWordingStatus(text, now) === 'invalid') {
+    return { kind: 'invalid', reason: 'range' };
+  }
   const range = resolveDateRange(text, now);
   if (!range) return { kind: 'current', occurredAt: null };
   if (isFuture(range, now)) return { kind: 'invalid', reason: 'future' };

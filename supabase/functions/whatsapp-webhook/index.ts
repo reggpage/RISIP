@@ -28,6 +28,12 @@ import {
   verifyMetaSignature,
 } from '../_shared/whatsapp.ts';
 import { sendWhatsAppText, showTyping, whatsAppDisplayNumber } from '../_shared/whatsappApi.ts';
+import {
+  markWhatsAppTurnProcessing,
+  releaseWhatsAppTurn,
+  startWhatsAppTurnHeartbeat,
+  waitForWhatsAppTurn,
+} from '../_shared/whatsappTurn.ts';
 import { looksLikeMachineText } from '../_shared/whatsappMachineText.ts';
 import {
   isProactiveNotificationStop,
@@ -431,7 +437,7 @@ import {
   toCostPrompt,
 } from '../_shared/whatsappCostPrompt.ts';
 import {
-  type ResolvedRange, isFuture, rangeLabel, resolveDateRange,
+  dateWordingStatus, type ResolvedRange, isFuture, rangeLabel, resolveDateRange,
   resolveTransactionDate, withinTimeOfDay,
 } from '../_shared/whatsappDateRange.ts';
 import {
@@ -1508,7 +1514,7 @@ async function askForBuyingPrice(
       updated_at: new Date().toISOString(),
     }, { onConflict: 'identity_id' });
 
-    await sendReplyText(phone, costQuestion(prompt, lang));
+    await sendReplyText(phone, costQuestion(prompt, lang), waMessageId);
     await audit(db, identity, waMessageId, 'product_cost', 'asked', prompt.productKey);
   } catch {
     /* Never let an optional question disturb a saved record. */
@@ -2072,8 +2078,9 @@ async function answerProductAnalytics(
   phone: string,
   request: ProductAnalyticsRequest,
   lang: Lang,
+  replyToMessageId?: string | null,
 ): Promise<void> {
-  await sendReplyText(phone, await productAnalyticsToolReply(db, identity, request, lang));
+  await sendReplyText(phone, await productAnalyticsToolReply(db, identity, request, lang), replyToMessageId);
 }
 
 async function productAnalyticsToolReply(
@@ -2146,25 +2153,32 @@ function shopDay(now = new Date()): { date: string; from: Date; to: Date } {
 }
 
 /**
- * Today, or the day the trader named.
+ * A day the trader named, or today when they named none.
  *
- * The wording is resolved by the same date parser every other read uses, so
- * "juzi" means here what it means everywhere else in Risip. A range that spans
- * more than one day is narrowed to its last day: this builds ONE day's list,
- * and quietly totalling three days under yesterday's heading would be worse
- * than answering about the wrong one.
+ * `understood` is the important half. This used to fall back to today whenever
+ * the wording did not resolve, which meant a question about the 23rd was
+ * answered with today's totals under today's heading and nothing anywhere said
+ * the date had been dropped. A wrong day carrying a confident total is worse
+ * than no answer: the figures are all real, so there is nothing to notice.
  */
-function resolveShopDay(wording: string | null): { date: string; from: Date; to: Date } {
-  if (!wording) return shopDay();
+function resolveShopDay(
+  wording: string | null,
+): { date: string; from: Date; to: Date; understood: boolean } {
+  if (!wording) return { ...shopDay(), understood: true };
   const range = resolveDateRange(wording);
-  if (!range) return shopDay();
+  if (!range) return { ...shopDay(), understood: false };
   const last = new Date(range.to.getTime() - 1);
   const date = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Africa/Dar_es_Salaam', year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(last);
   const [year, month, day] = date.split('-').map(Number);
   const midnightLocal = Date.UTC(year, month - 1, day) - EAT_OFFSET_MS;
-  return { date, from: new Date(midnightLocal), to: new Date(midnightLocal + 86_400_000) };
+  return {
+    date,
+    from: new Date(midnightLocal),
+    to: new Date(midnightLocal + 86_400_000),
+    understood: true,
+  };
 }
 
 function shopClock(value: Date, lang: Lang): string {
@@ -2196,6 +2210,9 @@ async function buildDayCloseFacts(
   dayWording: string | null = null,
 ): Promise<DayCloseFacts> {
   const day = resolveShopDay(dayWording);
+  if (dayWording && !day.understood) {
+    throw new Error('unresolved_explicit_date');
+  }
   const companyId = identity.company_id as string;
 
   const [{ data: todayRows }, { data: allRows }, { data: rawCosts }, { data: shelfRows }] =
@@ -2322,6 +2339,8 @@ async function buildDayCloseFacts(
     dateLabel: shopDateLabel(day.date, lang),
     sales: profit.sales,
     cogs: profit.cogs,
+    grossProfit: profit.grossProfit,
+    expenses: profit.expenses,
     profit: profit.estimatedProfit,
     purchases: total('stock_purchase'),
     newDebt: total('debt_issued'),
@@ -2909,6 +2928,11 @@ function readPeriodBounds(request: ReadRequest): { from: string; to: string } {
  * writes a row or calls a finance mutation RPC.
  */
 async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest, lang: Lang): Promise<string> {
+  if (request.invalidTime) {
+    return lang === 'sw'
+      ? 'Sijaweza kutambua tarehe hiyo kwa usalama. Tafadhali andika tarehe kamili, kwa mfano *tarehe 23 Agosti 2026*.'
+      : 'I could not resolve that date safely. Please write the full date, for example *23 August 2026*.';
+  }
   // There are no records from the future. Saying so is better than quietly
   // returning zero, which reads as "your shop sold nothing".
   if (request.range && isFuture(request.range)) {
@@ -4040,6 +4064,14 @@ async function runAssistantTool(
   // it, so the model cannot book an arrival as a sale.
   said?: string,
 ): Promise<AssistantToolExecution> {
+  const invalidWhen = typeof input.when === 'string'
+    && dateWordingStatus(input.when) === 'invalid';
+  if (invalidWhen) {
+    const message = lang === 'sw'
+      ? 'Sijaweza kutambua tarehe hiyo kwa usalama. Tafadhali andika tarehe kamili, kwa mfano *tarehe 23 Agosti 2026*.'
+      : 'I could not resolve that date safely. Please write the full date, for example *23 August 2026*.';
+    return { content: message, terminalReply: message, isError: true };
+  }
   // A QUESTION EMPTIES THE QUEUE FIRST.
   //
   // Drafts are not confirmed records, so nothing waiting is in any total. A
@@ -4752,6 +4784,12 @@ async function runAssistantTool(
       return { content: denied, isError: true, terminalReply: denied };
     }
     const asked = typeof input.period_wording === 'string' ? input.period_wording.trim() : '';
+    if (asked && dateWordingStatus(asked) === 'invalid') {
+      const message = lang === 'sw'
+        ? 'Sijaweza kutambua tarehe hiyo kwa usalama. Tafadhali andika tarehe kamili, kwa mfano *tarehe 23 Agosti 2026*.'
+        : 'I could not resolve that date safely. Please write the full date, for example *23 August 2026*.';
+      return { content: message, terminalReply: message, isError: true };
+    }
     const { days, periodLabel } = await buildDailyBreakdown(db, identity, lang, asked || null);
     // STAGE D. "Onyesha kila siku" wants thirty rows; "siku gani ilikuwa bora"
     // wants one sentence naming a day. A rendered table would answer the first
@@ -4777,6 +4815,12 @@ ${trendShapeFacts(days)}`,
       return { content: denied, isError: true, terminalReply: denied };
     }
     const asked = typeof input.date_wording === 'string' ? input.date_wording.trim() : '';
+    if (asked && dateWordingStatus(asked) === 'invalid') {
+      const message = lang === 'sw'
+        ? 'Sijaweza kutambua tarehe hiyo kwa usalama. Tafadhali andika tarehe kamili, kwa mfano *tarehe 23 Agosti 2026*.'
+        : 'I could not resolve that date safely. Please write the full date, for example *23 August 2026*.';
+      return { content: message, terminalReply: message, isError: true };
+    }
     const facts = await buildDayCloseFacts(db, identity, lang, asked || null);
     if (facts.recordCount === 0) {
       const none = lang === 'sw'
@@ -5185,7 +5229,7 @@ function maskDigits(text: string): string {
 }
 
 /** Best-effort reply. A send failure must never turn into a non-200 for Meta. */
-async function sendReplyText(to: string, body: string): Promise<void> {
+async function sendReplyText(to: string, body: string, replyToMessageId?: string | null): Promise<void> {
   if (looksLikeMachineText(body)) {
     // Loud on purpose: this is a bug in whichever branch built `body`, and the
     // only way to find it is to see it in the logs. The shop gets a clean line
@@ -5193,12 +5237,13 @@ async function sendReplyText(to: string, body: string): Promise<void> {
     console.error('BLOCKED machine text to', maskPhone(to), '·', body.slice(0, 80).replace(/\n/g, ' '));
     try {
       await sendWhatsAppText(to,
-        'Samahani, kuna hitilafu ndogo kwa jibu hilo. Jaribu tena, au niulize kwa njia nyingine.');
+        'Samahani, kuna hitilafu ndogo kwa jibu hilo. Jaribu tena, au niulize kwa njia nyingine.',
+        { replyToMessageId });
     } catch { /* swallow — see below */ }
     return;
   }
   try {
-    await sendWhatsAppText(to, body);
+    await sendWhatsAppText(to, body, { replyToMessageId });
   } catch (err) {
     console.error('reply failed', maskPhone(to), err instanceof Error ? err.message : 'unknown');
   }
@@ -5208,9 +5253,10 @@ async function replyDailyRecordConfirmationQuietly(
   to: string,
   record: ParsedDailyRecord,
   lang: Lang,
+  replyToMessageId?: string | null,
 ): Promise<void> {
   for (const chunk of buildDailyRecordConfirmationChunks(record, lang)) {
-    await sendReplyText(to, chunk);
+    await sendReplyText(to, chunk, replyToMessageId);
   }
 }
 
@@ -5218,9 +5264,10 @@ async function replyDailyRecordBatchConfirmationQuietly(
   to: string,
   records: ParsedDailyRecord[],
   lang: Lang,
+  replyToMessageId?: string | null,
 ): Promise<void> {
   for (const chunk of splitWhatsAppText(buildDailyRecordBatchConfirmation(records, lang))) {
-    await sendReplyText(to, chunk);
+    await sendReplyText(to, chunk, replyToMessageId);
   }
 }
 
@@ -5584,6 +5631,43 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // Meta may deliver two different messages in separate webhook
+        // invocations at the same time. A per-phone database lease keeps the
+        // older turn's conversation state and AI memory ahead of the newer one;
+        // it does not serialize different businesses.
+        const turnOwner = crypto.randomUUID();
+        let turnAcquired = false;
+        try {
+          turnAcquired = await waitForWhatsAppTurn(db, phone, waMessageId, turnOwner);
+        } catch {
+          turnAcquired = false;
+        }
+        if (!turnAcquired) {
+          await db.from('whatsapp_messages').update({
+            status: 'failed', last_error: 'whatsapp_turn_lock_timeout',
+            processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+          }).eq('wa_message_id', waMessageId);
+          await sendReplyText(phone,
+            'Samahani, ujumbe huu umechelewa kuchakatwa. Tafadhali utume tena baada ya muda mfupi.',
+            waMessageId);
+          continue;
+        }
+        let stopTurnHeartbeat = () => {};
+        try {
+          await markWhatsAppTurnProcessing(db, waMessageId);
+          stopTurnHeartbeat = startWhatsAppTurnHeartbeat(db, phone, turnOwner);
+        } catch {
+          await releaseWhatsAppTurn(db, phone, turnOwner);
+          await db.from('whatsapp_messages').update({
+            status: 'failed', last_error: 'whatsapp_turn_processing_claim_failed',
+            processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+          }).eq('wa_message_id', waMessageId);
+          await sendReplyText(phone,
+            'Samahani, ujumbe huu haukuweza kuanza kuchakatwa. Tafadhali utume tena.',
+            waMessageId);
+          continue;
+        }
+
         // Everything after the idempotency gate runs inside this guard.
         try {
 
@@ -5613,7 +5697,7 @@ Deno.serve(async (req) => {
           // dropped in silence.
           if (leftoverPending && leftover && identity) {
             leftoverPending = false;
-            await sendReplyText(phone, secondInstructionNotice(leftover.leftover, lang).trimStart());
+            await sendReplyText(phone, secondInstructionNotice(leftover.leftover, lang).trimStart(), waMessageId);
           }
           return db.from('whatsapp_messages')
             .update({
@@ -5667,7 +5751,7 @@ Deno.serve(async (req) => {
          * branch that sends two messages from writing the exchange twice.
          */
         const replyQuietly = async (to: string, text: string) => {
-          await sendReplyText(to, text);
+          await sendReplyText(to, text, waMessageId);
           if (identity && body?.trim() && !visibleTurnRemembered && !isLinkMessage(body)) {
             visibleTurnRemembered = await storeAssistantExchange(
               db, identity, waMessageId, body, text,
@@ -5713,7 +5797,7 @@ Deno.serve(async (req) => {
           }
           const product = parseProductAnalyticsRequest(mixed.question);
           if (product) {
-            await answerProductAnalytics(db, identity, to, product, lang);
+            await answerProductAnalytics(db, identity, to, product, lang, waMessageId);
             await audit(db, identity, waMessageId, 'rider_question', 'product_analytics', 'applied');
             return;
           }
@@ -5858,6 +5942,7 @@ Deno.serve(async (req) => {
           );
           if (setupReply) {
             await replyQuietly(phone, setupReply);
+            await finish('skipped', 'project_setup');
             continue;
           }
           await db.from('whatsapp_messages').update({
@@ -5867,6 +5952,9 @@ Deno.serve(async (req) => {
             media_mime: message.image.mime_type ? String(message.image.mime_type) : null,
             // Untrusted text. Only ever matched against the sender's own projects.
             caption: message.image.caption ? String(message.image.caption).slice(0, 500) : null,
+            // The receipt worker claims pending media jobs. Text turns use the
+            // per-phone lease above, so this image must not remain processing.
+            status: 'pending',
             updated_at: new Date().toISOString(),
           }).eq('wa_message_id', waMessageId);
           continue; // worker takes it from here
@@ -6411,7 +6499,7 @@ Deno.serve(async (req) => {
             p_reason: 'WhatsApp user changed topic before confirming daily record batch',
           });
           if (error) {
-            await replyDailyRecordBatchConfirmationQuietly(phone, dailyBatchConversation.records, lang);
+            await replyDailyRecordBatchConfirmationQuietly(phone, dailyBatchConversation.records, lang, waMessageId);
             await audit(db, identity, waMessageId, 'daily_record_batch', 'topic_switch_cancel', 'failed');
             await finish('skipped', 'daily_record_batch_cancel_failed');
             continue;
@@ -6432,7 +6520,7 @@ Deno.serve(async (req) => {
             p_reason: 'WhatsApp user changed topic before confirming daily record draft',
           });
           if (error) {
-            await replyDailyRecordConfirmationQuietly(phone, dailyConversation.record, lang);
+            await replyDailyRecordConfirmationQuietly(phone, dailyConversation.record, lang, waMessageId);
             await audit(db, identity, waMessageId, 'daily_record', 'topic_switch_cancel', 'failed');
             await finish('skipped', 'daily_record_cancel_failed');
             continue;
@@ -7047,7 +7135,7 @@ Deno.serve(async (req) => {
             expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
             updated_at: new Date().toISOString(),
           }, { onConflict: 'identity_id' });
-          await replyDailyRecordBatchConfirmationQuietly(phone, guardedRecords, lang);
+          await replyDailyRecordBatchConfirmationQuietly(phone, guardedRecords, lang, waMessageId);
           await audit(db, identity, waMessageId, 'daily_record_batch', 'create', 'pending');
           await finish('skipped');
           continue;
@@ -7096,7 +7184,7 @@ Deno.serve(async (req) => {
                 expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
                 updated_at: new Date().toISOString(),
               }, { onConflict: 'identity_id' });
-              await replyDailyRecordConfirmationQuietly(phone, guardedRecord, lang);
+              await replyDailyRecordConfirmationQuietly(phone, guardedRecord, lang, waMessageId);
               await audit(db, identity, waMessageId, 'daily_record', 'clarification_resumed', 'pending');
               await finish('skipped');
               continue;
@@ -7144,7 +7232,7 @@ Deno.serve(async (req) => {
             await finish('skipped');
             continue;
           }
-          await replyDailyRecordBatchConfirmationQuietly(phone, dailyBatchConversation.records, lang);
+          await replyDailyRecordBatchConfirmationQuietly(phone, dailyBatchConversation.records, lang, waMessageId);
           await finish('skipped');
           continue;
         }
@@ -7263,7 +7351,7 @@ Deno.serve(async (req) => {
             await finish('skipped');
             continue;
           }
-          await replyDailyRecordConfirmationQuietly(phone, dailyConversation.record, lang);
+          await replyDailyRecordConfirmationQuietly(phone, dailyConversation.record, lang, waMessageId);
           await finish('skipped');
           continue;
         }
@@ -9114,7 +9202,7 @@ Deno.serve(async (req) => {
                 expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
                 updated_at: new Date().toISOString(),
               }, { onConflict: 'identity_id' });
-              await replyDailyRecordBatchConfirmationQuietly(phone, records, lang);
+              await replyDailyRecordBatchConfirmationQuietly(phone, records, lang, waMessageId);
               await audit(db, identity, waMessageId, 'bare_expense', String(records.length), 'pending');
               await finish('skipped');
               continue;
@@ -9334,7 +9422,7 @@ Deno.serve(async (req) => {
 
         const productRequest = mixed ? null : (parseProductAnalyticsFollowUp(body, productContext) ?? parseProductAnalyticsRequest(body));
         if (productRequest) {
-          await answerProductAnalytics(db, identity, phone, productRequest, lang);
+          await answerProductAnalytics(db, identity, phone, productRequest, lang, waMessageId);
           await audit(db, identity, waMessageId, 'product_analytics', productRequest.rankBy, 'applied');
           await finish('skipped');
           continue;
@@ -9474,7 +9562,7 @@ Deno.serve(async (req) => {
               awaiting: 'payment_source', receipt_id: null, options: state,
               expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
             }, { onConflict: 'identity_id' });
-            await replyDailyRecordConfirmationQuietly(phone, created.record, lang);
+            await replyDailyRecordConfirmationQuietly(phone, created.record, lang, waMessageId);
             await audit(db, identity, waMessageId, 'supplier_payable', 'create', 'pending');
             await finish('applied');
             continue;
@@ -9758,7 +9846,7 @@ Deno.serve(async (req) => {
                 expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
                 updated_at: new Date().toISOString(),
               }, { onConflict: 'identity_id' });
-              await replyDailyRecordConfirmationQuietly(phone, guardedRecord, lang);
+              await replyDailyRecordConfirmationQuietly(phone, guardedRecord, lang, waMessageId);
               await audit(db, identity, waMessageId, 'daily_record', 'create', 'pending');
               await finish('skipped');
               continue;
@@ -9790,7 +9878,7 @@ Deno.serve(async (req) => {
               expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
               updated_at: new Date().toISOString(),
             }, { onConflict: 'identity_id' });
-            await replyDailyRecordBatchConfirmationQuietly(phone, guardedRecords, lang);
+              await replyDailyRecordBatchConfirmationQuietly(phone, guardedRecords, lang, waMessageId);
             await audit(db, identity, waMessageId, 'daily_record_batch', 'create', 'pending');
             await finish('skipped');
             continue;
@@ -10070,7 +10158,7 @@ Deno.serve(async (req) => {
                     awaiting: 'payment_source', receipt_id: null, options: state,
                     expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
                   }, { onConflict: 'identity_id' });
-                  await replyDailyRecordConfirmationQuietly(phone, guardedRecord, lang);
+                await replyDailyRecordConfirmationQuietly(phone, guardedRecord, lang, waMessageId);
                   await audit(db, identity, waMessageId, 'daily_record_ai_fallback', 'create', 'pending');
                   await finish('skipped');
                   continue;
@@ -10109,7 +10197,7 @@ Deno.serve(async (req) => {
               expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
               updated_at: new Date().toISOString(),
             }, { onConflict: 'identity_id' });
-            await replyDailyRecordConfirmationQuietly(phone, guardedRecord, lang);
+              await replyDailyRecordConfirmationQuietly(phone, guardedRecord, lang, waMessageId);
             await audit(db, identity, waMessageId, 'daily_record', 'create', 'pending');
             await finish('skipped');
             continue;
@@ -10335,8 +10423,11 @@ Deno.serve(async (req) => {
           // And the shop is told. Silence reads as Risip ignoring them, which
           // is worse than an error and harder to report.
           try {
-            await sendReplyText(phone, 'Samahani, kuna hitilafu kwa upande wangu. Jaribu tena baada ya dakika moja.');
+            await sendReplyText(phone, 'Samahani, kuna hitilafu kwa upande wangu. Jaribu tena baada ya dakika moja.', waMessageId);
           } catch { /* nothing more can be done for this message */ }
+        } finally {
+          stopTurnHeartbeat();
+          await releaseWhatsAppTurn(db, phone, turnOwner);
         }
       }
     }
