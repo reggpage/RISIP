@@ -48,27 +48,23 @@ describe('WhatsApp turn ordering', () => {
     expect(showTyping).toHaveBeenCalledTimes(4);
   });
 
-  it('starts typing before waiting behind earlier messages', () => {
+  it('starts typing only after each message owns its turn', () => {
     const heartbeat = webhook.indexOf('startWhatsAppTypingHeartbeat(() => showTyping(waMessageId))');
     const wait = webhook.indexOf('waitForWhatsAppTurn(db, phone, waMessageId, turnOwner)');
-    const stop = webhook.indexOf('stopTypingHeartbeat();', wait);
+    const stop = webhook.indexOf('stopTypingHeartbeat();', heartbeat);
     expect(heartbeat).toBeGreaterThan(-1);
-    expect(wait).toBeGreaterThan(heartbeat);
-    expect(stop).toBeGreaterThan(wait);
+    expect(heartbeat).toBeGreaterThan(wait);
+    expect(stop).toBeGreaterThan(heartbeat);
+    expect(webhook).not.toContain('const typingHeartbeats = new Map<string, () => void>()');
   });
 
-  it('starts all batch typing heartbeats before processing the first turn', () => {
-    const preflight = webhook.indexOf('const typingHeartbeats = new Map<string, () => void>()');
-    const heartbeatLoop = webhook.indexOf('for (const { waMessageId } of incomingMessages)', preflight);
-    const processingLoop = webhook.indexOf('for (const { message, waMessageId, phone, acceptedAt } of incomingMessages)', heartbeatLoop);
-    expect(preflight).toBeGreaterThan(-1);
-    expect(heartbeatLoop).toBeGreaterThan(preflight);
-    expect(processingLoop).toBeGreaterThan(heartbeatLoop);
-  });
-
-  it('gives a queued bubble a visible typing moment before fast replies', () => {
+  it('gives every claimed bubble a visible typing moment before fast replies', () => {
+    const heartbeat = webhook.indexOf('startWhatsAppTypingHeartbeat(() => showTyping(waMessageId))');
+    const pause = webhook.indexOf('await typingVisibilityPause()', heartbeat);
+    const resolveIdentity = webhook.indexOf('Resolve identity once', pause);
     expect(webhook).toContain('typingVisibilityPause');
-    expect(webhook).toContain('Date.now() - acceptedAt > 1_000');
-    expect(webhook).toContain('await typingVisibilityPause()');
+    expect(webhook).toContain('setTimeout(resolve, 1500)');
+    expect(pause).toBeGreaterThan(heartbeat);
+    expect(resolveIdentity).toBeGreaterThan(pause);
   });
 });

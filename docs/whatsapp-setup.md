@@ -49,7 +49,7 @@ the dependency on a later message arriving to trigger a sweep.
 | `WHATSAPP_APP_SECRET` | Meta **App Secret**. Verifies `X-Hub-Signature-256`. Without it every POST is rejected. |
 | `WHATSAPP_ACCESS_TOKEN` | Permanent System User token used to send messages and download media. |
 | `WHATSAPP_PHONE_NUMBER_ID` | The Phone Number ID (not the phone number) from WhatsApp Manager. |
-| `WHATSAPP_API_VERSION` | Optional. Defaults to `v21.0`. |
+| `WHATSAPP_API_VERSION` | Optional. Defaults to `v22.0`. |
 | `RISIP_PUBLIC_APP_URL` | Public app origin, e.g. `https://risip.online`. Used to build review links. |
 
 ```bash

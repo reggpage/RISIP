@@ -5251,7 +5251,7 @@ async function sendReplyText(to: string, body: string, replyToMessageId?: string
 }
 
 function typingVisibilityPause(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 650));
+  return new Promise((resolve) => setTimeout(resolve, 1500));
 }
 
 async function replyDailyRecordConfirmationQuietly(
@@ -5600,7 +5600,7 @@ Deno.serve(async (req) => {
   } catch { /* the sweep must never stop the message in front of us */ }
 
   const entries = Array.isArray(payload?.entry) ? payload.entry : [];
-  const incomingMessages: Array<{ message: any; waMessageId: string; phone: string; acceptedAt: number }> = [];
+  const incomingMessages: Array<{ message: any; waMessageId: string; phone: string }> = [];
   for (const entry of entries) {
     for (const change of entry?.changes ?? []) {
       const value = change?.value ?? {};
@@ -5615,8 +5615,7 @@ Deno.serve(async (req) => {
         // Idempotency gate: Meta delivers at least once, so a repeat delivery
         // must collide here rather than create a second job. Unique index does
         // the work. This preflight intentionally registers every new message in
-        // the webhook batch before any one of them starts the slow AI path; that
-        // lets every bubble show typing while it waits behind older turns.
+        // the webhook batch before any one of them starts the slow AI path.
         const { error: dupErr } = await db.from('whatsapp_messages').insert({
           wa_message_id: waMessageId,
           phone_e164: phone,
@@ -5628,17 +5627,12 @@ Deno.serve(async (req) => {
           console.error('message insert failed', dupErr.message);
           continue;
         }
-        incomingMessages.push({ message, waMessageId, phone, acceptedAt: Date.now() });
+        incomingMessages.push({ message, waMessageId, phone });
       }
     }
   }
 
-  const typingHeartbeats = new Map<string, () => void>();
-  for (const { waMessageId } of incomingMessages) {
-    typingHeartbeats.set(waMessageId, startWhatsAppTypingHeartbeat(() => showTyping(waMessageId)));
-  }
-
-  for (const { message, waMessageId, phone, acceptedAt } of incomingMessages) {
+  for (const { message, waMessageId, phone } of incomingMessages) {
         // MEASURED FAILURE, and the worst kind: total silence.
         //
         //   whatsapp_messages  15:25:32 | text | pending | retries=0 | (no error)
@@ -5656,7 +5650,7 @@ Deno.serve(async (req) => {
         // older turn's conversation state and AI memory ahead of the newer one;
         // it does not serialize different businesses.
         const turnOwner = crypto.randomUUID();
-        const stopTypingHeartbeat = typingHeartbeats.get(waMessageId) ?? (() => {});
+        let stopTypingHeartbeat = () => {};
         let turnAcquired = false;
         try {
           turnAcquired = await waitForWhatsAppTurn(db, phone, waMessageId, turnOwner);
@@ -5678,6 +5672,8 @@ Deno.serve(async (req) => {
         try {
           await markWhatsAppTurnProcessing(db, waMessageId);
           stopTurnHeartbeat = startWhatsAppTurnHeartbeat(db, phone, turnOwner);
+          stopTypingHeartbeat = startWhatsAppTypingHeartbeat(() => showTyping(waMessageId));
+          await typingVisibilityPause();
         } catch {
           await releaseWhatsAppTurn(db, phone, turnOwner);
           await db.from('whatsapp_messages').update({
@@ -5699,9 +5695,6 @@ Deno.serve(async (req) => {
         // idempotency gate, so status webhooks and duplicate deliveries cannot
         // flash a misleading typing indicator.
         await showTyping(waMessageId);
-        if (Date.now() - acceptedAt > 1_000) {
-          await typingVisibilityPause();
-        }
 
         // Resolve identity once; used by both branches below.
         const { data: rawIdentity } = await db

@@ -5,7 +5,7 @@ import { typingIndicatorPayload } from './whatsappApiPayloads.ts';
 import { toWhatsAppText } from './whatsappMarkdown.ts';
 import { whatsappTextPayload } from './whatsappTextPayload.ts';
 
-const DEFAULT_API_VERSION = 'v21.0';
+const DEFAULT_API_VERSION = 'v22.0';
 
 function apiBase(): string {
   const version = Deno.env.get('WHATSAPP_API_VERSION') || DEFAULT_API_VERSION;
@@ -85,7 +85,7 @@ export async function showTyping(messageId: string): Promise<void> {
   const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
   if (!phoneNumberId) return;
   try {
-    await fetch(`${apiBase()}/${phoneNumberId}/messages`, {
+    const res = await fetch(`${apiBase()}/${phoneNumberId}/messages`, {
       method: 'POST',
       signal: AbortSignal.timeout(3_000),
       headers: {
@@ -94,6 +94,9 @@ export async function showTyping(messageId: string): Promise<void> {
       },
       body: JSON.stringify(typingIndicatorPayload(messageId)),
     });
+    if (!res.ok) {
+      console.error(`whatsapp typing indicator failed: ${res.status}`);
+    }
   } catch {
     // Cosmetic only.
   }
