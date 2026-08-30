@@ -128,8 +128,11 @@ describe('the owner’s list', () => {
   const list = ownerDayListReply(facts, 'sw');
 
   it('separates the workers and names each one', () => {
-    expect(list).toContain('*Neema* · WhatsApp · 20:11');
-    expect(list).toContain('*Juma* · WhatsApp · 14:02');
+    // No channel. "Neema · app · 09:21" reads like a system log, and the owner
+    // asked for a report — how a record reached Risip is Risip's business.
+    expect(list).toContain('*Neema* · 20:11');
+    expect(list).toContain('*Juma* · 14:02');
+    expect(list).not.toContain('WhatsApp ·');
   });
 
   it('puts the customer’s name on the credit line', () => {

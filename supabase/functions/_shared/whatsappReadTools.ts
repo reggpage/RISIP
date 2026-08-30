@@ -438,9 +438,9 @@ export function businessSummaryFacts(
 export function buildBusinessSummaryReply(summary: BusinessSummary, period: ReadPeriod, lang: 'sw' | 'en', range?: ResolvedRange | null): string {
   const label = periodLabel(period, lang, range);
   if (lang === 'sw') {
-    return `Muhtasari wa ${label}:\nMauzo yote: ${money(summary.sales, lang)}\n  Yaliyolipwa: ${money(summary.paidSales, lang)} · Mkopo: ${money(summary.debtIssued, lang)} (si fedha iliyopokelewa)\nMatumizi ya rekodi za siku: ${money(summary.expenses, lang)}\nMalipo ya wateja: ${money(summary.customerPayments, lang)}\nMabadiliko ya fedha yanayokadiriwa: ${money(summary.cashMovement, lang)}\n\nHaya ni rekodi za siku; gharama za risiti zinaonyeshwa kando.`;
+    return `Muhtasari wa ${label}:\nMauzo yote: ${money(summary.sales, lang)}\n  Yaliyolipwa: ${money(summary.paidSales, lang)} · Mkopo: ${money(summary.debtIssued, lang)}\nMatumizi ya rekodi za siku: ${money(summary.expenses, lang)}\nMalipo ya wateja: ${money(summary.customerPayments, lang)}\nMabadiliko ya fedha yanayokadiriwa: ${money(summary.cashMovement, lang)}\n\nHaya ni rekodi za siku; gharama za risiti zinaonyeshwa kando.`;
   }
-  return `Summary for ${label}:\nTotal sales: ${money(summary.sales, lang)}\n  Paid: ${money(summary.paidSales, lang)} · Credit: ${money(summary.debtIssued, lang)} (not cash received)\nDaily-record expenses: ${money(summary.expenses, lang)}\nCustomer payments: ${money(summary.customerPayments, lang)}\nEstimated cash movement: ${money(summary.cashMovement, lang)}\n\nThese are daily records; receipt expenses are shown separately.`;
+  return `Summary for ${label}:\nTotal sales: ${money(summary.sales, lang)}\n  Paid: ${money(summary.paidSales, lang)} · Credit: ${money(summary.debtIssued, lang)}\nDaily-record expenses: ${money(summary.expenses, lang)}\nCustomer payments: ${money(summary.customerPayments, lang)}\nEstimated cash movement: ${money(summary.cashMovement, lang)}\n\nThese are daily records; receipt expenses are shown separately.`;
 }
 
 export function buildDebtorsReply(debtors: Debtor[], lang: 'sw' | 'en'): string {

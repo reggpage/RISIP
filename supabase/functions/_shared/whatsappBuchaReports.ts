@@ -82,8 +82,8 @@ export function buildBuchaReportReply(
     const sales = snapshot.sales ?? {};
     const methods = sales.by_payment_method ?? {};
     return lang === 'sw'
-      ? `Muhtasari wa ${label}:\nMauzo yote: ${money(sales.total)}\n  Yaliyolipwa: ${money(sales.cash_sales)} · Mkopo: ${money(sales.credit_sales)} (si fedha iliyopokelewa)\n  Njia iliyorekodiwa: cash ${money(methods.cash)} · mobile ${money(methods.mobile_money)} · bank ${money(methods.bank)} · haijarekodiwa ${money(methods.unstated)}\nMatumizi: ${money(snapshot.expenses)}\nMalipo ya wateja: ${money(snapshot.customer_payments)}\n\nHizi ni namba za rekodi zilizothibitishwa.`
-      : `Summary for ${label}:\nTotal sales: ${money(sales.total)}\n  Paid at the counter: ${money(sales.cash_sales)} · Credit: ${money(sales.credit_sales)} (not cash received)\n  Recorded method: cash ${money(methods.cash)} · mobile ${money(methods.mobile_money)} · bank ${money(methods.bank)} · not stated ${money(methods.unstated)}\nExpenses: ${money(snapshot.expenses)}\nCustomer payments: ${money(snapshot.customer_payments)}\n\nThese figures use confirmed records.`;
+      ? `Muhtasari wa ${label}:\nMauzo yote: ${money(sales.total)}\n  Yaliyolipwa: ${money(sales.cash_sales)} · Mkopo: ${money(sales.credit_sales)}\n  Njia iliyorekodiwa: cash ${money(methods.cash)} · mobile ${money(methods.mobile_money)} · bank ${money(methods.bank)} · haijarekodiwa ${money(methods.unstated)}\nMatumizi: ${money(snapshot.expenses)}\nMalipo ya wateja: ${money(snapshot.customer_payments)}\n\nHizi ni namba za rekodi zilizothibitishwa.`
+      : `Summary for ${label}:\nTotal sales: ${money(sales.total)}\n  Paid at the counter: ${money(sales.cash_sales)} · Credit: ${money(sales.credit_sales)}\n  Recorded method: cash ${money(methods.cash)} · mobile ${money(methods.mobile_money)} · bank ${money(methods.bank)} · not stated ${money(methods.unstated)}\nExpenses: ${money(snapshot.expenses)}\nCustomer payments: ${money(snapshot.customer_payments)}\n\nThese figures use confirmed records.`;
   }
   if (tool === 'daily_profit_estimate') {
     const profit = snapshot.profit ?? {};

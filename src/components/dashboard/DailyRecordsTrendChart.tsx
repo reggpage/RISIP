@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { type PointerEvent as ReactPointerEvent, useMemo, useRef, useState } from 'react';
 import { formatMoney } from '@/lib/format';
 import UnderlineTabs from '@/components/ui/UnderlineTabs';
 import type { LangCode } from '@/lib/lang';
@@ -111,23 +111,100 @@ export default function DailyRecordsTrendChart({ records, lang = 'en' }: { recor
   const x = (index: number) => PAD.l + (plotW * index) / Math.max(1, points.length - 1);
   const y = (value: number) => PAD.t + plotH * (1 - (value + max) / (2 * max));
   const labelStep = Math.max(1, Math.ceil(points.length / 7));
+
+  // Which point is being read. Null means none, and then the last value is
+  // written on the line instead — a phone should answer without being touched.
+  const frame = useRef<SVGSVGElement | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
+  const onPoint = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const svg = frame.current;
+    if (!svg || points.length === 0) return;
+    const box = svg.getBoundingClientRect();
+    if (box.width === 0) return;
+    // The pointer arrives in screen pixels; the drawing is in viewBox units.
+    const at = ((event.clientX - box.left) / box.width) * W;
+    const step = plotW / Math.max(1, points.length - 1);
+    const index = Math.round((at - PAD.l) / Math.max(1, step));
+    setHover(Math.min(points.length - 1, Math.max(0, index)));
+  };
   const tabs = (Object.keys(ranges[lang]) as Gran[]).map((value) => ({ value, label: ranges[lang][value] }));
 
   return (
     <section aria-label={lang === 'sw' ? 'Mwelekeo wa rekodi za siku' : 'Daily Records trend'}>
       <div className="mb-3 flex items-center justify-between gap-4">
-        <div><h3 className="text-base font-semibold text-ink">{lang === 'sw' ? 'Rekodi za Siku' : 'Daily Records'}</h3><p className="text-xs text-ink-muted">{lang === 'sw' ? 'Mikopo si fedha zilizopokelewa.' : 'Debt issued is not cash received.'}</p></div>
+        <h3 className="text-base font-semibold text-ink">{lang === 'sw' ? 'Rekodi za Siku' : 'Daily Records'}</h3>
         <UnderlineTabs tabs={tabs} value={gran} onChange={setGran} label={lang === 'sw' ? 'Kipindi cha rekodi' : 'Daily Records time range'} />
       </div>
       <p className="mb-2 text-xs text-ink-muted">{lang === 'sw' ? 'Mauzo yaliyothibitishwa kwa kila kipindi.' : 'Confirmed sales per period.'}</p>
-      <div className="overflow-x-auto"><svg viewBox={`0 0 ${W} ${H}`} className="min-w-[560px] w-full" role="img" aria-label={lang === 'sw' ? 'Mwelekeo wa rekodi za siku' : 'Daily Records trend chart'}>
+      {/*
+        NO horizontal scroll, and no minimum width.
+        
+        MEASURED, on the owner's own screen: the chart was 560px wide inside a
+        scroller, so on a phone the NEWEST point — the only one anybody opens a
+        dashboard to see — sat off the right edge until you dragged it into
+        view. A chart you have to scroll to read the important end of is a chart
+        that answers nothing.
+        
+        The viewBox already scales, so the fix is to let it. What narrow screens
+        actually need is fewer x labels, not more pixels, and labelStep handles
+        that from the point count.
+      */}
+      <div><svg
+        ref={frame}
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full touch-none"
+        role="img"
+        aria-label={lang === 'sw' ? 'Mwelekeo wa rekodi za siku' : 'Daily Records trend chart'}
+        onPointerMove={onPoint}
+        onPointerDown={onPoint}
+        onPointerLeave={() => setHover(null)}
+      >
         {[-1, -.5, 0, .5, 1].map((fraction) => <g key={fraction}><line x1={PAD.l} x2={W - PAD.r} y1={y(max * fraction)} y2={y(max * fraction)} stroke="rgb(var(--surface-border))" strokeDasharray={fraction === 0 ? '0' : '3 3'} /><text x={PAD.l - 8} y={y(max * fraction) + 4} textAnchor="end" fontSize="11" className="fill-ink" opacity=".7">{Math.round(max * fraction / 1000)}k</text></g>)}
         {series.map((item) => <polyline key={item.key} points={points.map((point, index) => `${x(index)},${y(point.values[item.key])}`).join(' ')} fill="none" stroke={item.color} strokeWidth={item.key === 'cash' ? 3 : 2} strokeLinejoin="round" strokeLinecap="round" />)}
         {points.map((point, index) => index % labelStep === 0 || index === points.length - 1 ? <text key={point.key} x={x(index)} y={H - 8} textAnchor="middle" fontSize="11" className="fill-ink" opacity=".7">{point.label}</text> : null)}
         {points.map((point, index) => <g key={`${point.key}-tips`}>{series.map((item) => <circle key={item.key} cx={x(index)} cy={y(point.values[item.key])} r="2.5" fill={item.color}><title>{`${point.label}: ${item.label} ${formatMoney(point.values[item.key])}`}</title></circle>)}</g>)}
+        {/*
+          One invisible column per point, so the whole height is a target
+          rather than a 2.5px circle. Pointer events cover mouse AND touch,
+          which the old <title> tooltip never did — on a phone it was
+          unreachable, which is where this chart is mostly read.
+        */}
+        {points.map((point, index) => (
+          <rect
+            key={`${point.key}-hit`}
+            x={x(index) - plotW / Math.max(1, points.length * 2)}
+            y={PAD.t}
+            width={plotW / Math.max(1, points.length)}
+            height={plotH}
+            fill="transparent"
+          />
+        ))}
+        {hover !== null && points[hover] ? (() => {
+          const point = points[hover];
+          const value = point.values.sale;
+          const cx = x(hover);
+          const cy = y(value);
+          const text = `${point.label} · ${formatMoney(value)}`;
+          // Roughly six pixels a character at this size; kept inside the plot
+          // so the tag never hangs off the drawing.
+          const width = Math.max(74, text.length * 6.2 + 16);
+          const left = Math.min(Math.max(cx - width / 2, PAD.l), W - PAD.r - width);
+          const top = Math.max(PAD.t, cy - 34);
+          return (
+            <g pointerEvents="none">
+              <line x1={cx} x2={cx} y1={PAD.t} y2={PAD.t + plotH}
+                stroke={colors.sale} strokeWidth="1" strokeDasharray="3 3" opacity=".5" />
+              <circle cx={cx} cy={cy} r="4.5" fill={colors.sale} />
+              <rect x={left} y={top} width={width} height={24} rx="6"
+                fill="rgb(var(--surface-card))" stroke="rgb(var(--surface-border))" />
+              <text x={left + width / 2} y={top + 16} textAnchor="middle"
+                fontSize="11.5" fontWeight="600" className="fill-ink">{text}</text>
+            </g>
+          );
+        })() : null}
         {(() => {
           const last = points[points.length - 1];
-          if (!last) return null;
+          if (!last || hover !== null) return null;
           const value = last.values.sale;
           const cx = x(points.length - 1);
           const cy = y(value);

@@ -48,7 +48,13 @@ describe('A1 deterministic read-only WhatsApp tools', () => {
     expect(summary).toMatchObject({ sales: 190000, paidSales: 140000, expenses: 10000, debtIssued: 50000, customerPayments: 20000, cashMovement: 150000 });
     expect(summary).not.toHaveProperty('cashSales');
     const prose = buildBusinessSummaryReply(summary, 'today', 'sw');
-    expect(prose).toContain('si fedha iliyopokelewa');
+    // The PARENTHETICAL is gone — the owner asked for it removed, and it was
+    // answering a question nobody had asked. What it protected is not: paid and
+    // credit are still two separate figures on the line, which IS the
+    // separation rather than a sentence about it.
+    expect(prose).toContain('Yaliyolipwa: TSh 140,000');
+    expect(prose).toContain('Mkopo: TSh 50,000');
+    expect(prose).not.toContain('si fedha iliyopokelewa');
     expect(prose).not.toMatch(/\bCash:/);
   });
 

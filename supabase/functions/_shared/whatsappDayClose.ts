@@ -177,7 +177,7 @@ export function ownerDayListReply(facts: DayCloseFacts, lang: Lang): string {
 
   for (const worker of facts.workers) {
     out.push('');
-    out.push(`*${worker.name}* · ${worker.source} · ${worker.firstAt}`);
+    out.push(`*${worker.name}* · ${worker.firstAt}`);
     for (const line of worker.lines) {
       const tail = line.partyName ? ` — *${line.partyName}*` : '';
       const label = kindSuffix(line.kind, lang);
