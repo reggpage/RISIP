@@ -407,3 +407,86 @@ export function dailyBreakdownFacts(days: DayFigures[], periodLabel: string): st
   }
   return rows.join('\n');
 }
+
+/**
+ * The SHAPE of the line, which the model could not see.
+ *
+ * The owner asked whether Risip understands the trend, and the honest answer
+ * was: it sees the day figures and nothing else. It could name the best day
+ * because that is a maximum, but not "sales have fallen three weeks running"
+ * or "Sunday is your day" — those are properties of the SEQUENCE, and nobody
+ * had computed them.
+ *
+ * All of it is arithmetic over figures the ledger already holds. Nothing here
+ * predicts: a run of three falls is a fact about the past, and saying what
+ * comes next remains something Risip refuses to do.
+ */
+export function trendShapeFacts(days: DayFigures[]): string {
+  const traded = days.filter((day) => day.recordCount > 0);
+  if (traded.length < 2) return 'trend=too_few_trading_days';
+
+  const rows: string[] = [];
+
+  // How the last stretch has moved, one step at a time.
+  let rising = 0;
+  let falling = 0;
+  for (let at = traded.length - 1; at > 0; at -= 1) {
+    const step = traded[at].sales - traded[at - 1].sales;
+    if (step > 0 && falling === 0) rising += 1;
+    else if (step < 0 && rising === 0) falling += 1;
+    else break;
+  }
+  if (rising > 0) rows.push(`consecutive_rises=${rising}`);
+  if (falling > 0) rows.push(`consecutive_falls=${falling}`);
+
+  // The two halves of the period against each other. A direction that survives
+  // being split in half is a direction; one that does not is noise.
+  const half = Math.floor(traded.length / 2);
+  const early = traded.slice(0, half);
+  const late = traded.slice(traded.length - half);
+  const mean = (list: DayFigures[]) =>
+    list.reduce((sum, day) => sum + day.sales, 0) / Math.max(1, list.length);
+  const earlyMean = mean(early);
+  const lateMean = mean(late);
+  rows.push(`first_half_average=${Math.round(earlyMean)}`);
+  rows.push(`second_half_average=${Math.round(lateMean)}`);
+  if (earlyMean > 0) {
+    rows.push(`half_over_half_change_pct=${Math.round(((lateMean - earlyMean) / earlyMean) * 100)}`);
+  }
+
+  // Which weekday actually earns. Only said when there is more than one week
+  // of it, because one good Sunday is a Sunday, not a pattern.
+  const byWeekday = new Map<number, { total: number; days: number }>();
+  for (const day of traded) {
+    const [year, month, date] = day.date.split('-').map(Number);
+    const weekday = new Date(Date.UTC(year, month - 1, date)).getUTCDay();
+    const seen = byWeekday.get(weekday) ?? { total: 0, days: 0 };
+    seen.total += day.sales;
+    seen.days += 1;
+    byWeekday.set(weekday, seen);
+  }
+  const repeated = [...byWeekday.entries()].filter(([, seen]) => seen.days >= 2);
+  if (repeated.length >= 2) {
+    const ranked = repeated
+      .map(([weekday, seen]) => ({ weekday, average: seen.total / seen.days, days: seen.days }))
+      .sort((a, b) => b.average - a.average);
+    const names = ['Jumapili', 'Jumatatu', 'Jumanne', 'Jumatano', 'Alhamisi', 'Ijumaa', 'Jumamosi'];
+    rows.push(`best_weekday=${names[ranked[0].weekday]}|${Math.round(ranked[0].average)}|weeks=${ranked[0].days}`);
+    rows.push(`weakest_weekday=${names[ranked[ranked.length - 1].weekday]}`
+      + `|${Math.round(ranked[ranked.length - 1].average)}|weeks=${ranked[ranked.length - 1].days}`);
+  }
+
+  // How lumpy the period is. One enormous day inside a flat month is a
+  // different business from a steady one, and the average hides it entirely.
+  const values = traded.map((day) => day.sales).sort((a, b) => a - b);
+  const middle = values.length % 2 === 1
+    ? values[(values.length - 1) / 2]
+    : (values[values.length / 2 - 1] + values[values.length / 2]) / 2;
+  const total = traded.reduce((sum, day) => sum + day.sales, 0);
+  rows.push(`median_trading_day=${Math.round(middle)}`);
+  if (total > 0) {
+    const best = Math.max(...traded.map((day) => day.sales));
+    rows.push(`best_day_share_of_total_pct=${Math.round((best / total) * 100)}`);
+  }
+  return rows.join('\n');
+}

@@ -375,7 +375,6 @@ import {
   sellingPriceSaved,
 } from '../_shared/whatsappSellingPrice.ts';
 import {
-  parseSellingPriceQuestion,
   sellingPriceReply,
 } from '../_shared/whatsappSellingPriceQuestion.ts';
 import {
@@ -396,8 +395,6 @@ import {
   ADVISOR_VOICE,
   advisorBrief,
   advisorEvidence,
-  parseAdvisorRequest,
-  parseSalesTrendRequest,
   salesTrendReply,
   type AdvisorPayload,
   type TrendProduct,
@@ -516,6 +513,7 @@ import {
   nothingToCloseReply,
   type DayFigures,
   dailyBreakdownFacts,
+  trendShapeFacts,
   dailyBreakdownReply,
   ownerDayListReply,
 } from '../_shared/whatsappDayClose.ts';
@@ -4432,7 +4430,14 @@ async function executeAssistantTool(
     // question whatever was asked, so the model gets the figures and decides
     // the shape; the table survives only if the model cannot finish.
     const rendered = dailyBreakdownReply(days, periodLabel, lang);
-    return { content: dailyBreakdownFacts(days, periodLabel), fallbackReply: rendered };
+    // The day figures AND the shape of them. "Siku gani ilikuwa bora" is a
+    // maximum; "mauzo yanashuka wiki tatu mfululizo" is a property of the
+    // sequence, and the model could not see it before.
+    return {
+      content: `${dailyBreakdownFacts(days, periodLabel)}
+${trendShapeFacts(days)}`,
+      fallbackReply: rendered,
+    };
   }
   if (name === 'get_day_records') {
     // A whole day's entries is a company financial: it shows what every worker
@@ -8873,7 +8878,6 @@ Deno.serve(async (req) => {
         // conversation history. The deterministic parsers below remain the
         // availability fallback when the provider or budget is unavailable.
         const outOfStockQuestion = parseOutOfStockQuestion(body);
-        const directStockQuestion = parseStockQuestion(body);
 
         // MEASURED FAILURE, three replies in the owner's own screenshot:
         //
@@ -9261,63 +9265,21 @@ Deno.serve(async (req) => {
         // moved — the same role check and the same confirmation guard the same
         // write.
 
-        // "Kwa nini mauzo yanashuka?" This period against the one before it.
-        // Answered from the ledger, because a fall is arithmetic and the model
-        // would otherwise be left to say something reassuring.
-        if (!mixed && parseSalesTrendRequest(body)) {
-          const period = /\bmwezi|month\b/i.test(body ?? '') ? 'month' as const : 'week' as const;
-          await reply(phone, await salesTrendToolReply(db, identity, period, lang));
-          await audit(db, identity, waMessageId, 'sales_trend', period, 'applied');
-          await finish('skipped');
-          continue;
-        }
-
-        // "Nipe ushauri." Answered from verified figures whether or not the
-        // model is reachable — a shopkeeper who asks for advice and is told the
-        // budget is finished has been told nothing.
-        if (!mixed && parseAdvisorRequest(body)) {
-          const answered = await executeAssistantTool(
-            db, identity, waMessageId, lang, 'get_business_advice', {},
-          );
-          // MEASURED FAILURE, MINE: this read `terminalReply ?? content`, but
-          // the advice tool's `content` is machine text for the MODEL — the
-          // `business=… revenue=…` evidence dump — and its human rendering is
-          // in `fallbackReply`. When I moved the tool off `terminalReply` I
-          // left this branch reading the wrong field, and the shop received the
-          // raw evidence twice. The human brief comes first, always.
-          await reply(phone, answered.fallbackReply ?? answered.terminalReply ?? answered.content);
-          await audit(db, identity, waMessageId, 'business_advice', 'brief', 'applied');
-          await finish('skipped');
-          continue;
-        }
-
-        // "Bei ya daftari ni ngapi?" The shop's own price list, read straight
-        // back. Until now there was no tool for this at all — Risip would take
-        // a price, keep it, price a sale with it, and then have to improvise
-        // when asked what it was.
-        const priceQuestion = mixed ? null : parseSellingPriceQuestion(body);
-        if (priceQuestion) {
-          const answered = await executeAssistantTool(
-            db, identity, waMessageId, lang, 'get_selling_price', { product_name: priceQuestion.product },
-          );
-          await reply(phone, answered.content);
-          await audit(db, identity, waMessageId, 'selling_price_question', 'product', 'applied');
-          await finish('skipped');
-          continue;
-        }
-
-        const stockQuestion = mixed ? null : directStockQuestion;
-        if (stockQuestion) {
-          const answered = await executeAssistantTool(
-            db, identity, waMessageId, lang, 'get_stock_on_hand',
-            stockQuestion.product ? { product_name: stockQuestion.product } : {},
-          );
-          await reply(phone, answered.content);
-          await audit(db, identity, waMessageId, 'stock_question',
-            stockQuestion.product ? 'product' : 'all', 'applied');
-          await finish('skipped');
-          continue;
-        }
+        // REMOVED: the last four parsers standing in front of Claude.
+        //
+        // A trend question, a request for advice, "bei ya daftari ni ngapi" and
+        // "nina birika ngapi" each had a regex gate here that answered before
+        // the model ever saw the message. Every one of the four already has a
+        // tool — get_sales_trend, get_business_advice, get_selling_price,
+        // get_stock_on_hand — so the gate added nothing except a second, worse
+        // way of understanding the same sentence: the parser matched its own
+        // phrasings and nobody else's, and a message it half-recognised was
+        // answered with the wrong period or the wrong product rather than
+        // passed on.
+        //
+        // The owner's rule, and it is the right one: no parser in front of the
+        // model except a confirmation and a one-word command, where the wording
+        // IS the protocol.
 
         // REMOVED: the legacy semantic-read path.
         //

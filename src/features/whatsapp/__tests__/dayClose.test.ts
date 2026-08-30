@@ -460,3 +460,72 @@ describe('a row number typed without a space', () => {
       .toEqual(['wholesale', 'wholesale', 'wholesale']);
   });
 });
+
+describe('the shape of the line, which the model could not see', () => {
+  // The owner asked whether Risip understands the trend. It saw day figures
+  // and nothing else: it could name the best day, because that is a maximum,
+  // but not "sales have fallen three weeks running" or "Sunday is your day" —
+  // those are properties of the SEQUENCE.
+  const day = (date: string, sales: number) =>
+    ({ date, label: date.slice(8), sales, profit: sales / 3, recordCount: 2, profitUnknown: false });
+
+  it('counts a run of falls', async () => {
+    const { trendShapeFacts } =
+      await import('../../../../supabase/functions/_shared/whatsappDayClose');
+    const facts = trendShapeFacts([
+      day('2026-08-01', 100_000), day('2026-08-02', 90_000),
+      day('2026-08-03', 70_000), day('2026-08-04', 50_000),
+    ]);
+    expect(facts).toContain('consecutive_falls=3');
+    expect(facts).not.toContain('consecutive_rises');
+  });
+
+  it('splits the period in half rather than trusting one step', async () => {
+    const { trendShapeFacts } =
+      await import('../../../../supabase/functions/_shared/whatsappDayClose');
+    // A direction that survives being split in half is a direction; one that
+    // does not is noise.
+    const facts = trendShapeFacts([
+      day('2026-08-01', 100_000), day('2026-08-02', 100_000),
+      day('2026-08-03', 200_000), day('2026-08-04', 200_000),
+    ]);
+    expect(facts).toContain('first_half_average=100000');
+    expect(facts).toContain('second_half_average=200000');
+    expect(facts).toContain('half_over_half_change_pct=100');
+  });
+
+  it('names a weekday only when it has repeated', async () => {
+    const { trendShapeFacts } =
+      await import('../../../../supabase/functions/_shared/whatsappDayClose');
+    // One good Sunday is a Sunday, not a pattern.
+    const oneWeek = trendShapeFacts([
+      day('2026-08-02', 900_000), day('2026-08-03', 10_000), day('2026-08-04', 20_000),
+    ]);
+    expect(oneWeek).not.toContain('best_weekday');
+    const twoWeeks = trendShapeFacts([
+      day('2026-08-02', 900_000), day('2026-08-03', 10_000),
+      day('2026-08-09', 800_000), day('2026-08-10', 20_000),
+    ]);
+    expect(twoWeeks).toContain('best_weekday=Jumapili');
+    expect(twoWeeks).toContain('weeks=2');
+  });
+
+  it('says how lumpy the period is, which the average hides', async () => {
+    const { trendShapeFacts } =
+      await import('../../../../supabase/functions/_shared/whatsappDayClose');
+    // One enormous day inside a flat month is a different business from a
+    // steady one, and the mean cannot tell them apart.
+    const facts = trendShapeFacts([
+      day('2026-08-01', 10_000), day('2026-08-02', 10_000),
+      day('2026-08-03', 10_000), day('2026-08-04', 970_000),
+    ]);
+    expect(facts).toContain('median_trading_day=10000');
+    expect(facts).toContain('best_day_share_of_total_pct=97');
+  });
+
+  it('refuses to describe a shape it does not have', async () => {
+    const { trendShapeFacts } =
+      await import('../../../../supabase/functions/_shared/whatsappDayClose');
+    expect(trendShapeFacts([day('2026-08-01', 10_000)])).toBe('trend=too_few_trading_days');
+  });
+});

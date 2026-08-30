@@ -179,26 +179,52 @@ export default function DailyRecordsTrendChart({ records, lang = 'en' }: { recor
             fill="transparent"
           />
         ))}
+        {/*
+          A CARD, not a pill.
+          
+          The first attempt was a single black lozenge with the date and the
+          money jammed onto one line, and it looked like a debug label. What a
+          reader needs is the same two-line card every serious dashboard uses:
+          the period on top in a quieter weight, then the series — its own
+          colour as a dot, its name, and the figure in bold. The point itself
+          gets a white ring so it reads as selected rather than merely drawn.
+        */}
         {hover !== null && points[hover] ? (() => {
           const point = points[hover];
           const value = point.values.sale;
+          const label = series[0].label;
           const cx = x(hover);
           const cy = y(value);
-          const text = `${point.label} · ${formatMoney(value)}`;
-          // Roughly six pixels a character at this size; kept inside the plot
-          // so the tag never hangs off the drawing.
-          const width = Math.max(74, text.length * 6.2 + 16);
+          const money = formatMoney(value);
+          // Two lines, so the card is as wide as its widest one. Roughly 5.9px
+          // a character at 11.5px, plus the dot, the gap and the padding.
+          const topLine = point.label.length * 6.0;
+          const bottomLine = 14 + (label.length + money.length + 2) * 6.0;
+          const width = Math.max(96, Math.max(topLine, bottomLine) + 24);
+          const height = 46;
           const left = Math.min(Math.max(cx - width / 2, PAD.l), W - PAD.r - width);
-          const top = Math.max(PAD.t, cy - 34);
+          // Above the point where there is room, below it when there is not.
+          const above = cy - height - 14 >= PAD.t;
+          const top = above ? cy - height - 14 : Math.min(cy + 14, PAD.t + plotH - height);
           return (
             <g pointerEvents="none">
               <line x1={cx} x2={cx} y1={PAD.t} y2={PAD.t + plotH}
-                stroke={colors.sale} strokeWidth="1" strokeDasharray="3 3" opacity=".5" />
-              <circle cx={cx} cy={cy} r="4.5" fill={colors.sale} />
-              <rect x={left} y={top} width={width} height={24} rx="6"
+                stroke="rgb(var(--surface-border))" strokeWidth="1" />
+              <circle cx={cx} cy={cy} r="6" fill="rgb(var(--surface-card))" />
+              <circle cx={cx} cy={cy} r="4" fill={colors.sale} />
+              {/* A soft drop shadow, drawn rather than filtered so it costs
+                  nothing and cannot be blurred away by a stacking context. */}
+              <rect x={left} y={top + 1.5} width={width} height={height} rx="8"
+                fill="rgb(var(--ink))" opacity=".08" />
+              <rect x={left} y={top} width={width} height={height} rx="8"
                 fill="rgb(var(--surface-card))" stroke="rgb(var(--surface-border))" />
-              <text x={left + width / 2} y={top + 16} textAnchor="middle"
-                fontSize="11.5" fontWeight="600" className="fill-ink">{text}</text>
+              <text x={left + 12} y={top + 18} fontSize="11.5"
+                className="fill-ink" opacity=".65">{point.label}</text>
+              <circle cx={left + 16} cy={top + 33} r="3.5" fill={colors.sale} />
+              <text x={left + 25} y={top + 37} fontSize="11.5"
+                className="fill-ink" opacity=".65">{label}</text>
+              <text x={left + width - 12} y={top + 37} textAnchor="end"
+                fontSize="12" fontWeight="600" className="fill-ink">{money}</text>
             </g>
           );
         })() : null}
