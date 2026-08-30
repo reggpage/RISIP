@@ -214,7 +214,7 @@ describe('Stage A changed no behaviour', () => {
     // Each carries ONE field, and it is the shopkeeper's own wording. None
     // reads a price, none writes, and none can confirm anything. The surface
     // grew; the authority did not.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(33);
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(35);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('propose_business_event');
     expect(shown).toContain('propose_money_event');

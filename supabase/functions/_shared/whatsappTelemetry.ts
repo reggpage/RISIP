@@ -53,6 +53,8 @@ export type SemanticIntent =
   | 'debtor_history'
   | 'record_void'
   | 'price_update'
+  | 'recurring_cost'
+  | 'recurring_costs'
   | 'no_tool' | 'unknown';
 
 /** Every read tool maps to exactly one question the shop was asking. */
@@ -84,6 +86,8 @@ const TOOL_INTENT: Record<string, SemanticIntent> = {
   get_debtor_history: 'debtor_history',
   propose_record_void: 'record_void',
   propose_price_update: 'price_update',
+  propose_recurring_cost: 'recurring_cost',
+  get_recurring_costs: 'recurring_costs',
   resolve_pending_clarification: 'clarification_answer',
   propose_product_cost: 'product_cost_setup',
 };

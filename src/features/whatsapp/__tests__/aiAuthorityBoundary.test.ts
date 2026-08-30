@@ -151,7 +151,11 @@ describe('the model cannot price a sale', () => {
       .filter(([, fields]) => fields.includes('amount_wording'))
       .map(([name]) => name)
       .sort();
-    expect(spoken).toEqual(['propose_business_event', 'propose_money_event']);
+    // propose_recurring_cost joined them: rent is a figure with no ledger to
+    // look it up in either, and it travels under exactly the same contract.
+    expect(spoken).toEqual([
+      'propose_business_event', 'propose_money_event', 'propose_recurring_cost',
+    ]);
     for (const name of spoken) {
       const fields = TOOL_FIELDS.get(name)!;
       // A candidate may never appear without the wording that justifies it.

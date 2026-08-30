@@ -496,6 +496,13 @@ import {
 } from '../_shared/whatsappReadTools.ts';
 import { buchaReportFacts, buildBuchaReportReply, type BuchaReportingSnapshot } from '../_shared/whatsappBuchaReports.ts';
 import {
+  type Obligation,
+  obligationFacts,
+  obligationListReply,
+  obligationName,
+  obligationSetReply,
+} from '../_shared/whatsappObligations.ts';
+import {
   type QueuedRecord,
   type RecordQueuePending,
   queueDiscardedReply,
@@ -2354,6 +2361,83 @@ function kindLabelFor(kind: string, lang: Lang): string {
  * calculateProfitEstimate. Running it once per day rather than once per period
  * is the only difference, and it is the whole point — a total hides the shape.
  */
+async function readObligations(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+): Promise<Obligation[]> {
+  const { data } = await db.rpc('wa_recurring_obligations', {
+    p_company_id: identity.company_id,
+  });
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    id: String(row.id),
+    kind: String(row.kind ?? 'other'),
+    label: (row.label ?? null) as string | null,
+    amount: Number(row.amount ?? 0),
+    periodMonths: Number(row.period_months ?? 1),
+    nextDueOn: String(row.next_due_on ?? ''),
+    daysUntilDue: Number(row.days_until_due ?? 0),
+    paidForCurrentPeriod: Number(row.paid_for_current_period ?? 0),
+    outstanding: Number(row.outstanding ?? 0),
+    lastPaidOn: (row.last_paid_on ?? null) as string | null,
+    previousAmount: row.previous_amount == null ? null : Number(row.previous_amount),
+  }));
+}
+
+/**
+ * How often, from the trader's own words.
+ *
+ * The MODEL copies the phrase; this maps it. Deliberately not a wide parser —
+ * it reads a period, which is one of six values, and anything it cannot place
+ * becomes a question rather than a guess. A wrong period would silently shift
+ * every future due date.
+ */
+function periodMonthsFromWording(wording: unknown): number | null {
+  const said = String(wording ?? '').toLocaleLowerCase('sw-TZ');
+  if (!said) return null;
+  if (/(mwaka|annual|yearly|year)/.test(said)) return 12;
+  if (/(nusu mwaka|half.?year)/.test(said)) return 6;
+  const digits = said.match(/(d{1,2})/);
+  const words: Record<string, number> = {
+    moja: 1, mbili: 2, tatu: 3, nne: 4, sita: 6, kumi: 10,
+    one: 1, two: 2, three: 3, four: 4, six: 6, twelve: 12,
+  };
+  const named = Object.keys(words).find((word) => said.includes(word));
+  const count = digits ? Number(digits[1]) : named ? words[named] : null;
+  if (/(miezi|month)/.test(said) && count && [1, 2, 3, 4, 6, 12].includes(count)) return count;
+  if (/(mwezi|monthly|month)/.test(said)) return 1;
+  return null;
+}
+
+/**
+ * When the next payment falls, from what they said or from today.
+ *
+ * A day of the month that has already passed means NEXT month — somebody who
+ * says "tarehe 5" on the tenth is talking about the fifth that is coming, not
+ * the one that went.
+ */
+function nextDueFromWording(wording: unknown, months: number): string {
+  const day = shopDay();
+  const [year, month, date] = day.date.split('-').map(Number);
+  const said = String(wording ?? '').toLocaleLowerCase('sw-TZ');
+  const asked = said.match(/(d{1,2})/);
+  if (/(mwisho|end)/.test(said)) {
+    const last = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    const target = new Date(Date.UTC(year, month - 1, last));
+    if (last < date) target.setUTCMonth(target.getUTCMonth() + 1);
+    return target.toISOString().slice(0, 10);
+  }
+  if (asked) {
+    const wanted = Math.min(28, Math.max(1, Number(asked[1])));
+    const target = new Date(Date.UTC(year, month - 1, wanted));
+    if (wanted < date) target.setUTCMonth(target.getUTCMonth() + 1);
+    return target.toISOString().slice(0, 10);
+  }
+  // Nothing said: one whole period from today, which is what somebody who has
+  // just paid and is now telling Risip about it means.
+  const target = new Date(Date.UTC(year, month - 1 + months, date));
+  return target.toISOString().slice(0, 10);
+}
+
 async function buildDailyBreakdown(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
@@ -4345,6 +4429,75 @@ async function executeAssistantTool(
   }
   if (name === 'resolve_pending_clarification') {
     return await executeClarification(db, identity, waMessageId, lang, input, said);
+  }
+  if (name === 'get_recurring_costs' || name === 'propose_recurring_cost') {
+    // What the shop pays whether or not it sold anything is a company
+    // financial, same boundary as every other read of its kind.
+    if (!canUseCompanyFinanceReads(identity.role)) {
+      const denied = lang === 'sw'
+        ? 'Gharama za kila mwezi zinaonekana kwa owner au accountant tu.'
+        : 'Recurring costs are available to an owner or accountant only.';
+      return { content: denied, isError: true, terminalReply: denied };
+    }
+
+    if (name === 'get_recurring_costs') {
+      const list = await readObligations(db, identity);
+      return {
+        content: obligationFacts(list, shopDay().date),
+        fallbackReply: obligationListReply(list, lang),
+      };
+    }
+
+    // The model splits the sentence; the SERVER reads the money. Same contract
+    // as every other proposing tool — amount_wording is the trader's own words
+    // and a disagreement with the model's reading is a question, not a guess.
+    const reading = readNumber(input.amount_wording, input.amount_candidate, { min: 0, max: 1_000_000_000 });
+    if (reading.kind !== 'value') {
+      const ask = lang === 'sw'
+        ? 'Sijaelewa kiasi. Niandikie tena, mfano: _"kodi ya jengo ni 200000 kila mwezi"_.'
+        : 'I could not read the amount. Say it again, for example: _"kodi ya jengo ni 200000 kila mwezi"_.';
+      return { content: ask, terminalReply: ask };
+    }
+    const months = periodMonthsFromWording(input.period_wording);
+    if (months === null) {
+      const ask = lang === 'sw'
+        ? 'Inalipwa kila baada ya muda gani? Mfano: _kila mwezi_, _kila miezi mitatu_, _kwa mwaka_.'
+        : 'How often does it fall due? For example: _monthly_, _every three months_, _yearly_.';
+      return { content: ask, terminalReply: ask };
+    }
+
+    const kind = typeof input.kind === 'string' ? input.kind : 'other';
+    const label = typeof input.label_wording === 'string' ? input.label_wording.trim().slice(0, 60) : '';
+    const due = nextDueFromWording(input.due_wording, months);
+
+    const { data: result, error } = await db.rpc('wa_set_recurring_obligation', {
+      p_company_id: identity.company_id,
+      p_profile_id: identity.profile_id,
+      p_kind: kind,
+      p_label: label || null,
+      p_amount: reading.value,
+      p_period_months: months,
+      p_next_due_on: due,
+    });
+    if (error) {
+      const failed = lang === 'sw'
+        ? 'Sikuweza kuhifadhi gharama hiyo sasa. Hakuna kilichobadilika; jaribu tena.'
+        : 'I could not save that cost just now. Nothing changed; please try again.';
+      return { content: failed, isError: true, terminalReply: failed };
+    }
+    const row = (result ?? {}) as { previous_amount?: number | null };
+    const said = obligationSetReply(
+      obligationName({
+        id: '', kind, label: label || null, amount: reading.value, periodMonths: months,
+        nextDueOn: due, daysUntilDue: 0, paidForCurrentPeriod: 0, outstanding: 0,
+        lastPaidOn: null, previousAmount: null,
+      }, lang),
+      reading.value, months, due,
+      row.previous_amount == null ? null : Number(row.previous_amount),
+      lang,
+    );
+    await audit(db, identity, waMessageId, 'recurring_cost', kind, 'applied');
+    return { content: said, terminalReply: said };
   }
   if (name === 'propose_price_update') {
     // The model SPLITS the sentence; the server READS every number. Same

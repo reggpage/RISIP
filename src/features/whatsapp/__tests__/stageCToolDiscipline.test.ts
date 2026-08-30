@@ -152,7 +152,7 @@ describe('nothing about financial authority moved', () => {
     // Each carries ONE field, and it is the shopkeeper's own wording. None
     // reads a price, none writes, and none can confirm anything. The surface
     // grew; the authority did not.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(33);
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(35);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('respond_conversationally');
     expect(shown).not.toContain('propose_catalogue_transaction');

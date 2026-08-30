@@ -379,6 +379,9 @@ export const ASSISTANT_TOOL_NAMES = [
   'propose_record_void',
   // A whole price list, however the shopkeeper happens to phrase it.
   'propose_price_update',
+  // Rent and the other costs that arrive whether you sold anything or not.
+  'propose_recurring_cost',
+  'get_recurring_costs',
   // One way back from every parked question, so no clarification needs its own
   // parser standing in front of the model.
   'resolve_pending_clarification',
@@ -777,6 +780,42 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
       },
     },
     ['answers'],
+  ),
+  tool(
+    'get_recurring_costs',
+    'RENT and the other costs that arrive on a schedule whether the shop sold anything or not: licence, electricity, water, security. '
+      + 'Use for "kodi ni ngapi", "nalipa kodi lini", "nimebakiza kiasi gani cha kodi", "gharama za kila mwezi", "what do I owe the landlord", "when is rent due". '
+      + 'Returns each one with its amount, how often it falls due, the next date, what has been paid against the current period and what is still short. '
+      + 'These are NOT daily records: they are not in get_business_summary and asking that tool will answer a different question.',
+    {},
+    [],
+  ),
+  tool(
+    'propose_recurring_cost',
+    'The trader is telling you what a recurring cost IS, or that it has changed: "kodi ya jengo ni 200000 kila mwezi", "nalipa kodi 600000 kila miezi mitatu", "mwenye nyumba amepandisha kodi mpaka 250000", "leseni ni 120000 kwa mwaka". '
+      + 'amount_wording is the figure EXACTLY as the trader said it — "200000", "laki mbili" — never your own; amount_candidate is your reading of those same words and the server checks the two against each other. '
+      + 'period_wording is how often they said it comes, in their words. Copy it; the server maps it. '
+      + 'A change of amount is kept as a NEW fact, so what the rent used to be stays answerable. This only ever prepares the change — nothing is set until the trader confirms.',
+    {
+      kind: {
+        type: 'string',
+        enum: ['rent', 'licence', 'electricity', 'water', 'security', 'other'],
+        description: 'rent is the building. Use other only when it is genuinely none of the rest.',
+      },
+      label_wording: {
+        type: ['string', 'null'],
+        description: 'A name when one cost of this kind is not enough — "duka la pili". Null otherwise.',
+      },
+      amount_wording: { type: 'string', description: 'The figure exactly as said. Never one you formatted or converted.' },
+      amount_candidate: { type: ['number', 'null'], description: 'Your reading of those words, or null. The server verifies it.' },
+      period_wording: { type: 'string', description: 'How often it falls due, as said — "kila mwezi", "kila miezi mitatu", "kwa mwaka".' },
+      due_wording: {
+        type: ['string', 'null'],
+        description: 'When the next payment is due, as said — "tarehe 5", "mwisho wa mwezi" — or null when they did not say.',
+      },
+    },
+    ['kind', 'label_wording', 'amount_wording', 'amount_candidate', 'period_wording', 'due_wording'],
+    false,
   ),
   tool(
     'propose_price_update',
