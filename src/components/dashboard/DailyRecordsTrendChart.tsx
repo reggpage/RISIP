@@ -210,14 +210,14 @@ export default function DailyRecordsTrendChart({ records, lang = 'en' }: { recor
             <g pointerEvents="none">
               <line x1={cx} x2={cx} y1={PAD.t} y2={PAD.t + plotH}
                 stroke="rgb(var(--surface-border))" strokeWidth="1" />
-              <circle cx={cx} cy={cy} r="6" fill="rgb(var(--surface-card))" />
+              <circle cx={cx} cy={cy} r="6" fill="rgb(var(--surface))" />
               <circle cx={cx} cy={cy} r="4" fill={colors.sale} />
               {/* A soft drop shadow, drawn rather than filtered so it costs
                   nothing and cannot be blurred away by a stacking context. */}
               <rect x={left} y={top + 1.5} width={width} height={height} rx="8"
                 fill="rgb(var(--ink))" opacity=".08" />
               <rect x={left} y={top} width={width} height={height} rx="8"
-                fill="rgb(var(--surface-card))" stroke="rgb(var(--surface-border))" />
+                fill="rgb(var(--surface))" stroke="rgb(var(--surface-border))" />
               <text x={left + 12} y={top + 18} fontSize="11.5"
                 className="fill-ink" opacity=".65">{point.label}</text>
               <circle cx={left + 16} cy={top + 33} r="3.5" fill={colors.sale} />

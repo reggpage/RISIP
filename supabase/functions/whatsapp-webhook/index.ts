@@ -5594,13 +5594,28 @@ Deno.serve(async (req) => {
           intent = routeFor(body);
         }
 
+        // A YES is only protocol when something is waiting for it.
+        //
+        // MEASURED, from the owner's own thread. He asked for a graph, Risip
+        // said graphs live in the app and offered a summary in words instead,
+        // and he answered "ndiyo". Nothing was parked — the offer was made by
+        // the MODEL, in prose, not by a pending state — so this line read a
+        // bare confirmation, filed the whole message as a system command, and
+        // the model never saw it. He got the generic help menu, and the thread
+        // he had been holding for two turns was gone.
+        //
+        // "Ndiyo" with a draft waiting is a protocol word and must never reach
+        // the model; the same word with nothing waiting is ordinary
+        // conversation, and the model is the only thing here that knows what
+        // it is agreeing to.
+        const awaitingAnswer = Boolean(convo?.awaiting);
         const systemCommand = isSwitchRequest(body)
           || isLoginRequest(body)
           || Boolean(parseLanguageCommand(body))
           || intent === 'cancel_action'
           || intent === 'change_language'
-          || isDailyRecordConfirmation(body ?? '')
-          || isDailyRecordRejection(body ?? '');
+          || (awaitingAnswer && isDailyRecordConfirmation(body ?? ''))
+          || (awaitingAnswer && isDailyRecordRejection(body ?? ''));
 
         if (intent === 'link_account') {
           const reply = await handleLink(db, phone, String(message?.from ?? ''), linkToken!);

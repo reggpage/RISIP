@@ -42,9 +42,18 @@ describe('A2 AI fallback budget boundary', () => {
     // the router so every branch asks the same question and gets the same
     // answer. It used to be an inline chain here.
     expect(webhook).toContain('const aiEligible = messageGoesToModel(convo, body, systemCommand)');
-    // They live in systemCommand now, hoisted above every branch.
-    expect(webhook).toContain("|| isDailyRecordConfirmation(body ?? '')");
-    expect(webhook).toContain("|| isDailyRecordRejection(body ?? '')");
+    // They live in systemCommand now, hoisted above every branch — but ONLY
+    // while something is waiting for them.
+    //
+    // MEASURED, from the owner's thread. He asked for a graph, Risip said
+    // graphs live in the app and offered a summary in words, and he answered
+    // "ndiyo". Nothing was parked — the offer came from the MODEL, in prose —
+    // so a bare confirmation was filed as a system command, the model never
+    // saw it, and he got the generic help menu instead of the summary he had
+    // just agreed to.
+    expect(webhook).toContain("|| (awaitingAnswer && isDailyRecordConfirmation(body ?? ''))");
+    expect(webhook).toContain("|| (awaitingAnswer && isDailyRecordRejection(body ?? ''))");
+    expect(webhook).toContain("const awaitingAnswer = Boolean(convo?.awaiting);");
     expect(webhook).not.toContain('&& !deterministicRecord');
   });
 
