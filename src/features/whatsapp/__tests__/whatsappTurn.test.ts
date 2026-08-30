@@ -56,4 +56,19 @@ describe('WhatsApp turn ordering', () => {
     expect(wait).toBeGreaterThan(heartbeat);
     expect(stop).toBeGreaterThan(wait);
   });
+
+  it('starts all batch typing heartbeats before processing the first turn', () => {
+    const preflight = webhook.indexOf('const typingHeartbeats = new Map<string, () => void>()');
+    const heartbeatLoop = webhook.indexOf('for (const { waMessageId } of incomingMessages)', preflight);
+    const processingLoop = webhook.indexOf('for (const { message, waMessageId, phone, acceptedAt } of incomingMessages)', heartbeatLoop);
+    expect(preflight).toBeGreaterThan(-1);
+    expect(heartbeatLoop).toBeGreaterThan(preflight);
+    expect(processingLoop).toBeGreaterThan(heartbeatLoop);
+  });
+
+  it('gives a queued bubble a visible typing moment before fast replies', () => {
+    expect(webhook).toContain('typingVisibilityPause');
+    expect(webhook).toContain('Date.now() - acceptedAt > 1_000');
+    expect(webhook).toContain('await typingVisibilityPause()');
+  });
 });

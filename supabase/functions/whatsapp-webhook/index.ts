@@ -5250,6 +5250,10 @@ async function sendReplyText(to: string, body: string, replyToMessageId?: string
   }
 }
 
+function typingVisibilityPause(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 650));
+}
+
 async function replyDailyRecordConfirmationQuietly(
   to: string,
   record: ParsedDailyRecord,
@@ -5596,6 +5600,7 @@ Deno.serve(async (req) => {
   } catch { /* the sweep must never stop the message in front of us */ }
 
   const entries = Array.isArray(payload?.entry) ? payload.entry : [];
+  const incomingMessages: Array<{ message: any; waMessageId: string; phone: string; acceptedAt: number }> = [];
   for (const entry of entries) {
     for (const change of entry?.changes ?? []) {
       const value = change?.value ?? {};
@@ -5603,23 +5608,15 @@ Deno.serve(async (req) => {
       const messages = Array.isArray(value.messages) ? value.messages : [];
 
       for (const message of messages) {
-        // MEASURED FAILURE, and the worst kind: total silence.
-        //
-        //   whatsapp_messages  15:25:32 | text | pending | retries=0 | (no error)
-        //
-        // Every other message that day reached 'skipped'. This one stayed
-        // 'pending' for ever, with no last_error, no audit row and no reply —
-        // because nothing wrapped the body of this loop. Anything that threw
-        // escaped, the row was left as it was inserted, and the shopkeeper was
-        // simply never answered.
-        //
-        // A message may fail. It may not disappear.
         const waMessageId = String(message?.id ?? '');
         const phone = normalizeE164(message?.from);
         if (!waMessageId || !phone) continue;
 
-        // Idempotency gate: Meta delivers at least once, so a repeat delivery must
-        // collide here rather than create a second job. Unique index does the work.
+        // Idempotency gate: Meta delivers at least once, so a repeat delivery
+        // must collide here rather than create a second job. Unique index does
+        // the work. This preflight intentionally registers every new message in
+        // the webhook batch before any one of them starts the slow AI path; that
+        // lets every bubble show typing while it waits behind older turns.
         const { error: dupErr } = await db.from('whatsapp_messages').insert({
           wa_message_id: waMessageId,
           phone_e164: phone,
@@ -5631,13 +5628,35 @@ Deno.serve(async (req) => {
           console.error('message insert failed', dupErr.message);
           continue;
         }
+        incomingMessages.push({ message, waMessageId, phone, acceptedAt: Date.now() });
+      }
+    }
+  }
+
+  const typingHeartbeats = new Map<string, () => void>();
+  for (const { waMessageId } of incomingMessages) {
+    typingHeartbeats.set(waMessageId, startWhatsAppTypingHeartbeat(() => showTyping(waMessageId)));
+  }
+
+  for (const { message, waMessageId, phone, acceptedAt } of incomingMessages) {
+        // MEASURED FAILURE, and the worst kind: total silence.
+        //
+        //   whatsapp_messages  15:25:32 | text | pending | retries=0 | (no error)
+        //
+        // Every other message that day reached 'skipped'. This one stayed
+        // 'pending' for ever, with no last_error, no audit row and no reply —
+        // because nothing wrapped the body of this loop. Anything that threw
+        // escaped, the row was left as it was inserted, and the shopkeeper was
+        // simply never answered.
+        //
+        // A message may fail. It may not disappear.
 
         // Meta may deliver two different messages in separate webhook
         // invocations at the same time. A per-phone database lease keeps the
         // older turn's conversation state and AI memory ahead of the newer one;
         // it does not serialize different businesses.
         const turnOwner = crypto.randomUUID();
-        const stopTypingHeartbeat = startWhatsAppTypingHeartbeat(() => showTyping(waMessageId));
+        const stopTypingHeartbeat = typingHeartbeats.get(waMessageId) ?? (() => {});
         let turnAcquired = false;
         try {
           turnAcquired = await waitForWhatsAppTurn(db, phone, waMessageId, turnOwner);
@@ -5680,6 +5699,9 @@ Deno.serve(async (req) => {
         // idempotency gate, so status webhooks and duplicate deliveries cannot
         // flash a misleading typing indicator.
         await showTyping(waMessageId);
+        if (Date.now() - acceptedAt > 1_000) {
+          await typingVisibilityPause();
+        }
 
         // Resolve identity once; used by both branches below.
         const { data: rawIdentity } = await db
@@ -10434,8 +10456,6 @@ Deno.serve(async (req) => {
           stopTurnHeartbeat();
           await releaseWhatsAppTurn(db, phone, turnOwner);
         }
-      }
-    }
   }
 
   nudgeWorker();
