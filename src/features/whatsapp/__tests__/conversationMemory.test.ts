@@ -5,6 +5,7 @@ import {
   parseQuantityMeaningAnswer,
   quantityMeaningQuestion,
   stockPurchaseNeedsPrices,
+  wantsToRegisterNewProducts,
   type HypotheticalPortionChoice,
 } from '../../../../supabase/functions/_shared/whatsappConversationMemory';
 
@@ -24,6 +25,8 @@ describe('short WhatsApp follow-up memory', () => {
     expect(parseQuantityMeaningAnswer('ni manunuzi')).toBe('stock_purchase');
     expect(parseQuantityMeaningAnswer('stock iliyopo')).toBe('stock_count');
     expect(parseQuantityMeaningAnswer('sawa')).toBeNull();
+    expect(wantsToRegisterNewProducts('ndiyo')).toBe(true);
+    expect(wantsToRegisterNewProducts('sajili')).toBe(true);
   });
 
   it('asks naturally and keeps every product on its own line', () => {
@@ -34,9 +37,22 @@ describe('short WhatsApp follow-up memory', () => {
       originalText: 'birika 100\nDaftari 400\nDumu la maji 100',
       sale,
     };
-    expect(quantityMeaningQuestion('sw')).not.toMatch(/Nimekumbuka|Kumbuka/);
+    const question = quantityMeaningQuestion('sw');
+    expect(question).toContain('mauzo ya leo');
+    expect(question).toContain('niongeze idadi hizi');
+    expect(question).toContain('bidhaa ulizonunua/kuongeza stoo');
+    expect(question).not.toMatch(/Nimekumbuka|Kumbuka/);
     expect(stockPurchaseNeedsPrices(state, 'sw')).toContain('• birika: 100\n• Daftari: 400\n• Dumu la maji: 100');
     expect(stockPurchaseNeedsPrices(state, 'sw')).not.toMatch(/Nimekumbuka|Kumbuka|sitaikisia/);
+  });
+
+  it('names products that are not yet registered before offering to add them', () => {
+    const question = quantityMeaningQuestion('sw', ['Puch', 'Dasan']);
+    expect(question).toContain('*Puch*');
+    expect(question).toContain('*Dasan*');
+    expect(question).toContain('Kama ni bidhaa mpya');
+    expect(question).toContain('bei ya kununua na bei ya kuuza');
+    expect(question).toContain('SAJILI');
   });
 
   it('resolves a short portion answer against only the parked choices', () => {

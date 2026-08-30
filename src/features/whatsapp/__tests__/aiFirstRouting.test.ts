@@ -266,7 +266,7 @@ describe('a parked question releases unless the message answers it', () => {
   });
 
   it('releases the new-product offer for anything that is not a price', () => {
-    const branch = webhook.slice(webhook.lastIndexOf('if (newProductSaleSetup &&'));
+    const branch = webhook.slice(webhook.indexOf('if (activeNewProductQuestion &&'));
     expect(branch.slice(0, 200)).toContain('!looksLikeAnAnswer');
     expect(branch.slice(0, 200)).not.toContain('startsAnotherTopic');
   });

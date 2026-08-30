@@ -352,6 +352,7 @@ import {
   parseQuantityMeaningAnswer,
   quantityMeaningQuestion,
   stockPurchaseNeedsPrices,
+  wantsToRegisterNewProducts,
   type HypotheticalPortionChoice,
   type ParkedQuantityMeaning,
 } from '../_shared/whatsappConversationMemory.ts';
@@ -578,6 +579,13 @@ type NewProductSaleSetup = {
   credit?: { party: string } | null;
   paymentMethod?: QuantityWanted['paymentMethod'];
   occurredAt?: string | null;
+};
+
+type NewProductOfferSetup = {
+  kind: 'new_product_offer_setup';
+  missingProducts: string[];
+  sourceMessageId: string;
+  originalText?: string;
 };
 
 /**
@@ -3255,7 +3263,29 @@ async function priceAndDraftSale(
   );
   if (priced.kind === 'blocked') return askBack(priced.message);
   if (priced.kind === 'unknown') {
-    return askBack(unknownProductMessage(priced.products, priced.resolvedProducts, lang));
+    if (!canUseCompanyFinanceReads(identity.role)) {
+      return askBack(newProductSaleWorkerBlocked(priced.products, lang));
+    }
+    const state: NewProductSaleSetup = {
+      kind: 'new_product_sale_setup',
+      missingProducts: priced.products,
+      sale: priced.sale,
+      sourceMessageId: waMessageId,
+      credit: args.credit,
+      paymentMethod: args.paymentMethod,
+      occurredAt: args.occurredAt,
+    };
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id,
+      company_id: identity.company_id,
+      profile_id: identity.profile_id,
+      awaiting: 'product_cost',
+      receipt_id: null,
+      options: state,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+    return askBack(newProductSaleOffer(priced.products, lang));
   }
   if (priced.kind === 'band') {
     // MEASURED REGRESSION, twice: "nimeuza nguvu ya sala 7 jumla" was asked
@@ -6308,6 +6338,10 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<NewProductSaleSetup> | null)?.kind === 'new_product_sale_setup'
           ? convo.options as NewProductSaleSetup
           : null;
+        const newProductOfferSetup = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<NewProductOfferSetup> | null)?.kind === 'new_product_offer_setup'
+          ? convo.options as NewProductOfferSetup
+          : null;
         const portionSizePending = convo?.awaiting === 'product_cost'
           && (convo.options as Partial<PortionSetupDraft> | null)?.kind === 'portion_setup_sizes'
           ? convo.options as PortionSetupDraft
@@ -7044,16 +7078,63 @@ Deno.serve(async (req) => {
         // A bare list such as "kitabu 7, biblia 3" is parked because it could
         // mean sales or stock. A short answer resumes the exact list instead of
         // being parsed as a brand-new one-line message.
-        if (quantityMeaningPending && parseQuantityMeaningAnswer(body) === null) {
+        if (quantityMeaningPending && parseQuantityMeaningAnswer(body) === null
+          && !((quantityMeaningPending.missingProducts?.length ?? 0) > 0
+            && wantsToRegisterNewProducts(body))) {
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'quantity_meaning', 'abandoned', 'skipped');
         } else if (quantityMeaningPending) {
           const meaning = parseQuantityMeaningAnswer(body);
+          if ((quantityMeaningPending.missingProducts?.length ?? 0) > 0
+            && wantsToRegisterNewProducts(body)) {
+            const state: NewProductOfferSetup = {
+              kind: 'new_product_offer_setup',
+              missingProducts: quantityMeaningPending.missingProducts ?? [],
+              sourceMessageId: quantityMeaningPending.sourceMessageId,
+              originalText: quantityMeaningPending.originalText,
+            };
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'product_cost',
+              receipt_id: null,
+              options: state,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await reply(phone, newProductOffer(state.missingProducts, lang));
+            await audit(db, identity, waMessageId, 'quantity_meaning', 'register_new_products', 'clarification');
+            await finish('skipped');
+            continue;
+          }
           if (meaning === 'sale') {
             resumedQuantitySale = quantityMeaningPending.sale;
             await clearConversation(db, identity.id as string);
             await audit(db, identity, waMessageId, 'quantity_meaning', 'sale', 'applied');
           } else if (meaning === 'stock_purchase') {
+            if ((quantityMeaningPending.missingProducts?.length ?? 0) > 0) {
+              const state: NewProductOfferSetup = {
+                kind: 'new_product_offer_setup',
+                missingProducts: quantityMeaningPending.missingProducts ?? [],
+                sourceMessageId: quantityMeaningPending.sourceMessageId,
+                originalText: quantityMeaningPending.originalText,
+              };
+              await db.from('whatsapp_conversations').upsert({
+                identity_id: identity.id,
+                company_id: identity.company_id,
+                profile_id: identity.profile_id,
+                awaiting: 'product_cost',
+                receipt_id: null,
+                options: state,
+                expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'identity_id' });
+              await reply(phone, newProductOffer(state.missingProducts, lang));
+              await audit(db, identity, waMessageId, 'quantity_meaning', 'stock_purchase_new_products', 'clarification');
+              await finish('skipped');
+              continue;
+            }
             await clearConversation(db, identity.id as string);
             await reply(phone, stockPurchaseNeedsPrices(quantityMeaningPending, lang));
             await audit(db, identity, waMessageId, 'quantity_meaning', 'stock_purchase', 'clarification');
@@ -7803,6 +7884,21 @@ Deno.serve(async (req) => {
           await clearConversation(db, identity.id as string);
           await replyQuietly(phone, newProductCancelled(lang));
           await audit(db, identity, waMessageId, 'new_product_sale_setup', 'cancel', 'applied');
+          await finish('skipped');
+          continue;
+        }
+
+        if (newProductOfferSetup && (isDailyRecordRejection(body) || isCancel(body))) {
+          await clearConversation(db, identity.id as string);
+          await replyQuietly(phone, newProductCancelled(lang));
+          await audit(db, identity, waMessageId, 'new_product_offer_setup', 'cancel', 'applied');
+          await finish('skipped');
+          continue;
+        }
+
+        if (newProductOfferSetup && wantsToRegisterNewProducts(body)) {
+          await replyQuietly(phone, newProductOffer(newProductOfferSetup.missingProducts, lang));
+          await audit(db, identity, waMessageId, 'new_product_offer_setup', 'prices_requested', 'clarification');
           await finish('skipped');
           continue;
         }
@@ -8990,11 +9086,13 @@ Deno.serve(async (req) => {
         // same line as a price change for a product that does not exist yet.
         const newProducts = parseNewProductPricing(writeBody);
         if (newProducts.length > 0) {
-          const stillMissing = newProductSaleSetup?.missingProducts.filter((required) =>
+          const activeNewProductSetup = newProductSaleSetup ?? newProductOfferSetup;
+          const stillMissing = activeNewProductSetup?.missingProducts.filter((required) =>
             !newProducts.some((product) => productKey(product.product) === productKey(required))) ?? [];
           if (stillMissing.length > 0) {
             await replyQuietly(phone, newProductPricingIncomplete(stillMissing, lang));
-            await audit(db, identity, waMessageId, 'new_product_sale_setup', 'prices_incomplete', 'clarification');
+            await audit(db, identity, waMessageId,
+              activeNewProductSetup?.kind ?? 'new_product', 'prices_incomplete', 'clarification');
             await finish('skipped');
             continue;
           }
@@ -9041,17 +9139,20 @@ Deno.serve(async (req) => {
         // is left qualifies only when it mentions the product or carries a
         // number — a botched price attempt worth one more go. A question, or a
         // refusal, or anything else, releases the parked sale.
-        const looksLikeAnAnswer = newProductSaleSetup
+        const activeNewProductQuestion = newProductSaleSetup ?? newProductOfferSetup;
+        const looksLikeAnAnswer = activeNewProductQuestion
           ? /[0-9]/.test(body)
-            && newProductSaleSetup.missingProducts.some((name) =>
+            && activeNewProductQuestion.missingProducts.some((name) =>
               body.toLocaleLowerCase('sw-TZ').includes(name.toLocaleLowerCase('sw-TZ')))
           : false;
-        if (newProductSaleSetup && !looksLikeAnAnswer) {
+        if (activeNewProductQuestion && !looksLikeAnAnswer) {
           await clearConversation(db, identity.id as string);
-          await audit(db, identity, waMessageId, 'new_product_sale_setup', 'abandoned', 'skipped');
-        } else if (newProductSaleSetup) {
-          await replyQuietly(phone, newProductSaleOffer(newProductSaleSetup.missingProducts, lang));
-          await audit(db, identity, waMessageId, 'new_product_sale_setup', 'prices_unreadable', 'clarification');
+          await audit(db, identity, waMessageId, activeNewProductQuestion.kind, 'abandoned', 'skipped');
+        } else if (activeNewProductQuestion) {
+          await replyQuietly(phone, activeNewProductQuestion.kind === 'new_product_sale_setup'
+            ? newProductSaleOffer(activeNewProductQuestion.missingProducts, lang)
+            : newProductOffer(activeNewProductQuestion.missingProducts, lang));
+          await audit(db, identity, waMessageId, activeNewProductQuestion.kind, 'prices_unreadable', 'clarification');
           await finish('skipped');
           continue;
         }
@@ -9439,11 +9540,16 @@ Deno.serve(async (req) => {
 
         const bareQuantityList = resumedQuantitySale ? null : parseBareQuantityList(writeBody);
         if (bareQuantityList) {
+          const pricingHint = await priceQuantitySale(db, identity, bareQuantityList, lang);
+          const missingProducts = pricingHint.kind === 'unknown' ? pricingHint.products : [];
+          const resolvedProducts = pricingHint.kind === 'unknown' ? pricingHint.resolvedProducts : [];
           const state: ParkedQuantityMeaning = {
             kind: 'quantity_meaning_clarification',
             sourceMessageId: waMessageId,
             originalText: writeBody,
             sale: bareQuantityList,
+            missingProducts,
+            resolvedProducts,
           };
           await db.from('whatsapp_conversations').upsert({
             identity_id: identity.id,
@@ -9455,7 +9561,7 @@ Deno.serve(async (req) => {
             expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
             updated_at: new Date().toISOString(),
           }, { onConflict: 'identity_id' });
-          await reply(phone, quantityMeaningQuestion(lang));
+          await reply(phone, quantityMeaningQuestion(lang, missingProducts));
           await audit(db, identity, waMessageId, 'quantity_meaning', 'clarify', 'pending');
           await finish('skipped');
           continue;

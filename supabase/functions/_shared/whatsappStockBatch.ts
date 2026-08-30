@@ -178,9 +178,9 @@ export function stockCountBatchConfirmation(batch: StockCountBatch, lang: Lang):
       + batch.unreadable.map((line) => `• ${line}`).join('\n'));
 
   return lang === 'sw'
-    ? `Stock itakayowekwa — bidhaa ${batch.counts.length}:\n${rows}${problem}\n\n`
-      + 'Hizi ni idadi zilizopo sasa; si manunuzi mapya.\n\n'
-      + `Niweke? NDIYO / HAPANA. ${pendingEscapeHint(lang)}`
+    ? `Hesabu mpya ya idadi zilizopo sasa — bidhaa ${batch.counts.length}:\n${rows}${problem}\n\n`
+      + 'Hii itaweka idadi hizi kama zilizopo sasa kwenye stoo; si mauzo na si manunuzi mapya.\n\n'
+      + `Nirekodi hesabu hii? NDIYO / HAPANA. ${pendingEscapeHint(lang)}`
     : `Stock on hand — ${batch.counts.length} products:\n${rows}${problem}\n\n`
       + 'This becomes the new anchor: from here I keep count as you sell and restock.\n\n'
       + `Save them all? YES / NO. ${pendingEscapeHint(lang)}`;

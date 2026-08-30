@@ -6,6 +6,8 @@ export type ParkedQuantityMeaning = {
   sourceMessageId: string;
   originalText: string;
   sale: QuantitySale;
+  missingProducts?: string[];
+  resolvedProducts?: string[];
 };
 
 export type HypotheticalPortionChoice = {
@@ -30,20 +32,36 @@ export function parseQuantityMeaningAnswer(
   return null;
 }
 
-export function quantityMeaningQuestion(lang: Lang): string {
+export function wantsToRegisterNewProducts(text: string | null | undefined): boolean {
+  const said = clean(text).replace(/[^\p{L}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+  return /^(?:ndiyo|dio|yes|yeah|yep|sajili|nisajilie|ongeza|ongeza bidhaa|weka bidhaa|bidhaa mpya)$/.test(said);
+}
+
+export function quantityMeaningQuestion(lang: Lang, missingProducts: string[] = []): string {
+  const missing = missingProducts.length === 0 ? '' : lang === 'sw'
+    ? `\n\nSijaziona hizi kwenye bidhaa zilizosajiliwa: ${missingProducts.map((name) => `*${name}*`).join(', ')}.\n`
+      + 'Kama ni bidhaa mpya, jibu *SAJILI* au *NDIYO*; nitakuomba bei ya kununua na bei ya kuuza.'
+    : `\n\nI do not see these in the registered products: ${missingProducts.map((name) => `*${name}*`).join(', ')}.\n`
+      + 'If they are new products, reply *REGISTER* or *YES*; I will ask for buying and selling prices.';
   const items = lang === 'sw'
-    ? 'Idadi hizi ni *mauzo*, *manunuzi*, au *bidhaa zilizopo sasa*?'
-    : 'Are these quantities *sales*, a *stock purchase*, or *stock on hand now*?';
+    ? 'Nimepata idadi za bidhaa ulizotaja. Unataka nizifanye nini?\n'
+      + '1. *MAUZO* — nirekodi kama mauzo ya leo\n'
+      + '2. *STOCK* — niongeze idadi hizi kama hesabu mpya ya bidhaa zilizopo sasa\n'
+      + '3. *MANUNUZI* — bidhaa ulizonunua/kuongeza stoo'
+    : 'I found quantities for the products you named. What should I do with them?\n'
+      + '1. *SALES* — record them as today’s sales\n'
+      + '2. *STOCK* — set these as the current quantities on hand\n'
+      + '3. *PURCHASE* — products you bought/added to the store';
   return lang === 'sw'
-    ? `${items}\nJibu MAUZO, MANUNUZI, au STOCK.`
-    : `${items}\nReply SALES, PURCHASE, or STOCK.`;
+    ? `${items}${missing}\n\nJibu MAUZO, STOCK, MANUNUZI${missingProducts.length > 0 ? ', au SAJILI' : ''}.`
+    : `${items}${missing}\n\nReply SALES, STOCK, PURCHASE${missingProducts.length > 0 ? ', or REGISTER' : ''}.`;
 }
 
 export function stockPurchaseNeedsPrices(state: ParkedQuantityMeaning, lang: Lang): string {
   const names = state.sale.items.map((item) => `• ${item.product}: ${item.quantity.toLocaleString('en-US')}`).join('\n');
   return lang === 'sw'
-    ? `Nimepata bidhaa hizi:\n${names}\n\nTaja bei ya kununua kwa kila bidhaa, mstari mmoja kwa kila bidhaa.`
-    : `I found these products:\n${names}\n\nSend the buying price for each product, one product per line.`;
+    ? `Nimepata bidhaa hizi:\n${names}\n\nTaja bei ya kununua/gharama kwa kila bidhaa, mstari mmoja kwa kila bidhaa. Kama bidhaa ni mpya kabisa, niambie *SAJILI* kwanza ili tuweke pia bei ya kuuza.`
+    : `I found these products:\n${names}\n\nSend the buying price/cost for each product, one product per line. If a product is brand new, tell me *REGISTER* first so we also capture its selling price.`;
 }
 
 export function hypotheticalPortionQuestion(state: HypotheticalPortionChoice, lang: Lang): string {

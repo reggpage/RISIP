@@ -126,7 +126,9 @@ describe('what the trader is shown before anything is saved', () => {
   it('says plainly that this becomes the new anchor', () => {
     const batch = parseStockCountBatch(list('daftari 90\nkalamu 240'))!;
     expect(stockCountBatchConfirmation(batch, 'sw')).toMatch(/idadi zilizopo sasa/);
-    expect(stockCountBatchConfirmation(batch, 'sw')).not.toMatch(/Nimekumbuka|Kumbuka/);
+    expect(stockCountBatchConfirmation(batch, 'sw')).toMatch(/si mauzo na si manunuzi mapya/);
+    expect(stockCountBatchConfirmation(batch, 'sw')).toMatch(/Nirekodi hesabu hii/);
+    expect(stockCountBatchConfirmation(batch, 'sw')).not.toMatch(/Nikaweke idadi hizi|Nimekumbuka|Kumbuka/);
   });
 
   it('shows the lines it could not read, before the question', () => {
