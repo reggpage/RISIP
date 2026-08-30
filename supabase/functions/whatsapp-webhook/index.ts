@@ -496,6 +496,14 @@ import {
 } from '../_shared/whatsappReadTools.ts';
 import { buchaReportFacts, buildBuchaReportReply, type BuchaReportingSnapshot } from '../_shared/whatsappBuchaReports.ts';
 import {
+  type QueuedRecord,
+  type RecordQueuePending,
+  queueDiscardedReply,
+  queueFlushReply,
+  queueSavedReply,
+  queueTickReply,
+} from '../_shared/whatsappRecordQueue.ts';
+import {
   calculateDebtorHistories,
   debtorAgeingFacts,
   debtorAgeingReply,
@@ -3166,9 +3174,102 @@ async function priceAndDraftSale(
   const guarded = await addHistoricalPriceWarnings(db, identity.company_id, saleRecord);
   const created = await createDailyRecordDraft(db, identity, waMessageId, guarded, lang, args.said);
   if (created.error || !created.id) return askBack(notSaved);
+  // THE QUEUE, and it lives here because this is the one line that decides
+  // whether the shopkeeper waits.
+  //
+  // With no ceiling set, nothing below runs and the behaviour is exactly what
+  // it has always been: park this draft on its own and write a confirmation.
+  // With one set, the draft joins the others already waiting and the shop gets
+  // a tick — no second model call, no six-second pause at the counter.
+  const queued = await queueRecordDraft(db, identity, lang);
+  if (queued) return queued;
+
   await pendingDraftState(db, identity, created.id, waMessageId, guarded);
   const confirmation = `${identity.company_name} — ${quantitySaleConfirmation(priced.lines, lang, [], priced.notCounted)}`;
   return { content: confirmation, fallbackReply: confirmation };
+}
+
+/**
+ * How many drafts this shop may leave waiting, or null for the old behaviour.
+ *
+ * Read per turn rather than cached: a shop is switched onto the queue by an
+ * UPDATE, and it should take effect on the next message rather than the next
+ * cold start.
+ */
+async function recordQueueSize(db: Admin, companyId: string): Promise<number | null> {
+  const { data } = await db.from('companies')
+    .select('record_queue_size').eq('id', companyId).maybeSingle();
+  const size = data?.record_queue_size;
+  return size == null ? null : Math.max(2, Math.min(30, Number(size)));
+}
+
+async function pendingQueue(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+): Promise<QueuedRecord[]> {
+  const { data } = await db.rpc('wa_pending_record_queue', {
+    p_company_id: identity.company_id,
+    p_profile_id: identity.profile_id,
+  });
+  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    id: String(row.id),
+    kind: String(row.kind ?? ''),
+    amount: Number(row.amount ?? 0),
+    partyName: (row.party_name ?? null) as string | null,
+    description: (row.description ?? null) as string | null,
+    occurredAt: String(row.occurred_at ?? ''),
+    lines: ((row.lines ?? []) as Array<Record<string, unknown>>).map((line) => ({
+      description: String(line.description ?? ''),
+      quantity: Number(line.quantity ?? 0),
+      lineTotal: Number(line.line_total ?? 0),
+    })),
+  }));
+}
+
+/**
+ * A tick, or — once enough have gathered — the whole batch to confirm.
+ *
+ * Returns null when this shop has no queue, which leaves every existing path
+ * exactly as it was.
+ */
+async function queueRecordDraft(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  lang: Lang,
+): Promise<AssistantToolExecution | null> {
+  const ceiling = await recordQueueSize(db, identity.company_id as string);
+  if (ceiling === null) return null;
+
+  const waiting = await pendingQueue(db, identity);
+  if (waiting.length < ceiling) {
+    // No conversation is parked. A tick is not a question, and parking one
+    // would make the next ordinary sentence look like an answer to it.
+    await clearConversation(db, identity.id as string);
+    const tick = queueTickReply(waiting.length, ceiling, lang);
+    return { content: tick, terminalReply: tick };
+  }
+  return await askToConfirmQueue(db, identity, lang, waiting);
+}
+
+/** Park the batch and ask once. Used by the ceiling, a question, and closing. */
+async function askToConfirmQueue(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  lang: Lang,
+  waiting: QueuedRecord[],
+): Promise<AssistantToolExecution> {
+  await db.from('whatsapp_conversations').upsert({
+    identity_id: identity.id,
+    company_id: identity.company_id,
+    profile_id: identity.profile_id,
+    awaiting: 'product_cost',
+    receipt_id: null,
+    options: { kind: 'record_queue', ids: waiting.map((one) => one.id) } satisfies RecordQueuePending,
+    expires_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'identity_id' });
+  const question = queueFlushReply(waiting, lang);
+  return { content: question, terminalReply: question };
 }
 
 /**
@@ -3802,6 +3903,24 @@ async function executeAssistantTool(
   // it, so the model cannot book an arrival as a sale.
   said?: string,
 ): Promise<AssistantToolExecution> {
+  // A QUESTION EMPTIES THE QUEUE FIRST.
+  //
+  // Drafts are not confirmed records, so nothing waiting is in any total. A
+  // shopkeeper who has typed four sales and then asks how the day is going
+  // would be answered about a day missing all four — which is worse than being
+  // asked to confirm them, because it is wrong rather than merely one step
+  // longer. Closing the day is the same problem and the same answer.
+  //
+  // A tick is not a question, so nothing was parked; this is the first moment
+  // the batch has anything to interrupt.
+  if (name.startsWith('get_') || name === 'propose_day_close') {
+    const ceiling = await recordQueueSize(db, identity.company_id as string);
+    if (ceiling !== null) {
+      const waiting = await pendingQueue(db, identity);
+      if (waiting.length > 0) return await askToConfirmQueue(db, identity, lang, waiting);
+    }
+  }
+
   if (name === 'get_business_summary') {
     // STAGE: the model gets EVIDENCE and writes the answer; the paragraph is
     // what the shop sees only if the model cannot finish. Asked "Biashara
@@ -5701,6 +5820,10 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<SellingPriceBatch> | null)?.kind === 'selling_price_batch'
           ? convo.options as SellingPriceBatch
           : null;
+        const queuePending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<RecordQueuePending> | null)?.kind === 'record_queue'
+          ? convo.options as RecordQueuePending
+          : null;
         const voidPending = convo?.awaiting === 'product_cost'
           && (convo.options as { kind?: string } | null)?.kind === 'void_record'
           ? convo.options as VoidPending
@@ -6989,6 +7112,50 @@ Deno.serve(async (req) => {
         if (invitePending && !isCancel(body) && !isDailyRecordRejection(body) && !parseInviteRole(body)) {
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'invite', 'abandoned', 'skipped');
+        } else if (queuePending) {
+          // The batch. One NDIYO puts every draft on the books; one HAPANA
+          // drops them all and writes nothing. Anything else falls through to
+          // the model, because a shopkeeper who answers a batch with another
+          // sale is adding to it, not answering it.
+          if (isDailyRecordConfirmation(body)) {
+            const { data: saved, error } = await db.rpc('wa_confirm_daily_record_batch', {
+              p_profile_id: identity.profile_id,
+              p_company_id: identity.company_id,
+              p_daily_record_ids: queuePending.ids,
+            });
+            await clearConversation(db, identity.id as string);
+            if (error) {
+              // Nothing was written, so say that rather than implying it was.
+              await replyQuietly(phone, lang === 'sw'
+                ? 'Sikuweza kuhifadhi sasa. Hakuna kilichoingia; jaribu tena baada ya muda mfupi.'
+                : 'I could not save just now. Nothing was recorded; please try again shortly.');
+              await audit(db, identity, waMessageId, 'record_queue', 'failed', 'failed');
+              await finish('failed');
+              continue;
+            }
+            const count = Number((saved as { saved?: number } | null)?.saved ?? queuePending.ids.length);
+            await replyQuietly(phone, queueSavedReply(count, lang));
+            await audit(db, identity, waMessageId, 'record_queue', String(count), 'applied');
+            await finish('skipped');
+            continue;
+          }
+          if (isDailyRecordRejection(body) || isPendingEscape(body)) {
+            const { error } = await db.rpc('wa_cancel_daily_record_batch', {
+              p_profile_id: identity.profile_id,
+              p_company_id: identity.company_id,
+              p_daily_record_ids: queuePending.ids,
+            });
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, error
+              ? (lang === 'sw'
+                ? 'Sikuweza kuondoa rasimu hizo sasa. Hakuna kilichohifadhiwa.'
+                : 'I could not drop those drafts just now. Nothing was saved.')
+              : queueDiscardedReply(queuePending.ids.length, lang));
+            await audit(db, identity, waMessageId, 'record_queue', 'discarded', error ? 'failed' : 'applied');
+            await finish('skipped');
+            continue;
+          }
+          // Not an answer. Leave the batch parked and let the model read it.
         } else if (voidPending) {
           if (isCancel(body) || isDailyRecordRejection(body)) {
             await clearConversation(db, identity.id as string);
