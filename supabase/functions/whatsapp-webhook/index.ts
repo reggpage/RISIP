@@ -5301,8 +5301,13 @@ function typingRecorder(
         ms_since_received: Math.max(0, Date.now() - receivedAtMs),
         queued_behind_earlier: queuedBehind,
       });
-    } catch {
-      // A diagnostic must never cost a shop its reply.
+    } catch (err) {
+      // A diagnostic must never cost a shop its reply. But it must not fail
+      // SILENTLY either: a swallowed insert leaves an empty table, an empty
+      // table reads as "no pulses were sent", and that is how the next
+      // investigation starts from a false fact.
+      console.error('typing attempt not recorded',
+        err instanceof Error ? err.message : 'unknown');
     }
   };
 }
