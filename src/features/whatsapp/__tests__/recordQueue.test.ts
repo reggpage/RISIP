@@ -181,3 +181,47 @@ describe('the safety of shipping it', () => {
     expect(webhook).toContain('Hakuna kilichoingia; jaribu tena baada ya muda mfupi.');
   });
 });
+
+describe('the queue is TODAY’S', () => {
+  // MEASURED, and the owner asked the right question within minutes: "mbona si
+  // records za leo?" The three drafts he was shown were from 22, 23 and 27
+  // August. It was the 30th.
+  //
+  // Two faults, and only one was new. Mine: the queue had no date filter at
+  // all, so it swept up every draft the shop had ever left unanswered. Older:
+  // nothing ever cleaned up a draft nobody replied to, so they accumulated for
+  // a week — one of them a stock purchase read from "matumizi... nimetumia
+  // nauli", which is an expense.
+  const scoping = readFileSync(
+    resolve(process.cwd(), 'supabase/migrations/0151_queue_today_only.sql'), 'utf8');
+  const notifications = readFileSync(
+    resolve(process.cwd(), 'supabase/functions/whatsapp-notifications/index.ts'), 'utf8');
+
+  it('reads only drafts made today, in the shop’s own timezone', () => {
+    expect(scoping).toContain("(r.created_at at time zone 'Africa/Dar_es_Salaam')::date");
+    expect(scoping).toContain("= (clock_timestamp() at time zone 'Africa/Dar_es_Salaam')::date");
+  });
+
+  it('drops what nobody answered, and says who left it', () => {
+    // The constraint requires a person and a sweep has none; the drafter is
+    // the honest answer, and the reason says how it ended so it does not read
+    // as a deliberate reversal by them.
+    expect(scoping).toContain('voided_by = recorded_by');
+    expect(scoping).toContain('Rasimu iliachwa bila kuthibitishwa');
+  });
+
+  it('cannot touch a figure, because a draft was never counted', () => {
+    expect(scoping).toContain("where status = 'pending_confirmation'");
+    expect(scoping).not.toMatch(/where status = 'confirmed'/);
+  });
+
+  it('gives somebody drafting at night until morning', () => {
+    // Twelve hours, not a calendar day: a draft at eleven must survive
+    // midnight, and nobody answers a question from yesterday morning.
+    expect(scoping).toContain('p_older_than_hours integer default 12');
+  });
+
+  it('runs on the daily schedule rather than on every message', () => {
+    expect(notifications).toContain("db.rpc('wa_sweep_abandoned_drafts'");
+  });
+});

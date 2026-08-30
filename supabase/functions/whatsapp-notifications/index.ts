@@ -51,6 +51,17 @@ Deno.serve(async (req) => {
   const limit = Math.max(1, Math.min(200, Number(input.limit) || 50));
   const staleDays = Math.max(1, Math.min(365, Number(input.debt_stale_days) || 7));
 
+  // Drop drafts nobody ever answered.
+  //
+  // A pending row has never been counted anywhere, so this removes a question
+  // and never a figure — but a question from last Tuesday reaching somebody's
+  // batch this morning is exactly what happened, and it carried a week-old
+  // misreading with it.
+  const { error: sweepError } = await db.rpc('wa_sweep_abandoned_drafts', { p_older_than_hours: 12 });
+  if (sweepError) {
+    console.error('draft sweep failed', sweepError.code, sweepError.message);
+  }
+
   // Queue the evening close reminders before claiming, so they go out on the
   // same run rather than waiting for the next one. Failure here must not stop
   // the daily summaries, which are the reason this endpoint exists.
