@@ -152,7 +152,15 @@ describe('nothing about financial authority moved', () => {
     // Each carries ONE field, and it is the shopkeeper's own wording. None
     // reads a price, none writes, and none can confirm anything. The surface
     // grew; the authority did not.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(35);
+    //
+    // Thirty-six now. get_day_comparison is the addition, and it is a READ that
+    // carries two of the shopkeeper's own date phrases and nothing else.
+    // MEASURED cause: "linganisha faida mauzo ya tarehe 17 na 23" was answered
+    // with the 17th alone, because get_day_records returns a terminalReply that
+    // ends the turn, so the second date had nowhere to go. It subtracts nothing
+    // itself — the server hands over both days and the difference already
+    // computed — so the surface grew and the authority again did not.
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(36);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('respond_conversationally');
     expect(shown).not.toContain('propose_catalogue_transaction');

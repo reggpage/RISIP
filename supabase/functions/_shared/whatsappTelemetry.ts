@@ -49,6 +49,9 @@ export type SemanticIntent =
   // Ending the trading day, and reading one day back entry by entry.
   | 'day_close'
   | 'day_records'
+  // Two named days set against each other. Separate from daily_breakdown,
+  // which walks a range: this one answers "tarehe 17 na 23, ipi ilikuwa bora".
+  | 'day_comparison'
   | 'daily_breakdown'
   | 'debtor_history'
   | 'record_void'
@@ -82,6 +85,7 @@ const TOOL_INTENT: Record<string, SemanticIntent> = {
   respond_conversationally: 'conversational',
   propose_day_close: 'day_close',
   get_day_records: 'day_records',
+  get_day_comparison: 'day_comparison',
   get_daily_breakdown: 'daily_breakdown',
   get_debtor_history: 'debtor_history',
   propose_record_void: 'record_void',

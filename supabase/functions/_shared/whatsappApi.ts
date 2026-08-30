@@ -54,11 +54,34 @@ export async function whatsAppDisplayNumber(): Promise<string | null> {
  * window — every reply we send is a direct answer to the user's own message, so
  * this MVP never needs a paid template.
  */
+/**
+ * Messages whose answer is already on its way out.
+ *
+ * MEASURED, and it is the whole of the second bug: the last typing pulse for
+ * the second message went out at 16:04:36.633 and its reply went out at
+ * 16:04:37.047 — four tenths of a second apart. The reply is what dismisses an
+ * indicator, so an indicator raised in that gap races its own dismissal, and on
+ * the handset it won: "typing…" appeared AFTER the answer and stayed there.
+ *
+ * Once an answer is being sent, no further indicator may be raised for the
+ * message it answers. Keyed by message id rather than a single flag, because
+ * two turns can be in flight in one isolate and a global would cross them.
+ */
+const typingSealed = new Set<string>();
+
+export function clearTypingSeal(messageId: string): void {
+  typingSealed.delete(messageId);
+}
+
 export async function sendWhatsAppText(
   toE164: string,
   body: string,
   options: { replyToMessageId?: string | null } = {},
 ): Promise<void> {
+  // Sealed BEFORE the request goes out, not after: the race is measured in
+  // hundreds of milliseconds and the send itself takes longer than that.
+  const answering = options.replyToMessageId?.trim();
+  if (answering) typingSealed.add(answering);
   const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
   if (!phoneNumberId) throw new Error('WHATSAPP_PHONE_NUMBER_ID not set');
 
@@ -94,6 +117,11 @@ export type TypingOutcome = {
  * supposedly failing. The caller records the outcome; see migration 0153.
  */
 export async function showTyping(messageId: string): Promise<TypingOutcome> {
+  // The answer is already going out. Raising an indicator now is raising one
+  // that arrives beside the reply and outlives it. Recorded as -1 so the audit
+  // shows a pulse that was deliberately not sent, which is a different fact
+  // from one that failed.
+  if (typingSealed.has(messageId)) return { status: -1, code: null };
   const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
   if (!phoneNumberId) return { status: null, code: null };
   try {

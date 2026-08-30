@@ -371,6 +371,9 @@ export const ASSISTANT_TOOL_NAMES = [
   'propose_day_close',
   // Every entry of one day, with who recorded it.
   'get_day_records',
+  // Two named days against each other. get_day_records ends the turn, so
+  // "tarehe 17 na 23" had nowhere to put the second date and it was dropped.
+  'get_day_comparison',
   // Day against day, so "which day was best" has somewhere to land.
   'get_daily_breakdown',
   // How OLD a debt is, and when the customer last paid anything.
@@ -905,6 +908,24 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
       },
     },
     ['date_wording'],
+  ),
+  tool(
+    'get_day_comparison',
+    'TWO DAYS SET SIDE BY SIDE. Use whenever the message names more than one day and asks which did better, or by how much: '
+      + '"linganisha faida mauzo ya tarehe 17 na 23", "tarehe 20 na 21 ipi ilikuwa bora", "compare Monday and Tuesday", "juzi na jana ipi iliuza zaidi". '
+      + 'get_day_records answers ONE day and its answer ends the turn, so asking it twice cannot compare anything — the second day is simply lost. '
+      + 'The server reads both days and returns both sets of figures; you write the comparison from what it returns and never subtract your own.',
+    {
+      first_date_wording: {
+        type: 'string',
+        description: 'The FIRST day as the person said it — "tarehe 17", "juzi", "Jumatatu". Never a date you calculated.',
+      },
+      second_date_wording: {
+        type: 'string',
+        description: 'The SECOND day, in their words. Both are required; for a single day use get_day_records instead.',
+      },
+    },
+    ['first_date_wording', 'second_date_wording'],
   ),
   tool(
     'propose_day_close',

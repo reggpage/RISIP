@@ -59,9 +59,20 @@ export async function waitForWhatsAppTurn(
   return false;
 }
 
+/**
+ * Keep the indicator alive across a long turn.
+ *
+ * The interval is 20 seconds, not 10, and the reason is arithmetic: one pulse
+ * lasts about 25 seconds on its own, so a ten-second interval spends two extra
+ * pulses on every ordinary turn and buys nothing. MEASURED, and one of those
+ * spare pulses is exactly what broke it — a tick landed 0.4 seconds before the
+ * reply, raised an indicator the reply then raced, and the indicator won.
+ * At 20 seconds a turn shorter than that pulses once, at the start, where it
+ * belongs.
+ */
 export function startWhatsAppTypingHeartbeat(
   showTyping: () => Promise<void> | void,
-  intervalMs = 10_000,
+  intervalMs = 20_000,
 ): () => void {
   let stopped = false;
   const pulse = () => {

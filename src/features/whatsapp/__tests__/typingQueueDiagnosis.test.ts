@@ -177,6 +177,65 @@ describe('what Meta said is written down, not shouted into stderr', () => {
   });
 });
 
+describe('an indicator is never raised into its own reply', () => {
+  // MEASURED, on the fix's first live run, and it turned the bug inside out.
+  // Every request now returned 200 — attempts 2, 3 and 4 included — so the
+  // "only the first read counts" hypothesis is DEAD and Meta was never
+  // refusing anything. The times are what mattered:
+  //
+  //   message   received      last pulse    reply sent
+  //   first     16:04:05.985  16:04:19.518  16:04:23.508   (4.0s of margin)
+  //   second    16:04:08.743  16:04:36.633  16:04:37.047   (0.4s of margin)
+  //
+  // The reply is what dismisses an indicator. Raise one four tenths of a
+  // second before the reply and the two race; on the handset the indicator
+  // won, so "typing…" appeared AFTER the answer and stayed there. That is the
+  // exact thing the shop reported the second time.
+  //
+  // The stray pulse was a heartbeat tick: 26.855 + 10s lands on 36.6.
+
+  it('stops asking once the answer is on its way out', () => {
+    expect(api).toContain('const typingSealed = new Set<string>();');
+    expect(api).toContain('if (typingSealed.has(messageId)) return { status: -1, code: null };');
+  });
+
+  it('seals before the send, not after, because the race is sub-second', () => {
+    const seal = api.indexOf('if (answering) typingSealed.add(answering);');
+    const fetchCall = api.indexOf('await fetch(', seal);
+    expect(seal).toBeGreaterThan(-1);
+    expect(fetchCall).toBeGreaterThan(seal);
+  });
+
+  it('keys the seal per message so two turns in one isolate cannot cross', () => {
+    expect(api).toContain('const answering = options.replyToMessageId?.trim();');
+    expect(api).not.toContain('let typingSealed = false');
+  });
+
+  it('records a suppressed pulse as suppressed, not as a failure', () => {
+    // -1 is not an HTTP status and is not meant to look like one. A pulse we
+    // chose not to send is a different fact from one Meta refused, and
+    // flattening the two is how the next diagnosis goes wrong.
+    expect(api).toContain('Recorded as -1 so the audit');
+  });
+
+  it('releases the seal when the turn ends', () => {
+    expect(webhook).toContain('clearTypingSeal(waMessageId);');
+    const finallyBlock = webhook.indexOf('clearTypingSeal(waMessageId);');
+    const release = webhook.indexOf('releaseWhatsAppTurn(db, phone, turnOwner)', finallyBlock);
+    expect(release).toBeGreaterThan(finallyBlock);
+  });
+
+  it('pulses once for an ordinary turn instead of three times', () => {
+    // One pulse lasts about 25 seconds. A ten-second heartbeat spent two spare
+    // pulses on every turn and bought nothing — and one of those spares is
+    // what landed beside the reply.
+    const turn = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/_shared/whatsappTurn.ts'), 'utf8');
+    expect(turn).toContain('intervalMs = 20_000');
+    expect(turn).not.toContain('intervalMs = 10_000');
+  });
+});
+
 describe('the reply still quotes the message it answers', () => {
   it('carries context.message_id for the exact inbound bubble', () => {
     expect(whatsappTextPayload('+255700000000', 'Faida ya leo ni TSh 84,250.', {

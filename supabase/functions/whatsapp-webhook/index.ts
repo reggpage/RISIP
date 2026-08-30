@@ -27,7 +27,7 @@ import {
   sha256Hex,
   verifyMetaSignature,
 } from '../_shared/whatsapp.ts';
-import { sendWhatsAppText, showTyping, whatsAppDisplayNumber } from '../_shared/whatsappApi.ts';
+import { clearTypingSeal, sendWhatsAppText, showTyping, whatsAppDisplayNumber } from '../_shared/whatsappApi.ts';
 import {
   markWhatsAppTurnProcessing,
   releaseWhatsAppTurn,
@@ -4804,6 +4804,66 @@ async function runAssistantTool(
       content: `${dailyBreakdownFacts(days, periodLabel)}
 ${trendShapeFacts(days)}`,
       fallbackReply: rendered,
+    };
+  }
+  if (name === 'get_day_comparison') {
+    // MEASURED: "linganisha faida mauzo ya tarehe 17 na 23" came back with the
+    // 17th alone. The model did the right thing and the contract did not — it
+    // reached for get_day_records, whose answer is terminal and ends the turn,
+    // so the second date had nowhere to go and was dropped in silence. Half an
+    // answer, delivered with the confidence of a whole one.
+    if (!canUseCompanyFinanceReads(identity.role)) {
+      const denied = lang === 'sw'
+        ? 'Kulinganisha siku kunaonekana kwa owner au accountant tu.'
+        : 'Comparing days is available to an owner or accountant only.';
+      return { content: denied, isError: true, terminalReply: denied };
+    }
+    const firstSaid = typeof input.first_date_wording === 'string' ? input.first_date_wording.trim() : '';
+    const secondSaid = typeof input.second_date_wording === 'string' ? input.second_date_wording.trim() : '';
+    if (!firstSaid || !secondSaid) {
+      const ask = lang === 'sw'
+        ? 'Niambie siku zote mbili, mfano: _tarehe 17 na tarehe 23_.'
+        : 'Name both days, for example: _the 17th and the 23rd_.';
+      return { content: ask, terminalReply: ask };
+    }
+    const readDay = async (said: string) => {
+      try {
+        return await buildDayCloseFacts(db, identity, lang, said);
+      } catch {
+        // An unreadable date is never answered with a different day.
+        return null;
+      }
+    };
+    const [dayA, dayB] = await Promise.all([readDay(firstSaid), readDay(secondSaid)]);
+    if (!dayA || !dayB) {
+      const bad = !dayA ? firstSaid : secondSaid;
+      const ask = lang === 'sw'
+        ? `Sijaelewa tarehe "${bad}". Iandike kama _tarehe 17_ au _juzi_.`
+        : `I could not read the date "${bad}". Write it as _tarehe 17_ or _juzi_.`;
+      return { content: ask, terminalReply: ask };
+    }
+    // Every difference is subtracted HERE. The model states them; it never
+    // works them out, which is the rule everywhere else in this file.
+    const grossOf = (facts: DayCloseFacts) => facts.grossProfit ?? (facts.sales - facts.cogs);
+    const line = (tag: string, said: string, facts: DayCloseFacts) =>
+      `${tag}=${facts.date}|asked_as=${said}|label=${facts.dateLabel}`
+      + `|sales=${Math.round(facts.sales)}|cogs=${Math.round(facts.cogs)}`
+      + `|gross_profit=${Math.round(grossOf(facts))}`
+      + `|expenses=${Math.round(facts.expenses ?? 0)}`
+      + `|purchases=${Math.round(facts.purchases ?? 0)}`
+      + `|records=${facts.recordCount}`;
+    const salesGap = Math.round(dayA.sales - dayB.sales);
+    const grossGap = Math.round(grossOf(dayA) - grossOf(dayB));
+    const better = grossGap === 0 ? 'equal' : (grossGap > 0 ? 'first' : 'second');
+    return {
+      content: [
+        line('first_day', firstSaid, dayA),
+        line('second_day', secondSaid, dayB),
+        `sales_difference=${Math.abs(salesGap)}`,
+        `gross_profit_difference=${Math.abs(grossGap)}`,
+        `better_by_gross_profit=${better}`,
+        'note=gross profit is sales minus cost of goods sold; recorded expenses are listed separately.',
+      ].join('\n'),
     };
   }
   if (name === 'get_day_records') {
@@ -10539,6 +10599,10 @@ Deno.serve(async (req) => {
         } finally {
           stopTypingHeartbeat();
           stopTurnHeartbeat();
+          // The seal is per message and the turn is over, so it has nothing
+          // left to protect. Left behind it would grow for the life of the
+          // isolate.
+          clearTypingSeal(waMessageId);
           await releaseWhatsAppTurn(db, phone, turnOwner);
         }
   }
