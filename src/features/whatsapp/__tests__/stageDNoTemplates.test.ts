@@ -189,7 +189,19 @@ describe('the prompt got shorter, not longer', () => {
     // length and telling it to stop is the only thing that moves it. Two
     // hundred characters in a cached prefix buys six seconds off every piece
     // of advice; a ceiling that blocks that is not protecting anybody.
-    expect(prompt.length).toBeLessThan(19_150);
+    // Raised by 700 for the one rule that decides whether a shilling the shop
+    // spent is counted as spent. MEASURED across this shop's whole history:
+    // "Nauli", "Chakula" and "Matumizi" all landed correctly as expenses, and
+    // "matumizi nimenunua chakula nimetumia nauli" landed as a stock purchase.
+    // The noun was never the problem; the verb was. And the model was not
+    // guessing — the routing rule sent anything stock-shaped to a tool with no
+    // expense in it, so once that sentence routed there was one slot left.
+    // Profit is sales - cogs - expenses and a purchase is deliberately not
+    // subtracted, so the misfiling reports the profit too high, in that record
+    // by 7,500. The rule cannot be shorter than it is because it cannot be a
+    // word list: rice is stock in a food shop and lunch in a bookshop, so it
+    // has to be stated as a test rather than a lookup.
+    expect(prompt.length).toBeLessThan(19_850);
   });
 
   it('tells the adviser to stop, and says what it costs not to', () => {

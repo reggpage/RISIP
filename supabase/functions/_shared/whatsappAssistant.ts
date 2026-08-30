@@ -652,6 +652,7 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
   tool(
     'propose_business_event',
     'Interpret any message that MOVES PRODUCTS OR STOCK: a sale, a customer credit sale, a stock purchase, goods taken from a supplier on credit, spoilage or loss, goods the owner took for personal use, a stock count, buying a whole animal, or butchering one. '
+      + 'NOT for something the shop bought and consumed rather than sells — a meal, a fare, fuel, a repair are expenses and belong to propose_money_event, which is the only tool with a place for one. '
       + 'Send the words the trader used. Never send prices, totals, costs, stock balances, margins or product ids — the server resolves every product, reads every price from the ledger and does all arithmetic. '
       + 'quantity_wording is the phrase exactly as said ("mbili na nusu", "vifuko vitatu", "kilo 3"); quantity_candidate is your reading of it and the server checks the two against each other. '
       + 'payment_wording is the payment word itself ("tigopesa", "taslimu", "benki") — never a category, and never for credit. Credit words such as deni, mkopo, sijalipa, atalipa or nitalipa go in credit_wording. '
@@ -719,6 +720,7 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
     'propose_money_event',
     'Interpret a message whose subject IS a sum of money the trader stated out loud: an expense they paid, a customer paying off a debt, or a payment to a supplier. '
       + 'Use propose_business_event instead whenever products, quantities or stock are involved — a customer taking goods on credit is a business event, not a money event. Never file money coming IN as an expense: a sale with no product named is kind=sale here. '
+      + 'But a thing the shop bought and USED UP is an expense HERE even though it is a thing, and even though the trader said they bought it: food eaten, a fare, fuel, airtime, a repair. Stock is what the shop sells; everything else it pays for is an expense. '
       + 'amount_wording is the phrase as said ("laki tatu", "300000"); amount_candidate is your reading of it and the server checks the two against each other, so never send a number the trader did not say. '
       + 'payment_wording is the payment word itself, never a category. This only ever prepares a draft the trader confirms with NDIYO.',
     {
@@ -1117,11 +1119,12 @@ GROUNDING AND TOOLS
   The last pair is the one that costs most when it is wrong: answering receivables to a payables question hands the owner the opposite ledger and it reads as a confident answer. Swahili is genuinely two-sided here — "nadaiwa" and "ninadaiwa" point opposite ways depending on the shop. When the direction is truly unclear, ask which one; do not pick.
 - owner_use is stock that left the shelf for the household with no sale and no spoilage. It is not an expense, not a loss and not a sale, and it stays owner_use even when the trader says they ate it, carried it home or gave it to family.
 - stock_purchase is inventory the business acquired for resale, however the trader says it arrived — bought, brought in, added, received against payment. The word does not matter; the movement does.
+- BUYING IS NOT WHAT MAKES IT STOCK. What happens to the thing NEXT decides it: goods the shop will SELL are stock_purchase; things it USED UP are an expense — a meal, a fare, fuel, airtime, a repair. The noun cannot settle it, since the same noun falls either way in different shops: rice is stock in a food shop and lunch in a bookshop, so the test is what THIS shop trades. A thing bought and consumed is an expense however plainly they said they bought it, and when they have already called it spending, believe them.
 
 - Do your reasoning privately. Give the user a concise answer and, where useful, a short explanation of the evidence—not hidden chain-of-thought.
 
 WRITES AND HUMAN CONTROL
-- Anything that MOVES PRODUCTS OR STOCK goes to propose_business_event: a sale, a customer credit sale, stock arriving, goods taken from a supplier on credit, spoilage, stock the owner took for themselves, a count, buying a whole animal, butchering one. It carries the trader's WORDS; the server resolves every product and unit and calculates every price and total.
+- Anything that MOVES PRODUCTS OR STOCK goes to propose_business_event: a sale, a customer credit sale, stock arriving, goods taken from a supplier on credit, spoilage, stock the owner took for themselves, a count, buying a whole animal, butchering one. STOCK MEANS GOODS THIS SHOP TRADES; this tool has no expense in it at all, so an expense sent here is filed as a purchase, left out of the day's costs, and reports the profit too high. It carries the trader's WORDS; the server resolves every product and unit and calculates every price and total.
 - Anything whose subject IS a sum of money the user said out loud goes to propose_money_event: an expense, a customer clearing a debt, a payment to a supplier, or a sale stated as a lump sum with no product named. Both create a pending draft only; neither confirms or posts it. propose_product_cost prepares a buying-cost confirmation and does not save it immediately.
 - Never claim a record is saved or confirmed until the server says so. Explicit NDIYO/YES is required and role policy is enforced server-side.
 - Never approve, pay, reverse, correct, void, delete, invite, change settings, or move money over plain WhatsApp text. Explain that the user must open Risip for those protected actions.
