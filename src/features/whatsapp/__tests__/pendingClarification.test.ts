@@ -235,8 +235,26 @@ describe('resuming re-derives everything financial', () => {
     expect(webhook).toContain('Naomba unijibu hilo kwanza');
   });
 
-  it('refuses to resume when nothing is parked', () => {
-    expect(webhook).toContain('I am not waiting on an answer right now');
+  it('refuses to resume when nothing is parked, without ending the turn', () => {
+    // It still refuses to invent a state to fit the answer — that part was
+    // always right. What changed is what happens next.
+    //
+    // MEASURED: the owner was shown a nine-line stock count at 13:58, the
+    // parked question expired at 14:28, and he answered at 14:29 by sending
+    // the same nine lines again. One minute. He was told "Sina swali
+    // linalosubiri jibu kwa sasa" and his nine products were dropped.
+    //
+    // Being right about the state is not the same as being useful. The turn
+    // now goes back to the model with no terminalReply, so it answers the
+    // message that is actually in front of it.
+    const branch = webhook.slice(
+      webhook.indexOf('  if (!pending) {'),
+      webhook.indexOf('  if (!pending) {') + 2200,
+    );
+    expect(branch).toContain('no_pending_question=true');
+    expect(branch).toContain('isError: true,');
+    expect(branch.slice(branch.indexOf('return {'), branch.indexOf('isError: true,')))
+      .not.toContain('terminalReply');
   });
 
   it('prices through the one shared path, not a second copy', () => {

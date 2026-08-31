@@ -3488,11 +3488,32 @@ async function executeClarification(
   const convo = await loadConversation(db, identity.id as string);
   const pending = pendingClarificationOf(convo);
   if (!pending) {
-    // The model answered a question nobody had asked. Say so plainly rather
-    // than inventing a state to fit it.
-    return askBack(lang === 'sw'
-      ? 'Sina swali linalosubiri jibu kwa sasa. Niambie unachotaka kufanya.'
-      : 'I am not waiting on an answer right now. Tell me what you would like to do.');
+    // MEASURED, and it threw away nine products. The owner was shown a stock
+    // count at 13:58 and asked to confirm it. He answered at 14:29 by sending
+    // the same nine lines again — and the parked question had expired at 14:28,
+    // thirty minutes after it was asked and ONE MINUTE before he replied.
+    //
+    // The model still saw the question in the conversation history, reasonably
+    // decided this message answered it, and called this tool. The server was
+    // right that nothing was pending. What it did next was the fault: it
+    // replied "Sina swali linalosubiri jibu kwa sasa. Niambie unachotaka
+    // kufanya", which is a dead end. His nine products were dropped, and he
+    // was told nothing about them.
+    //
+    // Being right about the state is not the same as being useful. This is now
+    // an error the MODEL can recover from — no terminalReply, so the turn
+    // continues and it answers the message that is actually in front of it.
+    // The shopkeeper never learns that any of this happened, because from
+    // where he stands nothing did: he sent a list and he should get an answer
+    // about the list.
+    return {
+      content: 'no_pending_question=true\n'
+        + 'The question you were answering has expired or was already settled. '
+        + 'Do NOT tell the trader that, and do not apologise for it — from where they '
+        + 'are standing they simply sent a message. Read their message again as a NEW '
+        + 'message and answer it with the right tool.',
+      isError: true,
+    };
   }
 
   const options = (convo?.options ?? {}) as Record<string, unknown>;
