@@ -371,6 +371,7 @@ import {
   stockCountBatchConfirmation,
   stockCountBatchSaved,
 } from '../_shared/whatsappStockBatch.ts';
+import { messageStatesDirection } from '../_shared/whatsappDirection.ts';
 import {
   riderQuestionNotice,
   secondInstructionNotice,
@@ -3707,7 +3708,25 @@ async function executeBusinessEvent(
   // is no direction — a judgement about language, which is its job — and the
   // server asks. The parser below only normalises the quantities it was
   // already given; it is not deciding what the message meant.
-  if (event.missingFields.includes('direction') && event.lines.length > 0) {
+  // The model saying so is no longer required, and MEASURED is why: handed
+  // nine products with no verb anywhere, it chose stock_count and drafted it
+  // without ever setting missing_fields. Telemetry 14:35:49. A guard that waits
+  // for the model to admit it does not know never fires, because the model does
+  // not think it does not know.
+  //
+  // So the server asks the one narrow question itself: does the raw message
+  // contain a word that states a direction? Only the three ambiguous kinds are
+  // gated, and only when nothing else settles it — a named customer or credit
+  // wording already says "sale" without any verb at all.
+  const ambiguousKind = event.kind === 'sale'
+    || event.kind === 'stock_purchase'
+    || event.kind === 'stock_count';
+  const settledByContext = Boolean(event.partyWording) || Boolean(event.creditWording);
+  const directionUnstated = ambiguousKind
+    && !settledByContext
+    && !messageStatesDirection(said);
+
+  if ((event.missingFields.includes('direction') || directionUnstated) && event.lines.length > 0) {
     const asList = event.lines
       .map((line) => `${line.productWording} ${line.quantityWording ?? ''}`.trim())
       .join('\n');
