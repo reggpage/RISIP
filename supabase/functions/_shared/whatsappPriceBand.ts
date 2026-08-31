@@ -61,7 +61,11 @@ export function needsBandChoice(
 const money = (value: number) => `TSh ${Math.round(value).toLocaleString('en-US')}`;
 const qty = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 3 });
 
-export function priceBandQuestion(choices: PriceBandChoice[], lang: Lang): string {
+export function priceBandQuestion(
+  choices: PriceBandChoice[],
+  lang: Lang,
+  settled: Array<{ product: string; quantity: number; unitPrice: number; unit?: string | null }> = [],
+): string {
   if (choices.length === 0) return '';
   const unit = (choice: PriceBandChoice) => (choice.unit ? ` ${choice.unit}` : '');
 
@@ -84,14 +88,26 @@ export function priceBandQuestion(choices: PriceBandChoice[], lang: Lang): strin
     : `${index + 1}. *${choice.product}* ${qty(choice.quantity)}${unit(choice)}`
       + ` — retail ${money(choice.retail)} · wholesale ${money(choice.wholesale)}`)).join('\n');
 
+  // Everything that priced without a question, shown with its total.
+  //
+  // The owner's instruction: "isikatishe bidhaa nyingine ifanye mahesabu then
+  // ndio isime hizi bidhaa zina bei mbili." Two ambiguous products are not a
+  // reason to go quiet about the other seven — he can see the work happened,
+  // and he only has to think about the lines that actually need him.
+  const done = settled.length === 0 ? '' : (lang === 'sw'
+    ? `*Nimekwisha pima hizi:*\n${settled.map((line) => `• ${line.product} ${qty(line.quantity)}`
+      + `${line.unit ? ` ${line.unit}` : ''} — *${money(line.quantity * line.unitPrice)}*`).join('\n')}\n\n`
+    : `*Already worked out:*\n${settled.map((line) => `• ${line.product} ${qty(line.quantity)}`
+      + `${line.unit ? ` ${line.unit}` : ''} — *${money(line.quantity * line.unitPrice)}*`).join('\n')}\n\n`);
+
   // The way out of ever seeing this again is one word at the top of the list,
   // so it is taught here rather than left to be discovered.
   return lang === 'sw'
-    ? `Hizi zina bei mbili, na hujasema uliyotumia:\n${rows}\n\n`
+    ? `${done}Hizi zina bei mbili, na hujasema uliyotumia:\n${rows}\n\n`
       + 'Kama zote ni bei moja, jibu *REJAREJA* au *JUMLA*.\n'
       + 'Kama zimechanganyika, andika namba: _1 rejareja, 2 jumla_\n\n'
       + `_Ukiandika "Mauzo ya leo rejareja" juu ya orodha, sitauliza tena._\n${pendingEscapeHint(lang)}`
-    : `These have two prices, and the message did not say which:\n${rows}\n\n`
+    : `${done}These have two prices, and the message did not say which:\n${rows}\n\n`
       + 'If they are all the same, reply *REJAREJA* or *JUMLA*.\n'
       + 'If they are mixed, use the numbers: _1 rejareja, 2 jumla_\n\n'
       + `_Head the list "Mauzo ya leo rejareja" and I will not ask again._\n${pendingEscapeHint(lang)}`;

@@ -695,10 +695,12 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
       amount_candidate: { type: ['number', 'null'], description: 'Your reading of amount_wording, or null. The server verifies it against the wording.' },
       missing_fields: {
         type: 'array',
-        description: 'What the sentence did not say. The server decides what is really missing.',
+        description: 'What the sentence did not say. The server decides what is really missing. '
+          + 'DIRECTION IS THE ONE YOU MUST NOT GUESS. A bare list of products and numbers — "Nguvu ya sala 9 / Puch 17 / chaki 60" — with no verb saying what happened to them is three different messages wearing the same clothes: goods SOLD, goods BOUGHT, or a COUNT of what is on the shelf. They write to the ledger in opposite directions, and each one makes the other two wrong. '
+          + 'When the message carries no such verb, send missing_fields ["direction"]; the server then asks the trader which of the three they meant and ignores the kind you chose. Do NOT send "direction" when they did say it: nimeuza, niliuza, nimenunua, nimeongeza, nimehesabu, nilizonazo, ziwe.',
         items: {
           type: 'string',
-          enum: ['product', 'quantity', 'unit', 'party', 'supplier', 'amount', 'payment_method', 'price_band', 'animal_source', 'animal_count', 'loss_reason'],
+          enum: ['direction', 'product', 'quantity', 'unit', 'party', 'supplier', 'amount', 'payment_method', 'price_band', 'animal_source', 'animal_count', 'loss_reason'],
         },
       },
     },

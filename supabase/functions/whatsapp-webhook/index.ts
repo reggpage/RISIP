@@ -706,7 +706,7 @@ async function priceQuantitySale(
   | { kind: 'unknown'; products: string[]; sale: QuantitySale; resolvedProducts: string[] }
   // Both prices registered, the line named neither, and the quantity does not
   // settle it. Guessing here is guessing at the takings.
-  | { kind: 'band'; choices: PriceBandChoice[]; sale: QuantitySale }
+  | { kind: 'band'; choices: PriceBandChoice[]; sale: QuantitySale; settled?: PricedLine[] }
   // "chips kuku" — the shop sells chicken by robo, nusu and kilo, and the order
   // named none of them. Three thousand or ten thousand for the same word.
   | { kind: 'combo_question'; splits: ComboSplit[]; sale: QuantitySale; units: [string, string[]][] }
@@ -1004,7 +1004,18 @@ async function priceQuantitySale(
   // Asked after the missing-price check, because a product with no price at all
   // is the bigger problem and its message says so. One question, listing only
   // the open lines — never one question per line.
-  if (open.length > 0) return { kind: 'band', choices: open, sale };
+  // The owner's instruction, and it is about not wasting his work: "isikatishe
+  // bidhaa nyingine ifanye mahesabu then ndio isime hizi bidhaa zina bei
+  // mbili." Two prices on two products is not a reason to go silent about the
+  // other seven. Everything that priced cleanly is carried into the question
+  // with its total, so he can see the arithmetic happened and only has to
+  // think about the ones that genuinely need him.
+  if (open.length > 0) {
+    const settled = lines.filter(
+      (line) => !open.some((choice) => choice.product === line.product),
+    );
+    return { kind: 'band', choices: open, sale, settled };
+  }
 
   const amount = Math.round(lines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0) * 100) / 100;
   return {
@@ -3304,7 +3315,7 @@ async function priceAndDraftSale(
       awaiting: 'product_cost', receipt_id: null, options: state,
       expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
     }, { onConflict: 'identity_id' });
-    const question = priceBandQuestion(priced.choices, lang);
+    const question = priceBandQuestion(priced.choices, lang, priced.settled ?? []);
     return { content: question, terminalReply: question };
   }
   if (priced.kind !== 'priced') return askBack(notUnderstood);
@@ -3656,6 +3667,51 @@ async function executeBusinessEvent(
 
   const event = validateBusinessEvent(input);
   if (!event) return askBack(notUnderstood);
+
+  // ── A LIST OF NUMBERS IS NOT AN INSTRUCTION ──────────────────────────────
+  //
+  // MEASURED, on the owner's own number. He sent nine products and their
+  // counts with no verb anywhere, and Risip filed it as a stock count without
+  // asking. His words: "hii ingetakiwa iniulize kama ni mauzo, manunuzi, au
+  // unaongeza idadi kwenye stoo ili mtu achague."
+  //
+  // He is right, and it is the most expensive ambiguity in the product. The
+  // same nine lines are three different messages — goods SOLD, goods BOUGHT,
+  // or a COUNT of what is on the shelf — and they move the ledger in opposite
+  // directions. Guessing "count" on a message that meant "sales" erases a
+  // day's takings and overwrites the shelf at the same time.
+  //
+  // The question already existed and is exactly the right one; nothing ever
+  // reached it, because the model answered first. Now the MODEL decides there
+  // is no direction — a judgement about language, which is its job — and the
+  // server asks. The parser below only normalises the quantities it was
+  // already given; it is not deciding what the message meant.
+  if (event.missingFields.includes('direction') && event.lines.length > 0) {
+    const asList = event.lines
+      .map((line) => `${line.productWording} ${line.quantityWording ?? ''}`.trim())
+      .join('\n');
+    const sale = parseBareQuantityList(asList);
+    if (sale) {
+      const hint = await priceQuantitySale(db, identity, sale, lang);
+      const missingProducts = hint.kind === 'unknown' ? hint.products : [];
+      const resolvedProducts = hint.kind === 'unknown' ? hint.resolvedProducts : [];
+      const parked: ParkedQuantityMeaning = {
+        kind: 'quantity_meaning_clarification',
+        sourceMessageId: waMessageId,
+        originalText: said ?? asList,
+        sale,
+        missingProducts,
+        resolvedProducts,
+      };
+      await db.from('whatsapp_conversations').upsert({
+        identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+        awaiting: 'product_cost', receipt_id: null, options: parked,
+        expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+      }, { onConflict: 'identity_id' });
+      const question = quantityMeaningQuestion(lang, missingProducts);
+      return { content: question, terminalReply: question };
+    }
+  }
 
   const date = decideDate(event.occurredAtWording, lang);
   if (!date.ok) return askBack(date.question);
@@ -5062,7 +5118,7 @@ ${trendShapeFacts(days)}`,
         awaiting: 'product_cost', receipt_id: null, options: state,
         expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
       }, { onConflict: 'identity_id' });
-      const question = priceBandQuestion(priced.choices, lang);
+      const question = priceBandQuestion(priced.choices, lang, priced.settled ?? []);
       return { content: question, terminalReply: question };
     }
     if (priced.kind === 'combo_question' || priced.kind === 'combo_variant') {
