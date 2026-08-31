@@ -588,6 +588,21 @@ type NewProductOfferSetup = {
   missingProducts: string[];
   sourceMessageId: string;
   originalText?: string;
+  /**
+   * What the trader had already chosen, and every line they typed.
+   *
+   * MEASURED, and it is why these two fields exist: a message with nine known
+   * products and two new ones, answered MANUNUZI, sent only the two new names
+   * onward. The other nine were dropped in silence — not refused, not asked
+   * about, simply gone, because this state had nowhere to keep them and no
+   * memory of what the person had asked for.
+   *
+   * The rule the owner gave, twice: do the work that can be done, then stop for
+   * the part that needs him. Registration is a blockage being cleared, not the
+   * end of the road, so what comes after it has to survive it.
+   */
+  pendingDirection?: 'sale' | 'stock_purchase' | 'stock_count';
+  pendingSale?: QuantitySale;
 };
 
 /**
@@ -7284,11 +7299,16 @@ Deno.serve(async (req) => {
           const meaning = parseQuantityMeaningAnswer(body);
           if ((quantityMeaningPending.missingProducts?.length ?? 0) > 0
             && wantsToRegisterNewProducts(body)) {
+            // SAJILI answered before a direction was chosen. He has not said
+            // what the lines are yet, so nothing is assumed — but the lines
+            // themselves are kept, so answering the direction afterwards does
+            // not mean typing them again.
             const state: NewProductOfferSetup = {
               kind: 'new_product_offer_setup',
               missingProducts: quantityMeaningPending.missingProducts ?? [],
               sourceMessageId: quantityMeaningPending.sourceMessageId,
               originalText: quantityMeaningPending.originalText,
+              pendingSale: quantityMeaningPending.sale,
             };
             await db.from('whatsapp_conversations').upsert({
               identity_id: identity.id,
@@ -7311,11 +7331,17 @@ Deno.serve(async (req) => {
             await audit(db, identity, waMessageId, 'quantity_meaning', 'sale', 'applied');
           } else if (meaning === 'stock_purchase') {
             if ((quantityMeaningPending.missingProducts?.length ?? 0) > 0) {
+              // Everything he typed travels with the question, and what he
+              // asked for travels with it. Without these two the nine products
+              // he already sells were dropped the moment two new names appeared
+              // beside them.
               const state: NewProductOfferSetup = {
                 kind: 'new_product_offer_setup',
                 missingProducts: quantityMeaningPending.missingProducts ?? [],
                 sourceMessageId: quantityMeaningPending.sourceMessageId,
                 originalText: quantityMeaningPending.originalText,
+                pendingDirection: 'stock_purchase',
+                pendingSale: quantityMeaningPending.sale,
               };
               await db.from('whatsapp_conversations').upsert({
                 identity_id: identity.id,
@@ -9293,6 +9319,16 @@ Deno.serve(async (req) => {
             await finish('skipped');
             continue;
           }
+          // THE EXACT LINE WHERE NINE PRODUCTS FELL OUT.
+          //
+          // The sale was carried forward only when it arrived from
+          // newProductSaleSetup. Arriving from newProductOfferSetup — which is
+          // the path a bare list takes when the trader answers MANUNUZI — it
+          // was silently not carried, so registration finished and there was
+          // nothing left to resume. Two new names went in; nine known products
+          // went nowhere.
+          //
+          // Registration is a blockage being cleared, never the end of the road.
           const state: NewProductPricingState = {
             kind: 'new_product_pricing',
             products: newProducts,
@@ -9302,6 +9338,9 @@ Deno.serve(async (req) => {
               credit: newProductSaleSetup.credit ?? null,
               paymentMethod: newProductSaleSetup.paymentMethod ?? null,
               occurredAt: newProductSaleSetup.occurredAt ?? null,
+            } : newProductOfferSetup?.pendingSale ? {
+              pendingSale: newProductOfferSetup.pendingSale,
+              sourceMessageId: newProductOfferSetup.sourceMessageId,
             } : {}),
           };
           await db.from('whatsapp_conversations').upsert({
