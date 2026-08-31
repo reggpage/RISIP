@@ -8882,7 +8882,30 @@ Deno.serve(async (req) => {
         // narrow: a shop asked "Rejareja au jumla?" that instead types "leo
         // nimeuza shingapi" has changed the subject, and changing the subject
         // goes to Claude like any other sentence.
-        const aiEligible = messageGoesToModel(convo, body, systemCommand);
+        // A FORM WE HANDED THEM IS NOT LANGUAGE.
+        //
+        // MEASURED, on the owner's screen, and it wrote the wrong product to
+        // his books. Risip asked him to register two products in an exact
+        // shape, he sent it exactly:
+        //
+        //   kofia @4000 nauza 7000 jumla 6500
+        //   shuka @9000 nauza 15000 jumla ni 10000
+        //
+        // parseNewProductPricing reads both perfectly — verified — but that
+        // parser lives eight hundred lines below this gate, and 'product_cost'
+        // is a bounded state whose only bypass is yes/no. So the message went
+        // to the model, which read it as propose_product_cost and called it
+        // TWICE. The confirmation on screen named kofia; the row that saved was
+        // shuka. He approved one thing and a different thing was written.
+        //
+        // The model is right for language and this is not language: it is the
+        // answer to a form Risip printed a moment earlier, in the syntax Risip
+        // dictated. Reinterpreting our own form is not intelligence.
+        const answeringWithPrices = Boolean(
+          (newProductOfferSetup || newProductSaleSetup || newProductPending)
+          && parseNewProductPricing(writeBody).length > 0,
+        );
+        const aiEligible = messageGoesToModel(convo, body, systemCommand) && !answeringWithPrices;
         // Watched in production: ai_primary is what an ordinary business
         // message must be. If parsers ever start eating them again, this is
         // where it shows first.
