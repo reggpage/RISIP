@@ -319,6 +319,28 @@ export function periodDates(
   return first === today ? today : `${first}..${today}`;
 }
 
+function periodDateLabel(
+  period: ReadPeriod,
+  lang: 'sw' | 'en',
+  range?: ResolvedRange | null,
+  now = new Date(),
+): string {
+  const dates = periodDates(period, range, now);
+  const format = (isoDay: string) => {
+    const [year, month, day] = isoDay.split('-').map(Number);
+    return new Intl.DateTimeFormat(lang === 'sw' ? 'sw-TZ' : 'en-GB', {
+      timeZone: 'Africa/Dar_es_Salaam',
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(new Date(Date.UTC(year, month - 1, day, 12)));
+  };
+  if (!dates.includes('..')) return format(dates);
+  const [first, last] = dates.split('..');
+  return `${format(first)} mpaka ${format(last)}`;
+}
+
 export function calculateBusinessSummary(rows: ReadDailyRow[]): BusinessSummary {
   const confirmed = rows.filter((row) => row.status === 'confirmed');
   const total = (kind: string) => confirmed
@@ -429,6 +451,7 @@ export function businessSummaryFacts(
   return [
     `period=${periodLabel(period, lang, range)}`,
     `period_dates=${periodDates(period, range)}`,
+    `period_date_label=${periodDateLabel(period, lang, range)}`,
     `total_sales=${summary.sales}`,
     `sales_not_on_credit=${summary.paidSales}`,
     `credit_sales=${summary.debtIssued}`,

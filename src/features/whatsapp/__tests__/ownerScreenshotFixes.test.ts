@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import {
+  buildAssistantSystemPrompt,
+  type AssistantIdentityContext,
+} from '../../../../supabase/functions/_shared/whatsappAssistant';
 import { toWhatsAppText } from '../../../../supabase/functions/_shared/whatsappMarkdown';
 import { periodDates } from '../../../../supabase/functions/_shared/whatsappReadTools';
 import { readFileSync } from 'node:fs';
@@ -73,6 +77,29 @@ describe('a figure has to belong to a day the shop can check', () => {
     // ndio nini". The label stays; the dates travel with it.
     expect(facts).toContain('period=mwezi huu');
     expect(facts).toMatch(/period_dates=\d{4}-\d{2}-\d{2}/);
+    expect(facts).toMatch(/period_date_label=\w+/);
+  });
+
+  it('hands the model the full local label for jana', async () => {
+    const { businessSummaryFacts, calculateBusinessSummary } =
+      await import('../../../../supabase/functions/_shared/whatsappReadTools');
+    const { resolveDateRange } =
+      await import('../../../../supabase/functions/_shared/whatsappDateRange');
+    const range = resolveDateRange('jana', at('2026-08-31T05:00:00Z'));
+    const facts = businessSummaryFacts(calculateBusinessSummary([]), 'today', 'sw', range);
+    expect(facts).toContain('period=jana');
+    expect(facts).toContain('period_dates=2026-08-30');
+    expect(facts).toContain('period_date_label=Jumapili, 30 Agosti 2026');
+  });
+
+  it('forbids the fake system-date caveat once the tool has dates', () => {
+    const prompt = buildAssistantSystemPrompt({
+      identityId: 'i', profileId: 'p', companyId: 'c', companyName: 'Duka',
+      userName: null, role: 'owner', lang: 'sw',
+      approvalFlowEnabled: false, reversalEnabled: false, payoutsEnabled: false,
+    } as AssistantIdentityContext);
+    expect(prompt).toContain('period_date_label');
+    expect(prompt).toMatch(/NEVER\s+say the system\s+did not provide the date/i);
   });
 });
 
