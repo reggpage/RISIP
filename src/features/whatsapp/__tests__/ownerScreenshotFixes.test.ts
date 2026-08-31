@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildAssistantSystemPrompt,
+  enforceResolvedDateLabel,
   findFalseDateCaveat,
   type AssistantIdentityContext,
 } from '../../../../supabase/functions/_shared/whatsappAssistant';
@@ -118,6 +119,23 @@ describe('a figure has to belong to a day the shop can check', () => {
       'Mauzo ya jana: TSh 105,000. (Tarehe kamili haikuwepo kwenye matokeo ya mfumo huu.)',
       [evidence],
     )).toEqual(['false_date_caveat']);
+  });
+
+  it('removes the false caveat and inserts the resolved jana label', () => {
+    const evidence = [
+      'period=jana',
+      'period_dates=2026-08-30',
+      'period_date_label=Jumapili, 30 Agosti 2026',
+      'total_sales=105000',
+    ].join('\n');
+    expect(enforceResolvedDateLabel(
+      'Jana, mauzo yalikuwa TSh 105,000, faida ghafi TSh 84,250. (Tarehe kamili haikutolewa na mfumo.)',
+      [evidence],
+    )).toBe('Jana (Jumapili, 30 Agosti 2026), mauzo yalikuwa TSh 105,000, faida ghafi TSh 84,250.');
+    expect(enforceResolvedDateLabel(
+      'Mauzo ya jana: TSh 105,000. Faida ghafi: TSh 84,250. (Tarehe kamili haikuwepo kwenye matokeo ya mfumo huu.)',
+      [evidence],
+    )).toBe('Mauzo ya jana (Jumapili, 30 Agosti 2026): TSh 105,000. Faida ghafi: TSh 84,250.');
   });
 
   it('does not reject an honest clarification when no date was resolved', () => {

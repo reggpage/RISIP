@@ -1378,6 +1378,30 @@ export function findFalseDateCaveat(answer: string, evidence: string[]): string[
   return claimsMissingDate ? ['false_date_caveat'] : [];
 }
 
+export function enforceResolvedDateLabel(answer: string, evidence: string[]): string {
+  const joined = evidence.join('\n');
+  const label = joined.match(/^period_date_label=(.+)$/m)?.[1]?.trim();
+  if (!label) return answer;
+  let cleaned = answer
+    .replace(/\s*\([^)]*\btarehe\b[^)]*\b(?:haikutolewa|haikuwepo|haijapo|hakuna|haikupatikana|haikuonekana|haijaonyeshwa)\b[^)]*\b(?:mfumo|matokeo|data|tool|system)\b[^)]*\)\s*\.?/giu, ' ')
+    .replace(/\s*\btarehe\b[^.?!\n]*\b(?:haikutolewa|haikuwepo|haijapo|hakuna|haikupatikana|haikuonekana|haijaonyeshwa)\b[^.?!\n]*\b(?:mfumo|matokeo|data|tool|system)\b[^.?!\n]*[.?!]?/giu, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (cleaned.includes(label)) return cleaned;
+  const period = joined.match(/^period=(.+)$/m)?.[1]?.trim().toLocaleLowerCase('sw-TZ') ?? '';
+  if (period === 'jana' && /\bjana\b/iu.test(cleaned)) {
+    return cleaned.replace(/\bjana\b/iu, (match) => `${match} (${label})`);
+  }
+  if (period === 'leo' && /\bleo\b/iu.test(cleaned)) {
+    return cleaned.replace(/\bleo\b/iu, (match) => `${match} (${label})`);
+  }
+  if (period === 'juzi' && /\bjuzi\b/iu.test(cleaned)) {
+    return cleaned.replace(/\bjuzi\b/iu, (match) => `${match} (${label})`);
+  }
+  return cleaned;
+}
+
 /**
  * Numbers an answer may state without inventing anything.
  *
@@ -1606,7 +1630,9 @@ ${userText}` },
         return null;
       }
       const modelText = textFrom(payload.content);
-      const reply = modelText || unavailable(args.context.lang);
+      const reply = modelText
+        ? enforceResolvedDateLabel(modelText, evidence)
+        : unavailable(args.context.lang);
       const ungrounded = findUngroundedNumbers(reply, evidence);
       const unsafeProfitWording = findUnsafeProfitWording(reply, evidence);
       const falseDateCaveat = findFalseDateCaveat(reply, evidence);
