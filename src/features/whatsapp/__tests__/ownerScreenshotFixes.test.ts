@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildAssistantSystemPrompt,
+  findFalseDateCaveat,
   type AssistantIdentityContext,
 } from '../../../../supabase/functions/_shared/whatsappAssistant';
 import { toWhatsAppText } from '../../../../supabase/functions/_shared/whatsappMarkdown';
@@ -100,6 +101,30 @@ describe('a figure has to belong to a day the shop can check', () => {
     } as AssistantIdentityContext);
     expect(prompt).toContain('period_date_label');
     expect(prompt).toMatch(/NEVER\s+say the system\s+did not provide the date/i);
+  });
+
+  it('rejects the exact fake date caveats seen live', () => {
+    const evidence = [
+      'period=jana',
+      'period_dates=2026-08-30',
+      'period_date_label=Jumapili, 30 Agosti 2026',
+      'total_sales=105000',
+    ].join('\n');
+    expect(findFalseDateCaveat(
+      'Jana, mauzo yalikuwa TSh 105,000. (Tarehe kamili haikutolewa na mfumo.)',
+      [evidence],
+    )).toEqual(['false_date_caveat']);
+    expect(findFalseDateCaveat(
+      'Mauzo ya jana: TSh 105,000. (Tarehe kamili haikuwepo kwenye matokeo ya mfumo huu.)',
+      [evidence],
+    )).toEqual(['false_date_caveat']);
+  });
+
+  it('does not reject an honest clarification when no date was resolved', () => {
+    expect(findFalseDateCaveat(
+      'Sijaweza kutambua tarehe hiyo kwa usalama.',
+      ['total_sales=105000'],
+    )).toEqual([]);
   });
 });
 

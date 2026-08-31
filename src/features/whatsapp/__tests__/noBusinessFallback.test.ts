@@ -63,7 +63,7 @@ describe('no business prose can stand in for an answer', () => {
   });
 
   it('fails the turn when the model states a figure no tool returned', () => {
-    const branch = assistant.slice(assistant.indexOf('if (ungrounded.length > 0 || unsafeProfitWording.length > 0)'));
+    const branch = assistant.slice(assistant.indexOf('if (ungrounded.length > 0 || unsafeProfitWording.length > 0 || falseDateCaveat.length > 0)'));
     // The code now carries the SHAPE of the refused token — digit-widths, never
     // the value — because "deferred for safety" three times in a row named the
     // symptom and not one thing that would fix it. Still one failure, still no

@@ -1368,6 +1368,16 @@ export function findUnsafeProfitWording(answer: string, evidence: string[]): str
   return issues;
 }
 
+export function findFalseDateCaveat(answer: string, evidence: string[]): string[] {
+  const joined = evidence.join('\n');
+  if (!/\bperiod_dates\s*=|\bperiod_date_label\s*=/i.test(joined)) return [];
+  const normalized = answer.toLocaleLowerCase('sw-TZ');
+  const claimsMissingDate = /\btarehe\b/.test(normalized)
+    && /\b(haikutolewa|haikuwepo|haijapo|hakuna|haikupatikana|haikuonekana|haijaonyeshwa)\b/.test(normalized)
+    && /\b(mfumo|matokeo|data|tool|system)\b/.test(normalized);
+  return claimsMissingDate ? ['false_date_caveat'] : [];
+}
+
 /**
  * Numbers an answer may state without inventing anything.
  *
@@ -1599,7 +1609,8 @@ ${userText}` },
       const reply = modelText || unavailable(args.context.lang);
       const ungrounded = findUngroundedNumbers(reply, evidence);
       const unsafeProfitWording = findUnsafeProfitWording(reply, evidence);
-      if (ungrounded.length > 0 || unsafeProfitWording.length > 0) {
+      const falseDateCaveat = findFalseDateCaveat(reply, evidence);
+      if (ungrounded.length > 0 || unsafeProfitWording.length > 0 || falseDateCaveat.length > 0) {
         // The model stated a figure no tool returned. The answer cannot go out,
         // and neither can a template pretending to be one.
         // WHICH figure was rejected, as a SHAPE rather than a value.
@@ -1631,24 +1642,32 @@ ${userText}` },
         if (corrections === 0) {
           corrections += 1;
           messages.push({ role: 'assistant', content: payload.content ?? [] });
-          const correction = ungrounded.length > 0
+        const correction = ungrounded.length > 0
             ? `Your answer stated figures no tool returned: ${ungrounded.join(', ')}. `
               + 'Rewrite it using ONLY figures that appear in the tool results above. Do not '
               + 'derive, subtract, project, forecast or round. If answering properly needs a '
               + 'figure you were not given, say plainly that it is not recorded, and answer '
               + 'with what you do have.'
-            : 'Rewrite the daily profit answer with precise accounting labels. In Kiswahili, '
+            : unsafeProfitWording.length > 0
+              ? 'Rewrite the daily profit answer with precise accounting labels. In Kiswahili, '
               + 'cogs must be "Gharama za bidhaa zilizouzwa (COGS)", gross_profit must be '
               + '"Faida ghafi", and estimated_profit must be "Faida baada ya matumizi '
               + 'yaliyorekodiwa". Do not shorten cogs to "gharama za bidhaa" and do not '
-              + 'call estimated_profit only "Faida ya leo".';
+              + 'call estimated_profit only "Faida ya leo".'
+              : 'Rewrite without the false date caveat. The tool result already includes '
+              + 'period_dates and period_date_label, so the date was provided by the system. '
+              + 'Use that label naturally and answer the question directly.';
           messages.push({
             role: 'user',
             content: correction,
           });
           continue;
         }
-        args.onFailure?.((ungrounded.length > 0 ? `model_ungrounded_number:${shape}` : `model_profit_wording:${unsafeProfitWording.join(',')}`).slice(0, 60));
+        args.onFailure?.((ungrounded.length > 0
+          ? `model_ungrounded_number:${shape}`
+          : unsafeProfitWording.length > 0
+            ? `model_profit_wording:${unsafeProfitWording.join(',')}`
+            : `model_false_date_caveat:${falseDateCaveat.join(',')}`).slice(0, 60));
         return {
           reply: unavailable(args.context.lang),
           memory: inferAssistantMemory(executed),
