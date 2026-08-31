@@ -268,7 +268,8 @@ const T = {
       + '• _nafunga_\n\n'
       + '*1* Register products\n'
       + '*2* Invite a worker\n'
-      + '*3* Something else — just tell me',
+      + '*3* Something else — just tell me\n\n'
+      + '_Barcoded goods: send *scan*._',
     sw: 'Andika kwa maneno yako — ninaelewa Kiswahili cha kawaida.\n\n'
       + 'Mifano ya kawaida:\n'
       + '• _nimeuza soda 5_\n'
@@ -277,7 +278,8 @@ const T = {
       + '• _nafunga_\n\n'
       + '*1* Nataka kusajili bidhaa\n'
       + '*2* Nataka kumualika mfanyakazi\n'
-      + '*3* Kitu kingine — niambie tu',
+      + '*3* Kitu kingine — niambie tu\n\n'
+      + '_Bidhaa zenye barcode: tuma *scan*._',
   },
   onlyRisip: {
     en: 'I can help with Risip and your business records, including receipts, sales, expenses, debts, payments, products and projects. Ask me naturally, or reply *help* for commands.',

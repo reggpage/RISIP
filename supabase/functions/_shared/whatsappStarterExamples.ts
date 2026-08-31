@@ -173,16 +173,31 @@ export function firstProductsPrompt(
   const eg = starterExample(category, subCategory);
   const italic = (lines: string[]) => lines.map((line) => `_${line}_`).join('\n');
   const twoLines = italic(eg.register.slice(0, 2));
+  // THE BARCODE, SAID WHERE SOMEBODY WILL ACT ON IT.
+  //
+  // The owner asked for this, and he is right that it belongs at the start:
+  // "mtu anaweza sajili bidhaa kupitia bar code… mwambie mtu pia kuwa unaweza
+  // sajili bidhaa kwa kuscan, tuma neno scan."
+  //
+  // The feature already worked — isScanRequest, handleScanLink, the
+  // product_barcodes table — and nothing ever told anybody it existed. A shop
+  // with two hundred packaged lines types every one of them by hand because a
+  // working camera path was never mentioned.
+  //
+  // One line, and only one: a person registering their first three products
+  // does not need a second method explained, they need to know it is there.
   return lang === 'sw'
     ? 'Tuanze na bidhaa zako. Andika hivi, moja kwa mstari:\n\n'
       + `${twoLines}\n\n`
       + '*@* ni bei ya kununua, *nauza* ni bei ya kuuza.\n\n'
       + '_Bidhaa ikiwa na bei ya jumla, ongeza: jumla 900 kuanzia 12._\n'
+      + '_Zenye barcode: tuma *scan* nikupe link ya kupiga picha ya barcode._\n'
       + 'Ukikwama tuma *msaada*.'
     : 'Let us start with your products. Write them like this, one per line:\n\n'
       + `${twoLines}\n\n`
       + '*@* is the buying price, *nauza* is the selling price.\n\n'
       + '_If a product has a wholesale price, add: jumla 900 kuanzia 12._\n'
+      + '_For barcoded goods: send *scan* and I will send you a link._\n'
       + 'Send *msaada* if you get stuck.';
 }
 

@@ -107,16 +107,28 @@ describe('the server asks instead of writing', () => {
 describe('the three choices the shopkeeper is given', () => {
   const asked = quantityMeaningQuestion('sw', []);
 
-  it('offers sales, stock and purchase, and nothing else', () => {
-    expect(asked).toContain('*MAUZO*');
-    expect(asked).toContain('*STOCK*');
-    expect(asked).toContain('*MANUNUZI*');
+  it('offers the owner’s three words, numbered', () => {
+    // "iwe Mauzo, Ongeza na Sajili." STOCK left the menu: an absolute shelf
+    // count is a rarer and more deliberate act, and it keeps its own header
+    // word rather than sitting between two everyday ones.
+    expect(asked).toContain('*1* MAUZO');
+    expect(asked).toContain('*2* ONGEZA');
+    expect(asked).toContain('*3* SAJILI');
+    expect(asked).not.toContain('MANUNUZI');
   });
 
-  it('says what each one will do, not just its name', () => {
-    expect(asked).toContain('nirekodi kama mauzo ya leo');
-    expect(asked).toContain('hesabu mpya ya bidhaa zilizopo sasa');
-    expect(asked).toContain('ulizonunua');
+  it('says what each one will DO, not just what it is called', () => {
+    // "pia mtu apewe maana zake mwanzoni kabisa." A category name tells
+    // somebody nothing; a consequence does.
+    expect(asked).toContain('nimeuza bidhaa hizi');
+    expect(asked).toContain('nimenunua, ziongezwe kwenye zilizopo');
+    expect(asked).toContain('bidhaa mpya, ziwekwe kwenye orodha kwanza');
+  });
+
+  it('invites their own words as well as a number', () => {
+    // "nachotaka hata mtu akijielezea kwa maswali ai iwe na uwezo wa kuelewa
+    // kama chatgpt." The numbers are for whoever would rather not type.
+    expect(asked).toContain('au niambie kwa maneno yako');
   });
 });
 

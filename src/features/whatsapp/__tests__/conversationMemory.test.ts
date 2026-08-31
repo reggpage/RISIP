@@ -38,9 +38,9 @@ describe('short WhatsApp follow-up memory', () => {
       sale,
     };
     const question = quantityMeaningQuestion('sw');
-    expect(question).toContain('mauzo ya leo');
-    expect(question).toContain('niongeze idadi hizi');
-    expect(question).toContain('bidhaa ulizonunua/kuongeza stoo');
+    expect(question).toContain('nimeuza bidhaa hizi');
+    expect(question).toContain('ziongezwe kwenye zilizopo');
+    expect(question).toContain('ziwekwe kwenye orodha kwanza');
     expect(question).not.toMatch(/Nimekumbuka|Kumbuka/);
     expect(stockPurchaseNeedsPrices(state, 'sw')).toContain('• birika: 100\n• Daftari: 400\n• Dumu la maji: 100');
     expect(stockPurchaseNeedsPrices(state, 'sw')).not.toMatch(/Nimekumbuka|Kumbuka|sitaikisia/);
@@ -54,7 +54,7 @@ describe('short WhatsApp follow-up memory', () => {
     // and pointing at the choice that fits: the owner asked for the question to
     // lean on what Risip can already see rather than read like a form.
     expect(question).toContain('sijaziona kwenye stoo yako — ni mpya');
-    expect(question).toContain('Kama umezinunua, chagua *MANUNUZI*');
+    expect(question).toContain('Zikiwa mpya kweli, chagua *3*');
     expect(question).toContain('bei ya kununua na bei ya kuuza');
     expect(question).toContain('SAJILI');
   });

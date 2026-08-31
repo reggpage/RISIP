@@ -35,16 +35,19 @@ describe('when every product is already his', () => {
   });
 
   it('does not invent new products that are not there', () => {
+    // SAJILI is still offered as option 3 — it is one of the three things a
+    // list of numbers can mean. What must not appear is the "these are new"
+    // block, because none of them are.
     expect(asked).not.toContain('ni mpya');
-    expect(asked).not.toContain('SAJILI');
+    expect(asked).not.toContain('sijaziona kwenye stoo yako');
   });
 
   it('still gives all three choices, because knowing the products settles nothing', () => {
     // He could be selling them, restocking them, or counting them. The shop
     // recognising a name proves none of the three.
-    expect(asked).toContain('*MAUZO*');
-    expect(asked).toContain('*STOCK*');
-    expect(asked).toContain('*MANUNUZI*');
+    expect(asked).toContain('*1* MAUZO');
+    expect(asked).toContain('*2* ONGEZA');
+    expect(asked).toContain('*3* SAJILI');
   });
 });
 
@@ -60,12 +63,12 @@ describe('when some are new', () => {
   it('leans towards purchase without deciding it', () => {
     // "Kama umezinunua" — if you bought them. A conditional, not a conclusion:
     // a first-ever stock count also contains names Risip has never seen.
-    expect(asked).toContain('Kama umezinunua, chagua *MANUNUZI*');
+    expect(asked).toContain('Zikiwa mpya kweli, chagua *3*');
     expect(asked).not.toContain('Nimerekodi');
   });
 
   it('offers registration, since a new product needs prices before anything else', () => {
-    expect(asked).toContain('*SAJILI*');
+    expect(asked).toContain('*3* SAJILI');
     expect(asked).toContain('bei ya kununua na bei ya kuuza');
   });
 

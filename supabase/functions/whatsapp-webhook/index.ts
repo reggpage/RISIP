@@ -7559,10 +7559,25 @@ Deno.serve(async (req) => {
             await finish('skipped');
             continue;
           } else {
-            await reply(phone, quantityMeaningQuestion(lang));
-            await audit(db, identity, waMessageId, 'quantity_meaning', 'reask', 'skipped');
-            await finish('skipped');
-            continue;
+            // NOT A NUMBER AND NOT ONE OF THE THREE WORDS — SO IT IS LANGUAGE.
+            //
+            // The owner: "nachotaka hata mtu akijielezea kwa maswali ai iwe na
+            // uwezo wa kuelewa kama chatgpt."
+            //
+            // He is right, and re-asking was the robot. "Hizi nimezinunua leo
+            // asubuhi" is a perfectly clear answer that this parser cannot read
+            // and the model reads without effort — reading language is the one
+            // job a parser should never be given.
+            //
+            // The parked question stays exactly where it is. The model is told
+            // what is waiting and answers it through
+            // resolve_pending_clarification, or changes the subject and the
+            // server releases the question. Either way nobody is asked the same
+            // thing twice for having used their own words.
+            await audit(db, identity, waMessageId, 'quantity_meaning', 'to_model', 'clarification');
+            // Deliberately no finish() and no continue: falling through is the
+            // whole point. The message carries on to the model with the parked
+            // question still in its context.
           }
         }
 
