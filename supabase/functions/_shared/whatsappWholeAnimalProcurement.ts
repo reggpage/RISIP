@@ -154,7 +154,7 @@ export function wholeAnimalProcurementConfirmation(
     ? 'Hii haijaongeza kilo za nyama au bidhaa nyingine.'
     : 'This has not created meat kilos or any other product stock.');
   lines.push(lang === 'sw'
-    ? 'Jibu *NDIYO* kuthibitisha, au *HAPANA* kughairi.'
-    : 'Reply *YES* to confirm, or *NO* to cancel.');
+    ? 'Jibu *1* Ndiyo · *2* Hapana'
+    : 'Reply *1* Yes · *2* No');
   return lines.join('\n');
 }

@@ -53,7 +53,7 @@ describe('whole-animal breakdown parser', () => {
   it('renders confirmation and validates a single source choice', () => {
     expect(wholeAnimalBreakdownConfirmation([
       { productName: 'nyama', quantity: 180, unit: 'kilo' },
-    ], 'sw')).toContain('NDIYO');
+    ], 'sw')).toContain('*1*');
     expect(parseWholeAnimalSourceChoice('2', 2)).toBe(1);
     expect(parseWholeAnimalSourceChoice('3', 2)).toBeNull();
     expect(parseWholeAnimalSourceChoice('HAPANA', 2)).toBeNull();

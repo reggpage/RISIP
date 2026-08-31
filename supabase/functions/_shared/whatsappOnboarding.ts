@@ -104,7 +104,7 @@ const T = {
     en: 'Got it, thank you.',
   },
   confirmCategoryAgain: {
-    sw: 'Jibu NDIYO kama nimepata sawa, au HAPANA unieleze tena biashara yako.',
+    sw: 'Jibu *1* Ndiyo, au *2* unieleze tena biashara yako.',
     en: 'Reply YES if that is right, or NO to describe your business again.',
   },
   askCode: {

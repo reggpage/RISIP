@@ -18,7 +18,7 @@ describe('product rename conversation', () => {
       records: 12, saleLines: 4, costRows: 2, priceRows: 2, stockCounts: 3, unitRows: 1,
     }, 'sw');
     expect(reply).toContain('Rekodi 12');
-    expect(reply).toContain('Jibu *NDIYO*');
+    expect(reply).toContain('*1* Ndiyo');
     expect(reply).toContain('Pesa, idadi na jumla hazitabadilika');
   });
 });

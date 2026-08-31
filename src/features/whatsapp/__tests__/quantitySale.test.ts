@@ -88,7 +88,7 @@ describe('what the trader is shown', () => {
     expect(reply).toContain('nguvu ya sala: 8 × TSh 9,000 (jumla) = TSh 72,000');
     expect(reply).toContain('daftari: 2 × TSh 1,500 = TSh 3,000');
     expect(reply).toContain('TSh 75,000');
-    expect(reply).toMatch(/NDIYO/);
+    expect(reply).toContain('*1*');
   });
 
   it('says the prices came from the trader, not from itself', () => {
@@ -284,7 +284,7 @@ describe('a name it cannot price, in a long paste', () => {
       'sw', [], ['biblia']);
     expect(reply).toContain('biblia');
     expect(reply).toMatch(/sijazihesabu/);
-    expect(reply.indexOf('biblia')).toBeLessThan(reply.indexOf('NDIYO'));
+    expect(reply.indexOf('biblia')).toBeLessThan(reply.indexOf('*1*'));
   });
 
   it('still shows the total for everything it could price', () => {

@@ -277,7 +277,7 @@ export function portionSetupConfirmation(setup: PortionSetupReady, lang: Lang): 
     ? `Nimeelewa ${setup.product}:\n`
       + `• Kipimo cha bidhaa: ${setup.baseUnit}\n${purchase}`
       + `\nVipimo vya kuuza:\n${rows}\n\n`
-      + 'Nihifadhi mpangilio huu? *NDIYO* / *HAPANA*'
+      + 'Nihifadhi mpangilio huu? *1* Ndiyo · *2* Hapana'
     : `I understood ${setup.product}:\n`
       + `• Stock unit: ${setup.baseUnit}\n${purchase}`
       + `\nSelling portions:\n${rows}\n\n`

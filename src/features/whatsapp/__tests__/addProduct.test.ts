@@ -124,8 +124,8 @@ describe('noticing the product is already there', () => {
     // Only the shopkeeper knows whether "daftari kubwa" is "daftari".
     const reply = productLooksLikeExisting('atlas', 'atlasi', 'sw');
     expect(reply).toContain('tayari una “atlasi”');
-    expect(reply).toMatch(/NDIYO/);
-    expect(reply).toMatch(/HAPANA/);
+    expect(reply).toContain('*1*');
+    expect(reply).toContain('*2*');
   });
 
   it('copes with a product that has no numbers yet', () => {

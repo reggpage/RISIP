@@ -569,10 +569,10 @@ export function quantitySaleConfirmation(
   return lang === 'sw'
     ? `Nimeelewa:\nAina: Mauzo\nBidhaa:\n${rows}\nJumla ya mauzo: *${money(total)}*\n${outgoings}${skipped}\n`
       + '_Bei ni zile ulizoziweka mwenyewe._\n\n'
-      + 'Jibu *NDIYO* kuthibitisha, au *HAPANA* kughairi.'
+      + 'Jibu *1* Ndiyo · *2* Hapana'
     : `Understood:\nType: Sale\nItems:\n${rows}\nSales total: *${money(total)}*\n${outgoings}${skipped}\n`
       + '_Priced from the list you set yourself._\n\n'
-      + 'Reply *YES* to confirm, or *NO* to cancel.';
+      + 'Reply *1* Yes · *2* No';
 }
 
 

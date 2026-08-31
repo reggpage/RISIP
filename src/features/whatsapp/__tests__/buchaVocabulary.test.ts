@@ -155,7 +155,7 @@ describe('what the shop is told', () => {
     const preview = aliasConfirmation('za mbwa', 'Chakula cha mbwa', 'sw');
     expect(preview).toContain('za mbwa');
     expect(preview).toContain('Chakula cha mbwa');
-    expect(preview).toContain('NDIYO');
+    expect(preview).toContain('*1*');
   });
 
   it('admits when a taught meaning still will not know the product', () => {

@@ -440,7 +440,7 @@ export function comboSaveOffer(split: ComboSplit, lang: Lang): string {
     `${piece.name}${piece.unit ? ` ${piece.unit}` : ''}${piece.quantity === 1 ? '' : ` ×${qty(piece.quantity)}`}`)
     .join(' + ');
   return lang === 'sw'
-    ? `\n\n💾 Nihifadhi *${split.phrase}* = ${reading}?\nUkijibu NDIYO sitakuuliza tena.`
+    ? `\n\n💾 Nihifadhi *${split.phrase}* = ${reading}?\nUkijibu *1* sitakuuliza tena.`
     : `\n\n💾 Save *${split.phrase}* = ${reading}?\nReply YES and I will not ask again.`;
 }
 

@@ -27,7 +27,7 @@ export function accountDeletionWarning(
   const names = companies.length ? companies.map((company) => `• ${company.name}`).join('\n') : '• Hakuna biashara unayomiliki';
   return lang === 'sw'
     ? 'Hii itafuta kabisa akaunti yako ya Risip, biashara unazomiliki, rekodi, stock, madeni, picha, history na link ya WhatsApp. Biashara unazofanyia kazi lakini humiliki zitaendelea kuwepo. Hii haiwezi kurudishwa.\n\nBiashara zitakazofutwa:\n'
-      + `${names}\n\nAndika FUTA KABISA kuthibitisha, au HAPANA kughairi.`
+      + `${names}\n\nAndika FUTA KABISA kuthibitisha, au *2* kughairi.`
     : 'This permanently deletes your Risip account, businesses you own, records, stock, debts, receipts, history and WhatsApp link. Businesses you only work in remain. This cannot be undone.\n\nBusinesses to delete:\n'
       + `${names}\n\nType DELETE PERMANENTLY to confirm, or NO to cancel.`;
 }
@@ -40,6 +40,6 @@ export function accountDeletionDone(lang: Lang): string {
 
 export function accountDeletionReask(lang: Lang): string {
   return lang === 'sw'
-    ? 'Sijaafuta chochote bado. Andika FUTA KABISA kuthibitisha, au HAPANA kughairi.'
+    ? 'Sijaafuta chochote bado. Andika FUTA KABISA kuthibitisha, au *2* kughairi.'
     : 'Nothing has been deleted yet. Type DELETE PERMANENTLY to confirm, or NO to cancel.';
 }

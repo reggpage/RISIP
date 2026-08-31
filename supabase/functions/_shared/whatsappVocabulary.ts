@@ -93,7 +93,7 @@ export function parseVocabularyTeaching(text: string | null | undefined): Vocabu
 export function aliasConfirmation(term: string, productName: string, lang: Lang): string {
   return lang === 'sw'
     ? `Nimeelewa. Unataka *${term}* iwe jina jingine la *${productName}* kwenye biashara hii.\n\n`
-      + `Nihifadhi? *NDIYO* / *HAPANA*`
+      + `Nihifadhi? *1* Ndiyo · *2* Hapana`
     : `Understood. You want *${term}* to be another name for *${productName}* in this business.\n\n`
       + `Save it? *YES* / *NO*`;
 }
@@ -104,7 +104,7 @@ export function semanticConfirmation(term: string, productName: string | null, l
       + (productName
         ? `Nitachukua kuwa unamaanisha *${productName}* isipokuwa ukitaja nyingine.\n`
         : `Sitajua ni bidhaa gani mpaka uniambie kila mara.\n`)
-      + `\nNihifadhi? *NDIYO* / *HAPANA*`;
+      + `\nNihifadhi? *1* Ndiyo · *2* Hapana`;
   }
   return `Understood. In this business, *${term}* means goods that spoiled.\n`
     + (productName
@@ -115,7 +115,7 @@ export function semanticConfirmation(term: string, productName: string | null, l
 
 export function forgetConfirmation(term: string, lang: Lang): string {
   return lang === 'sw'
-    ? `Unataka nisahau neno *${term}* kwenye biashara hii?\n\n*NDIYO* / *HAPANA*`
+    ? `Unataka nisahau neno *${term}* kwenye biashara hii?\n\n*1* Ndiyo · *2* Hapana`
     : `Do you want me to forget the word *${term}* in this business?\n\n*YES* / *NO*`;
 }
 

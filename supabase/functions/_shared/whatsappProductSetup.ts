@@ -260,7 +260,7 @@ export function productSetupConfirmation(
       : `• Selling: *${shillings(setup.salePrice, lang)}* per ${setup.saleUnit}`);
   }
   return (sw
-    ? `Nimeelewa *${setup.product}*:\n${rows.join('\n')}\n\nNihifadhi? *NDIYO* / *HAPANA*`
+    ? `Nimeelewa *${setup.product}*:\n${rows.join('\n')}\n\nNihifadhi? *1* Ndiyo · *2* Hapana`
     : `Understood, *${setup.product}*:\n${rows.join('\n')}\n\nSave it? *YES* / *NO*`);
 }
 
@@ -268,7 +268,7 @@ export function packagingConfirmation(setup: PackagingSetup, lang: Lang): string
   return lang === 'sw'
     ? `Nimeelewa: *${setup.packageUnit} 1* ya ${setup.product} ni *${setup.baseUnit} ${setup.size}*.\n\n`
       + `Ukiuza ${setup.packageUnit} 3, nitatoa ${setup.baseUnit} ${setup.size * 3} kwenye stock.\n\n`
-      + `Nihifadhi? *NDIYO* / *HAPANA*`
+      + `Nihifadhi? *1* Ndiyo · *2* Hapana`
     : `Understood: *1 ${setup.packageUnit}* of ${setup.product} is *${setup.size} ${setup.baseUnit}*.\n\n`
       + `Sell 3 ${setup.packageUnit} and I take ${setup.size * 3} ${setup.baseUnit} off the shelf.\n\n`
       + `Save it? *YES* / *NO*`;

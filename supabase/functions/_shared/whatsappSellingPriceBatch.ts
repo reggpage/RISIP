@@ -153,10 +153,10 @@ export function sellingPriceBatchConfirmation(
   return lang === 'sw'
     ? `Bei za kuuza — bidhaa ${batch.prices.length}:\n${rows}${problem}${trouble}\n\n`
       + 'Nitazitumia mtu akituma mauzo bila kutaja bei.\n\n'
-      + `Nihifadhi zote? NDIYO / HAPANA. ${pendingEscapeHint(lang)}`
+      + `Nihifadhi zote? *1* Ndiyo · *2* Hapana. ${pendingEscapeHint(lang)}`
     : `Selling prices — ${batch.prices.length} products:\n${rows}${problem}${trouble}\n\n`
       + 'I will use these when a sale names no price.\n\n'
-      + `Save them all? YES / NO. ${pendingEscapeHint(lang)}`;
+      + `Save them all? *1* Yes · *2* No. ${pendingEscapeHint(lang)}`;
 }
 
 /**

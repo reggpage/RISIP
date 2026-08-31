@@ -102,7 +102,7 @@ describe('setting up a product sold in portions', () => {
     const reply = portionSetupConfirmation(resumed.setup, 'sw');
     expect(reply).toContain('robo: 0.25 lita · TSh 700 · gharama TSh 250 · faida TSh 450');
     expect(reply).toContain('nusu: 0.5 lita · TSh 1,200 · gharama TSh 500 · faida TSh 700');
-    expect(reply).toMatch(/NDIYO/);
+    expect(reply).toContain('*1*');
   });
 });
 

@@ -156,8 +156,8 @@ export function parseSupplierPayment(input: string | null | undefined, lang: Lan
 
 export function supplierPaymentConfirmation(payment: SupplierPayment, lang: Lang): string {
   return lang === 'sw'
-    ? `Nimeelewa: umemlipa ${payment.supplierName} *TSh ${payment.amount.toLocaleString('en-US')}* kwa ${payment.paymentMethod}.\n\nJibu *NDIYO* kuthibitisha, au *HAPANA* kughairi.`
-    : `I understood: you paid ${payment.supplierName} *TZS ${payment.amount.toLocaleString('en-US')}* by ${payment.paymentMethod}.\n\nReply *YES* to confirm, or *NO* to cancel.`;
+    ? `Nimeelewa: umemlipa ${payment.supplierName} *TSh ${payment.amount.toLocaleString('en-US')}* kwa ${payment.paymentMethod}.\n\nJibu *1* Ndiyo · *2* Hapana`
+    : `I understood: you paid ${payment.supplierName} *TZS ${payment.amount.toLocaleString('en-US')}* by ${payment.paymentMethod}.\n\nReply *1* Yes · *2* No`;
 }
 
 export function parseSupplierBalanceQuestion(input: string | null | undefined): SupplierBalanceQuestion | null {

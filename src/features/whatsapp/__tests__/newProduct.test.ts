@@ -107,7 +107,7 @@ describe('what the shopkeeper is shown', () => {
     expect(reply).toContain('samaki');
     expect(reply).toMatch(/haipo kwenye store/);
     expect(reply).toMatch(/mauzo haya kwa muda/);
-    expect(reply).toMatch(/uyathibitishe kwa NDIYO/);
+    expect(reply).toMatch(/uyathibitishe kwa \*1\*/);
   });
 
   it('blocks a worker clearly instead of leading them into an owner-only write', () => {
@@ -139,7 +139,7 @@ describe('what the shopkeeper is shown', () => {
     expect(reply).toContain('rejareja TSh 12,000');
     expect(reply).toContain('jumla TSh 11,000 (kuanzia 3)');
     expect(reply).toContain('faida kwa kimoja: TSh 3,000');
-    expect(reply).toMatch(/NDIYO/);
+    expect(reply).toContain('*1*');
   });
 
   it('interrupts for a price that loses money on every sale', () => {
@@ -147,7 +147,7 @@ describe('what the shopkeeper is shown', () => {
       product: 'biblia', unitCost: 12000, retail: 12000, wholesale: null, wholesaleMinQty: null, unit: null,
     }], 'sw');
     expect(reply).toMatch(/hasara/);
-    expect(reply.indexOf('hasara')).toBeLessThan(reply.indexOf('NDIYO'));
+    expect(reply.indexOf('hasara')).toBeLessThan(reply.indexOf('*1*'));
   });
 
   it('judges the loss by the lowest price the shop would actually charge', () => {

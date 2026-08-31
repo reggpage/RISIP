@@ -1015,12 +1015,12 @@ export function buildDailyRecordConfirmation(record: ParsedDailyRecord, lang: La
   if (record.warnings?.length) {
     lines.push('', lang === 'sw' ? '⚠️ Tahadhari ya bei:' : '⚠️ Price warning:');
     lines.push(...record.warnings.map((warning) => '- ' + warning));
-    lines.push(lang === 'sw' ? 'Thibitisha kwa makusudi kwa kujibu NDIYO.' : 'Confirm explicitly by replying YES.');
+    lines.push(lang === 'sw' ? 'Thibitisha kwa kujibu *1*.' : 'Confirm explicitly by replying YES.');
   }
   lines.push((lang === 'sw' ? 'Jumla' : 'Total') + ': *' + money(record.amount, lang) + '*', '');
   lines.push(lang === 'sw'
-    ? `Jibu *NDIYO* kuthibitisha, au *HAPANA* kughairi. ${pendingEscapeHint(lang)}`
-    : `Reply *YES* to confirm, or *NO* to cancel. ${pendingEscapeHint(lang)}`);
+    ? `Jibu *1* Ndiyo · *2* Hapana ${pendingEscapeHint(lang)}`
+    : `Reply *1* Yes · *2* No ${pendingEscapeHint(lang)}`);
   return lines.join('\n');
 }
 
@@ -1051,14 +1051,38 @@ export function splitWhatsAppText(text: string, maxChars = 3200): string[] {
   return chunks;
 }
 
+/**
+ * A BARE "1" IS YES, AND A BARE "2" IS NO.
+ *
+ * The owner's rule: "kwenye commands words ziwe na number mtu achague… ili
+ * kuepusha kukosea kwa spellings." He is right about the cost. Every control
+ * word in this product has needed a spelling parser, and every one of those
+ * parsers has been a source of bugs — "mdiyo" was not a yes, and a confirmed
+ * sale sat unsaved because of it. A digit cannot be misspelled.
+ *
+ * Safe because of WHERE these are asked. Both are only ever consulted while a
+ * specific question is parked: twenty-two branches behind their own pending
+ * state, plus releasesParkedQuestion, which by definition runs only when
+ * something is waiting. A "1" with nothing pending never reaches here.
+ *
+ * GHAIRI stays a word, deliberately. isCancel is used by the general intent
+ * router, with no parked question above it, so a bare "3" there would cancel
+ * whatever somebody happened to be doing — and "3" is one of the commonest
+ * quantities a shop types. Rejection already covers ghairi, so 1 and 2 are the
+ * whole vocabulary a confirmation needs.
+ */
 export function isDailyRecordConfirmation(text: string | null | undefined): boolean {
   text = correctControlWords(text);
-  return /^(yes|ok|okay|confirm|sawa|ndio|ndiyo|thibitisha|hakika)\b/i.test(String(text ?? '').trim());
+  const said = String(text ?? '').trim();
+  if (said === '1') return true;
+  return /^(yes|ok|okay|confirm|sawa|ndio|ndiyo|thibitisha|hakika)\b/i.test(said);
 }
 
 export function isDailyRecordRejection(text: string | null | undefined): boolean {
   text = correctControlWords(text);
-  return /^(no|hapana|cancel|ghairi|toka|futa|acha|sitisha)\b/i.test(String(text ?? '').trim());
+  const said = String(text ?? '').trim();
+  if (said === '2') return true;
+  return /^(no|hapana|cancel|ghairi|toka|futa|acha|sitisha)\b/i.test(said);
 }
 
 export function buildDailyRecordConfirmed(record: ParsedDailyRecord, lang: Lang): string {

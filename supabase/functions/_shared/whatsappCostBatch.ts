@@ -88,10 +88,10 @@ export function costBatchConfirmation(batch: ProductCostBatch, lang: Lang): stri
   return lang === 'sw'
     ? `Bei za kununua ${batch.costs.length}:\n${rows}${problem}\n\n`
       + 'Hizi zitabadilisha makisio ya faida yanayofuata. Rekodi za nyuma hazitaguswa.\n\n'
-      + `Nihifadhi zote? NDIYO / HAPANA. ${pendingEscapeHint(lang)}`
+      + `Nihifadhi zote? *1* Ndiyo · *2* Hapana. ${pendingEscapeHint(lang)}`
     : `${batch.costs.length} buying prices:\n${rows}${problem}\n\n`
       + 'These change the profit estimates that follow. Past records are untouched.\n\n'
-      + `Save them all? YES / NO. ${pendingEscapeHint(lang)}`;
+      + `Save them all? *1* Yes · *2* No. ${pendingEscapeHint(lang)}`;
 }
 
 export function costBatchSaved(saved: number, businessName: string, lang: Lang): string {

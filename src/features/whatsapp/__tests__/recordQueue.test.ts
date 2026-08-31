@@ -89,7 +89,7 @@ describe('the batch, once enough have gathered', () => {
 
   it('asks once, for all of them', () => {
     expect(said).toContain('Nimepokea vitu *4*');
-    expect((said.match(/NDIYO/g) ?? [])).toHaveLength(1);
+    expect((said.match(/\*1\*/g) ?? [])).toHaveLength(1);
   });
 
   it('keeps a record with no product lines readable', () => {

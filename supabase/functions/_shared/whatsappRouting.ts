@@ -31,7 +31,7 @@
  *                   could not be reached at all.
  *
  * The narrow exception matters as much as the rule. When Risip has drafted a
- * record and asked "Jibu NDIYO au HAPANA", the word "ndiyo" is not a sentence
+ * record and asked "Jibu *1* Ndiyo · *2* Hapana", the word "ndiyo" is not a sentence
  * to be understood — it is a state-machine answer, and sending it to a model
  * risks semantic drift on the one step where drift writes to a ledger.
  */
@@ -54,7 +54,7 @@ export type MessageRoute =
  * and must not hold a new sentence away from the model.
  */
 const BOUNDED_QUESTION_STATES = new Set([
-  'payment_source',           // a drafted record awaiting NDIYO / HAPANA
+  'payment_source',           // a drafted record awaiting *1* Ndiyo · *2* Hapana
   'product_cost',             // a price band, a stock count, a cost batch
   'daily_record_quantity',    // "ngapi?"
   'logout_confirm',

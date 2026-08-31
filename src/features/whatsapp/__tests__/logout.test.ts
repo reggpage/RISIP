@@ -82,7 +82,7 @@ describe('what the person is told', () => {
     const sw = logoutConfirmation('St. Ritha bookshop', 'sw');
     expect(sw).toContain('St. Ritha bookshop');
     expect(sw).toMatch(/zitabaki salama/);
-    expect(sw).toMatch(/NDIYO/);
+    expect(sw).toContain('*1*');
     const en = logoutConfirmation('St. Ritha bookshop', 'en');
     expect(en).toMatch(/stay safe/);
     expect(en).toMatch(/YES/);

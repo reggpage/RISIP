@@ -152,6 +152,6 @@ export function bulkAdditionConfirmation(addition: BulkAddition, lang: 'sw' | 'e
     : `${qty(segment.stated)} ${addition.baseUnitName}`);
   const total = `${addition.productName}: ${sw ? 'jumla' : 'total'} ${qty(addition.totalBaseUnits)} ${addition.baseUnitName}`;
   return (sw
-    ? `${lines.join('\n')}\n${total}\n\nNihifadhi? NDIYO / HAPANA`
+    ? `${lines.join('\n')}\n${total}\n\nNihifadhi? *1* Ndiyo · *2* Hapana`
     : `${lines.join('\n')}\n${total}\n\nSave this? YES / NO`);
 }

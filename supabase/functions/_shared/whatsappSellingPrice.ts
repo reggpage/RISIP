@@ -163,7 +163,7 @@ export function sellingPriceConfirmation(price: SellingPrice, lang: Lang): strin
     lines.push((lang === 'sw' ? 'Jumla: ' : 'Wholesale: ') + shillings(price.wholesale) + from);
   }
   return lang === 'sw'
-    ? `${price.product}\n${lines.join('\n')}\n\nNihifadhi? NDIYO / HAPANA`
+    ? `${price.product}\n${lines.join('\n')}\n\nNihifadhi? *1* Ndiyo · *2* Hapana`
     : `${price.product}\n${lines.join('\n')}\n\nSave this? YES / NO`;
 }
 

@@ -86,7 +86,7 @@ export function voidConfirmation(target: VoidTarget, lang: Lang): string {
   const sw = lang === 'sw';
   return (sw
     ? `Nitaondoa hii kwenye hesabu zako:\n\n${describe(target, lang)}\n\n`
-      + 'Haitafutwa kabisa — itabaki kwenye historia ikiwa imefutwa, na haitahesabika tena.\n\nNiondoe? NDIYO / HAPANA'
+      + 'Haitafutwa kabisa — itabaki kwenye historia ikiwa imefutwa, na haitahesabika tena.\n\nNiondoe? *1* Ndiyo · *2* Hapana'
     : `I will take this out of your figures:\n\n${describe(target, lang)}\n\n`
       + 'It is not deleted — it stays in history marked voided, and stops counting.\n\nRemove it? YES / NO');
 }

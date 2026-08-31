@@ -59,7 +59,7 @@ describe('taking back a confirmed record', () => {
     expect(said).toContain('TSh 34,000');
     expect(said).toContain('nguvu ya sala 2');
     expect(said).toContain('Sabuni 6');
-    expect(said).toContain('NDIYO / HAPANA');
+    expect(said).toContain('*1* Ndiyo · *2* Hapana');
   });
 
   // A shopkeeper who can make a number vanish without trace has a tool for

@@ -121,7 +121,7 @@ export function queueFlushReply(records: QueuedRecord[], lang: Lang): string {
     .join(' · '));
 
   out.push('');
-  out.push(sw ? 'Jibu *NDIYO* nihifadhi zote.' : 'Reply *NDIYO* and I will save them all.');
+  out.push(sw ? 'Jibu *1* Ndiyo nihifadhi zote.' : 'Reply *1* and I will save them all.');
   return out.join('\n');
 }
 

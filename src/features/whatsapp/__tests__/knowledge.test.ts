@@ -5,7 +5,7 @@ describe('Risip knowledge retrieval', () => {
   it('retrieves daily-record guidance in Swahili', () => {
     const rows = retrieveRisipKnowledge('rekodi za mauzo na matumizi', 'sw');
     expect(rows.some((row) => row.topic === 'daily_records')).toBe(true);
-    expect(buildKnowledgeReply('rekodi za mauzo', 'sw')).toContain('NDIYO');
+    expect(buildKnowledgeReply('rekodi za mauzo', 'sw')).toContain('*1*');
   });
 
   it('retrieves permissions and receipt guidance in English', () => {

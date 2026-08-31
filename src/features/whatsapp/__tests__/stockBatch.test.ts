@@ -124,8 +124,8 @@ describe('what the trader is shown before anything is saved', () => {
     const reply = stockCountBatchConfirmation(batch, 'sw');
     expect(reply).toContain('1. daftari — *90*');
     expect(reply).toContain('2. sukari — *12.5 kilo*');
-    expect(reply).toContain('*NDIYO*');
-    expect(reply).toContain('*HAPANA*');
+    expect(reply).toContain('*1*');
+    expect(reply).toContain('*2*');
   });
 
   it('bolds the heading, so the list has something to hang under', () => {
@@ -146,7 +146,7 @@ describe('what the trader is shown before anything is saved', () => {
     const batch = parseStockCountBatch(list('daftari 90\nkalamu 240\nnyingine kadhaa'))!;
     const reply = stockCountBatchConfirmation(batch, 'sw');
     expect(reply).toContain('nyingine kadhaa');
-    expect(reply.indexOf('nyingine kadhaa')).toBeLessThan(reply.indexOf('NDIYO'));
+    expect(reply.indexOf('nyingine kadhaa')).toBeLessThan(reply.indexOf('*1*'));
   });
 });
 

@@ -74,7 +74,7 @@ describe('the draft, which is what somebody is asked to agree to', () => {
     expect(said).toContain('Mauzo 14');
     expect(said).toContain('TSh 596,500');
     expect(said).toContain('Faida ghafi: *TSh 399,000*');
-    expect(said).toContain('NDIYO');
+    expect(said).toContain('*1*');
   });
 
   it('names the debtor rather than counting them', () => {
@@ -104,7 +104,7 @@ describe('the draft, which is what somebody is asked to agree to', () => {
     // somebody typed "nafunga" out of habit before entering anything.
     const empty = nothingToCloseReply({ ...facts, recordCount: 0 }, 'sw');
     expect(empty).toContain('Hakuna kilichorekodiwa');
-    expect(empty).not.toContain('NDIYO');
+    expect(empty).not.toContain('*1*');
   });
 });
 

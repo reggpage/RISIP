@@ -212,8 +212,8 @@ export function stockLossConfirmation(
   if (lang === 'sw') {
     const head = `Nimeelewa ${amount} za *${productName}* zimeharibika.`;
     return value === null
-      ? `${head}\n\nSina gharama ya uhakika ya bidhaa hii, hivyo nitarekodi kiasi kilichopotea bila kukisia thamani yake.\n\nNirekodi? *NDIYO* / *HAPANA*`
-      : `${head}\nThamani ya stock iliyopotea ni *${money(value, lang)}*.\n\nNirekodi? *NDIYO* / *HAPANA*`;
+      ? `${head}\n\nSina gharama ya uhakika ya bidhaa hii, hivyo nitarekodi kiasi kilichopotea bila kukisia thamani yake.\n\nNirekodi? *1* Ndiyo · *2* Hapana`
+      : `${head}\nThamani ya stock iliyopotea ni *${money(value, lang)}*.\n\nNirekodi? *1* Ndiyo · *2* Hapana`;
   }
   const head = `I understand ${amount} of *${productName}* was lost.`;
   return value === null
@@ -233,7 +233,7 @@ export function ownerUseConfirmation(
     // shelf for the household, and that is the whole statement.
     const head = `Nimeelewa umechukua ${amount} za *${productName}* nyumbani.`;
     return `${head}${value === null ? '' : `\nGharama yake ni *${money(value, lang)}*.`}`
-      + `\nSitaihesabu kama mauzo wala kama hasara ya biashara.\n\nNirekodi? *NDIYO* / *HAPANA*`;
+      + `\nSitaihesabu kama mauzo wala kama hasara ya biashara.\n\nNirekodi? *1* Ndiyo · *2* Hapana`;
   }
   const head = `I understand you took ${amount} of *${productName}* home.`;
   return `${head}${value === null ? '' : `\nIt cost *${money(value, lang)}*.`}`
@@ -253,7 +253,7 @@ export function spoilageClarification(
   return lang === 'sw'
     ? `Neno *${reading.word}* linaweza kumaanisha vitu viwili, na sitakisia.\n\n`
       + `Unamaanisha ${amount} za nyama zimeharibika?\n\n`
-      + `Jibu *NDIYO* kama ni hivyo, kisha niambie ni bidhaa gani — mfano: _nyama kilo ${reading.quantity} imeharibika_.`
+      + `Jibu *1* Ndiyo kama ni hivyo, kisha niambie ni bidhaa gani — mfano: _nyama kilo ${reading.quantity} imeharibika_.`
     : `The word *${reading.word}* can mean two different things, and I will not guess.\n\n`
       + `Do you mean ${amount} of meat spoiled?\n\n`
       + `Reply *YES* if so, then tell me which product — for example: _nyama kilo ${reading.quantity} imeharibika_.`;

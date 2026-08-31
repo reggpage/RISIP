@@ -224,7 +224,7 @@ describe('deterministic WhatsApp daily-record parser', () => {
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.every((chunk) => chunk.length <= 500)).toBe(true);
     expect(chunks.at(-1)).toContain('Jumla: *TSh 1,080,000*');
-    expect(chunks.at(-1)).toContain('NDIYO');
+    expect(chunks.at(-1)).toContain('*1*');
     expect(buildDailyRecordConfirmationChunks(parsed.record, 'sw').every((chunk) => chunk.length <= 3200)).toBe(true);
   });
 
@@ -234,7 +234,7 @@ describe('deterministic WhatsApp daily-record parser', () => {
     if (parsed.kind === 'parsed') {
       const reply = buildDailyRecordConfirmation(parsed.record, 'sw');
       expect(reply).toContain('TSh 15,000');
-      expect(reply).toContain('NDIYO');
+      expect(reply).toContain('*1*');
       expect(reply).not.toContain('Confirm');
     }
   });

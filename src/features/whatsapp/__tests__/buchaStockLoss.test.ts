@@ -115,7 +115,7 @@ describe('the preview a trader confirms', () => {
   it('shows the value only when the backend resolved one', () => {
     const priced = stockLossConfirmation(reading, 'Nyama ya ng’ombe', 27000, 'sw');
     expect(priced).toContain('TSh 27,000');
-    expect(priced).toContain('NDIYO');
+    expect(priced).toContain('*1*');
   });
 
   it('says plainly that it will not guess a missing cost', () => {

@@ -101,7 +101,7 @@ describe('WhatsApp mixed daily-record batches', () => {
     expect(confirmation).toContain('Jumla: *TSh 25,000*');
     expect(confirmation).toContain('Jumla: *TSh 19,500*');
     expect(confirmation).toContain('Jumla: *TSh 90,000*');
-    expect(confirmation).toContain('NDIYO');
+    expect(confirmation).toContain('*1*');
   });
 
   it('does not misclassify a supplier payable as an expense or customer debt', () => {

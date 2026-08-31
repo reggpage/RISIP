@@ -148,7 +148,7 @@ export function wholeAnimalBreakdownConfirmation(
     lines.push(`- ${output.productName} ${displayQuantity(output.quantity)} ${output.unit}`);
   }
   lines.push('', lang === 'sw'
-    ? 'Nirekodi breakdown hii? *NDIYO* / *HAPANA*'
+    ? 'Nirekodi breakdown hii? *1* Ndiyo · *2* Hapana'
     : 'Record this breakdown? *YES* / *NO*');
   return lines.join('\n');
 }
@@ -185,7 +185,7 @@ export function wholeAnimalSourceQuestion(
   const rows = candidates.map((candidate, index) =>
     `${index + 1}. ${candidate.animalType} ${candidate.animalCount} — TSh ${candidate.purchaseTotal.toLocaleString('en-US')} — ${candidate.occurredAt.slice(0, 10)}`,
   );
-  return `${heading}\n${rows.join('\n')}\n\n${lang === 'sw' ? 'Jibu namba moja, au HAPANA kughairi.' : 'Reply with one number, or NO to cancel.'}`;
+  return `${heading}\n${rows.join('\n')}\n\n${lang === 'sw' ? 'Jibu namba moja, au *2* kughairi.' : 'Reply with one number, or NO to cancel.'}`;
 }
 
 export function parseWholeAnimalSourceChoice(

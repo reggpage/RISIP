@@ -141,7 +141,7 @@ export function dayDraftReply(facts: DayCloseFacts, lang: Lang): string {
 
   lines.push('');
   lines.push(sw ? 'Kuna kitu hakijaingia? Niambie sasa.' : 'Anything missing? Tell me now.');
-  lines.push(sw ? 'Yote yakiwa sawa, jibu *NDIYO*.' : 'If it is all correct, reply *NDIYO*.');
+  lines.push(sw ? 'Yote yakiwa sawa, jibu *1* Ndiyo.' : 'If it is all correct, reply *1* YesIYO*.');
   return lines.join('\n');
 }
 

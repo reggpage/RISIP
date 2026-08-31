@@ -129,7 +129,7 @@ export function productAlreadyExists(
 export function productLooksLikeExisting(asked: string, existing: string, lang: Lang): string {
   return lang === 'sw'
     ? `Kabla sijaongeza “${asked}” — tayari una “${existing}”.\n\n`
-      + `Ni bidhaa ile ile? Jibu *NDIYO* nitumie “${existing}”, au *HAPANA* niongeze “${asked}” kama bidhaa mpya.`
+      + `Ni bidhaa ile ile? Jibu *1* nitumie “${existing}”, au *2* niongeze “${asked}” kama bidhaa mpya.`
     : `Before I add “${asked}” — you already have “${existing}”.\n\n`
       + `Same product? Reply *YES* to use “${existing}”, or *NO* to add “${asked}” as a new one.`;
 }

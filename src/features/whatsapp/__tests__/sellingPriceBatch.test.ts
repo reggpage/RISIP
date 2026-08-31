@@ -105,7 +105,7 @@ describe('what the trader is shown', () => {
     const reply = sellingPriceBatchConfirmation(batch, 'sw');
     expect(reply).toContain('1. daftari — TSh 1,500 · jumla TSh 1,300 (kuanzia 12)');
     expect(reply).toContain('2. kalamu — TSh 500');
-    expect(reply).toMatch(/NDIYO/);
+    expect(reply).toContain('*1*');
   });
 
   it('shows the unreadable lines before the question', () => {
@@ -113,6 +113,6 @@ describe('what the trader is shown', () => {
       'daftari rejareja 1500', 'kalamu rejareja 500 jumla 900', 'penseli rejareja 300'))!;
     const reply = sellingPriceBatchConfirmation(batch, 'sw');
     expect(reply).toContain('kalamu rejareja 500 jumla 900');
-    expect(reply.indexOf('kalamu rejareja 500 jumla 900')).toBeLessThan(reply.indexOf('NDIYO'));
+    expect(reply.indexOf('kalamu rejareja 500 jumla 900')).toBeLessThan(reply.indexOf('*1*'));
   });
 });

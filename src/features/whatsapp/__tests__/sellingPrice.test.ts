@@ -75,7 +75,7 @@ describe('what the trader is shown', () => {
       { product: 'Nguvu ya Sala', retail: 10000, wholesale: 9000, minQty: 5 }, 'sw');
     expect(reply).toContain('Rejareja: TSh 10,000');
     expect(reply).toContain('Jumla: TSh 9,000 (kuanzia 5)');
-    expect(reply).toMatch(/NDIYO/);
+    expect(reply).toContain('*1*');
   });
 
   it('says who the trade price is for when there is no quantity', () => {

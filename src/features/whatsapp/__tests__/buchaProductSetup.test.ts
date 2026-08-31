@@ -75,7 +75,7 @@ describe('bought whole, sold in pieces', () => {
     expect(preview).toContain('box 1');
     expect(preview).toContain('packet 12');
     expect(preview).toContain('TSh 1,500');
-    expect(preview).toContain('NDIYO');
+    expect(preview).toContain('*1*');
   });
 });
 

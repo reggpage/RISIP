@@ -105,7 +105,7 @@ describe('the confirmation says which business and what it was', () => {
     const text = costConfirmation(cost, 'Duka la Asha', null, 'sw');
     expect(text).toContain('Duka la Asha');
     expect(text).toContain('1,100');
-    expect(text).toMatch(/NDIYO/);
+    expect(text).toContain('*1*');
   });
 
   it('shows the old price rather than just saying saved', () => {

@@ -28,7 +28,7 @@ export function productRenameConfirmation(preview: ProductRenamePreview, lang: L
     ? `Unataka kubadilisha jina la *${preview.from}* kuwa *${preview.to}*.\n`
       + `Rekodi ${preview.records.toLocaleString('en-US')} zitapewa jina jipya `
       + `(mauzo ${preview.saleLines}, gharama ${preview.costRows}, bei ${preview.priceRows}, stock ${preview.stockCounts}, vipimo ${preview.unitRows}).\n\n`
-      + 'Pesa, idadi na jumla hazitabadilika. Audit itahifadhi jina la zamani.\nJibu *NDIYO* au *HAPANA*.'
+      + 'Pesa, idadi na jumla hazitabadilika. Audit itahifadhi jina la zamani.\nJibu *1* Ndiyo · *2* Hapana'
     : `Rename *${preview.from}* to *${preview.to}*.\n`
       + `${preview.records.toLocaleString('en-US')} records will receive the new name `
       + `(sales ${preview.saleLines}, costs ${preview.costRows}, prices ${preview.priceRows}, stock ${preview.stockCounts}, units ${preview.unitRows}).\n\n`

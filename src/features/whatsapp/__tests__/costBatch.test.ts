@@ -63,7 +63,7 @@ describe('the paste that saved nothing', () => {
     const reply = costBatchConfirmation(parseProductCostBatch(REAL_PASTE)!, 'sw');
     expect(reply).toContain('Bei za kununua 36');
     expect(reply).toContain('Kamusi — TSh 18,000');
-    expect(reply).toMatch(/NDIYO/);
+    expect(reply).toContain('*1*');
     // A price change must never look like it rewrote the past.
     expect(reply).toMatch(/Rekodi za nyuma hazitaguswa/);
   });

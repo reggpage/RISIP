@@ -88,7 +88,7 @@ describe('a bulk unit converts to the shop’s OWN base count', () => {
     const said = bulkAdditionConfirmation(added, 'sw');
     expect(said).toContain('5 trei = 140 yai');
     expect(said).toContain('jumla 140 yai');
-    expect(said).toContain('NDIYO / HAPANA');
+    expect(said).toContain('*1* Ndiyo · *2* Hapana');
   });
 });
 

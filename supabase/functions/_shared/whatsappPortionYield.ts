@@ -101,7 +101,7 @@ export function portionYieldConfirmation(reading: PortionYield, lang: Lang): str
     ? `Nimeelewa:\n`
       + `• *${reading.portionName}* 1 = ${reading.productName} ${each} ${reading.baseUnit}\n`
       + `• ${reading.baseUnit} 1 = ${reading.portionName} ${reading.perBaseUnit} (wastani)\n\n`
-      + `Nihifadhi? *NDIYO* / *HAPANA*`
+      + `Nihifadhi? *1* Ndiyo · *2* Hapana`
     : `Understood:\n`
       + `• 1 *${reading.portionName}* = ${each} ${reading.baseUnit} of ${reading.productName}\n`
       + `• 1 ${reading.baseUnit} = ${reading.perBaseUnit} ${reading.portionName} (average)\n\n`

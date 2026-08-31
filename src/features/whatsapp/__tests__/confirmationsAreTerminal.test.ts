@@ -93,8 +93,8 @@ describe('the count he sent, shown back the way it should have been', () => {
   });
 
   it('bolds the words he has to type back', () => {
-    expect(reply).toContain('*NDIYO*');
-    expect(reply).toContain('*HAPANA*');
+    expect(reply).toContain('*1*');
+    expect(reply).toContain('*2*');
   });
 
   it('says what the count will DO before he agrees to it', () => {

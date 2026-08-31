@@ -24,7 +24,7 @@ export function projectSetupNamePrompt(lang: Lang): string {
 
 export function projectSetupConfirmation(lang: Lang, projectName: string): string {
   return lang === 'sw'
-    ? `Umechagua project "${projectName}". Thibitisha kwa kuandika NDIYO, au andika HAPANA kubadilisha.`
+    ? `Umechagua project "${projectName}". Thibitisha: *1* Ndiyo · *2* Hapana kubadilisha.`
     : `You chose project "${projectName}". Reply YES to confirm, or NO to choose again.`;
 }
 

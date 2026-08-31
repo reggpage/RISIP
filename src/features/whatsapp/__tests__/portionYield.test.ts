@@ -76,7 +76,7 @@ describe('the words it uses', () => {
     const confirmation = portionYieldConfirmation(reading, 'sw');
     expect(confirmation).toContain('0.0556 kilo');
     expect(confirmation).toContain('mishikaki 18 (wastani)');
-    expect(confirmation).toContain('NDIYO');
+    expect(confirmation).toContain('*1*');
   });
 });
 

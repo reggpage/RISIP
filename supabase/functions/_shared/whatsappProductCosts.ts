@@ -151,7 +151,7 @@ export function costConfirmation(
     : '';
 
   return lang === 'sw'
-    ? `${businessName} — ${cost.product} inakugharimu TSh ${price}${per}.${was}\n\nNi sahihi? NDIYO / HAPANA`
+    ? `${businessName} — ${cost.product} inakugharimu TSh ${price}${per}.${was}\n\nNi sahihi? *1* Ndiyo · *2* Hapana`
     : `${businessName} — ${cost.product} costs you TSh ${price}${per}.${was}\n\nIs that right? YES / NO`;
 }
 

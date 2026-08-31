@@ -175,7 +175,7 @@ export function newProductOffer(names: string[], lang: Lang): string {
  */
 export function newProductSaleOffer(names: string[], lang: Lang): string {
   const next = lang === 'sw'
-    ? '\n\nNimehifadhi maelezo ya mauzo haya kwa muda. Ukimaliza kusajili bidhaa, nitakuonyesha mauzo hayo tena uyathibitishe kwa NDIYO.'
+    ? '\n\nNimehifadhi maelezo ya mauzo haya kwa muda. Ukimaliza kusajili bidhaa, nitakuonyesha mauzo hayo tena uyathibitishe kwa *1*.'
     : '\n\nI have kept this sale temporarily. After you register the product, I will show the sale again for a separate YES confirmation.';
   return newProductOffer(names, lang) + next;
 }
@@ -224,7 +224,7 @@ export function newProductConfirmation(products: NewProductPricing[], lang: Lang
       + losing.map((product) => `  • ${product.product}`).join('\n'));
 
   return lang === 'sw'
-    ? `Bidhaa mpya — ${products.length}:\n${rows}${warning}\n\nNiziweke kwenye store? NDIYO / HAPANA`
+    ? `Bidhaa mpya — ${products.length}:\n${rows}${warning}\n\nNiziweke kwenye store? *1* Ndiyo · *2* Hapana`
     : `New products — ${products.length}:\n${rows}${warning}\n\nAdd them to the store? YES / NO`;
 }
 

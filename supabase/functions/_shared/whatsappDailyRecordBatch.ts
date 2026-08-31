@@ -446,7 +446,7 @@ export function resumeDailyRecordBatchClarification(
       kind: 'unsupported_payable',
       state,
       message: state.lang === 'sw'
-        ? `Nimeelewa kuwa biashara yako ndiyo inamdaiwa ${state.debt.partyName}. Risip bado haina supplier-payable record kwenye Rekodi za Siku, kwa hiyo sitaiandikisha kimakosa kama matumizi au deni la mteja. Jibu *ENDELEA BILA MKOPO* kuhifadhi mauzo na matumizi pekee, au *HAPANA* kughairi yote. ${pendingEscapeHint(state.lang)}`
+        ? `Nimeelewa kuwa biashara yako ndiyo inamdaiwa ${state.debt.partyName}. Risip bado haina supplier-payable record kwenye Rekodi za Siku, kwa hiyo sitaiandikisha kimakosa kama matumizi au deni la mteja. Jibu *ENDELEA BILA MKOPO* kuhifadhi mauzo na matumizi pekee, au *2* Hapana kughairi yote. ${pendingEscapeHint(state.lang)}`
         : `I understand that your business owes ${state.debt.partyName}. Daily Records does not yet support supplier payables, so I will not misclassify it as an expense or customer debt. Reply *CONTINUE WITHOUT THE DEBT* to save only sales and expenses, or *NO* to cancel everything. ${pendingEscapeHint(state.lang)}`,
     };
   }
@@ -485,7 +485,7 @@ export function buildDailyRecordBatchConfirmation(records: ParsedDailyRecord[], 
     : `I understood ${records.length} separate records. Each will be saved separately:`;
   const summaries = records.map((record, index) => `${index + 1}. ${withoutConfirmationPrompt(record, lang)}`);
   const confirm = lang === 'sw'
-    ? `Jibu *NDIYO* kuthibitisha rekodi zote ${records.length}, au *HAPANA* kughairi zote. ${pendingEscapeHint(lang)}`
+    ? `Jibu *1* kuthibitisha rekodi zote ${records.length}, au *2* kughairi zote. ${pendingEscapeHint(lang)}`
     : `Reply *YES* to confirm all ${records.length} records, or *NO* to cancel all of them. ${pendingEscapeHint(lang)}`;
   return [intro, ...summaries, confirm].join('\n\n');
 }

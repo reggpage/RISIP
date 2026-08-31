@@ -77,7 +77,7 @@ export function logoutConfirmation(businessName: string, lang: Lang): string {
       + '• Link zako za kuingia zitakufa\n'
       + '• Rekodi na historia yako yote **zitabaki salama**\n\n'
       + 'Kuunganisha tena utahitaji kodi mpya kutoka kwa owner.\n\n'
-      + 'Uhakika? NDIYO / HAPANA'
+      + 'Uhakika? *1* Ndiyo · *2* Hapana'
     : `If you remove this number from ${businessName}:\n`
       + '• You will not be able to record or ask anything here on WhatsApp\n'
       + '• Your login links will stop working\n'
@@ -111,7 +111,7 @@ export function logoutReask(step: LogoutState['step'], lang: Lang): string {
       : 'I did not catch that. Reply 1 to cancel what is pending, or 2 to remove this number from Risip.';
   }
   return lang === 'sw'
-    ? 'Sijaondoa chochote bado. Jibu NDIYO kuondoa namba hii, au HAPANA kuacha ilivyo.'
+    ? 'Sijaondoa chochote bado. Jibu *1* Ndiyo · *2* Hapana.'
     : 'Nothing has been removed yet. Reply YES to remove this number, or NO to leave it as it is.';
 }
 

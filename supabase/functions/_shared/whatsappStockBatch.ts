@@ -183,10 +183,10 @@ export function stockCountBatchConfirmation(batch: StockCountBatch, lang: Lang):
   return lang === 'sw'
     ? `*Hesabu mpya ya idadi zilizopo sasa — bidhaa ${batch.counts.length}*:\n${rows}${problem}\n\n`
       + 'Hii itaweka idadi hizi kama zilizopo sasa kwenye stoo; si mauzo na si manunuzi mapya.\n\n'
-      + `Nirekodi hesabu hii? *NDIYO* / *HAPANA*. ${pendingEscapeHint(lang)}`
+      + `Nirekodi hesabu hii? *1* Ndiyo · *2* Hapana. ${pendingEscapeHint(lang)}`
     : `*Stock on hand — ${batch.counts.length} products*:\n${rows}${problem}\n\n`
       + 'This becomes the new anchor: from here I keep count as you sell and restock.\n\n'
-      + `Save them all? *YES* / *NO*. ${pendingEscapeHint(lang)}`;
+      + `Save them all? *1* Yes · *2* No. ${pendingEscapeHint(lang)}`;
 }
 
 export function stockCountBatchSaved(saved: number, businessName: string, lang: Lang): string {
