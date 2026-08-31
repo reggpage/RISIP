@@ -201,7 +201,14 @@ describe('the prompt got shorter, not longer', () => {
     // by 7,500. The rule cannot be shorter than it is because it cannot be a
     // word list: rice is stock in a food shop and lunch in a bookshop, so it
     // has to be stated as a test rather than a lookup.
-    expect(prompt.length).toBeLessThan(19_850);
+    // Raised by 350 for the one thing every reply is read for. The owner's
+    // words: "prices numbers headings, commands katika message yoyote
+    // zinatakiwa ziwe bold". He is right about how the message is used — a
+    // shopkeeper behind a counter does not read a WhatsApp reply, they hunt it
+    // for a figure, and an unbolded number in a paragraph is a number they have
+    // to find twice. The rule also says what NOT to bold, because a reply where
+    // everything is bold has nothing bold in it.
+    expect(prompt.length).toBeLessThan(20_200);
   });
 
   it('tells the adviser to stop, and says what it costs not to', () => {

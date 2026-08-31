@@ -168,8 +168,11 @@ const amount = (item: StockCountItem) =>
   `${item.quantity.toLocaleString('en-US', { maximumFractionDigits: 3 })}${item.unit ? ` ${item.unit}` : ''}`;
 
 export function stockCountBatchConfirmation(batch: StockCountBatch, lang: Lang): string {
+  // The quantity is bold because it is the only thing on the line worth
+  // checking. The owner counted the shelf; the product name he already knows,
+  // the number is what he is here to verify.
   const rows = batch.counts
-    .map((item, index) => `${index + 1}. ${item.product} — ${amount(item)}`)
+    .map((item, index) => `${index + 1}. ${item.product} — *${amount(item)}*`)
     .join('\n');
   const problem = batch.unreadable.length === 0 ? '' : (lang === 'sw'
     ? `\n\n⚠️ Mistari ${batch.unreadable.length} sikuisoma, haitahesabiwa:\n`
@@ -178,12 +181,12 @@ export function stockCountBatchConfirmation(batch: StockCountBatch, lang: Lang):
       + batch.unreadable.map((line) => `• ${line}`).join('\n'));
 
   return lang === 'sw'
-    ? `Hesabu mpya ya idadi zilizopo sasa — bidhaa ${batch.counts.length}:\n${rows}${problem}\n\n`
+    ? `*Hesabu mpya ya idadi zilizopo sasa — bidhaa ${batch.counts.length}*:\n${rows}${problem}\n\n`
       + 'Hii itaweka idadi hizi kama zilizopo sasa kwenye stoo; si mauzo na si manunuzi mapya.\n\n'
-      + `Nirekodi hesabu hii? NDIYO / HAPANA. ${pendingEscapeHint(lang)}`
-    : `Stock on hand — ${batch.counts.length} products:\n${rows}${problem}\n\n`
+      + `Nirekodi hesabu hii? *NDIYO* / *HAPANA*. ${pendingEscapeHint(lang)}`
+    : `*Stock on hand — ${batch.counts.length} products*:\n${rows}${problem}\n\n`
       + 'This becomes the new anchor: from here I keep count as you sell and restock.\n\n'
-      + `Save them all? YES / NO. ${pendingEscapeHint(lang)}`;
+      + `Save them all? *YES* / *NO*. ${pendingEscapeHint(lang)}`;
 }
 
 export function stockCountBatchSaved(saved: number, businessName: string, lang: Lang): string {

@@ -3325,7 +3325,7 @@ async function priceAndDraftSale(
 
   await pendingDraftState(db, identity, created.id, waMessageId, guarded);
   const confirmation = `${identity.company_name} — ${quantitySaleConfirmation(priced.lines, lang, [], priced.notCounted)}`;
-  return { content: confirmation, fallbackReply: confirmation };
+  return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
 }
 
 /**
@@ -3609,7 +3609,7 @@ async function executeClarification(
     };
     await pendingDraftState(db, identity, draft.dailyRecordId, waMessageId, withMethod);
     const confirmation = buildDailyRecordConfirmation(withMethod, lang);
-    return { content: confirmation, fallbackReply: confirmation };
+    return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
   }
 
   // ── which product, and which measure, when the shop has said ─────────────
@@ -3723,7 +3723,7 @@ async function executeBusinessEvent(
     }
     await pendingDraftState(db, identity, created.id, waMessageId, created.record);
     const confirmation = buildDailyRecordConfirmation(created.record, lang);
-    return { content: confirmation, fallbackReply: confirmation };
+    return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
   }
 
   // ── spoilage, and stock the owner took home ──────────────────────────────
@@ -3778,7 +3778,7 @@ async function executeBusinessEvent(
     const confirmation = event.kind === 'stock_loss'
       ? stockLossConfirmation(reading as never, match.productName, value, lang)
       : ownerUseConfirmation(reading as never, match.productName, value, lang);
-    return { content: confirmation, fallbackReply: confirmation };
+    return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
   }
 
   // ── stock arriving, paid for ─────────────────────────────────────────────
@@ -3813,7 +3813,7 @@ async function executeBusinessEvent(
     if (created.error || !created.id) return askBack(notSaved);
     await pendingDraftState(db, identity, created.id, waMessageId, record);
     const confirmation = buildDailyRecordConfirmation(record, lang);
-    return { content: confirmation, fallbackReply: confirmation };
+    return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
   }
 
   // ── buying a live animal ─────────────────────────────────────────────────
@@ -3868,7 +3868,7 @@ async function executeBusinessEvent(
       paymentMethod: paymentMethod as WholeAnimalPaymentMethod | null,
       reference: null, note: animalLine.productWording,
     }, date.occurredAt, lang);
-    return { content: confirmation, fallbackReply: confirmation };
+    return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
   }
 
   // ── butchering it ────────────────────────────────────────────────────────
@@ -3924,7 +3924,7 @@ async function executeBusinessEvent(
       expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
     }, { onConflict: 'identity_id' });
     const confirmation = wholeAnimalBreakdownConfirmation(result.outputs, lang);
-    return { content: confirmation, fallbackReply: confirmation };
+    return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
   }
 
   // ── counting what is actually on the shelf ───────────────────────────────
@@ -3945,8 +3945,21 @@ async function executeBusinessEvent(
       awaiting: 'product_cost', receipt_id: null, options: stockBatch,
       expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
     }, { onConflict: 'identity_id' });
+    // TERMINAL, and every other confirmation in this file with it.
+    //
+    // MEASURED: the owner sent nine products with their counts and got back
+    // "Tafadhali thibitisha hesabu hii kwa kujibu NDIYO ili niiweke" — and
+    // nothing else. No list. The list existed; stockCountBatchConfirmation
+    // built it correctly, all nine lines. It was handed to the model as
+    // evidence rather than as the answer, and the model summarised it away.
+    //
+    // A confirmation is not evidence. It is the last thing a person sees
+    // before money is written to their books, and it has to reach them exactly
+    // as the server wrote it. Being asked to approve a figure you cannot see is
+    // worse than not being asked, because it manufactures the feeling of having
+    // checked.
     const confirmation = stockCountBatchConfirmation(stockBatch, lang);
-    return { content: confirmation, fallbackReply: confirmation };
+    return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
   }
 
   return askBack(notUnderstood);
@@ -4006,7 +4019,7 @@ async function executeMoneyEvent(
     }
     await pendingDraftState(db, identity, created.id, waMessageId, created.record);
     const confirmation = supplierPaymentConfirmation({ supplierName, amount, paymentMethod: method }, lang);
-    return { content: confirmation, fallbackReply: confirmation };
+    return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
   }
 
   // ── an expense, or a customer clearing their debt ────────────────────────
@@ -4028,7 +4041,7 @@ async function executeMoneyEvent(
   }
   await pendingDraftState(db, identity, created.id, waMessageId, guarded);
   const confirmation = buildDailyRecordConfirmation(guarded, lang);
-  return { content: confirmation, fallbackReply: confirmation };
+  return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
 }
 
 /**
@@ -4537,7 +4550,7 @@ async function runAssistantTool(
       previous ? Number((previous as { unit_cost: number }).unit_cost) : null,
       lang,
     );
-    return { content: confirmation, fallbackReply: confirmation };
+    return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
   }
   // ── STAGE B ─────────────────────────────────────────────────────────────
   if (name === 'propose_business_event') {
@@ -5083,7 +5096,7 @@ ${trendShapeFacts(days)}`,
       expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
     }, { onConflict: 'identity_id' });
     const confirmation = `${identity.company_name} — ${quantitySaleConfirmation(priced.lines, lang, [], priced.notCounted)}`;
-    return { content: confirmation, fallbackReply: confirmation };
+    return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
   }
   if (name === 'propose_daily_record') {
     const parsed = validateAiCandidate(input, said);
@@ -5122,7 +5135,7 @@ ${trendShapeFacts(days)}`,
     const nearName = await nearNameNotice(db, identity.company_id, guardedRecord, lang);
     const underPrice = await belowOwnPriceNotice(db, identity.company_id, guardedRecord, lang);
     const confirmation = `${identity.company_name} — ${buildDailyRecordConfirmation(guardedRecord, lang)}${nearName}${underPrice}`;
-    return { content: confirmation, fallbackReply: confirmation };
+    return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
   }
   return {
     content: lang === 'sw' ? 'Tool hiyo haipatikani.' : 'That tool is not available.',

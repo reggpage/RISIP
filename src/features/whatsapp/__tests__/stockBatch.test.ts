@@ -115,12 +115,23 @@ describe('what it must never claim', () => {
 });
 
 describe('what the trader is shown before anything is saved', () => {
-  it('lists every line back with its number', () => {
+  it('lists every line back with its number, and bolds the number', () => {
+    // The owner's instruction, and he is right about how the message is used:
+    // "prices numbers headings, commands ... zinatakiwa ziwe bold". He counted
+    // the shelf himself — the product name he already knows, the quantity is
+    // the only thing on the line he is here to check.
     const batch = parseStockCountBatch(list('daftari 90\nsukari kilo 12.5'))!;
     const reply = stockCountBatchConfirmation(batch, 'sw');
-    expect(reply).toContain('1. daftari — 90');
-    expect(reply).toContain('2. sukari — 12.5 kilo');
-    expect(reply).toMatch(/NDIYO/);
+    expect(reply).toContain('1. daftari — *90*');
+    expect(reply).toContain('2. sukari — *12.5 kilo*');
+    expect(reply).toContain('*NDIYO*');
+    expect(reply).toContain('*HAPANA*');
+  });
+
+  it('bolds the heading, so the list has something to hang under', () => {
+    const batch = parseStockCountBatch(list('daftari 90\nkalamu 240'))!;
+    expect(stockCountBatchConfirmation(batch, 'sw'))
+      .toMatch(/^\*Hesabu mpya ya idadi zilizopo sasa — bidhaa 2\*:/);
   });
 
   it('says plainly that this becomes the new anchor', () => {
