@@ -111,9 +111,26 @@ const T = {
     sw: 'Andika kodi ya mwaliko (herufi 8).',
     en: 'Send the invite code (8 characters).',
   },
+  // "Nina akaunti tayari".
+  //
+  // The old version told somebody to open a screen they may never have seen,
+  // and stopped there — no format, no example, and the menu still waiting
+  // underneath, so anything they said next came back as "sijakuelewa".
+  //
+  // Now it says exactly where, exactly what to send, and accepts the code on
+  // its own: somebody who has just copied a code pastes the code, not the word
+  // LINK in front of it.
   alreadyHave: {
-    sw: 'Fungua Risip kwenye simu au kompyuta, nenda Settings → WhatsApp, kisha nitumie kodi utakayoona.',
-    en: 'Open Risip on your phone or computer, go to Settings → WhatsApp, then send me the code it shows.',
+    sw: 'Sawa. Fungua Risip kwenye simu au kompyuta:\n\n'
+      + '*Settings* → *WhatsApp* → *Unganisha namba*\n\n'
+      + 'Kisha nitumie kodi utakayoona hapo. Iandike hivi:\n'
+      + '_LINK a1b2c3…_\n\n'
+      + 'Au bandika kodi yenyewe tu — nitaielewa.',
+    en: 'Right. Open Risip on your phone or computer:\n\n'
+      + '*Settings* → *WhatsApp* → *Link number*\n\n'
+      + 'Then send me the code it shows. Write it like this:\n'
+      + '_LINK a1b2c3…_\n\n'
+      + 'Or just paste the code on its own — I will understand it.',
   },
   notUnderstood: {
     sw: 'Samahani, sijakuelewa vizuri. Jibu 1, 2 au 3 — au niambie kwa maneno, mfano “nataka kufungua duka langu”.',

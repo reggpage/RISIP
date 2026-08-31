@@ -103,6 +103,24 @@ export function parseLinkToken(text: string | null | undefined): string | null {
   return match ? match[1] : null;
 }
 
+/**
+ * The same code, pasted on its own.
+ *
+ * Somebody who has just copied a linking code from a screen pastes the code.
+ * Requiring the word LINK in front of it is a rule that exists for the parser's
+ * convenience and costs the person a failed attempt they will not understand.
+ *
+ * Deliberately NOT folded into parseLinkToken, and only ever used for a number
+ * with no identity: for a linked shop, a long alphanumeric string is far more
+ * likely to be a product code than a token, and treating it as a token there
+ * would be guessing at somebody's stock.
+ */
+export function parseBareLinkToken(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const said = String(text).trim();
+  return /^[A-Za-z0-9_-]{16,128}$/.test(said) ? said : null;
+}
+
 export type LinkTokenRow = {
   expires_at: string;
   used_at: string | null;

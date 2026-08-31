@@ -23,6 +23,7 @@ import {
   linkFailureMessage,
   maskPhone,
   normalizeE164,
+  parseBareLinkToken,
   parseLinkToken,
   sha256Hex,
   verifyMetaSignature,
@@ -6488,6 +6489,19 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // A code pasted on its own, by somebody with nothing linked yet. Only
+        // here: for a linked shop a long alphanumeric string is far more likely
+        // to be a product code, and reading it as a token would be guessing at
+        // their stock.
+        if (!identity) {
+          const bare = parseBareLinkToken(body);
+          if (bare) {
+            await replyQuietly(phone, await handleLink(db, phone, String(message?.from ?? ''), bare));
+            await finish('skipped');
+            continue;
+          }
+        }
+
         if (!identity) {
           await replyQuietly(phone, isAccountDeletionRequest(body)
             ? (lang === 'sw'
@@ -6511,9 +6525,64 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // MSAADA MENU — answered.
+        //
+        // Checked before the ordinary parsers, because a bare "1" is exactly
+        // the kind of token anything else would happily read as a quantity.
+        // Only ever reached while this precise menu is parked.
+        const helpMenuPending = convo?.awaiting === 'product_cost'
+          && (convo.options as { kind?: string } | null)?.kind === 'help_menu';
+        if (helpMenuPending) {
+          const said = String(body ?? '').trim();
+          if (/^1$/.test(said)) {
+            await clearConversation(db, identity.id as string);
+            await reply(phone, firstProductsPrompt(null, null, lang));
+            await audit(db, identity, waMessageId, 'help', 'register_products', 'applied');
+            await finish('answered');
+            continue;
+          }
+          if (/^2$/.test(said)) {
+            await clearConversation(db, identity.id as string);
+            // Falls through to the ordinary invite path below by pretending the
+            // word was typed, so there is one implementation of an invite and
+            // not two that drift apart.
+            writeBody = 'mualike';
+            body = 'mualike';
+          } else if (/^3$/.test(said)) {
+            // "Just tell me" is not a fallback. It is the main road, and the
+            // only thing to do is get out of the way.
+            await clearConversation(db, identity.id as string);
+            await reply(phone, lang === 'sw'
+              ? 'Sawa — niambie unachotaka kwa maneno yako.'
+              : 'Fine — tell me what you need, in your own words.');
+            await audit(db, identity, waMessageId, 'help', 'open', 'applied');
+            await finish('answered');
+            continue;
+          } else {
+            // Anything else is not an answer to this menu. Release it and read
+            // the message as what it is.
+            await clearConversation(db, identity.id as string);
+          }
+        }
+
         if (isHelp(body)) {
-          await replyQuietly(phone, `${t('help', lang)}\n\n${buildKnowledgeReply(body, lang)}`);
-          await audit(db, identity, waMessageId, 'help', 'knowledge_reply', 'applied');
+          await db.from('whatsapp_conversations').upsert({
+            identity_id: identity.id,
+            company_id: identity.company_id,
+            profile_id: identity.profile_id,
+            awaiting: 'product_cost',
+            receipt_id: null,
+            options: { kind: 'help_menu' },
+            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'identity_id' });
+          // The knowledge search is appended only when they actually asked
+          // something. On a bare "msaada" it adds a paragraph nobody wanted to
+          // a message whose whole point is being short.
+          const asked = String(body ?? '').trim().split(/\s+/).length > 1;
+          const extra = asked ? `\n\n${buildKnowledgeReply(body, lang)}` : '';
+          await replyQuietly(phone, `${t('help', lang)}${extra}`);
+          await audit(db, identity, waMessageId, 'help', 'menu', 'applied');
           await finish('skipped');
           continue;
         }

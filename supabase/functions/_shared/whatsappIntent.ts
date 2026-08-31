@@ -249,9 +249,35 @@ const T = {
   },
   languageSet: { en: 'Done. I will reply in English.', sw: 'Sawa. Nitakujibu kwa Kiswahili.' },
   cancelled: { en: 'Cancelled. Send a new receipt photo whenever you are ready.', sw: 'Imeghairiwa. Tuma picha nyingine wakati wowote.' },
+  // MSAADA.
+  //
+  // The owner asked what it should show, and the answer is: not everything.
+  // Somebody typing "msaada" is stuck NOW, on one thing. A list of twenty
+  // commands leaves them stuck AND confused, and the old text described
+  // photographing a receipt — which is not what most shops do most days.
+  //
+  // Four examples, because four can be read. Three numbered choices for the
+  // things that need a flow. Everything else goes back to the model, which is
+  // where it is strongest: "niambie tu" is not a fallback, it is the main road.
   help: {
-    en: 'Send a photo of a receipt and I will read it and file it in Risip.\n\nYou can add a note with the photo, for example: "Fuel for Dodoma, I paid with my own money."\n\nCommands: *cancel* to stop, *change language to Kiswahili*.',
-    sw: 'Tuma picha ya rekodi nami nitaisoma na kuiweka kwenye Risip.\n\nUnaweza kuandika maelezo pamoja na picha, mfano: "Mafuta ya Dodoma, nimelipa pesa yangu."\n\nAmri: *ghairi* kusitisha, *change language to English*.',
+    en: 'Write in your own words — I understand ordinary language.\n\n'
+      + 'Common examples:\n'
+      + '• _nimeuza soda 5_\n'
+      + '• _Juma amechukua daftari 3 kwa deni_\n'
+      + '• _leo nimeuza shingapi_\n'
+      + '• _nafunga_\n\n'
+      + '*1* Register products\n'
+      + '*2* Invite a worker\n'
+      + '*3* Something else — just tell me',
+    sw: 'Andika kwa maneno yako — ninaelewa Kiswahili cha kawaida.\n\n'
+      + 'Mifano ya kawaida:\n'
+      + '• _nimeuza soda 5_\n'
+      + '• _Juma amechukua daftari 3 kwa deni_\n'
+      + '• _leo nimeuza shingapi_\n'
+      + '• _nafunga_\n\n'
+      + '*1* Nataka kusajili bidhaa\n'
+      + '*2* Nataka kumualika mfanyakazi\n'
+      + '*3* Kitu kingine — niambie tu',
   },
   onlyRisip: {
     en: 'I can help with Risip and your business records, including receipts, sales, expenses, debts, payments, products and projects. Ask me naturally, or reply *help* for commands.',

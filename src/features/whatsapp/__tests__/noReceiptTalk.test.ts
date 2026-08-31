@@ -52,8 +52,11 @@ describe('nothing Risip says mentions a receipt', () => {
 
   it('says "rekodi" in the places that used to say "risiti"', () => {
     const intent = sources.find((row) => row.name === 'whatsappIntent.ts')!.text;
-    expect(intent).toContain('Tuma picha ya rekodi nami nitaisoma');
+    // The photo instruction that used to live in "msaada" is gone entirely —
+    // help now leads with ordinary words, which is what most shops actually
+    // use. What remains of the photo path still says rekodi.
     expect(intent).toContain('Sijajua mradi wa rekodi hii');
+    expect(intent).toContain('Tafadhali tuma picha.');
 
     const setup = sources.find((row) => row.name === 'whatsappProjectSetup.ts')!.text;
     expect(setup).toContain('project ya kuhifadhi rekodi');
