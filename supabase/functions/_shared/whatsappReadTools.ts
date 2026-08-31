@@ -468,7 +468,7 @@ export function businessSummaryFacts(
 export function buildBusinessSummaryReply(summary: BusinessSummary, period: ReadPeriod, lang: 'sw' | 'en', range?: ResolvedRange | null): string {
   const label = periodLabel(period, lang, range);
   if (lang === 'sw') {
-    return `Muhtasari wa ${label}:\nMauzo yote: ${money(summary.sales, lang)}\n  Yaliyolipwa: ${money(summary.paidSales, lang)} · Mkopo: ${money(summary.debtIssued, lang)}\nMatumizi ya rekodi za siku: ${money(summary.expenses, lang)}\nMalipo ya wateja: ${money(summary.customerPayments, lang)}\nMabadiliko ya fedha yanayokadiriwa: ${money(summary.cashMovement, lang)}\n\nHaya ni rekodi za siku; gharama za risiti zinaonyeshwa kando.`;
+    return `Muhtasari wa ${label}:\nMauzo yote: ${money(summary.sales, lang)}\n  Yaliyolipwa: ${money(summary.paidSales, lang)} · Mkopo: ${money(summary.debtIssued, lang)}\nMatumizi ya rekodi za siku: ${money(summary.expenses, lang)}\nMalipo ya wateja: ${money(summary.customerPayments, lang)}\nMabadiliko ya fedha yanayokadiriwa: ${money(summary.cashMovement, lang)}\n\nHaya ni rekodi za siku; gharama za picha zinaonyeshwa kando.`;
   }
   return `Summary for ${label}:\nTotal sales: ${money(summary.sales, lang)}\n  Paid: ${money(summary.paidSales, lang)} · Credit: ${money(summary.debtIssued, lang)}\nDaily-record expenses: ${money(summary.expenses, lang)}\nCustomer payments: ${money(summary.customerPayments, lang)}\nEstimated cash movement: ${money(summary.cashMovement, lang)}\n\nThese are daily records; receipt expenses are shown separately.`;
 }
@@ -523,7 +523,7 @@ export function buildReceiptsReply(
   lang: 'sw' | 'en',
   appUrl?: string | null,
 ): string {
-  if (receipts.length === 0) return lang === 'sw' ? 'Sina risiti zako zilizoonekana kwa sasa.' : 'I could not find your receipts right now.';
+  if (receipts.length === 0) return lang === 'sw' ? 'Sina rekodi zako zilizoonekana kwa sasa.' : 'I could not find your receipts right now.';
   const base = String(appUrl ?? '').replace(/\/+$/, '');
   const rows = receipts.slice(0, 10).map((receipt, index) => {
     const amount = receipt.amount === null ? '-' : money(receipt.amount, lang);
@@ -552,19 +552,19 @@ export function buildReceiptDetailReply(
   appUrl?: string | null,
 ): string {
   if (!receipt) return lang === 'sw'
-    ? 'Sikuweza kupata risiti hiyo katika rekodi unazoruhusiwa kuona.'
+    ? 'Sikuweza kupata rekodi hiyo katika rekodi unazoruhusiwa kuona.'
     : 'I could not find that receipt among the records you are allowed to view.';
   const base = String(appUrl ?? '').replace(/\/+$/, '');
   const link = base ? `\n${base}/receipts?receipt=${receipt.id}` : '';
   const uncertain = receipt.lowConfidenceFields.length > 0
     ? (lang === 'sw'
-      ? `\nTahadhari: AI haikuwa na uhakika wa ${receipt.lowConfidenceFields.join(', ')}; hakiki picha ya risiti.`
+      ? `\nTahadhari: AI haikuwa na uhakika wa ${receipt.lowConfidenceFields.join(', ')}; hakiki picha ya rekodi.`
       : `\nCaution: AI had low confidence in ${receipt.lowConfidenceFields.join(', ')}; verify the receipt image.`)
     : '';
   if (lang === 'sw') {
-    return `Maelezo ya risiti:\n`
+    return `Maelezo ya rekodi:\n`
       + `Muuzaji: ${shown(receipt.vendor, lang)}\n`
-      + `Namba ya risiti: ${shown(receipt.receiptNumber, lang)}\n`
+      + `Namba ya rekodi: ${shown(receipt.receiptNumber, lang)}\n`
       + `TIN: ${shown(receipt.tin, lang)}\n`
       + `VRN: ${shown(receipt.vrn, lang)}\n`
       + `Kodi ya uthibitisho: ${shown(receipt.verificationCode, lang)}\n`
@@ -620,7 +620,7 @@ export function buildPettyCashReply(balance: number | null, lang: 'sw' | 'en'): 
 
 export function buildOwedToMeReply(amount: number, count: number, lang: 'sw' | 'en'): string {
   return lang === 'sw'
-    ? `Risip inakudai ${money(amount, lang)} kwa risiti ${count} za matumizi ya pesa zako ambazo bado hazijalipwa.`
+    ? `Risip inakudai ${money(amount, lang)} kwa rekodi ${count} za matumizi ya pesa zako ambazo bado hazijalipwa.`
     : `Risip owes you ${money(amount, lang)} across ${count} personal-expense receipts that have not been reimbursed.`;
 }
 
@@ -632,6 +632,6 @@ export function buildBusinessesReply(businesses: BusinessMembership[], lang: 'sw
 
 export function buildPendingApprovalsReply(count: number, lang: 'sw' | 'en'): string {
   return lang === 'sw'
-    ? `Kuna risiti ${count} zinazosubiri hatua ya finance.`
+    ? `Kuna rekodi ${count} zinazosubiri hatua ya finance.`
     : `There are ${count} receipts waiting for a finance decision.`;
 }

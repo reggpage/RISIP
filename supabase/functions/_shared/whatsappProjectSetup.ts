@@ -12,7 +12,7 @@ export type ProjectSetupState = {
 export function projectSetupPrompt(lang: Lang, companyName: string): string {
   const safeCompany = sanitizeProjectName(companyName) ?? 'your business';
   return lang === 'sw'
-    ? `Biashara yako bado haina project ya kuhifadhi risiti.\nChagua:\n1. Tengeneza project "General"\n2. Tengeneza project "${safeCompany}"\n3. Andika jina lingine`
+    ? `Biashara yako bado haina project ya kuhifadhi rekodi.\nChagua:\n1. Tengeneza project "General"\n2. Tengeneza project "${safeCompany}"\n3. Andika jina lingine`
     : `Your business does not have a project for storing receipts yet.\nChoose:\n1. Create project "General"\n2. Create project "${safeCompany}"\n3. Type another name`;
 }
 
@@ -30,13 +30,13 @@ export function projectSetupConfirmation(lang: Lang, projectName: string): strin
 
 export function projectSetupCreatedReply(lang: Lang, projectName: string): string {
   return lang === 'sw'
-    ? `Project "${projectName}" iko tayari. Nachambua risiti yako sasa.`
+    ? `Project "${projectName}" iko tayari. Nachambua rekodi yako sasa.`
     : `Project "${projectName}" is ready. I am processing your receipt now.`;
 }
 
 export function projectSetupWorkerReply(lang: Lang): string {
   return lang === 'sw'
-    ? 'Biashara yako bado haina project ya kuhifadhi risiti. Muombe owner au accountant atengeneze project kwanza.'
+    ? 'Biashara yako bado haina project ya kuhifadhi rekodi. Muombe owner au accountant atengeneze project kwanza.'
     : 'Your business does not have a project for storing receipts yet. Ask the owner or accountant to create one first.';
 }
 

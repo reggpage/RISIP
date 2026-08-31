@@ -45,7 +45,7 @@ describe('WhatsApp project setup', () => {
   });
 
   it('uses the polished Kiswahili processing copy', () => {
-    expect(projectSetupCreatedReply('sw', 'General')).toContain('Nachambua risiti yako sasa');
+    expect(projectSetupCreatedReply('sw', 'General')).toContain('Nachambua rekodi yako sasa');
     expect(projectSetupCreatedReply('sw', 'General')).not.toContain('Ninasindika');
   });
 });

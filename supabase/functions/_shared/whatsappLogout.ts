@@ -75,7 +75,7 @@ export function logoutConfirmation(businessName: string, lang: Lang): string {
     ? `Ukiondoa namba hii kwenye ${businessName}:\n`
       + '• Hutaweza kurekodi wala kuuliza chochote hapa WhatsApp\n'
       + '• Link zako za kuingia zitakufa\n'
-      + '• Rekodi, risiti na historia yako yote **zitabaki salama**\n\n'
+      + '• Rekodi na historia yako yote **zitabaki salama**\n\n'
       + 'Kuunganisha tena utahitaji kodi mpya kutoka kwa owner.\n\n'
       + 'Uhakika? NDIYO / HAPANA'
     : `If you remove this number from ${businessName}:\n`

@@ -53,7 +53,7 @@ export function parseInviteRole(text: string | null | undefined): InviteRole | n
 export function inviteRoleQuestion(lang: Lang): string {
   return lang === 'sw'
     ? 'Unamualika kwa nafasi gani?\n\n'
-      + '*1* — Mfanyakazi (anarekodi mauzo na risiti za miradi yake tu)\n'
+      + '*1* — Mfanyakazi (anarekodi mauzo na bidhaa za miradi yake tu)\n'
       + '*2* — Mhasibu (anaona fedha zote za biashara)\n\n'
       + 'Jibu 1 au 2.'
     : 'What will they be?\n\n'
@@ -88,7 +88,7 @@ export function inviteReady(
     : (lang === 'sw' ? 'namba hii ya Risip' : 'this Risip number');
   const forward = lang === 'sw'
     ? `Karibu ${businessName}. Tuma neno *${code}* kwenye ${where}, `
-      + 'kisha fuata maswali mawili. Ndipo utaweza kurekodi mauzo na risiti kwa simu yako.'
+      + 'kisha fuata maswali mawili. Ndipo utaweza kurekodi mauzo kwa simu yako.'
     : `Welcome to ${businessName}. Send *${code}* to ${where}, `
       + 'then answer two short questions. That is all you need to start recording sales and receipts.';
 

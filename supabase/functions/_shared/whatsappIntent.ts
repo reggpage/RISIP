@@ -248,14 +248,14 @@ const T = {
     sw: 'Karibu Risip. Chagua lugha:\n\nJibu *1* kwa Kiswahili\nJibu *2* kwa English',
   },
   languageSet: { en: 'Done. I will reply in English.', sw: 'Sawa. Nitakujibu kwa Kiswahili.' },
-  cancelled: { en: 'Cancelled. Send a new receipt photo whenever you are ready.', sw: 'Imeghairiwa. Tuma picha nyingine ya risiti wakati wowote.' },
+  cancelled: { en: 'Cancelled. Send a new receipt photo whenever you are ready.', sw: 'Imeghairiwa. Tuma picha nyingine wakati wowote.' },
   help: {
     en: 'Send a photo of a receipt and I will read it and file it in Risip.\n\nYou can add a note with the photo, for example: "Fuel for Dodoma, I paid with my own money."\n\nCommands: *cancel* to stop, *change language to Kiswahili*.',
-    sw: 'Tuma picha ya risiti nami nitaisoma na kuiweka kwenye Risip.\n\nUnaweza kuandika maelezo pamoja na picha, mfano: "Mafuta ya Dodoma, nimelipa pesa yangu."\n\nAmri: *ghairi* kusitisha, *change language to English*.',
+    sw: 'Tuma picha ya rekodi nami nitaisoma na kuiweka kwenye Risip.\n\nUnaweza kuandika maelezo pamoja na picha, mfano: "Mafuta ya Dodoma, nimelipa pesa yangu."\n\nAmri: *ghairi* kusitisha, *change language to English*.',
   },
   onlyRisip: {
     en: 'I can help with Risip and your business records, including receipts, sales, expenses, debts, payments, products and projects. Ask me naturally, or reply *help* for commands.',
-    sw: 'Naweza kukusaidia kuhusu Risip na rekodi za biashara yako—risiti, mauzo, matumizi, madeni, malipo, bidhaa na projects. Niulize kwa kawaida, au andika *msaada* kuona amri.',
+    sw: 'Naweza kukusaidia kuhusu Risip na rekodi za biashara yako — mauzo, matumizi, madeni, malipo na bidhaa. Niulize kwa kawaida, au andika *msaada* kuona amri.',
   },
   notLinked: {
     en: 'This number is not connected to a Risip account.\n\nOpen Risip on the web, go to Settings → WhatsApp and tap "Connect WhatsApp".',
@@ -263,7 +263,7 @@ const T = {
   },
   photoOnly: {
     en: 'Please send the receipt as a photo. Documents, voice notes and videos are not supported yet.',
-    sw: 'Tafadhali tuma risiti kama picha. Nyaraka, sauti na video hazitumiki bado.',
+    sw: 'Tafadhali tuma picha. Nyaraka, sauti na video hazitumiki bado.',
   },
 } as const;
 
@@ -305,7 +305,7 @@ export function buildReceiptReplyV2(input: {
   if (input.needsProject) {
     lines.push(
       lang === 'sw'
-        ? 'Sijajua mradi wa risiti hii. Jibu na namba ya mradi:'
+        ? 'Sijajua mradi wa rekodi hii. Jibu na namba ya mradi:'
         : 'I do not know which project this belongs to. Reply with the number:',
     );
     (input.projectOptions ?? []).slice(0, 9).forEach((p, i) => lines.push(`${i + 1}. ${p.name}`));

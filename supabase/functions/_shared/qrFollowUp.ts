@@ -22,7 +22,7 @@ const money = (value: number | null | undefined) =>
 /** Appended to the receipt confirmation when TRA could not confirm it. */
 export function askForQrCloseUp(lang: Lang): string {
   return lang === 'sw'
-    ? '\n\n⚠️ Sikuweza kuthibitisha risiti hii na TRA, kwa hiyo namba zake ni za kusoma picha tu.'
+    ? '\n\n⚠️ Sikuweza kuthibitisha rekodi hii na TRA, kwa hiyo namba zake ni za kusoma picha tu.'
       + '\n\nNipigie picha ya mraba wa QR peke yake, karibu — nitachukua taarifa halisi kutoka TRA.'
     : '\n\n⚠️ I could not confirm this receipt with TRA, so its figures are only what the photo showed.'
       + '\n\nSend me a close-up of just the QR square and I will take the real figures from TRA.';
@@ -58,7 +58,7 @@ export function qrCorrectionReply(
   }
 
   const head = lang === 'sw'
-    ? `✅ Imethibitishwa na TRA: ${official.vendorName ?? 'risiti'} — ${money(official.totalInclTax)}.`
+    ? `✅ Imethibitishwa na TRA: ${official.vendorName ?? 'rekodi'} — ${money(official.totalInclTax)}.`
     : `✅ Confirmed by TRA: ${official.vendorName ?? 'receipt'} — ${money(official.totalInclTax)}.`;
 
   // Every other reply carries a way to open the receipt; this one did not, so a

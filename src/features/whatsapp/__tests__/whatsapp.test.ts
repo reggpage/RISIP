@@ -171,7 +171,7 @@ describe('reply messages', () => {
     expect(buildFailureReply('https://x.test', 'too_large', 'sw')).toContain('Picha hiyo ni kubwa sana');
     expect(buildFailureReply('https://x.test', 'too_large', 'sw')).not.toContain('too large');
     expect(buildNoActiveProjectReply('https://risip.online/receipts', 'sw')).toBe(
-      'Biashara yako haina mradi hai, kwa hiyo sikuweza kuhifadhi risiti hii.\nFungua Risip kukamilisha setup:\nhttps://risip.online/receipts',
+      'Biashara yako haina mradi hai, kwa hiyo sikuweza kuhifadhi rekodi hii.\nFungua Risip kukamilisha setup:\nhttps://risip.online/receipts',
     );
     expect(buildNoActiveProjectReply('https://risip.online/receipts', 'en')).toContain('Your business has no active project yet');
   });
