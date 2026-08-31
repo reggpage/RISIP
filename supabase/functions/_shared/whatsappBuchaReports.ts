@@ -1,5 +1,7 @@
 import type { ReadPeriod, ReadToolName } from './whatsappReadTools.ts';
-import { periodLabel, type ResolvedRange } from './whatsappReadTools.ts';
+import { periodDateLabel, periodDates, periodLabel } from './whatsappReadTools.ts';
+// ResolvedRange lives in whatsappDateRange; whatsappReadTools only imports it.
+import type { ResolvedRange } from './whatsappDateRange.ts';
 
 export type BuchaReportingSnapshot = {
   sales?: { total?: number; cash_sales?: number; credit_sales?: number; by_payment_method?: Record<string, number> };
@@ -42,6 +44,24 @@ export function buchaReportFacts(
   const profit = snapshot.profit ?? {};
   const lines = [
     `period=${periodLabel(period, lang, range)}`,
+    // THE DATE. Missing here for as long as this function has existed, and it
+    // is the whole of the "tarehe kamili haikutolewa na mfumo" bug.
+    //
+    // MEASURED: the owner asked "Jana walifunga na shingapi" four times and got
+    // that sentence every time. Everyone, including me, read it as the model
+    // lying. It was not. ai_business_summary_facts is inside snapshotTools, so
+    // EVERY summary — butchery or bookshop — comes through here, and the well
+    // tested businessSummaryFacts that does emit the date is never reached on
+    // this path. The model was handed period=jana and no date, said so
+    // honestly, and was then fought by three layers built to delete a true
+    // sentence: a prompt rule, a caveat detector, and a regex that rewrites the
+    // answer. All three no-op correctly when there is no date to enforce, which
+    // is why four fixes to them changed nothing.
+    //
+    // Supply the fact. Do not argue with the model about a fact it does not
+    // have.
+    `period_dates=${periodDates(period, range)}`,
+    `period_date_label=${periodDateLabel(period, lang, range)}`,
     `total_sales=${Number(sales.total ?? 0)}`,
     `sales_not_on_credit=${Number(sales.cash_sales ?? 0)}`,
     `credit_sales=${Number(sales.credit_sales ?? 0)}`,

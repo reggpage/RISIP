@@ -1380,7 +1380,17 @@ export function findFalseDateCaveat(answer: string, evidence: string[]): string[
 
 export function enforceResolvedDateLabel(answer: string, evidence: string[]): string {
   const joined = evidence.join('\n');
-  const label = joined.match(/^period_date_label=(.+)$/m)?.[1]?.trim();
+  const explicitLabel = joined.match(/^period_date_label=(.+)$/m)?.[1]?.trim();
+  const dates = joined.match(/^period_dates=([0-9]{4}-[0-9]{2}-[0-9]{2})$/m)?.[1]?.trim();
+  const label = explicitLabel || (dates
+    ? new Intl.DateTimeFormat('sw-TZ', {
+      timeZone: 'Africa/Dar_es_Salaam',
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    }).format(new Date(`${dates}T12:00:00.000Z`))
+    : '');
   if (!label) return answer;
   let cleaned = answer
     .replace(/\s*\([^)]*\btarehe\b[^)]*\b(?:haikutolewa|haikuwepo|haijapo|hakuna|haikupatikana|haikuonekana|haijaonyeshwa)\b[^)]*\b(?:mfumo|matokeo|data|tool|system)\b[^)]*\)\s*\.?/giu, ' ')

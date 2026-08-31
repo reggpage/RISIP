@@ -319,7 +319,7 @@ export function periodDates(
   return first === today ? today : `${first}..${today}`;
 }
 
-function periodDateLabel(
+export function periodDateLabel(
   period: ReadPeriod,
   lang: 'sw' | 'en',
   range?: ResolvedRange | null,

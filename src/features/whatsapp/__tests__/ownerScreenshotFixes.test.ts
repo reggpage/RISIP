@@ -136,6 +136,22 @@ describe('a figure has to belong to a day the shop can check', () => {
       'Mauzo ya jana: TSh 105,000. Faida ghafi: TSh 84,250. (Tarehe kamili haikuwepo kwenye matokeo ya mfumo huu.)',
       [evidence],
     )).toBe('Mauzo ya jana (Jumapili, 30 Agosti 2026): TSh 105,000. Faida ghafi: TSh 84,250.');
+    expect(enforceResolvedDateLabel(
+      'Jana: mauzo TSh 105,000, faida ghafi TSh 84,250. Tarehe kamili ya "jana" haikutolewa na mfumo katika matokeo haya.',
+      [evidence],
+    )).toBe('Jana (Jumapili, 30 Agosti 2026): mauzo TSh 105,000, faida ghafi TSh 84,250.');
+  });
+
+  it('can recover the local date label from period_dates alone', () => {
+    const evidence = [
+      'period=juzi',
+      'period_dates=2026-08-29',
+      'total_sales=0',
+    ].join('\n');
+    expect(enforceResolvedDateLabel(
+      'Juzi: mauzo TSh 0, faida ghafi TSh 0. Tarehe kamili ya "juzi" haikutolewa na mfumo katika matokeo haya.',
+      [evidence],
+    )).toBe('Juzi (Jumamosi, 29 Agosti 2026): mauzo TSh 0, faida ghafi TSh 0.');
   });
 
   it('does not reject an honest clarification when no date was resolved', () => {
