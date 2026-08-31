@@ -50,6 +50,10 @@ export function notificationTemplateParameters(claim: ClaimedNotification): stri
   if (claim.notification_kind === 'daily_summary') {
     const note = p.note_key === 'expenses_exceed_sales'
       ? (claim.lang === 'sw' ? '⚠️ Matumizi yamezidi mauzo leo.' : '⚠️ Expenses were higher than sales today.')
+      : p.note_key === 'day_closed'
+        ? (claim.lang === 'sw'
+          ? `Imefungwa na ${String(p.note_worker ?? '').trim() || 'mfanyakazi'}; faida baada ya matumizi ${amount(p.note_profit)}; rekodi ${Math.max(0, Math.round(Number(p.note_records ?? 0)))}.`
+          : `Closed by ${String(p.note_worker ?? '').trim() || 'staff'}; profit after expenses ${amount(p.note_profit)}; records ${Math.max(0, Math.round(Number(p.note_records ?? 0)))}.`)
       : (claim.lang === 'sw' ? 'Hakuna tatizo leo.' : 'No issues today.');
     return [
       String(p.business_name ?? '').trim(),

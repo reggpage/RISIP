@@ -278,6 +278,14 @@ describe('the ledger, and who may see a whole day', () => {
     expect(migration).toContain("'daily_summary', p_business_date, 'daily',");
   });
 
+  it('keeps stock purchases out of the daily-summary expenses slot', () => {
+    const fix = readFileSync(
+      resolve(process.cwd(), 'supabase/migrations/0154_day_close_summary_expenses.sql'), 'utf8');
+    expect(fix).toContain('v_expenses numeric');
+    expect(fix).toContain("'expenses', v_expenses");
+    expect(fix).not.toContain("'expenses', coalesce(p_purchases");
+  });
+
   it('does not tell somebody what they just typed', () => {
     expect(migration).toContain('(p_profile_id is null or p.id <> p_profile_id)');
   });

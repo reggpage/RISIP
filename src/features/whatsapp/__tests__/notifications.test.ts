@@ -54,6 +54,29 @@ describe('proactive WhatsApp notifications', () => {
     expect(payload.template.components[0].parameters).toHaveLength(5);
   });
 
+  it('uses the manual close note when a worker closes the day for the boss', () => {
+    const closed: ClaimedNotification = {
+      ...daily,
+      parameters: {
+        business_name: 'St. Ritha bookshop',
+        business_date: '2026-08-30',
+        sales: 105000,
+        expenses: 0,
+        note_key: 'day_closed',
+        note_worker: 'Neema',
+        note_profit: 84250,
+        note_records: 2,
+      },
+    };
+    expect(notificationTemplateParameters(closed)).toEqual([
+      'St. Ritha bookshop',
+      'Jumapili, 30 Agosti',
+      'TSh 105,000',
+      'TSh 0',
+      'Imefungwa na Neema; faida baada ya matumizi TSh 84,250; rekodi 2.',
+    ]);
+  });
+
   it('keeps a debt reminder to one debtor and one balance', () => {
     const debt: ClaimedNotification = {
       ...daily,
