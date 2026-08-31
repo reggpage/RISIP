@@ -135,7 +135,7 @@ const shillings = (value: number) => `TSh ${Math.round(value).toLocaleString('en
  * second round trip to collect the prices anyway, and a shopkeeper standing at a
  * counter should be able to finish this in one message.
  */
-export function newProductOffer(names: string[], lang: Lang): string {
+export function newProductOffer(names: string[], lang: Lang, alreadyKnown = 0): string {
   const one = names.length === 1;
   const only = names[0] ?? 'biblia';
   // One product is named in the sentence itself. Listing a single bullet under
@@ -157,12 +157,24 @@ export function newProductOffer(names: string[], lang: Lang): string {
     ? `_${only} kununua <bei ya kununua> rejareja <bei ya kuuza>_`
     : `_${only} kununua <buying price> rejareja <selling price>_`;
 
+  // WHAT IS ALREADY DONE, SAID BEFORE WHAT IS MISSING.
+  //
+  // The owner's rule, twice: "isikatishe bidhaa nyingine ifanye mahesabu then
+  // ndio isime hizi bidhaa zina bei mbili." Nothing here is lost — a catalogue
+  // miss holds the sale, registration follows, and the whole sale resumes
+  // afterwards. But a person who types eleven products and is asked about two
+  // has no way to know the other nine survived, and being asked about a
+  // fraction of your work reads exactly like losing the rest of it.
+  const done = alreadyKnown <= 0 ? '' : (lang === 'sw'
+    ? `_Bidhaa ${alreadyKnown} nimezipata na zinasubiri._\n`
+    : `_I have the other ${alreadyKnown}, and they are waiting._\n`);
+
   return lang === 'sw'
-    ? `${heading}${one ? 'Ulitaka kuiweka? Tuma bei zake:\n' : 'Ulitaka kuziweka? Tuma bei zake, mstari mmoja kwa kila bidhaa:\n'}`
+    ? `${done}${heading}${one ? 'Ulitaka kuiweka? Tuma bei zake:\n' : 'Ulitaka kuziweka? Tuma bei zake, mstari mmoja kwa kila bidhaa:\n'}`
       + `${template}\n`
       + 'Ukiuza pia kwa jumla, ongeza: _jumla <bei> kuanzia <idadi>_.\n'
       + 'Ukiona jina limekosewa, rekebisha badala ya kuliweka upya.'
-    : `${heading}${one ? 'Add it? Send its prices:\n' : 'Add them? Send their prices, one line per product:\n'}`
+    : `${done}${heading}${one ? 'Add it? Send its prices:\n' : 'Add them? Send their prices, one line per product:\n'}`
       + `${template}\n`
       + 'If you also sell in bulk, add: _jumla <price> kuanzia <quantity>_.\n'
       + 'If a name is mistyped, fix it rather than adding it twice.';

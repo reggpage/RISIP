@@ -18,6 +18,21 @@ export type StockCountBatch = {
   counts: StockCountItem[];
   /** Lines inside a count message that could not be read. Named, never dropped. */
   unreadable: string[];
+  /**
+   * Products the shop has never registered.
+   *
+   * MEASURED, in the code rather than on a screen: wa_record_stock_counts
+   * inserts whatever product_key it is handed, so counting a name nobody has
+   * registered creates a shelf entry for something with no buying cost and no
+   * selling price. It then appears in "what is on hand" as a quantity that
+   * cannot be valued, cannot be sold, and that nobody remembers creating.
+   *
+   * Counted separately from `unreadable` because they are a different problem
+   * with a different answer: an unreadable line is a typing accident, and a
+   * name like this is a product the shop may genuinely want — it just has to
+   * be registered first, with its two prices.
+   */
+  notRegistered?: string[];
 };
 
 const MAX_LINES = 120;
@@ -180,11 +195,22 @@ export function stockCountBatchConfirmation(batch: StockCountBatch, lang: Lang):
     : `\n\n⚠️ ${batch.unreadable.length} line(s) I could not read, and will not count:\n`
       + batch.unreadable.map((line) => `• ${line}`).join('\n'));
 
+  // Named, and named as a different thing from an unreadable line. A shop that
+  // is told "these were skipped" and not told WHY assumes Risip lost them.
+  const fresh = batch.notRegistered ?? [];
+  const unregistered = fresh.length === 0 ? '' : (lang === 'sw'
+    ? `\n\nHizi hazijasajiliwa bado, kwa hiyo sitazihesabu:\n`
+      + fresh.map((name) => `• *${name}*`).join('\n')
+      + '\n_Zisajili kwanza na bei zake, kisha tutazihesabu._'
+    : `\n\nThese are not registered yet, so I will not count them:\n`
+      + fresh.map((name) => `• *${name}*`).join('\n')
+      + '\n_Register them with their prices first, then we count them._');
+
   return lang === 'sw'
-    ? `*Hesabu mpya ya idadi zilizopo sasa — bidhaa ${batch.counts.length}*:\n${rows}${problem}\n\n`
+    ? `*Hesabu mpya ya idadi zilizopo sasa — bidhaa ${batch.counts.length}*:\n${rows}${problem}${unregistered}\n\n`
       + 'Hii itaweka idadi hizi kama zilizopo sasa kwenye stoo; si mauzo na si manunuzi mapya.\n\n'
       + `Nirekodi hesabu hii? *1* Ndiyo · *2* Hapana. ${pendingEscapeHint(lang)}`
-    : `*Stock on hand — ${batch.counts.length} products*:\n${rows}${problem}\n\n`
+    : `*Stock on hand — ${batch.counts.length} products*:\n${rows}${problem}${unregistered}\n\n`
       + 'This becomes the new anchor: from here I keep count as you sell and restock.\n\n'
       + `Save them all? *1* Yes · *2* No. ${pendingEscapeHint(lang)}`;
 }

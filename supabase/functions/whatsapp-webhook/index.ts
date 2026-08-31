@@ -7424,7 +7424,10 @@ Deno.serve(async (req) => {
               expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
               updated_at: new Date().toISOString(),
             }, { onConflict: 'identity_id' });
-            await reply(phone, newProductOffer(state.missingProducts, lang));
+            await reply(phone, newProductOffer(
+                state.missingProducts, lang,
+                Math.max(0, (state.pendingSale?.items.length ?? 0) - state.missingProducts.length),
+              ));
             await audit(db, identity, waMessageId, 'quantity_meaning', 'register_new_products', 'clarification');
             await finish('skipped');
             continue;
@@ -7457,7 +7460,10 @@ Deno.serve(async (req) => {
                 expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
                 updated_at: new Date().toISOString(),
               }, { onConflict: 'identity_id' });
-              await reply(phone, newProductOffer(state.missingProducts, lang));
+              await reply(phone, newProductOffer(
+                state.missingProducts, lang,
+                Math.max(0, (state.pendingSale?.items.length ?? 0) - state.missingProducts.length),
+              ));
               await audit(db, identity, waMessageId, 'quantity_meaning', 'stock_purchase_new_products', 'clarification');
               await finish('skipped');
               continue;
@@ -7468,14 +7474,61 @@ Deno.serve(async (req) => {
             await finish('skipped');
             continue;
           } else if (meaning === 'stock_count') {
+            // A COUNT ONLY MEANS SOMETHING FOR A REGISTERED PRODUCT.
+            //
+            // wa_record_stock_counts inserts whatever product_key it is handed,
+            // so counting a name nobody has registered creates a shelf entry
+            // with no buying cost and no selling price. It then shows up in
+            // "what is on hand" as a quantity that cannot be valued, cannot be
+            // sold, and that nobody remembers creating.
+            //
+            // The known ones are counted — that work is real and there is no
+            // reason to refuse it — and the rest are named, with the reason.
+            // Skipping something silently is what this whole week has been
+            // about.
+            const unregistered = new Set(
+              (quantityMeaningPending.missingProducts ?? []).map((name) => productKey(name)),
+            );
+            const countable = quantityMeaningPending.sale.items
+              .filter((item) => !unregistered.has(productKey(item.product)));
+            if (countable.length === 0) {
+              // Nothing here can be counted yet. Registration is the only door
+              // that is open, so go straight to it rather than showing an empty
+              // list and asking about it.
+              const state: NewProductOfferSetup = {
+                kind: 'new_product_offer_setup',
+                missingProducts: quantityMeaningPending.missingProducts ?? [],
+                sourceMessageId: quantityMeaningPending.sourceMessageId,
+                originalText: quantityMeaningPending.originalText,
+                pendingSale: quantityMeaningPending.sale,
+              };
+              await db.from('whatsapp_conversations').upsert({
+                identity_id: identity.id,
+                company_id: identity.company_id,
+                profile_id: identity.profile_id,
+                awaiting: 'product_cost',
+                receipt_id: null,
+                options: state,
+                expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'identity_id' });
+              await reply(phone, newProductOffer(
+                state.missingProducts, lang,
+                Math.max(0, (state.pendingSale?.items.length ?? 0) - state.missingProducts.length),
+              ));
+              await audit(db, identity, waMessageId, 'quantity_meaning', 'stock_count_all_new', 'clarification');
+              await finish('skipped');
+              continue;
+            }
             const stockBatch: StockCountBatch = {
               kind: 'stock_count_batch',
-              counts: quantityMeaningPending.sale.items.map((item) => ({
+              counts: countable.map((item) => ({
                 product: item.product,
                 quantity: item.quantity,
                 unit: item.unit ?? null,
               })),
               unreadable: [],
+              notRegistered: quantityMeaningPending.missingProducts ?? [],
             };
             await db.from('whatsapp_conversations').upsert({
               identity_id: identity.id,
