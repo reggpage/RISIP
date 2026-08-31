@@ -372,6 +372,7 @@ import {
   stockCountBatchSaved,
 } from '../_shared/whatsappStockBatch.ts';
 import { messageStatesDirection } from '../_shared/whatsappDirection.ts';
+import { shopMayAlreadyStock } from '../_shared/whatsappKnownProduct.ts';
 import {
   riderQuestionNotice,
   secondInstructionNotice,
@@ -3743,18 +3744,40 @@ async function executeBusinessEvent(
       // nine products it knows and it answers with two empty lists — which is
       // exactly what the owner was shown: a question that knew nothing about
       // his own shop while the answer sat one query away.
+      // Through the SAME resolver the draft itself uses, and MEASURED is why.
+      // My first version compared normalised names against the catalogue and
+      // called that a lookup. The owner sent eleven products, two of them
+      // genuinely new, and was told SEVEN were new: "Puch" is registered as
+      // punch, and the others are shorthand for names the shop keeps in longer
+      // form. Exact string matching is not what "does this shop sell it" means
+      // here — one transposed letter behind a counter is the normal case, which
+      // is exactly what wa_resolve_company_product_read exists to absorb.
+      //
+      // Ambiguous counts as KNOWN. Several candidates means the shop sells it
+      // more than one way, not that it has never heard of it; calling that new
+      // would offer to register a product it already stocks twice over.
       const { data: catalogueRows } = await db.rpc('company_product_names', {
         p_company_id: identity.company_id,
       });
-      const catalogue = new Set(
-        ((catalogueRows ?? []) as Array<Record<string, unknown>>)
-          .map((row) => productKey(String(row.product_name ?? '')))
-          .filter(Boolean),
-      );
+      const catalogue = ((catalogueRows ?? []) as Array<Record<string, unknown>>)
+        .map((row) => String(row.product_name ?? '').trim())
+        .filter(Boolean);
+
       const missingProducts: string[] = [];
       const resolvedProducts: string[] = [];
       for (const item of sale.items) {
-        const target = catalogue.has(productKey(item.product)) ? resolvedProducts : missingProducts;
+        const found = await resolveProductForRead(db, identity, item.product);
+        // The exact resolver first — it is the one that would bill this line.
+        // Then the looser question, which is the only one being asked here:
+        // does the shop plausibly already stock it? Three of the owner's five
+        // "new" products were a missing letter, a short name and a word that
+        // opens TWO registered books. The exact resolver is right to refuse all
+        // three, because it is being asked which single product to bill and
+        // there is no honest answer. Telling him he does not sell them is a
+        // different claim, and a false one.
+        const known = (!found.error && found.resolution.kind !== 'not_found')
+          || shopMayAlreadyStock(item.product, catalogue);
+        const target = known ? resolvedProducts : missingProducts;
         if (!target.includes(item.product)) target.push(item.product);
       }
       const parked: ParkedQuantityMeaning = {

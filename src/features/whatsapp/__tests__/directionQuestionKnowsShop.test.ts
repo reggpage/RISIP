@@ -77,14 +77,18 @@ describe('when some are new', () => {
 describe('where the answer comes from', () => {
   const branch = webhook.slice(
     webhook.indexOf('// WHICH OF THESE DOES THE SHOP ALREADY SELL?'),
-    webhook.indexOf('// WHICH OF THESE DOES THE SHOP ALREADY SELL?') + 1600,
+    webhook.indexOf('// WHICH OF THESE DOES THE SHOP ALREADY SELL?') + 3000,
   );
 
   it('reads the catalogue directly, not the pricing path', () => {
     // The pricing path answers this question only when it fails, which is why
     // nine known products produced silence.
     expect(branch).toContain("db.rpc('company_product_names'");
-    expect(branch).toContain('catalogue.has(productKey(item.product))');
+    // Exact resolver first — the one that would bill the line — then the
+    // looser "does the shop plausibly stock it" test, which is the only
+    // question being asked here.
+    expect(branch).toContain('await resolveProductForRead(db, identity, item.product)');
+    expect(branch).toContain('shopMayAlreadyStock(item.product, catalogue)');
   });
 
   it('records why the previous source was wrong', () => {
@@ -96,6 +100,14 @@ describe('where the answer comes from', () => {
   });
 
   it('does not double-count a product named twice', () => {
-    expect(branch).toContain('if (!target.includes(item.product)) target.push(item.product);');
+    expect(webhook).toContain('if (!target.includes(item.product)) target.push(item.product);');
+  });
+
+  it('does not call a product new just because it could not be billed', () => {
+    // MEASURED: three of five "new" products were a missing letter, a short
+    // name, and a word opening TWO registered books. The exact resolver is
+    // right to refuse all three; saying he does not sell them is a different
+    // claim, and a false one.
+    expect(webhook).toContain('different claim, and a false one.');
   });
 });

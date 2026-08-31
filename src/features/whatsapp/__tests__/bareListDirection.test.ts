@@ -63,7 +63,7 @@ describe('the model can now say it does not know', () => {
 describe('the server asks instead of writing', () => {
   const branch = webhook.slice(
     webhook.indexOf("if ((event.missingFields.includes('direction') || directionUnstated)"),
-    webhook.indexOf("if ((event.missingFields.includes('direction') || directionUnstated)") + 3400,
+    webhook.indexOf("if ((event.missingFields.includes('direction') || directionUnstated)") + 6000,
   );
 
   it('raises the question before any draft is built', () => {
