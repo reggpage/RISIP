@@ -142,6 +142,7 @@ import {
   inviteNotAllowed,
   inviteReady,
   inviteRoleQuestion,
+  workerCanDo,
   parseInviteRequest,
   parseInviteRole,
 } from '../_shared/whatsappInvite.ts';
@@ -7977,7 +7978,10 @@ Deno.serve(async (req) => {
             continue;
           }
           const { data: made, error } = await db.rpc('wa_create_invite_code', {
-            p_phone: phone, p_role: role, p_days: 7,
+            // Three days, not seven. An invite nobody used in three days was
+            // not meant, and a live code sitting in somebody chat history is a
+            // way into a shop ledger.
+            p_phone: phone, p_role: role, p_days: 3,
           });
           await clearConversation(db, identity.id as string);
           if (error) {
@@ -8973,18 +8977,36 @@ Deno.serve(async (req) => {
             await finish('skipped');
             continue;
           }
-          await db.from('whatsapp_conversations').upsert({
-            identity_id: identity.id,
-            company_id: identity.company_id,
-            profile_id: identity.profile_id,
-            awaiting: 'product_cost',
-            receipt_id: null,
-            options: { kind: 'invite_role' },
-            expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
-            updated_at: new Date().toISOString(),
-          }, { onConflict: 'identity_id' });
-          await reply(phone, inviteRoleQuestion(lang));
-          await audit(db, identity, waMessageId, 'invite', 'ask_role', 'pending');
+          // ONE ROLE, SO NO QUESTION.
+          //
+          // The owner: "hii risip haitaji tena muhasibu ni mfanyakazi tu sasa
+          // hivi kwasaabu kazi yake ni kuripot na risip yenye ni mhasibu."
+          //
+          // A question with one answer is not a question — it is a tap between
+          // somebody and the thing they asked for. He asked to invite a worker;
+          // he gets a worker invite.
+          const { data: made, error: inviteError } = await db.rpc('wa_create_invite_code', {
+            p_phone: phone, p_role: 'worker', p_days: 3,
+          });
+          if (inviteError) {
+            const hint = (inviteError as { hint?: string } | null)?.hint;
+            await reply(phone, hint === 'not_authorized'
+              ? inviteNotAllowed(lang)
+              : productCostErrorMessage(inviteError, lang));
+            await audit(db, identity, waMessageId, 'invite', 'worker', 'failed');
+            await finish('skipped');
+            continue;
+          }
+          const invite = made as { code?: string; company_name?: string } | null;
+          await reply(phone, inviteReady(
+            String(invite?.code ?? ''), 'worker', invite?.company_name ?? '',
+            await whatsAppDisplayNumber(), lang,
+          ));
+          // Its own message. The code is what he asked for and ends where it
+          // ends; this is the boundary he is handing over, and he should read
+          // it as a separate thing.
+          await sendReplyText(phone, workerCanDo(lang), waMessageId);
+          await audit(db, identity, waMessageId, 'invite', 'worker', 'applied');
           await finish('skipped');
           continue;
         }

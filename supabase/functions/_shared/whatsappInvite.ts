@@ -50,16 +50,22 @@ export function parseInviteRole(text: string | null | undefined): InviteRole | n
   return null;
 }
 
+/**
+ * Kept for anyone mid-flow when the second role was removed, and for nothing
+ * else. Nothing asks this any more.
+ *
+ * The owner: "hii risip haitaji tena muhasibu ni mfanyakazi tu sasa hivi
+ * kwasaabu kazi yake ni kuripot na risip yenye ni mhasibu." He is right about
+ * his own product — the accountant was a role from a contracting tool, and a
+ * shop that has Risip does not need a second person reading its ledger.
+ *
+ * A question with one answer is not a question. It is a tap the person has to
+ * make before the thing they asked for happens.
+ */
 export function inviteRoleQuestion(lang: Lang): string {
   return lang === 'sw'
-    ? 'Unamualika kwa nafasi gani?\n\n'
-      + '*1* — Mfanyakazi (anarekodi mauzo na bidhaa za miradi yake tu)\n'
-      + '*2* — Mhasibu (anaona fedha zote za biashara)\n\n'
-      + 'Jibu 1 au 2.'
-    : 'What will they be?\n\n'
-      + '*1* — Worker (records sales and receipts, only their own projects)\n'
-      + '*2* — Accountant (sees the whole business\'s finances)\n\n'
-      + 'Reply 1 or 2.';
+    ? 'Namuandaa mfanyakazi. Subiri kidogo…'
+    : 'Preparing a worker invite. One moment…';
 }
 
 const roleName = (role: InviteRole, lang: Lang) => lang === 'sw'
@@ -90,12 +96,12 @@ export function inviteReady(
     ? `Karibu ${businessName}. Tuma neno *${code}* kwenye ${where}, `
       + 'kisha fuata maswali mawili. Ndipo utaweza kurekodi mauzo kwa simu yako.'
     : `Welcome to ${businessName}. Send *${code}* to ${where}, `
-      + 'then answer two short questions. That is all you need to start recording sales and receipts.';
+      + 'then answer two short questions. That is all you need to start recording sales.';
 
   return lang === 'sw'
     ? `✅ Mwaliko wa *${roleName(role, lang)}* uko tayari.\n\n`
       + `Namba ya siri: *${code}*\n`
-      + '_Inatumika mara moja tu, na inaisha baada ya siku 7._\n\n'
+      + '_Inatumika mara moja tu, na inaisha baada ya siku 3._\n\n'
       + '── Nakala ya kutuma kwake ──\n'
       + forward
       + '\n──\n\n'
@@ -103,12 +109,46 @@ export function inviteReady(
       + 'namba ikikosewa hata tarakimu moja, mwaliko unaenda kwa mtu usiyemjua.'
     : `✅ *${roleName(role, lang)}* invite is ready.\n\n`
       + `Code: *${code}*\n`
-      + '_Single use, expires in 7 days._\n\n'
+      + '_Single use, expires in 3 days._\n\n'
       + '── Forward this to them ──\n'
       + forward
       + '\n──\n\n'
       + 'Send it yourself from your own contacts. I do not send it — '
       + 'one wrong digit and the invite reaches somebody you do not know.';
+}
+
+/**
+ * What the owner is handing over, said before the person joins rather than after.
+ *
+ * The owner asked for it: "atapofanya ualiko apate bulets za majukumu ya
+ * mfanyakazi wake." He is giving somebody a way into his books. The list of
+ * what they will NOT see matters as much as the list of what they will —
+ * without it, "mfanyakazi" is a word he has to trust rather than a boundary he
+ * can read.
+ *
+ * Sent as its own message, after the code. Kanuni 3: the invite is the thing
+ * he asked for and it ends where it ends; this is the explanation behind it.
+ */
+export function workerCanDo(lang: Lang): string {
+  return lang === 'sw'
+    ? '*Mfanyakazi wako ataweza:*\n'
+      + '• Kurekodi mauzo na manunuzi\n'
+      + '• Kuhesabu bidhaa zilizopo\n'
+      + '• Kutuma picha ya rekodi\n\n'
+      + '*Hataona:*\n'
+      + '• Faida ya biashara\n'
+      + '• Madeni ya wateja wote\n'
+      + '• Ripoti za fedha\n\n'
+      + '_Ukibadilisha mawazo, tuma *ondoa* na jina lake._'
+    : '*Your worker will be able to:*\n'
+      + '• Record sales and purchases\n'
+      + '• Count stock on hand\n'
+      + '• Send a photo of a record\n\n'
+      + '*They will not see:*\n'
+      + '• The business profit\n'
+      + '• Every customer’s debt\n'
+      + '• Financial reports\n\n'
+      + '_If you change your mind, send *ondoa* and their name._';
 }
 
 export function inviteCancelled(lang: Lang): string {

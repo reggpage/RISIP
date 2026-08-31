@@ -6,6 +6,7 @@ import {
   inviteRoleQuestion,
   parseInviteRequest,
   parseInviteRole,
+  workerCanDo,
 } from '../../../../supabase/functions/_shared/whatsappInvite';
 
 describe('asking to bring somebody in', () => {
@@ -45,11 +46,44 @@ describe('choosing the role, which is never guessed', () => {
     expect(inviteRoleQuestion('sw')).not.toMatch(/mmiliki|owner/i);
   });
 
-  it('says what each role will actually see', () => {
+  it('no longer asks, because there is only one role to ask about', () => {
+    // The owner: "hii risip haitaji tena muhasibu ni mfanyakazi tu sasa hivi
+    // kwasaabu kazi yake ni kuripot na risip yenye ni mhasibu."
+    //
+    // A question with one answer is not a question. It is a tap between
+    // somebody and the thing they asked for. "mualike" now produces the invite
+    // itself; this string survives only for anyone parked mid-flow on the day
+    // the second role was removed.
     const question = inviteRoleQuestion('sw');
-    expect(question).toMatch(/Mfanyakazi/);
-    expect(question).toMatch(/Mhasibu/);
-    expect(question).toMatch(/fedha zote/);
+    expect(question).not.toMatch(/Mhasibu/);
+    expect(question).not.toMatch(/Jibu 1 au 2/);
+    expect(question).toMatch(/Namuandaa mfanyakazi/);
+  });
+
+  it('creates a worker invite straight from "mualike", with no question between', () => {
+    const webhook = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+    const branch = webhook.slice(
+      webhook.indexOf('// ONE ROLE, SO NO QUESTION.'),
+      webhook.indexOf('// ONE ROLE, SO NO QUESTION.') + 1600,
+    );
+    expect(branch).toContain("p_phone: phone, p_role: 'worker', p_days: 3,");
+    expect(branch).toContain('await sendReplyText(phone, workerCanDo(lang), waMessageId);');
+    expect(branch).not.toContain("options: { kind: 'invite_role' }");
+  });
+
+  it('tells the owner what he is handing over, and what he is not', () => {
+    // "atapofanya ualiko apate bulets za majukumu ya mfanyakazi wake." The list
+    // of what the worker will NOT see matters as much as the list of what they
+    // will — without it, "mfanyakazi" is a word to trust rather than a boundary
+    // to read.
+    const said = workerCanDo('sw');
+    expect(said).toContain('Kurekodi mauzo na manunuzi');
+    expect(said).toContain('Kuhesabu bidhaa zilizopo');
+    expect(said).toContain('*Hataona:*');
+    expect(said).toContain('Faida ya biashara');
+    expect(said).toContain('Madeni ya wateja wote');
+    expect(said).toContain('ondoa');
   });
 });
 
@@ -59,7 +93,9 @@ describe('what the owner gets back', () => {
   it('carries the code and what it costs to lose it', () => {
     expect(reply).toContain('KTM4PQ7X');
     expect(reply).toMatch(/mara moja tu/);
-    expect(reply).toMatch(/siku 7/);
+    // Three days, not seven: an invite nobody used in three days was not
+    // meant, and a live code in somebody's chat history is a way into a ledger.
+    expect(reply).toMatch(/siku 3/);
   });
 
   it('writes the forwardable half to the newcomer, not to the owner', () => {
