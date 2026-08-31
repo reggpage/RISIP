@@ -103,6 +103,89 @@ export function starterExample(
  * first three things worth doing, in the order that makes each one useful: a
  * price list makes a sale priceable, a count makes stock answerable.
  */
+/**
+ * MESSAGE 6 — what Risip is for, before anything is asked of them.
+ *
+ * MEASURED: businessWelcome below is 899 characters over 30 lines, and it
+ * arrives the second somebody finishes signing up. Everything in it is true and
+ * almost none of it is read — a person who has answered five questions is not
+ * about to study a manual, and teaching everything on day one is how nothing is
+ * learned.
+ *
+ * So the wall becomes three messages, and this is the first: five things Risip
+ * does, no syntax, no commands, no question. The owner asked for exactly this —
+ * "kazi yake kwa bullets yani kitu kiwe proffessional and simple to use".
+ */
+export function businessReady(person: string, businessName: string, lang: 'sw' | 'en'): string {
+  return lang === 'sw'
+    ? `✅ *${businessName}* limefunguliwa. Karibu, ${person}.\n\n`
+      + 'Ninachoweza kukufanyia:\n'
+      + '• Kurekodi mauzo ya kila siku\n'
+      + '• Kuhesabu bidhaa zilizopo\n'
+      + '• Kufuatilia madeni ya wateja\n'
+      + '• Kukuambia faida yako\n'
+      + '• Kufunga siku na kukupa ripoti'
+    : `✅ *${businessName}* is open. Welcome, ${person}.\n\n`
+      + 'What I can do for you:\n'
+      + '• Record every day’s sales\n'
+      + '• Count the stock on hand\n'
+      + '• Follow customer debts\n'
+      + '• Tell you your profit\n'
+      + '• Close the day and report it';
+}
+
+/**
+ * MESSAGE 7 — asked now, because later means never.
+ *
+ * The owner: "ai lazima imuulize mtu baada ya usajili kama anataka kumwalika
+ * mfanyakazi wake." Waiting for somebody to remember the word "mualike" is
+ * waiting for a thing that does not happen.
+ *
+ * Numbered, per his rule: a choice with two answers needs no spelling.
+ */
+export function workerOffer(lang: 'sw' | 'en'): string {
+  return lang === 'sw'
+    ? 'Una mfanyakazi wa kumualika?\n\n'
+      + '*1* Ndiyo, nimualike sasa\n'
+      + '*2* Baadaye'
+    : 'Do you have a worker to invite?\n\n'
+      + '*1* Yes, invite them now\n'
+      + '*2* Later';
+}
+
+/**
+ * MESSAGE 8 — the one thing to do next.
+ *
+ * A new shop has no products, so nothing else is possible yet: there is nothing
+ * to sell and no shelf to count. This is not a restriction, it is the only door
+ * that is open — and the moment three products exist, selling works the same
+ * minute.
+ *
+ * Wholesale is mentioned in ONE line, after the simple form, and not explained.
+ * The full syntax lesson belongs where it is needed, which is the first time a
+ * product genuinely has two prices.
+ */
+export function firstProductsPrompt(
+  category: string | null | undefined,
+  subCategory: string | null | undefined,
+  lang: 'sw' | 'en',
+): string {
+  const eg = starterExample(category, subCategory);
+  const italic = (lines: string[]) => lines.map((line) => `_${line}_`).join('\n');
+  const twoLines = italic(eg.register.slice(0, 2));
+  return lang === 'sw'
+    ? 'Tuanze na bidhaa zako. Andika hivi, moja kwa mstari:\n\n'
+      + `${twoLines}\n\n`
+      + '*@* ni bei ya kununua, *nauza* ni bei ya kuuza.\n\n'
+      + '_Bidhaa ikiwa na bei ya jumla, ongeza: jumla 900 kuanzia 12._\n'
+      + 'Ukikwama tuma *msaada*.'
+    : 'Let us start with your products. Write them like this, one per line:\n\n'
+      + `${twoLines}\n\n`
+      + '*@* is the buying price, *nauza* is the selling price.\n\n'
+      + '_If a product has a wholesale price, add: jumla 900 kuanzia 12._\n'
+      + 'Send *msaada* if you get stuck.';
+}
+
 export function businessWelcome(
   person: string,
   businessName: string,

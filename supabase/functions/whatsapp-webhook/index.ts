@@ -291,7 +291,7 @@ import { lowStockNotice, type StockLevel } from '../_shared/whatsappLowStock.ts'
 import {
   formatBarcode, isScanRequest, isSellScanRequest, parseBarcodeMessage,
 } from '../_shared/barcode.ts';
-import { businessWelcome } from '../_shared/whatsappStarterExamples.ts';
+import { businessReady, businessWelcome, firstProductsPrompt, workerOffer } from '../_shared/whatsappStarterExamples.ts';
 import {
   parseBareExpense,
   parseBareQuantityList,
@@ -5772,10 +5772,44 @@ async function handleOnboarding(
 
     const name = (result as { company_name?: string } | null)?.company_name ?? '';
     const person = next.action.fullName;
-    // The single most-read message in the product lives in one place, beside
-    // the trade examples it is built from, so it can be reviewed and quoted
-    // without reading the webhook.
-    return businessWelcome(person, name, next.action.category, next.action.subCategory, lang);
+    // THREE MESSAGES, NOT ONE WALL.
+    //
+    // MEASURED: businessWelcome is 899 characters over 30 lines and it landed
+    // the second somebody finished signing up. Everything in it is true and
+    // almost none of it was read.
+    //
+    // Now: what Risip does (no question), the worker offer (a question), and
+    // the first products (an instruction). Kanuni 3 — a message that awaits an
+    // answer ends with its question and nothing follows it, so the offer cannot
+    // sit underneath five bullets where it reads as an afterthought.
+    //
+    // The onboarding row is gone by this point, so the offer is parked on the
+    // ordinary conversation state like every other question.
+    await sendReplyText(phone, businessReady(person, name, lang));
+    const { data: freshIdentity } = await db
+      .from('whatsapp_identities')
+      .select('id, company_id, profile_id')
+      .eq('phone_e164', phone)
+      .is('revoked_at', null)
+      .maybeSingle();
+    const fresh = freshIdentity as { id: string; company_id: string; profile_id: string } | null;
+    if (fresh) {
+      await db.from('whatsapp_conversations').upsert({
+        identity_id: fresh.id,
+        company_id: fresh.company_id,
+        profile_id: fresh.profile_id,
+        awaiting: 'product_cost',
+        receipt_id: null,
+        options: {
+          kind: 'onboarding_worker_offer',
+          category: next.action.category ?? null,
+          subCategory: next.action.subCategory ?? null,
+        },
+        expires_at: new Date(Date.now() + 60 * 60_000).toISOString(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'identity_id' });
+    }
+    return workerOffer(lang);
   }
 
   await db.from('whatsapp_onboarding').update({
@@ -8968,6 +9002,52 @@ Deno.serve(async (req) => {
         // A pasted selling-price list. Checked against what the shop pays before
         // it is confirmed, because a retail price under the buying cost reads
         // and saves perfectly while turning every future sale into a loss.
+        // ONBOARDING STEP 7 — the worker offer, answered.
+        //
+        // Checked here, before the ordinary parsers, because "1" and "2" are
+        // exactly the kind of bare token that anything else would happily read
+        // as a quantity. It is only ever reached while this precise question is
+        // parked, and it clears the parked state either way.
+        const workerOfferPending = convo?.awaiting === 'product_cost'
+          && (convo.options as { kind?: string } | null)?.kind === 'onboarding_worker_offer'
+          ? convo.options as { kind: string; category: string | null; subCategory: string | null }
+          : null;
+        if (workerOfferPending) {
+          const said = String(body ?? '').trim().toLowerCase();
+          const wantsWorker = /^1$/.test(said) || /\b(?:ndiyo|ndio|yes|naam|sawa)\b/.test(said);
+          const later = /^2$/.test(said) || /\b(?:baadaye|later|hapana|no|bado)\b/.test(said);
+          if (wantsWorker || later) {
+            await clearConversation(db, identity.id as string);
+            if (wantsWorker) {
+              const { data: made, error: madeError } = await db.rpc('wa_create_invite_code', {
+                p_phone: phone, p_role: 'worker', p_days: 3,
+              });
+              if (madeError) {
+                await reply(phone, inviteNotAllowed(lang));
+              } else {
+                const invite = made as { code?: string; company_name?: string } | null;
+                await reply(phone, inviteReady(
+                  String(invite?.code ?? ''), 'worker', invite?.company_name ?? '',
+                  await whatsAppDisplayNumber(), lang,
+                ));
+                await sendReplyText(phone, workerCanDo(lang), waMessageId);
+              }
+            }
+            // Either answer leads here. The offer was a detour; products are
+            // the road, and a new shop cannot do anything else until it has one.
+            await sendReplyText(phone, firstProductsPrompt(
+              workerOfferPending.category, workerOfferPending.subCategory, lang,
+            ), waMessageId);
+            await audit(db, identity, waMessageId, 'onboarding', wantsWorker ? 'invite_now' : 'invite_later', 'applied');
+            await finish('answered');
+            continue;
+          }
+          // Anything else is not an answer to this. Release the question rather
+          // than holding somebody hostage to it, and let the message be read as
+          // what it is.
+          await clearConversation(db, identity.id as string);
+        }
+
         // "nataka kumuinvite mtu". Risip does not send the invite — see
         // whatsappInvite.ts for why — it writes it out for the owner to forward.
         if (parseInviteRequest(writeBody)) {
