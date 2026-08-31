@@ -63,7 +63,7 @@ describe('the model can now say it does not know', () => {
 describe('the server asks instead of writing', () => {
   const branch = webhook.slice(
     webhook.indexOf("if ((event.missingFields.includes('direction') || directionUnstated)"),
-    webhook.indexOf("if ((event.missingFields.includes('direction') || directionUnstated)") + 1800,
+    webhook.indexOf("if ((event.missingFields.includes('direction') || directionUnstated)") + 3400,
   );
 
   it('raises the question before any draft is built', () => {
@@ -82,7 +82,7 @@ describe('the server asks instead of writing', () => {
   });
 
   it('asks the question that already existed rather than inventing a second one', () => {
-    expect(branch).toContain('quantityMeaningQuestion(lang, missingProducts)');
+    expect(branch).toContain('quantityMeaningQuestion(lang, missingProducts, resolvedProducts)');
   });
 
   it('parks the answer so the reply lands on this list', () => {

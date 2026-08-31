@@ -50,7 +50,11 @@ describe('short WhatsApp follow-up memory', () => {
     const question = quantityMeaningQuestion('sw', ['Puch', 'Dasan']);
     expect(question).toContain('*Puch*');
     expect(question).toContain('*Dasan*');
-    expect(question).toContain('Kama ni bidhaa mpya');
+    // The wording moved from "if they are new products" to naming them as new
+    // and pointing at the choice that fits: the owner asked for the question to
+    // lean on what Risip can already see rather than read like a form.
+    expect(question).toContain('sijaziona kwenye stoo yako — ni mpya');
+    expect(question).toContain('Kama umezinunua, chagua *MANUNUZI*');
     expect(question).toContain('bei ya kununua na bei ya kuuza');
     expect(question).toContain('SAJILI');
   });

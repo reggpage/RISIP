@@ -3732,9 +3732,31 @@ async function executeBusinessEvent(
       .join('\n');
     const sale = parseBareQuantityList(asList);
     if (sale) {
-      const hint = await priceQuantitySale(db, identity, sale, lang);
-      const missingProducts = hint.kind === 'unknown' ? hint.products : [];
-      const resolvedProducts = hint.kind === 'unknown' ? hint.resolvedProducts : [];
+      // WHICH OF THESE DOES THE SHOP ALREADY SELL?
+      //
+      // The owner's improvement: "kama ai imenotice bidhaa ambazo hazipo ndio
+      // iseme pia kuna bidhaa naona hazipo kwenye stoo yako hizi ni mpya kama
+      // ni mpya chagua manunuzi."
+      //
+      // Read from the catalogue directly rather than from the pricing path,
+      // which only reports names when something FAILS to resolve. Ask it about
+      // nine products it knows and it answers with two empty lists — which is
+      // exactly what the owner was shown: a question that knew nothing about
+      // his own shop while the answer sat one query away.
+      const { data: catalogueRows } = await db.rpc('company_product_names', {
+        p_company_id: identity.company_id,
+      });
+      const catalogue = new Set(
+        ((catalogueRows ?? []) as Array<Record<string, unknown>>)
+          .map((row) => productKey(String(row.product_name ?? '')))
+          .filter(Boolean),
+      );
+      const missingProducts: string[] = [];
+      const resolvedProducts: string[] = [];
+      for (const item of sale.items) {
+        const target = catalogue.has(productKey(item.product)) ? resolvedProducts : missingProducts;
+        if (!target.includes(item.product)) target.push(item.product);
+      }
       const parked: ParkedQuantityMeaning = {
         kind: 'quantity_meaning_clarification',
         sourceMessageId: waMessageId,
@@ -3748,7 +3770,7 @@ async function executeBusinessEvent(
         awaiting: 'product_cost', receipt_id: null, options: parked,
         expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
       }, { onConflict: 'identity_id' });
-      const question = quantityMeaningQuestion(lang, missingProducts);
+      const question = quantityMeaningQuestion(lang, missingProducts, resolvedProducts);
       return { content: question, terminalReply: question };
     }
   }

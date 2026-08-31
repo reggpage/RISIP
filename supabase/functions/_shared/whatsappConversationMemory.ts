@@ -37,12 +37,43 @@ export function wantsToRegisterNewProducts(text: string | null | undefined): boo
   return /^(?:ndiyo|dio|yes|yeah|yep|sajili|nisajilie|ongeza|ongeza bidhaa|weka bidhaa|bidhaa mpya)$/.test(said);
 }
 
-export function quantityMeaningQuestion(lang: Lang, missingProducts: string[] = []): string {
+/**
+ * The question that stops a list of numbers becoming the wrong kind of record.
+ *
+ * THE OWNER'S IMPROVEMENT, and it is the right one: "nataka ai iwe na akili
+ * isiwe tu kama roboti… kama ai imenotice bidhaa ambazo hazipo ndio iseme pia
+ * kuna bidhaa naona hazipo kwenye stoo yako hizi ni mpya kama ni mpya chagua
+ * manunuzi."
+ *
+ * The server already knows which of these products the shop sells — it resolves
+ * every one of them a moment later. Asking the question without saying so made
+ * it read like a form. Saying so turns three equal options into a decision the
+ * shopkeeper can already half-answer: nine products he recognises is a sale or
+ * a count, and a name he has never registered is almost certainly something he
+ * has just bought.
+ *
+ * It STATES what it found and never decides on it. Recognising a product does
+ * not prove a sale, and a new name does not prove a purchase — a shop counting
+ * a shelf for the first time meets both. So this leans, and he chooses.
+ */
+export function quantityMeaningQuestion(
+  lang: Lang,
+  missingProducts: string[] = [],
+  knownProducts: string[] = [],
+): string {
+  const known = knownProducts.length === 0 ? '' : (missingProducts.length === 0
+    ? (lang === 'sw'
+      ? `_Bidhaa zote ${knownProducts.length} zipo kwenye orodha yako._\n\n`
+      : `_All ${knownProducts.length} are already in your product list._\n\n`)
+    : (lang === 'sw'
+      ? `_Bidhaa ${knownProducts.length} zipo kwenye orodha yako._\n\n`
+      : `_${knownProducts.length} are already in your product list._\n\n`));
+
   const missing = missingProducts.length === 0 ? '' : lang === 'sw'
-    ? `\n\nSijaziona hizi kwenye bidhaa zilizosajiliwa: ${missingProducts.map((name) => `*${name}*`).join(', ')}.\n`
-      + 'Kama ni bidhaa mpya, jibu *SAJILI* au *NDIYO*; nitakuomba bei ya kununua na bei ya kuuza.'
-    : `\n\nI do not see these in the registered products: ${missingProducts.map((name) => `*${name}*`).join(', ')}.\n`
-      + 'If they are new products, reply *REGISTER* or *YES*; I will ask for buying and selling prices.';
+    ? `\n\nHizi sijaziona kwenye stoo yako — ni mpya: ${missingProducts.map((name) => `*${name}*`).join(', ')}.\n`
+      + 'Kama umezinunua, chagua *MANUNUZI*; nitakuomba bei ya kununua na bei ya kuuza.'
+    : `\n\nI do not see these in your store — they are new: ${missingProducts.map((name) => `*${name}*`).join(', ')}.\n`
+      + 'If you bought them, choose *MANUNUZI*; I will ask for buying and selling prices.';
   const items = lang === 'sw'
     ? 'Nimepata idadi za bidhaa ulizotaja. Unataka nizifanye nini?\n'
       + '1. *MAUZO* — nirekodi kama mauzo ya leo\n'
@@ -53,8 +84,8 @@ export function quantityMeaningQuestion(lang: Lang, missingProducts: string[] = 
       + '2. *STOCK* — set these as the current quantities on hand\n'
       + '3. *PURCHASE* — products you bought/added to the store';
   return lang === 'sw'
-    ? `${items}${missing}\n\nJibu MAUZO, STOCK, MANUNUZI${missingProducts.length > 0 ? ', au SAJILI' : ''}.`
-    : `${items}${missing}\n\nReply SALES, STOCK, PURCHASE${missingProducts.length > 0 ? ', or REGISTER' : ''}.`;
+    ? `${known}${items}${missing}\n\nJibu *MAUZO*, *STOCK*, *MANUNUZI*${missingProducts.length > 0 ? ', au *SAJILI*' : ''}.`
+    : `${known}${items}${missing}\n\nReply *SALES*, *STOCK*, *PURCHASE*${missingProducts.length > 0 ? ', or *REGISTER*' : ''}.`;
 }
 
 export function stockPurchaseNeedsPrices(state: ParkedQuantityMeaning, lang: Lang): string {
