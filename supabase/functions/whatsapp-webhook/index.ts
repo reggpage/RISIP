@@ -5736,6 +5736,19 @@ Deno.serve(async (req) => {
   // Deliberately NOT replying to these: an answer to an eleven-day-old question
   // is its own kind of confusing. The record is for whoever looks.
   try {
+    // Read them BEFORE marking them, so the ones young enough to still matter
+    // can be answered. MEASURED: ten of the first 711 messages died this way —
+    // one in every seventy — and every one of those shopkeepers typed, waited,
+    // and was never told anything at all. Silence is the worst failure mode
+    // this system has, because the person cannot tell it from being ignored.
+    const abandonedSince = new Date(Date.now() - 10 * 60_000).toISOString();
+    const { data: abandoned } = await db.from('whatsapp_messages')
+      .select('wa_message_id, phone_e164, created_at')
+      .in('status', ['pending', 'processing'])
+      .lt('created_at', abandonedSince)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
     await db.from('whatsapp_messages')
       .update({
         status: 'failed',
@@ -5744,7 +5757,31 @@ Deno.serve(async (req) => {
         updated_at: new Date().toISOString(),
       })
       .in('status', ['pending', 'processing'])
-      .lt('created_at', new Date(Date.now() - 10 * 60_000).toISOString());
+      .lt('created_at', abandonedSince);
+
+    // Only the recent ones get an apology, and the original reasoning for that
+    // still holds: an answer to an eleven-day-old question is its own kind of
+    // confusing. Two hours is the line — long enough to cover a shopkeeper who
+    // stepped away from the counter, short enough that they still remember
+    // sending it. Older ones stay a record for whoever looks.
+    //
+    // Idempotent by construction: the rows are 'failed' by the time this runs,
+    // so the next invocation cannot pick them up and apologise twice.
+    const stillWorthAnswering = (abandoned ?? []).filter((row) => {
+      const age = Date.now() - new Date(row.created_at as string).getTime();
+      return age < 2 * 60 * 60_000;
+    }).slice(0, 5);
+
+    for (const row of stillWorthAnswering) {
+      // Their own words, not ours: no stack trace, no HTTP code, no provider
+      // name. What they need is to know it did not arrive and that sending it
+      // again will work.
+      await sendReplyText(
+        String(row.phone_e164),
+        'Samahani, ujumbe huu haukufika kwangu vizuri na sikuweza kuujibu. Tafadhali utume tena.',
+        String(row.wa_message_id),
+      );
+    }
   } catch { /* the sweep must never stop the message in front of us */ }
 
   const entries = Array.isArray(payload?.entry) ? payload.entry : [];
