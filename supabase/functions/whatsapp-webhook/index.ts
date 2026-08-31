@@ -674,6 +674,20 @@ type NewProductPricingState = {
   credit?: { party: string } | null;
   paymentMethod?: QuantityWanted['paymentMethod'];
   occurredAt?: string | null;
+  /**
+   * What the trader answered before the registration interrupted them.
+   *
+   * MEASURED, and the owner found it by asking rather than by being burned:
+   * "kama hapa nikijibu manunuzi je ai itajua manunuzi kwa bidhaa zote au hizo
+   * mpya?" Neither. It knew about all of them and would have written every one
+   * of them down as a SALE — priceQuantitySale builds `kind: 'sale'`, and the
+   * resume path had no idea a direction had ever been chosen.
+   *
+   * A registration is an interruption. Everything the person had already
+   * decided has to survive it, and the decision is the part that says whether
+   * money came in or went out.
+   */
+  pendingDirection?: 'sale' | 'stock_purchase' | 'stock_count';
 };
 
 function transactionDateQuestion(reason: 'future' | 'range', lang: Lang): string {
@@ -8319,6 +8333,27 @@ Deno.serve(async (req) => {
             if (failed) {
               await clearConversation(db, identity.id as string);
               await replyQuietly(phone, productCostErrorMessage(failed, lang));
+            } else if (pendingSale && newProductPending.pendingDirection === 'stock_purchase') {
+              // HE SAID MANUNUZI, SO IT IS MANUNUZI — for all of them.
+              //
+              // Without this the resume fell into the sale path and wrote every
+              // product down as `kind: 'sale'`, including the nine he had never
+              // said anything about selling. Money going out, recorded as money
+              // coming in, on a list he had already told us the direction of.
+              //
+              // A purchase needs what he PAID, and that is not the registered
+              // cost: a shop that buys the same soap twice in a month rarely
+              // pays the same twice. So it asks, for every line, exactly as it
+              // would have if no registration had interrupted.
+              await clearConversation(db, identity.id as string);
+              await replyQuietly(phone, `${newProductSaved(pendingProducts, lang, true)}\n\n`
+                + stockPurchaseNeedsPrices({
+                  kind: 'quantity_meaning_clarification',
+                  sourceMessageId: pendingSourceMessageId ?? waMessageId,
+                  originalText: '',
+                  sale: pendingSale,
+                }, lang));
+              await audit(db, identity, waMessageId, 'quantity_meaning', 'stock_purchase_resumed', 'clarification');
             } else if (pendingSale && pendingSourceMessageId) {
               const priced = await priceQuantitySale(
                 db, identity, pendingSale, lang, [], pendingCredit, pendingOccurredAt,
@@ -9565,6 +9600,10 @@ Deno.serve(async (req) => {
             } : newProductOfferSetup?.pendingSale ? {
               pendingSale: newProductOfferSetup.pendingSale,
               sourceMessageId: newProductOfferSetup.sourceMessageId,
+              // The answer he already gave, carried across the interruption.
+              ...(newProductOfferSetup.pendingDirection
+                ? { pendingDirection: newProductOfferSetup.pendingDirection }
+                : {}),
             } : {}),
           };
           await db.from('whatsapp_conversations').upsert({
