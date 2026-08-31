@@ -292,7 +292,7 @@ describe('no message disappears', () => {
   // control, where no catch can run.
   it('marks a message the worker never finished', () => {
     expect(webhook).toContain("last_error: 'worker_ended_before_completion'");
-    expect(webhook).toContain(".eq('status', 'pending')");
+    expect(webhook).toContain(".in('status', ['pending', 'processing'])");
   });
 
   it('sweeps before the loop, not inside it', () => {
@@ -311,5 +311,15 @@ describe('no message disappears', () => {
     // Ten minutes is well past the point where processing could plausibly
     // still be running, and well short of anything a live request would hit.
     expect(webhook).toMatch(/Date\.now\(\) - 10 \* 60_000/);
+  });
+
+  it('normalizes business outcomes before writing whatsapp_messages.status', () => {
+    // The table only accepts pending, processing, done, failed and skipped.
+    // Business outcomes such as "closed" live in the audit log, not this queue
+    // status column; otherwise one successful reply can stay "processing" and
+    // block every later message for the same phone.
+    expect(webhook).toContain("const messageStatus = status === 'failed'");
+    expect(webhook).toContain("status: messageStatus");
+    expect(webhook).not.toContain('status, ...(error ? { last_error: error } : {})');
   });
 });

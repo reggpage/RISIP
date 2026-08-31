@@ -5743,12 +5743,12 @@ Deno.serve(async (req) => {
         processed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
-      .eq('status', 'pending')
+      .in('status', ['pending', 'processing'])
       .lt('created_at', new Date(Date.now() - 10 * 60_000).toISOString());
   } catch { /* the sweep must never stop the message in front of us */ }
 
   const entries = Array.isArray(payload?.entry) ? payload.entry : [];
-  const incomingMessages: Array<{ message: any; waMessageId: string; phone: string }> = [];
+  const incomingMessages: Array<{ message: any; waMessageId: string; phone: string; receivedAtMs: number }> = [];
   for (const entry of entries) {
     for (const change of entry?.changes ?? []) {
       const value = change?.value ?? {};
@@ -5890,6 +5890,11 @@ Deno.serve(async (req) => {
         const identity = await resolveWhatsAppContext(db, rawIdentity as { id: string; revoked_at: string | null } | null);
         let lang: Lang = identity?.lang ?? detectLanguage(body) ?? 'en';
         const finish = async (status: string, error?: string) => {
+          const messageStatus = status === 'failed'
+            ? 'failed'
+            : status === 'done'
+              ? 'done'
+              : 'skipped';
           // A second instruction is named on the way out, whichever branch
           // handled the first one. MEASURED FAILURE: the notice used to hang
           // off reply(), and the sale and daily-record confirmations do not go
@@ -5900,12 +5905,13 @@ Deno.serve(async (req) => {
             leftoverPending = false;
             await sendReplyText(phone, secondInstructionNotice(leftover.leftover, lang).trimStart(), waMessageId);
           }
-          return db.from('whatsapp_messages')
+          const { error: finishError } = await db.from('whatsapp_messages')
             .update({
-              status, ...(error ? { last_error: error } : {}),
+              status: messageStatus, ...(error ? { last_error: error } : {}),
               processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
             })
             .eq('wa_message_id', waMessageId);
+          if (finishError) throw finishError;
         };
 
         // Everything audited from here on records what was asked, not only what
