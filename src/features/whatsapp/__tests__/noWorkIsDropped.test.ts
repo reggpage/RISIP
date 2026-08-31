@@ -38,7 +38,7 @@ describe('the state that survives a registration', () => {
   });
 
   it('remembers what he asked for, so it can be resumed', () => {
-    expect(type).toContain("pendingDirection?: 'sale' | 'stock_purchase' | 'stock_count';");
+    expect(type).toContain("pendingDirection?: 'sale' | 'stock_purchase' | 'stock_count' | 'ask';");
   });
 
   it('records why both fields exist', () => {
@@ -61,20 +61,37 @@ describe('MANUNUZI carries the whole message forward', () => {
   });
 });
 
-describe('SAJILI before a direction is chosen', () => {
+describe('SAJILI is not a direction', () => {
+  // MEASURED, and the owner's own question is what exposed it: choosing SAJILI
+  // parked the sale with no direction at all, the resume fell through to the
+  // sale path, and every line was written down as today's takings by somebody
+  // who had only said "these are new products".
   const branch = webhook.slice(
-    webhook.indexOf('// SAJILI answered before a direction was chosen'),
-    webhook.indexOf('// SAJILI answered before a direction was chosen') + 900,
+    webhook.indexOf('// SAJILI IS NOT A DIRECTION'),
+    webhook.indexOf('// SAJILI IS NOT A DIRECTION') + 1600,
   );
 
   it('keeps the lines so he does not retype them', () => {
     expect(branch).toContain('pendingSale: quantityMeaningPending.sale,');
   });
 
-  it('assumes no direction, because he has not given one', () => {
-    // Registering is not choosing. Guessing here would be the original bug
-    // wearing a different hat.
-    expect(branch).not.toContain('pendingDirection:');
+  it('says "ask" out loud rather than leaving the field absent', () => {
+    // An absent field relies on a later branch noticing. It did not notice.
+    expect(branch).toContain("pendingDirection: 'ask',");
+  });
+
+  it('still assumes nothing about what happened to the goods', () => {
+    expect(branch).not.toContain("pendingDirection: 'sale'");
+    expect(branch).not.toContain("pendingDirection: 'stock_purchase'");
+  });
+
+  it('asks the direction once registration is finished', () => {
+    const resume = webhook.slice(
+      webhook.indexOf("newProductPending.pendingDirection === 'ask'"),
+      webhook.indexOf("newProductPending.pendingDirection === 'stock_purchase'"),
+    );
+    expect(resume).toContain('quantityMeaningQuestion(lang, []');
+    expect(resume).toContain('clean two-way');
   });
 });
 

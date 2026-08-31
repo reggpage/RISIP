@@ -603,7 +603,7 @@ type NewProductOfferSetup = {
    * the part that needs him. Registration is a blockage being cleared, not the
    * end of the road, so what comes after it has to survive it.
    */
-  pendingDirection?: 'sale' | 'stock_purchase' | 'stock_count';
+  pendingDirection?: 'sale' | 'stock_purchase' | 'stock_count' | 'ask';
   pendingSale?: QuantitySale;
 };
 
@@ -687,7 +687,7 @@ type NewProductPricingState = {
    * decided has to survive it, and the decision is the part that says whether
    * money came in or went out.
    */
-  pendingDirection?: 'sale' | 'stock_purchase' | 'stock_count';
+  pendingDirection?: 'sale' | 'stock_purchase' | 'stock_count' | 'ask';
 };
 
 function transactionDateQuestion(reason: 'future' | 'range', lang: Lang): string {
@@ -7417,16 +7417,28 @@ Deno.serve(async (req) => {
           const meaning = parseQuantityMeaningAnswer(body);
           if ((quantityMeaningPending.missingProducts?.length ?? 0) > 0
             && wantsToRegisterNewProducts(body)) {
-            // SAJILI answered before a direction was chosen. He has not said
-            // what the lines are yet, so nothing is assumed — but the lines
-            // themselves are kept, so answering the direction afterwards does
-            // not mean typing them again.
+            // SAJILI IS NOT A DIRECTION, AND MUST NOT BECOME ONE BY DEFAULT.
+            //
+            // MEASURED, and the owner's question is what exposed it: "what if
+            // we add a, b when kukiwa na mada mbili". He is right that this
+            // message carries two decisions — what these products ARE, and
+            // what happened to them — and the second was being answered for
+            // him. Choosing SAJILI parked the sale with no direction, the
+            // resume fell through to the sale path, and every line was written
+            // down as today's takings by somebody who had only said "these are
+            // new products".
+            //
+            // 'ask' says so explicitly rather than leaving the field absent and
+            // hoping a later branch notices. Registration finishes, and THEN
+            // the direction is asked — one question at a time, which is the
+            // rule that already governs every other message here.
             const state: NewProductOfferSetup = {
               kind: 'new_product_offer_setup',
               missingProducts: quantityMeaningPending.missingProducts ?? [],
               sourceMessageId: quantityMeaningPending.sourceMessageId,
               originalText: quantityMeaningPending.originalText,
               pendingSale: quantityMeaningPending.sale,
+              pendingDirection: 'ask',
             };
             await db.from('whatsapp_conversations').upsert({
               identity_id: identity.id,
@@ -8348,6 +8360,30 @@ Deno.serve(async (req) => {
             if (failed) {
               await clearConversation(db, identity.id as string);
               await replyQuietly(phone, productCostErrorMessage(failed, lang));
+            } else if (pendingSale && newProductPending.pendingDirection === 'ask') {
+              // Registration is finished, so now the OTHER decision. Everything
+              // is on the list by this point, which makes it a clean two-way
+              // question rather than the three-way one he started from.
+              await db.from('whatsapp_conversations').upsert({
+                identity_id: identity.id,
+                company_id: identity.company_id,
+                profile_id: identity.profile_id,
+                awaiting: 'product_cost',
+                receipt_id: null,
+                options: {
+                  kind: 'quantity_meaning_clarification',
+                  sourceMessageId: pendingSourceMessageId ?? waMessageId,
+                  originalText: '',
+                  sale: pendingSale,
+                  missingProducts: [],
+                  resolvedProducts: pendingSale.items.map((item) => item.product),
+                },
+                expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                updated_at: new Date().toISOString(),
+              }, { onConflict: 'identity_id' });
+              await replyQuietly(phone, `${newProductSaved(pendingProducts, lang, true)}\n\n`
+                + quantityMeaningQuestion(lang, [], pendingSale.items.map((item) => item.product)));
+              await audit(db, identity, waMessageId, 'quantity_meaning', 'direction_after_register', 'clarification');
             } else if (pendingSale && newProductPending.pendingDirection === 'stock_purchase') {
               // HE SAID MANUNUZI, SO IT IS MANUNUZI — for all of them.
               //
