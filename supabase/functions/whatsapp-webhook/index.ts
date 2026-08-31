@@ -164,7 +164,9 @@ import {
   newProductSaleOffer,
   newProductSaleWorkerBlocked,
   newProductSaved,
+  incompletePriceReply,
   parseNewProductPricing,
+  readIncompletePriceLines,
   type NewProductPricing,
 } from '../_shared/whatsappNewProduct.ts';
 import {
@@ -8937,10 +8939,32 @@ Deno.serve(async (req) => {
         // The model is right for language and this is not language: it is the
         // answer to a form Risip printed a moment earlier, in the syntax Risip
         // dictated. Reinterpreting our own form is not intelligence.
-        const answeringWithPrices = Boolean(
-          (newProductOfferSetup || newProductSaleSetup || newProductPending)
-          && parseNewProductPricing(writeBody).length > 0,
+        const registrationPending = Boolean(
+          newProductOfferSetup || newProductSaleSetup || newProductPending,
         );
+        const answeringWithPrices = registrationPending
+          && parseNewProductPricing(writeBody).length > 0;
+
+        // HALF A PRICE LIST IS STILL A PRICE LIST.
+        //
+        // "kofia @4000" is somebody registering a product who has not typed the
+        // second number yet. parseNewProductLine needs both and returns null
+        // without either, so before this the line read as nothing, fell past
+        // every deterministic branch, and landed on the model — the same route
+        // that once showed a confirmation for kofia and wrote shuka.
+        //
+        // The owner asked for it: "bidhaa mpya ikiingia bila bei za kununua na
+        // kuuza ai inotice mapema na kumsaidia mtu."
+        const incompletePrices = registrationPending && !answeringWithPrices
+          ? readIncompletePriceLines(writeBody)
+          : [];
+        if (incompletePrices.length > 0) {
+          await reply(phone, incompletePriceReply(incompletePrices, lang));
+          await audit(db, identity, waMessageId, 'new_product', 'prices_half_given', 'clarification');
+          await finish('skipped');
+          continue;
+        }
+
         const aiEligible = messageGoesToModel(convo, body, systemCommand) && !answeringWithPrices;
         // Watched in production: ai_primary is what an ordinary business
         // message must be. If parsers ever start eating them again, this is

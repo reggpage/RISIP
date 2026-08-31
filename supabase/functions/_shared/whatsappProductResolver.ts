@@ -178,8 +178,8 @@ export function productReadClarification(resolution: Extract<ProductReadResoluti
     ? (lang === 'sw' ? `${names[0]} au ${names[1]}` : `${names[0]} or ${names[1]}`)
     : names.map((name, index) => `${index + 1}. ${name}`).join('\n');
   return lang === 'sw'
-    ? `Unamaanisha bidhaa gani kwa “${resolution.asked}”?\n${choices}`
-    : `Which product do you mean by “${resolution.asked}”?\n${choices}`;
+    ? `Kwenye orodha yako, “${resolution.asked}” inaweza kuwa mbili. Ni ipi?\n${choices}\n\nUkitaka kuacha, andika *GHAIRI*.`
+    : `In your list, “${resolution.asked}” could be either of two. Which one?\n${choices}\n\nTo stop, reply *GHAIRI*.`;
 }
 
 export function productReadMatchNotice(resolution: ProductReadResolution, lang: Lang): string {

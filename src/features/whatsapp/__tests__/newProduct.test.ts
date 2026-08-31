@@ -95,7 +95,7 @@ describe('what the shopkeeper is shown', () => {
     // plural heading: "kama ni bidhaa moja, ai ijibu kwa kutaja hiyo bidhaa".
     expect(offer).toMatch(/haipo kwenye store/);
     expect(offer).not.toMatch(/Hizi hazipo/);
-    expect(offer).toMatch(/kununua .* rejareja/);
+    expect(offer).toMatch(/@<bei uliyonunua> nauza <bei unayouza>/);
   });
 
   it('warns that a mistyped name would become a second product', () => {
@@ -127,7 +127,7 @@ describe('what the shopkeeper is shown', () => {
       wholesale: null, wholesaleMinQty: null, unit: null,
     }];
     const reply = newProductSaved(product, 'sw', true);
-    expect(reply).toMatch(/mauzo yaliyokuwa yanasubiri/);
+    expect(reply).toMatch(/turudi kwenye bidhaa ulizonitumia awali/);
     expect(reply).not.toMatch(/andika mauzo yake kawaida/);
   });
 

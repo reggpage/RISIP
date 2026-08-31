@@ -57,11 +57,11 @@ describe('the message he actually sent', () => {
 describe('the gate that was letting it through', () => {
   const gate = webhook.slice(
     webhook.indexOf('// A FORM WE HANDED THEM IS NOT LANGUAGE.'),
-    webhook.indexOf('// A FORM WE HANDED THEM IS NOT LANGUAGE.') + 2400,
+    webhook.indexOf('// A FORM WE HANDED THEM IS NOT LANGUAGE.') + 3600,
   );
 
   it('keeps the model out when a registration was asked for and answered', () => {
-    expect(gate).toContain('const answeringWithPrices = Boolean(');
+    expect(gate).toContain('const answeringWithPrices = registrationPending');
     expect(gate).toContain('parseNewProductPricing(writeBody).length > 0');
   });
 

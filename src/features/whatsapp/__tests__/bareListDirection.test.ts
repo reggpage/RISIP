@@ -111,9 +111,9 @@ describe('the three choices the shopkeeper is given', () => {
     // "iwe Mauzo, Ongeza na Sajili." STOCK left the menu: an absolute shelf
     // count is a rarer and more deliberate act, and it keeps its own header
     // word rather than sitting between two everyday ones.
-    expect(asked).toContain('*1* MAUZO');
-    expect(asked).toContain('*2* ONGEZA');
-    expect(asked).toContain('*3* SAJILI');
+    expect(asked).toContain('*1* *MAUZO*');
+    expect(asked).toContain('*2* *ONGEZA*');
+    expect(asked).toContain('*3* *SAJILI*');
     expect(asked).not.toContain('MANUNUZI');
   });
 

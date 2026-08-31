@@ -108,7 +108,7 @@ describe('the branch that builds it', () => {
 describe('the offer says what survived', () => {
   it('counts the products already found, before naming the missing ones', () => {
     const said = newProductOffer(['kofia', 'shuka'], 'sw', 9);
-    expect(said).toContain('Bidhaa 9 nimezipata na zinasubiri');
+    expect(said).toContain('Bidhaa 9 zipo tayari kwenye stoo yako');
     expect(said.indexOf('nimezipata')).toBeLessThan(said.indexOf('kofia'));
   });
 

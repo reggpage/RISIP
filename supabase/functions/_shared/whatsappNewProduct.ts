@@ -113,6 +113,71 @@ export function parseNewProductLine(text: string | null | undefined): NewProduct
   };
 }
 
+/**
+ * A registration line that is trying, and missing one half.
+ *
+ * MEASURED, and it is the same route that once wrote the wrong product to the
+ * owner's books: parseNewProductLine requires BOTH a buying price and a selling
+ * price, and returns null without either. So "kofia @4000" — a person who
+ * genuinely means to register a product and simply has not typed the second
+ * number — reads as nothing at all, falls past every deterministic branch, and
+ * lands on the model, which had already proved what it does with a line shaped
+ * like that.
+ *
+ * The owner asked for it directly: "bidhaa mpya ikiingia bila bei za kununua na
+ * kuuza ai inotice mapema na kumsaidia mtu."
+ *
+ * Deliberately narrow. It only fires on a line that already carries ONE of the
+ * two price markers, so an ordinary sentence with a number in it is not dragged
+ * into a registration it never asked for.
+ */
+export type IncompletePriceLine = { product: string; hasCost: boolean; hasRetail: boolean };
+
+export function readIncompletePriceLines(text: string | null | undefined): IncompletePriceLine[] {
+  const found: IncompletePriceLine[] = [];
+  for (const raw of String(text ?? '').split(/\r?\n/)) {
+    const line = clean(raw).replace(/^[-•*\d.)\s]+/, '');
+    if (!line || parseNewProductLine(line)) continue;
+    const hasCost = new RegExp(`${BUY.source}\\s*(?:ni|is|:)?\\s*${NUMBER}`, 'i').test(line);
+    const hasRetail = new RegExp(`${RETAIL.source}\\s*(?:ni|is|:)?\\s*${NUMBER}`, 'i').test(line);
+    // One marker and not the other. Both means parseNewProductLine already had
+    // it; neither means this is not a registration line at all.
+    if (hasCost === hasRetail) continue;
+    const product = line
+      .replace(new RegExp(`${BUY.source}\\s*(?:ni|is|:)?\\s*${NUMBER}`, 'gi'), ' ')
+      .replace(new RegExp(`${RETAIL.source}\\s*(?:ni|is|:)?\\s*${NUMBER}`, 'gi'), ' ')
+      .replace(/(?<![\p{L}])[0-9]+(?![\p{L}])/gu, ' ')
+      .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (product.length < 2 || !/[\p{L}]/u.test(product)) continue;
+    found.push({ product, hasCost, hasRetail });
+  }
+  return found;
+}
+
+/** What is missing, said as the shopkeeper would say it. */
+export function incompletePriceReply(lines: IncompletePriceLine[], lang: Lang): string {
+  const rows = lines.map((line) => {
+    const missing = line.hasCost
+      ? (lang === 'sw' ? 'bei ya kuuza' : 'the selling price')
+      : (lang === 'sw' ? 'bei ya kununua' : 'the buying price');
+    return lang === 'sw'
+      ? `• *${line.product}* — imebaki ${missing}`
+      : `• *${line.product}* — still needs ${missing}`;
+  }).join('\n');
+  const example = lines[0]?.product ?? 'kofia';
+  return lang === 'sw'
+    ? `Karibu tumemaliza — kila bidhaa inahitaji bei mbili.\n\n${rows}\n\n`
+      + `Mfano: _${example} @4000 nauza 7000_\n`
+      + '_@_ ni uliyonunua, _nauza_ ni unayouza.\n'
+      + 'Ukitaka kuacha, andika *GHAIRI*.'
+    : `Almost there — each product needs both prices.\n\n${rows}\n\n`
+      + `For example: _${example} @4000 nauza 7000_\n`
+      + '_@_ is what you paid, _nauza_ is what you sell for.\n'
+      + 'To stop, reply *GHAIRI*.';
+}
+
 /** Several new products in one message, which is how a restock arrives. */
 export function parseNewProductPricing(text: string | null | undefined): NewProductPricing[] {
   const lines = String(text ?? '').split(/\r?\n/).map(clean).filter(Boolean);
@@ -154,8 +219,8 @@ export function newProductOffer(names: string[], lang: Lang, alreadyKnown = 0): 
   // guess dressed up as advice. The shape is what the person needs; the numbers
   // are the one thing only they know.
   const template = lang === 'sw'
-    ? `_${only} kununua <bei ya kununua> rejareja <bei ya kuuza>_`
-    : `_${only} kununua <buying price> rejareja <selling price>_`;
+    ? `_${only} @<bei uliyonunua> nauza <bei unayouza>_`
+    : `_${only} @<buying price> nauza <selling price>_`;
 
   // WHAT IS ALREADY DONE, SAID BEFORE WHAT IS MISSING.
   //
@@ -166,18 +231,20 @@ export function newProductOffer(names: string[], lang: Lang, alreadyKnown = 0): 
   // has no way to know the other nine survived, and being asked about a
   // fraction of your work reads exactly like losing the rest of it.
   const done = alreadyKnown <= 0 ? '' : (lang === 'sw'
-    ? `_Bidhaa ${alreadyKnown} nimezipata na zinasubiri._\n`
-    : `_I have the other ${alreadyKnown}, and they are waiting._\n`);
+    ? `_Bidhaa ${alreadyKnown} zipo tayari kwenye stoo yako — nazipumzisha pembeni kwanza, tusajili hizi ambazo hazipo._\n`
+    : `_The other ${alreadyKnown} are already in your store — I have set them aside while we register these._\n`);
 
   return lang === 'sw'
-    ? `${done}${heading}${one ? 'Ulitaka kuiweka? Tuma bei zake:\n' : 'Ulitaka kuziweka? Tuma bei zake, mstari mmoja kwa kila bidhaa:\n'}`
+    ? `${done}${heading}${one ? 'Nitumie bei zake:\n' : 'Nitumie bei zake, mstari mmoja kwa kila bidhaa:\n'}`
       + `${template}\n`
       + 'Ukiuza pia kwa jumla, ongeza: _jumla <bei> kuanzia <idadi>_.\n'
-      + 'Ukiona jina limekosewa, rekebisha badala ya kuliweka upya.'
-    : `${done}${heading}${one ? 'Add it? Send its prices:\n' : 'Add them? Send their prices, one line per product:\n'}`
+      + 'Ukiona jina limekosewa, liandike upya sahihi.\n'
+      + 'Ukitaka kuacha, andika *GHAIRI*.'
+    : `${done}${heading}${one ? 'Send me its prices:\n' : 'Send me their prices, one line per product:\n'}`
       + `${template}\n`
       + 'If you also sell in bulk, add: _jumla <price> kuanzia <quantity>_.\n'
-      + 'If a name is mistyped, fix it rather than adding it twice.';
+      + 'If a name is mistyped, write it again correctly.\n'
+      + 'To stop, reply *GHAIRI*.';
 }
 
 /**
@@ -236,7 +303,7 @@ export function newProductConfirmation(products: NewProductPricing[], lang: Lang
       + losing.map((product) => `  • ${product.product}`).join('\n'));
 
   return lang === 'sw'
-    ? `Bidhaa mpya — ${products.length}:\n${rows}${warning}\n\nNiziweke kwenye store? *1* Ndiyo · *2* Hapana`
+    ? `Bidhaa mpya — ${products.length}:\n${rows}${warning}\n\nNiziweke kwenye store? *1* Ndiyo · *2* Hapana · *GHAIRI* kuacha`
     : `New products — ${products.length}:\n${rows}${warning}\n\nAdd them to the store? YES / NO`;
 }
 
@@ -244,8 +311,8 @@ export function newProductSaved(products: NewProductPricing[], lang: Lang, saleW
   const first = products[0]?.product ?? '';
   if (saleWillResume) {
     return lang === 'sw'
-      ? `✅ Nimeweka bidhaa ${products.length} kwenye store.\n\nSasa kagua mauzo yaliyokuwa yanasubiri hapa chini.`
-      : `✅ Added ${products.length} product(s) to the store.\n\nNow review the sale that was waiting below.`;
+      ? `✅ Nimesajili bidhaa ${products.length}.\n\nSasa turudi kwenye bidhaa ulizonitumia awali.`
+      : `✅ Registered ${products.length} product(s).\n\nNow back to the products you sent me earlier.`;
   }
   return lang === 'sw'
     ? `✅ Nimeweka bidhaa ${products.length} kwenye store.\n\n`

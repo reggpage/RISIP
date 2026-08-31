@@ -119,26 +119,26 @@ export function quantityMeaningQuestion(
   // the consequence.
   const items = lang === 'sw'
     ? 'Nimepata idadi za bidhaa ulizotaja. Unataka nizifanye nini?\n\n'
-      + '*1* MAUZO — nimeuza bidhaa hizi\n'
-      + '*2* ONGEZA — nimenunua, ziongezwe kwenye zilizopo\n'
-      + '*3* SAJILI — hizi ni bidhaa mpya, ziwekwe kwenye orodha kwanza'
+      + '*1* *MAUZO* — nimeuza bidhaa hizi\n'
+      + '*2* *ONGEZA* — nimenunua, ziongezwe kwenye zilizopo\n'
+      + '*3* *SAJILI* — hizi ni bidhaa mpya, ziwekwe kwenye orodha kwanza'
     : 'I found quantities for the products you named. What should I do with them?\n\n'
-      + '*1* MAUZO — I sold these\n'
-      + '*2* ONGEZA — I bought them, add them to what I have\n'
-      + '*3* SAJILI — these are new products, put them on my list first';
+      + '*1* *MAUZO* — I sold these\n'
+      + '*2* *ONGEZA* — I bought them, add them to what I have\n'
+      + '*3* *SAJILI* — these are new products, put them on my list first';
   // "Or tell me in your own words" is not decoration. A person who answers
   // "hizi nimezinunua leo asubuhi" has answered clearly, and the model reads
   // that; the numbers exist for the person who would rather not type.
   return lang === 'sw'
-    ? `${known}${items}${missing}\n\nJibu *1*, *2* au *3* — au niambie kwa maneno yako.`
-    : `${known}${items}${missing}\n\nReply *1*, *2* or *3* — or just tell me in your own words.`;
+    ? `${known}${items}${missing}\n\nJibu *1*, *2* au *3* — au niambie kwa maneno yako.\nUkitaka kuacha, andika *GHAIRI*.`
+    : `${known}${items}${missing}\n\nReply *1*, *2* or *3* — or just tell me in your own words.\nTo stop, reply *GHAIRI*.`;
 }
 
 export function stockPurchaseNeedsPrices(state: ParkedQuantityMeaning, lang: Lang): string {
   const names = state.sale.items.map((item) => `• ${item.product}: ${item.quantity.toLocaleString('en-US')}`).join('\n');
   return lang === 'sw'
-    ? `Nimepata bidhaa hizi:\n${names}\n\nTaja bei ya kununua/gharama kwa kila bidhaa, mstari mmoja kwa kila bidhaa. Kama bidhaa ni mpya kabisa, niambie *SAJILI* kwanza ili tuweke pia bei ya kuuza.`
-    : `I found these products:\n${names}\n\nSend the buying price/cost for each product, one product per line. If a product is brand new, tell me *REGISTER* first so we also capture its selling price.`;
+    ? `Nimepata bidhaa hizi:\n${names}\n\nNitumie bei uliyonunua kila moja, mstari mmoja kwa kila bidhaa.\nUkitaka kuacha, andika *GHAIRI*.`
+    : `I found these products:\n${names}\n\nSend me what you paid for each one, one product per line.\nTo stop, reply *GHAIRI*.`;
 }
 
 export function hypotheticalPortionQuestion(state: HypotheticalPortionChoice, lang: Lang): string {
