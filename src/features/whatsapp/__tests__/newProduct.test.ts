@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   newProductConfirmation,
+  newProductQuantityQuestion,
+  newProductRegistrationConfirmation,
   newProductOffer,
   newProductPricingIncomplete,
   newProductSaleOffer,
@@ -140,6 +142,37 @@ describe('what the shopkeeper is shown', () => {
     expect(reply).toContain('jumla TSh 11,000 (kuanzia 3)');
     expect(reply).toContain('faida kwa kimoja: TSh 3,000');
     expect(reply).toContain('*1*');
+    expect(reply).toMatch(/stock iliyopo/);
+  });
+
+  it('asks for opening quantity and does not pretend prices created stock', () => {
+    const products = [
+      { product: 'vest', unitCost: 2000, retail: 8000, wholesale: null, wholesaleMinQty: null, unit: null },
+      { product: 'belt', unitCost: 3000, retail: 7000, wholesale: null, wholesaleMinQty: null, unit: null },
+    ];
+    const question = newProductQuantityQuestion(products, 'sw');
+    expect(question).toContain('vest');
+    expect(question).toContain('belt');
+    expect(question).toContain('stock iliyopo sasa');
+    expect(question).toContain('vipande 10');
+    expect(newProductConfirmation(products, 'sw')).not.toMatch(/Niziweke kwenye store/);
+  });
+
+  it('requires a measure for an ambiguous oil product', () => {
+    const question = newProductQuantityQuestion([
+      { product: 'mafuta', unitCost: 5000, retail: 7000, wholesale: null, wholesaleMinQty: null, unit: null },
+    ], 'sw');
+    expect(question).toMatch(/kipimo hakijatajwa/);
+    expect(question).toMatch(/kilo, lita, ml/);
+  });
+
+  it('shows quantity and unit in the final registration confirmation', () => {
+    const reply = newProductRegistrationConfirmation([
+      { product: 'mafuta', unitCost: 5000, retail: 7000, wholesale: null, wholesaleMinQty: null, unit: null },
+    ], [{ product: 'mafuta', quantity: 2.5, unit: 'lita' }], 'sw');
+    expect(reply).toContain('mafuta');
+    expect(reply).toContain('2.5 lita');
+    expect(reply).toContain('Bei na stock hizi ni sahihi');
   });
 
   it('interrupts for a price that loses money on every sale', () => {

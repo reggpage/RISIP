@@ -28,6 +28,12 @@ export type NewProductPricing = {
   unit: string | null;
 };
 
+export type NewProductStock = {
+  product: string;
+  quantity: number;
+  unit: string | null;
+};
+
 const clean = (s: string | null | undefined) => String(s ?? '').replace(/\s+/g, ' ').trim();
 
 const NUMBER = '([0-9][0-9,. ]*)';
@@ -351,8 +357,63 @@ export function newProductConfirmation(products: NewProductPricing[], lang: Lang
       + losing.map((product) => `  • ${product.product}`).join('\n'));
 
   return lang === 'sw'
-    ? `Bidhaa mpya — ${products.length}:\n${rows}${warning}\n\nNiziweke kwenye store? *1* Ndiyo · *2* Hapana · *GHAIRI* kuacha`
-    : `New products — ${products.length}:\n${rows}${warning}\n\nAdd them to the store? YES / NO`;
+    ? `Bidhaa mpya — ${products.length}:\n${rows}${warning}\n\nBei hizi ni sahihi? *1* Ndiyo · *2* Hapana · *GHAIRI* kuacha\n_Nitakuuliza stock iliyopo kabla ya kukamilisha usajili._`
+    : `New products — ${products.length}:\n${rows}${warning}\n\nAre these prices correct? *1* Yes · *2* No · *CANCEL* to stop\n_I will ask for current stock before finishing registration._`;
+}
+
+function isMeasureAmbiguous(product: string): boolean {
+  return /(?:^|\s)(?:mafuta|oil|lotion|cream|vaseline|gel)(?:\s|$)/iu.test(product);
+}
+
+function stockUnitLabel(product: NewProductPricing, lang: Lang): string {
+  if (product.unit) return lang === 'sw' ? `kipimo: ${product.unit}` : `measure: ${product.unit}`;
+  if (isMeasureAmbiguous(product.product)) {
+    return lang === 'sw'
+      ? 'kipimo hakijatajwa — taja kilo, lita, ml au vipande'
+      : 'measure not stated — say kilos, litres, ml or pieces';
+  }
+  return lang === 'sw' ? 'idadi/vipande' : 'pieces/count';
+}
+
+/** Ask for the opening stock before a newly registered product becomes usable. */
+export function newProductQuantityQuestion(products: NewProductPricing[], lang: Lang): string {
+  const rows = products.map((product, index) =>
+    `${index + 1}. *${product.product}* — ${stockUnitLabel(product, lang)}`).join('\n');
+  return lang === 'sw'
+    ? `Bei zimepokelewa. Kabla sijamaliza kusajili bidhaa, niambie *stock iliyopo sasa* kwa kila bidhaa:\n${rows}\n\n`
+      + 'Andika bidhaa na kiasi chake, mfano: _vest vipande 10, belt vipande 5_. '
+      + 'Kwa bidhaa za kupimwa unaweza kuandika _mafuta lita 5_, _mafuta ml 500_, _sukari kilo 2.5_.'
+      + '\nUsipotaja kipimo cha mafuta/lotion/cream, nitauliza kwanza — sitakisia.\n'
+      + 'Ukitaka kuacha, andika *GHAIRI*.'
+    : `Prices received. Before I finish registering the products, tell me the *current stock* for each:\n${rows}\n\n`
+      + 'Write each product and quantity, for example: _vest 10, belt 5_. '
+      + 'For measured goods write _oil 5 litres_, _oil 500 ml_ or _sugar 2.5 kilos_.\n'
+      + 'If oil/lotion/cream has no measure, I will ask instead of guessing.\n'
+      + 'To stop, reply *GHAIRI*.';
+}
+
+export function newProductRegistrationConfirmation(
+  products: NewProductPricing[],
+  stock: NewProductStock[],
+  lang: Lang,
+): string {
+  const rows = products.map((product, index) => {
+    const found = stock[index];
+    const quantity = found?.quantity.toLocaleString('en-US', { maximumFractionDigits: 3 }) ?? '?';
+    const unit = found?.unit ?? product.unit;
+    return `${index + 1}. *${product.product}* — stock *${quantity}${unit ? ` ${unit}` : ''}*`;
+  }).join('\n');
+  return lang === 'sw'
+    ? `Uthibitisho wa mwisho wa usajili:\n${rows}\n\nBei na stock hizi ni sahihi? *1* Ndiyo · *2* Hapana · *GHAIRI* kuacha`
+    : `Final registration confirmation:\n${rows}\n\nAre these prices and stock levels correct? *1* Yes · *2* No · *GHAIRI* to stop`;
+}
+
+export function newProductQuantityIncomplete(products: NewProductPricing[], completed: string[], lang: Lang): string {
+  const missing = products.filter((product) => !completed.some((name) => name.toLowerCase() === product.product.toLowerCase()));
+  const rows = missing.map((product) => `• *${product.product}* — ${stockUnitLabel(product, lang)}`).join('\n');
+  return lang === 'sw'
+    ? `Bado sijapata stock ya bidhaa hizi:\n${rows}\n\nTaja quantity ya kila moja. Usikisie kipimo; kwa mafuta/lotion/cream taja kilo, lita, ml au vipande.`
+    : `I still need stock for these products:\n${rows}\n\nState the quantity for each. Do not guess the measure; for oil/lotion/cream state kilos, litres, ml or pieces.`;
 }
 
 /**
@@ -379,9 +440,9 @@ export function newProductSaved(
       : `✅ Registered ${products.length} product(s).\n\nNow back to the products you sent me earlier.`;
   }
   return lang === 'sw'
-    ? `✅ Nimeweka bidhaa ${products.length} kwenye store.\n\n`
+    ? `✅ Nimesajili bidhaa ${products.length} na stock yake kwenye orodha ya bidhaa.\n\n`
       + `Sasa andika mauzo yake kawaida: "nimeuza ${first} 2".`
-    : `✅ Added ${products.length} product(s) to the store.\n\n`
+    : `✅ Registered ${products.length} product(s) and their stock.\n\n`
       + `Now record their sales as usual: "nimeuza ${first} 2".`;
 }
 

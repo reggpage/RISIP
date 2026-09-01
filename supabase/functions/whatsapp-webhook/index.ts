@@ -168,12 +168,16 @@ import {
 import {
   newProductCancelled,
   newProductConfirmation,
+  newProductQuantityIncomplete,
+  newProductQuantityQuestion,
+  newProductRegistrationConfirmation,
   newProductOffer,
   newProductPricingIncomplete,
   newProductSaleOffer,
   newProductSaleWorkerBlocked,
   newProductSaved,
   parseNewProductPricing,
+  type NewProductStock,
   type NewProductPricing,
 } from '../_shared/whatsappNewProduct.ts';
 import {
@@ -734,6 +738,15 @@ type NewProductPricingState = {
    * money came in or went out.
    */
   pendingDirection?: 'sale' | 'stock_purchase' | 'stock_count' | 'ask';
+};
+
+type NewProductQuantityState = Omit<NewProductPricingState, 'kind'> & {
+  kind: 'new_product_quantity';
+};
+
+type NewProductRegistrationConfirmationState = Omit<NewProductPricingState, 'kind'> & {
+  kind: 'new_product_registration_confirmation';
+  stock: NewProductStock[];
 };
 
 function transactionDateQuestion(reason: 'future' | 'range', lang: Lang): string {
@@ -3665,6 +3678,18 @@ function pendingClarificationOf(convo: { awaiting?: string | null; options?: unk
       product: choices.map((choice) => choice?.productName).filter(Boolean).join(', ') || null,
     };
   }
+  if (awaiting === 'product_cost' && kind === 'new_product_quantity') {
+    const products = Array.isArray(options.products)
+      ? options.products as Array<{ product?: string; unit?: string | null }>
+      : [];
+    return {
+      field: 'quantity',
+      intent: 'new_product_opening_stock',
+      product: products.map((product) => product.product).filter(Boolean).join(', ') || null,
+      choices: ['kilo', 'lita', 'ml', 'vipande'],
+      details: 'Return one quantity answer per product. Put the product name in raw_wording so the server can attach the number to the right product. A quantity is allowed to be 0. If the product has a configured unit, preserve it. For an ambiguous product such as mafuta, lotion or cream, also return field=unit with the unit the trader stated; never infer that it is liquid.',
+    };
+  }
   if (awaiting === 'payment_source' && kind === 'daily_record_confirmation') {
     // The draft is on the screen. NDIYO and HAPANA stay deterministic; how it
     // was paid is a sentence, and sentences belong to the model.
@@ -3674,6 +3699,199 @@ function pendingClarificationOf(convo: { awaiting?: string | null; options?: unk
     return { field: 'event_type', intent: 'unknown' };
   }
   return null;
+}
+
+function newProductAnswerProduct(raw: string | null, products: NewProductPricing[]): number | null {
+  const text = normalizedChoice(raw ?? '');
+  if (products.length === 1 && (!text || /^\d/.test(text))) return 0;
+  const matches = products
+    .map((product, index) => ({ index, key: normalizedChoice(product.product) }))
+    .filter((product) => text === product.key || text.startsWith(`${product.key} `) || text.includes(` ${product.key} `));
+  return matches.length === 1 ? matches[0].index : null;
+}
+
+function normalizedNewProductUnit(value: string | null): string | null {
+  const unit = normalizedChoice(value ?? '');
+  if (!unit) return null;
+  if (['kg', 'kilo', 'kilos', 'kilogram', 'kilograms'].includes(unit)) return 'kilo';
+  if (['lita', 'litre', 'liter', 'litres', 'liters'].includes(unit)) return 'lita';
+  if (['ml', 'mililita', 'millilitre', 'milliliter'].includes(unit)) return 'ml';
+  if (['pcs', 'piece', 'pieces', 'kipande', 'vipande', 'idadi'].includes(unit)) return null;
+  return unit;
+}
+
+function resolveNewProductStock(
+  products: NewProductPricing[],
+  answers: Array<{ field: string; rawWording: string | null; canonicalValue: string | null; numericValue: number | null }>,
+): { kind: 'ready'; stock: NewProductStock[] } | { kind: 'missing'; completed: string[] } | { kind: 'invalid'; message: string } {
+  const quantities = new Map<number, number>();
+  const units = new Map<number, string | null>();
+  for (const answer of answers) {
+    if (answer.field !== 'quantity' && answer.field !== 'unit') continue;
+    const index = newProductAnswerProduct(answer.rawWording, products);
+    if (index === null) continue;
+    if (answer.field === 'quantity') {
+      if (answer.numericValue === null || !Number.isFinite(answer.numericValue)
+        || answer.numericValue < 0 || answer.numericValue > 1_000_000) continue;
+      quantities.set(index, answer.numericValue);
+    } else {
+      const unit = normalizedNewProductUnit(answer.canonicalValue);
+      if (unit !== null || answer.canonicalValue) units.set(index, unit);
+    }
+  }
+
+  const missing = products.filter((_product, index) => !quantities.has(index));
+  if (missing.length > 0) return { kind: 'missing', completed: products
+    .filter((_product, index) => quantities.has(index)).map((product) => product.product) };
+
+  const stock: NewProductStock[] = [];
+  for (const [index, product] of products.entries()) {
+    const selected = units.has(index) ? units.get(index)! : product.unit ?? null;
+    if (product.unit && selected && normalizedNewProductUnit(product.unit) !== selected) {
+      return {
+        kind: 'invalid',
+        message: `*${product.product}* imewekwa kwa ${product.unit}. Taja quantity kwa ${product.unit}, si ${selected}.`,
+      };
+    }
+    if (!product.unit && !selected && /(?:^|\s)(?:mafuta|oil|lotion|cream|vaseline|gel)(?:\s|$)/iu.test(product.product)) {
+      return {
+        kind: 'invalid',
+        message: `Kwa *${product.product}* sijui bado kipimo. Taja kama ni *kilo*, *lita*, *ml* au *vipande*, pamoja na quantity, kwa mfano: _${product.product} lita 5_.`,
+      };
+    }
+    stock.push({ product: product.product, quantity: quantities.get(index)!, unit: selected });
+  }
+  return { kind: 'ready', stock };
+}
+
+function parseNewProductNumericList(body: string, products: NewProductPricing[]): number[] | null {
+  if (products.length < 2 || !/^\s*[0-9]+(?:\.[0-9]+)?(?:\s*[,;]\s*[0-9]+(?:\.[0-9]+)?)+\s*$/u.test(body)) return null;
+  const values = body.split(/[,;]/u).map((value) => Number(value.trim()));
+  return values.length === products.length && values.every((value) => Number.isFinite(value) && value >= 0 && value <= 1_000_000)
+    ? values
+    : null;
+}
+
+async function resumeSaleAfterNewProductRegistration(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  waMessageId: string,
+  lang: Lang,
+  products: NewProductPricing[],
+  pendingSale: QuantitySale,
+  sourceMessageId: string | undefined,
+  pendingDirection: NewProductPricingState['pendingDirection'],
+  credit: { party: string } | null,
+  paymentMethod: QuantityWanted['paymentMethod'] | null,
+  occurredAt: string | null,
+): Promise<{ message: string; conversationKept: boolean }> {
+  if (pendingDirection === 'ask') {
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+      awaiting: 'product_cost', receipt_id: null,
+      options: {
+        kind: 'quantity_meaning_clarification',
+        sourceMessageId: sourceMessageId ?? waMessageId,
+        originalText: '', sale: pendingSale, missingProducts: [],
+        resolvedProducts: pendingSale.items.map((item) => item.product),
+      },
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+    return {
+      message: `${newProductSaved(products, lang, 'question')}\n\n`
+        + quantityMeaningQuestion(lang, [], pendingSale.items.map((item) => item.product), true),
+      conversationKept: true,
+    };
+  }
+  if (pendingDirection === 'stock_purchase') {
+    await clearConversation(db, identity.id as string);
+    return {
+      message: `${newProductSaved(products, lang, true)}\n\n` + stockPurchaseNeedsPrices({
+        kind: 'quantity_meaning_clarification',
+        sourceMessageId: sourceMessageId ?? waMessageId,
+        originalText: '', sale: pendingSale,
+      }, lang),
+      conversationKept: false,
+    };
+  }
+  if (!sourceMessageId) {
+    await clearConversation(db, identity.id as string);
+    return { message: newProductSaved(products, lang), conversationKept: false };
+  }
+
+  const priced = await priceQuantitySale(db, identity, pendingSale, lang, [], credit, occurredAt);
+  if (priced.kind === 'band') {
+    const state: PriceBandPending = {
+      kind: 'price_band_choice', sale: priced.sale, choices: priced.choices,
+      answered: priced.choices.map(() => null), sourceMessageId,
+      credit, paymentMethod, occurredAt,
+    };
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+      awaiting: 'product_cost', receipt_id: null, options: state,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+    return {
+      message: `${newProductSaved(products, lang, true)}\n\n` + priceBandQuestion(priced.choices, lang),
+      conversationKept: true,
+    };
+  }
+  if (priced.kind !== 'priced') {
+    await clearConversation(db, identity.id as string);
+    return {
+      message: `${newProductSaved(products, lang)}\n\n${priced.kind === 'blocked' ? priced.message : (lang === 'sw'
+        ? 'Sikuweza kuandaa mauzo yaliyokuwa yanasubiri. Hayajathibitishwa; yatume tena.'
+        : 'I could not prepare the waiting sale. It was not confirmed; please send it again.')}`,
+      conversationKept: false,
+    };
+  }
+
+  const record = await addHistoricalPriceWarnings(db, identity.company_id,
+    paymentMethod ? { ...priced.record, paymentMethod } : priced.record);
+  const records: ParsedDailyRecord[] = [record, ...pendingSale.expenses.map((spent) => ({
+    kind: 'expense' as const, amount: spent.amount, partyName: null,
+    description: spent.label, lines: [], confidence: 0.95,
+  }))];
+  if (records.length > 1) {
+    const batch = await createDailyRecordBatchDrafts(db, identity, sourceMessageId, records, lang);
+    if (!batch.error && batch.ids.length > 0) {
+      await db.from('whatsapp_conversations').upsert({
+        identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+        awaiting: 'payment_source', receipt_id: null,
+        options: { kind: 'daily_record_batch_confirmation', dailyRecordIds: batch.ids, sourceMessageId, records },
+        expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+      }, { onConflict: 'identity_id' });
+      return {
+        message: `${newProductSaved(products, lang, true)}\n\n${quantitySaleConfirmation(
+          priced.lines, lang, pendingSale.expenses, [],
+        )}`,
+        conversationKept: true,
+      };
+    }
+  } else {
+    const created = await createDailyRecordDraft(db, identity, sourceMessageId, record, lang);
+    if (!created.error && created.id) {
+      await db.from('whatsapp_conversations').upsert({
+        identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+        awaiting: 'payment_source', receipt_id: null,
+        options: { kind: 'daily_record_confirmation', dailyRecordId: created.id, sourceMessageId, record },
+        expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+      }, { onConflict: 'identity_id' });
+      return {
+        message: `${newProductSaved(products, lang, true)}\n\n${quantitySaleConfirmation(priced.lines, lang, [], [],)}`,
+        conversationKept: true,
+      };
+    }
+  }
+  await clearConversation(db, identity.id as string);
+  return {
+    message: `${newProductSaved(products, lang)}\n\n${lang === 'sw'
+      ? 'Sikuweza kuandaa mauzo yaliyokuwa yanasubiri. Hayajathibitishwa; yatume tena.'
+      : 'I could not prepare the waiting sale. It was not confirmed; please send it again.'}`,
+    conversationKept: false,
+  };
 }
 
 async function executeClarification(
@@ -3732,6 +3950,40 @@ async function executeClarification(
     return askBack(lang === 'sw'
       ? `Nilikuwa naulizia ${pending.field}. Naomba unijibu hilo kwanza.`
       : `I was asking about ${pending.field}. Answer that one first.`);
+  }
+
+  // ── opening stock for a newly registered product ─────────────────────────
+  // This is a multi-product quantity question. The model reads the trader's
+  // sentence (including "robo", "nusu", "lita" and Swahili number words); the
+  // server only bounds the number, attaches it to an exact product name from
+  // the parked list, and checks the unit against the product's own measure.
+  if (pending.field === 'quantity' && options.kind === 'new_product_quantity') {
+    const products = Array.isArray(options.products) ? options.products as NewProductPricing[] : [];
+    const resolved = resolveNewProductStock(products, answers);
+    if (resolved.kind === 'missing') {
+      const question = newProductQuantityIncomplete(products, resolved.completed, lang);
+      return { content: question, terminalReply: question };
+    }
+    if (resolved.kind === 'invalid') {
+      return { content: resolved.message, terminalReply: resolved.message };
+    }
+    const state: NewProductRegistrationConfirmationState = {
+      ...(options as unknown as Omit<NewProductQuantityState, 'kind'>),
+      kind: 'new_product_registration_confirmation',
+      stock: resolved.stock,
+    };
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id,
+      company_id: identity.company_id,
+      profile_id: identity.profile_id,
+      awaiting: 'product_cost',
+      receipt_id: null,
+      options: state,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+    const question = newProductRegistrationConfirmation(products, resolved.stock, lang);
+    return { content: question, terminalReply: question };
   }
 
   // ── which price the shop meant ───────────────────────────────────────────
@@ -7088,6 +7340,14 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<NewProductPricingState> | null)?.kind === 'new_product_pricing'
           ? convo.options as NewProductPricingState
           : null;
+        const newProductQuantityPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<NewProductQuantityState> | null)?.kind === 'new_product_quantity'
+          ? convo.options as NewProductQuantityState
+          : null;
+        const newProductRegistrationPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<NewProductRegistrationConfirmationState> | null)?.kind === 'new_product_registration_confirmation'
+          ? convo.options as NewProductRegistrationConfirmationState
+          : null;
         const newProductSaleSetup = convo?.awaiting === 'product_cost'
           && (convo.options as Partial<NewProductSaleSetup> | null)?.kind === 'new_product_sale_setup'
           ? convo.options as NewProductSaleSetup
@@ -7252,7 +7512,7 @@ Deno.serve(async (req) => {
         };
         const costConversation = convo?.awaiting === 'product_cost' && convo.options
           && !costPrompt && !costBatchPending && !stockBatchPending && !sellingBatchPending && !priceAndCostPending
-          && !newProductPending && !newProductSaleSetup && !portionSizePending && !portionConfirmPending
+          && !newProductPending && !newProductQuantityPending && !newProductRegistrationPending && !newProductSaleSetup && !portionSizePending && !portionConfirmPending
           && !quantityMeaningPending && !portionQuantityPending && !productRenamePending
           && !addProductSetupPending && !bandPending && !comboPending && !comboSavePending
           && !comboVariantPending
@@ -8820,6 +9080,116 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        if (newProductQuantityPending && (isDailyRecordRejection(body) || isCancel(body))) {
+          await clearConversation(db, identity.id as string);
+          await replyQuietly(phone, newProductCancelled(lang));
+          await audit(db, identity, waMessageId, 'new_product_quantity', 'cancel', 'applied');
+          await finish('skipped');
+          continue;
+        }
+
+        // A bare number is a legitimate answer when one product is pending;
+        // it is a protocol answer, so the normal router does not send it to
+        // the model. Keep that short, safe path, while natural sentences such
+        // as "vest vipande kumi" still go through the AI clarification tool.
+        if (newProductQuantityPending) {
+          const simple = newProductQuantityPending.products.length === 1
+            ? parseQuantityAnswer(body)
+            : null;
+          const numericList = parseNewProductNumericList(body, newProductQuantityPending.products);
+          const values = simple
+            ? [{ field: 'quantity', raw_wording: body, canonical_value: null, numeric_value: simple.quantity }]
+            : numericList?.map((quantity, index) => ({
+              field: 'quantity',
+              raw_wording: newProductQuantityPending.products[index].product,
+              canonical_value: null,
+              numeric_value: quantity,
+            }));
+          if (values) {
+            const result = await executeClarification(db, identity, waMessageId, lang, { answers: values }, body);
+            await replyQuietly(phone, result.content);
+            await audit(db, identity, waMessageId, 'new_product_quantity', 'numeric_answer', result.isError ? 'failed' : 'pending');
+            await finish('skipped');
+            continue;
+          }
+        }
+
+        if (newProductRegistrationPending) {
+          if (isDailyRecordConfirmation(body)) {
+            const pendingProducts = newProductRegistrationPending.products;
+            const stock = newProductRegistrationPending.stock;
+            const { error: costError } = await db.rpc('wa_set_product_costs', {
+              p_phone: phone,
+              p_items: pendingProducts.map((product, index) => ({
+                product: product.product,
+                unit_cost: product.unitCost,
+                unit: stock[index]?.unit ?? product.unit,
+              })),
+            });
+            const { error: priceError } = costError ? { error: null } : await db.rpc('wa_set_selling_prices', {
+              p_phone: phone,
+              p_items: pendingProducts.map((product) => ({
+                product: product.product,
+                retail: product.retail,
+                wholesale: product.wholesale,
+                min_qty: product.wholesaleMinQty,
+              })),
+            });
+            const { error: stockError } = costError || priceError ? { error: null } : await db.rpc('wa_record_stock_counts', {
+              p_phone: phone,
+              p_items: stock.map((item) => ({
+                product: item.product, quantity: item.quantity, unit: item.unit,
+              })),
+            });
+            const failed = costError ?? priceError ?? stockError;
+            if (failed) {
+              // Keep the preview available on failure. No confirmation was
+              // claimed, and the owner can retry without retyping prices or
+              // quantities. The RPCs themselves are all-or-nothing batches.
+              await replyQuietly(phone, `${productCostErrorMessage(failed, lang)}\n\n`
+                + newProductRegistrationConfirmation(pendingProducts, stock, lang));
+              await audit(db, identity, waMessageId, 'new_product_registration', 'confirm', 'failed');
+            } else {
+              const pendingSale = newProductRegistrationPending.pendingSale;
+              if (pendingSale) {
+                const resumed = await resumeSaleAfterNewProductRegistration(
+                  db,
+                  identity,
+                  waMessageId,
+                  lang,
+                  pendingProducts,
+                  pendingSale,
+                  newProductRegistrationPending.sourceMessageId,
+                  newProductRegistrationPending.pendingDirection,
+                  newProductRegistrationPending.credit ?? null,
+                  newProductRegistrationPending.paymentMethod ?? null,
+                  newProductRegistrationPending.occurredAt ?? null,
+                );
+                await replyQuietly(phone, resumed.message);
+                await audit(db, identity, waMessageId, 'new_product_registration',
+                  'resume_sale', resumed.conversationKept ? 'pending' : 'applied');
+              } else {
+                await clearConversation(db, identity.id as string);
+                await replyQuietly(phone, newProductSaved(pendingProducts, lang));
+              }
+              await audit(db, identity, waMessageId, 'new_product_registration', String(pendingProducts.length), 'applied');
+            }
+          } else if (isDailyRecordRejection(body) || isCancel(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, newProductCancelled(lang));
+            await audit(db, identity, waMessageId, 'new_product_registration', 'cancel', 'applied');
+          } else {
+            await replyQuietly(phone, newProductRegistrationConfirmation(
+              newProductRegistrationPending.products,
+              newProductRegistrationPending.stock,
+              lang,
+            ));
+            await audit(db, identity, waMessageId, 'new_product_registration', 'reask', 'skipped');
+          }
+          await finish('skipped');
+          continue;
+        }
+
         // NDIYO on a set of brand-new products. The cost and both selling prices
         // land together, because a product added with only one of them fails the
         // next sale in exactly the way that started this.
@@ -8834,26 +9204,27 @@ Deno.serve(async (req) => {
           const pendingPaymentMethod = newProductPending.paymentMethod ?? null;
           const pendingOccurredAt = newProductPending.occurredAt ?? null;
           if (isDailyRecordConfirmation(body)) {
-            const { error: costError } = await db.rpc('wa_set_product_costs', {
-              p_phone: phone,
-              p_items: pendingProducts.map((product) => ({
-                product: product.product, unit_cost: product.unitCost, unit: product.unit,
-              })),
-            });
-            const { error: priceError } = costError ? { error: null } : await db.rpc('wa_set_selling_prices', {
-              p_phone: phone,
-              p_items: pendingProducts.map((product) => ({
-                product: product.product,
-                retail: product.retail,
-                wholesale: product.wholesale,
-                min_qty: product.wholesaleMinQty,
-              })),
-            });
-            const failed = costError ?? priceError;
-            if (failed) {
-              await clearConversation(db, identity.id as string);
-              await replyQuietly(phone, productCostErrorMessage(failed, lang));
-            } else if (pendingSale && newProductPending.pendingDirection === 'ask') {
+            // Prices are not saved yet. First collect opening stock so a newly
+            // registered product can never enter the catalogue with an
+            // unknown quantity. The next answer is read by the AI with this
+            // exact product list in its pending context.
+            const quantityState: NewProductQuantityState = {
+              ...newProductPending,
+              kind: 'new_product_quantity',
+            };
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'product_cost',
+              receipt_id: null,
+              options: quantityState,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await replyQuietly(phone, newProductQuantityQuestion(pendingProducts, lang));
+            await audit(db, identity, waMessageId, 'new_product_quantity', 'question', 'clarification');
+          } else if (pendingSale && newProductPending.pendingDirection === 'ask') {
               // Registration is finished, so now the OTHER decision. Everything
               // is on the list by this point, which makes it a clean two-way
               // question rather than the three-way one he started from.

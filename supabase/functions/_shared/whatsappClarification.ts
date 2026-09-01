@@ -70,6 +70,8 @@ export type PendingClarification = {
   product?: string | null;
   /** For a unit question: the measures this product is actually sold in. */
   choices?: readonly string[];
+  /** Extra factual instructions for a multi-line parked question. */
+  details?: string;
 };
 
 /**
@@ -88,6 +90,7 @@ export function describePending(pending: PendingClarification | null): string | 
   ];
   if (pending.product) parts.push(`about_product=${pending.product}`);
   if (allowed?.length) parts.push(`allowed_values=${allowed.join('|')}`);
+  if (pending.details) parts.push(pending.details);
   parts.push(
     'If this message answers that question, call resolve_pending_clarification. Send canonical_value as'
     + " one of the allowed values above — YOU decide which of them the trader's words mean, because the"
@@ -122,7 +125,7 @@ export function validateClarificationAnswers(input: unknown): ClarificationAnswe
   const row = input as Record<string, unknown>;
   const raw = Array.isArray(row.answers) ? row.answers : [row];
   const answers: ClarificationAnswer[] = [];
-  for (const entry of raw.slice(0, 6)) {
+  for (const entry of raw.slice(0, 50)) {
     if (!entry || typeof entry !== 'object') continue;
     const one = entry as Record<string, unknown>;
     const field = String(one.field ?? '') as ClarificationField;
