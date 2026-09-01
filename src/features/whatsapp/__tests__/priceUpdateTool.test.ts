@@ -101,7 +101,7 @@ describe('the tool, and the authority it does not have', () => {
   it('saves nothing by itself', () => {
     expect(tool?.description).toMatch(/Nothing is saved by this call/i);
     const at = webhook.indexOf("if (name === 'propose_price_update')");
-    const branch = webhook.slice(at, at + 6000);
+    const branch = webhook.slice(at, webhook.indexOf("if (name === 'propose_record_void')", at));
     // It parks the same pending state the deterministic path parks, and the
     // write stays in the confirmation branch where NDIYO reaches it.
     expect(branch).toContain("kind: 'selling_price_batch'");
@@ -110,10 +110,14 @@ describe('the tool, and the authority it does not have', () => {
 
   it('resolves names before asking, so one typo cannot cost the certain ones', () => {
     const at = webhook.indexOf("if (name === 'propose_price_update')");
-    const branch = webhook.slice(at, at + 6000);
+    const branch = webhook.slice(at, webhook.indexOf("if (name === 'propose_record_void')", at));
     expect(branch).toContain("db.rpc('company_product_names'");
     // An unresolvable name is listed back, never dropped: a price that
     // vanishes quietly is worse than one refused loudly.
     expect(branch).toContain('unreadable.push(one.asked);');
+    expect(branch).not.toContain('const partial = known.filter');
+    expect(branch).toContain("product: one.asked");
+    expect(branch).toContain("kind: 'new_product_pricing'");
+    expect(branch).toContain('Do not answer yet. Call propose_price_update again');
   });
 });

@@ -5128,26 +5128,76 @@ async function runAssistantTool(
 
     // Names are resolved before anything is asked, so one uncertain spelling
     // cannot cost the prices that were never in doubt — the lesson the
-    // deterministic path learned the hard way.
+    // deterministic path learned the hard way. A WRITE must never use a
+    // substring/prefix guess: "vest" is not "Vestline". Exact catalogue names
+    // are updates; an unknown name with the complete cost and selling prices is
+    // a new-product draft and waits for the same confirmation as every other
+    // write.
     const { data: catalogue } = await db.rpc('company_product_names', {
       p_company_id: identity.company_id,
     });
     const known = ((catalogue ?? []) as Array<Record<string, unknown>>)
       .map((row) => String(row.product_name ?? '').trim()).filter(Boolean);
     const prices: SellingPrice[] = [];
+    const newProducts: NewProductPricing[] = [];
     for (const one of wanted) {
       const needle = one.asked.toLocaleLowerCase('sw-TZ');
       const exact = known.find((entry) => entry.toLocaleLowerCase('sw-TZ') === needle);
-      const partial = known.filter((entry) => entry.toLocaleLowerCase('sw-TZ').includes(needle));
-      const resolved = exact ?? (partial.length === 1 ? partial[0] : null);
-      if (!resolved) {
-        unreadable.push(one.asked);
+      if (!exact) {
+        if (one.cost) {
+          newProducts.push({
+            product: one.asked,
+            unitCost: one.cost.unitCost,
+            retail: one.price,
+            wholesale: one.wholesale,
+            wholesaleMinQty: one.minQty,
+            unit: one.cost.unit,
+          });
+        } else {
+          unreadable.push(one.asked);
+        }
         continue;
       }
       // One product is one line. See addPriceTier — this is where the owner
       // was shown shuka twice, once for each of its two prices.
-      addPriceTier(prices, resolved, one.price, one.wholesale, one.minQty);
-      if (one.cost) one.cost.product = resolved;
+      addPriceTier(prices, exact, one.price, one.wholesale, one.minQty);
+      if (one.cost) one.cost.product = exact;
+    }
+
+    // A complete unknown-product price list belongs to the existing new-product
+    // confirmation state. It must not be forced into the known-product price
+    // batch, and it must never be silently confirmed as only the lines the
+    // model happened to understand.
+    if (newProducts.length === wanted.length && unreadable.length === 0) {
+      const state: NewProductPricingState = {
+        kind: 'new_product_pricing',
+        products: newProducts,
+      };
+      await db.from('whatsapp_conversations').upsert({
+        identity_id: identity.id,
+        company_id: identity.company_id,
+        profile_id: identity.profile_id,
+        awaiting: 'product_cost',
+        receipt_id: null,
+        options: state,
+        expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'identity_id' });
+      const question = newProductConfirmation(newProducts, lang);
+      await audit(db, identity, waMessageId, 'new_product', String(newProducts.length), 'pending');
+      return { content: question, terminalReply: question };
+    }
+
+    // Never show a confirmation for a partial model read. Give the model the
+    // validation result so it can call the same tool again with every product
+    // line. If it still cannot repair the structure, the normal AI failure
+    // path will fall back safely instead of writing half the message.
+    if (unreadable.length > 0) {
+      const names = [...new Set(unreadable)].join(', ');
+      const correction = lang === 'sw'
+        ? `Usitoe jibu bado. Rudia propose_price_update kwa kila bidhaa uliyotajwa; mistari hii haijasomeka kikamilifu: ${names}. Kila bidhaa lazima iwe na retail_price yake; usiache bidhaa yoyote na usiunganishe bidhaa mbili.`
+        : `Do not answer yet. Call propose_price_update again for every product mentioned; these lines were not read completely: ${names}. Each product must have its own retail_price; do not omit or merge products.`;
+      return { content: correction, isError: true };
     }
 
     if (prices.length === 0) {
