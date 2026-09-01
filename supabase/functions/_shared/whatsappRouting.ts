@@ -84,6 +84,15 @@ export function answersPendingQuestion(convo: PendingConversation, said: string 
   if (!awaiting || !text) return false;
   if (!BOUNDED_QUESTION_STATES.has(awaiting)) return false;
 
+  // Letter choices are protocol answers only while one of these menus is
+  // actually open. Outside them, a lone "a" is ordinary language and must
+  // still reach the model. Keeping this here prevents the AI-first route from
+  // swallowing (a)/(b)/(c) before the matching validator sees it.
+  const kind = String((convo?.options as { kind?: unknown } | null)?.kind ?? '');
+  if (awaiting === 'product_cost'
+    && ['price_band_choice', 'quantity_meaning_clarification'].includes(kind)
+    && /^\(?[abc]\)?$/i.test(text)) return true;
+
   // This is the ONLY conversational bypass left: exact control answers to a
   // confirmation. A name, explanation, correction, amount, price, payment
   // method or any other sentence is language and must reach the model—even

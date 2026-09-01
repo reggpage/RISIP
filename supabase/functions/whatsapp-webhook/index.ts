@@ -238,7 +238,6 @@ import {
 // Who sees a message first: the line between a sentence and a protocol answer.
 import { answersPendingQuestion, messageGoesToModel } from '../_shared/whatsappRouting.ts';
 import {
-  assistantFailureMessage,
   classifyAssistantFailure,
   type AssistantFailureClass,
 } from '../_shared/whatsappAssistant.ts';
@@ -322,6 +321,7 @@ import {
   applyPriceBands,
   type Band,
   needsBandChoice,
+  isPriceBandCancelChoice,
   parsePriceBandAnswer,
   priceBandCancelled,
   type PriceBandChoice,
@@ -1234,6 +1234,38 @@ function releasesParkedQuestion(text: string): boolean {
   // question again, and again. There is no list to maintain here: a message
   // that is not the answer is a new turn, and new turns belong to the model.
   return true;
+}
+
+/**
+ * A model outage must not become a fake conversation turn. Give the trader a
+ * useful, context-aware next question and keep this operational message out of
+ * assistant history, so a future model call does not learn the wrong context.
+ */
+function assistantClarificationQuestion(
+  lang: Lang,
+  body: string | null | undefined,
+  pending: PendingClarification | null,
+): string {
+  if (pending?.field === 'price_band') {
+    return lang === 'sw'
+      ? 'Nimepokea jibu lako, lakini sijaliunganisha na bei ya mauzo. Chagua (a) *REJAREJA*, (b) *JUMLA*, au (c) *GHAIRI*.'
+      : 'I received your answer, but could not attach it to the selling price. Choose (a) *RETAIL*, (b) *WHOLESALE*, or (c) *CANCEL*.';
+  }
+  if (pending?.field === 'quantity') {
+    const product = pending.product ? ` ya *${pending.product}*` : '';
+    return lang === 'sw'
+      ? `Nimepokea ujumbe wako kuhusu quantity${product}, lakini sijapata kiasi na kipimo salama. Andika kwa mfano: *${pending.product ?? 'bidhaa'} vipande 5*, *kilo 2.5* au *lita 0.5*.`
+      : `I received your quantity message${product}, but could not identify a safe amount and unit. Write for example: *${pending.product ?? 'product'} 5 pieces*, *2.5 kilos* or *0.5 litres*.`;
+  }
+  if (pending?.field === 'event_type') {
+    return lang === 'sw'
+      ? 'Nimeona orodha ya bidhaa, lakini sijui unataka nifanye nini: (a) *MAUZO*, (b) *ONGEZA STOCK*, au (c) *SAJILI BIDHAA*?'
+      : 'I see a product list, but I need the action: (a) *SALES*, (b) *ADD STOCK*, or (c) *REGISTER PRODUCTS*?';
+  }
+  const excerpt = String(body ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  return lang === 'sw'
+    ? `Nimepokea “${excerpt}”, lakini sitaki kukisia hatua unayotaka. Unataka (a) kurekodi mauzo, (b) kuongeza stock, (c) kusajili bidhaa, au (d) kupata taarifa?`
+    : `I received “${excerpt}”, but I do not want to guess the action. Do you want (a) record a sale, (b) add stock, (c) register products, or (d) get information?`;
 }
 
 
@@ -6892,9 +6924,9 @@ Deno.serve(async (req) => {
          * the pair is stored. One store per inbound message: the flag stops a
          * branch that sends two messages from writing the exchange twice.
          */
-        const replyQuietly = async (to: string, text: string) => {
+        const replyQuietly = async (to: string, text: string, remember = true) => {
           await sendReplyText(to, text, waMessageId);
-          if (identity && body?.trim() && !visibleTurnRemembered && !isLinkMessage(body)) {
+          if (remember && identity && body?.trim() && !visibleTurnRemembered && !isLinkMessage(body)) {
             visibleTurnRemembered = await storeAssistantExchange(
               db, identity, waMessageId, body, text,
               { topic: null, entities: {}, lastTool: null },
@@ -7169,6 +7201,10 @@ Deno.serve(async (req) => {
         const awaitingAnswer = Boolean(convo?.awaiting);
         const systemCommand = isSwitchRequest(body)
           || isLoginRequest(body)
+          // Invite creation is supported directly on WhatsApp. Keep it out of
+          // the conversational model so it cannot replace the real flow with
+          // the old app-only refusal.
+          || parseInviteRequest(body)
           || Boolean(parseLanguageCommand(body))
           || intent === 'cancel_action'
           || intent === 'change_language'
@@ -8105,7 +8141,8 @@ Deno.serve(async (req) => {
         //
         // parsePriceBandAnswer reads that message correctly. It was never
         // called. Read the answer first; release only what is not one.
-        if (bandPending && isPendingEscape(body)) {
+        if (bandPending && (isPendingEscape(body)
+          || isPriceBandCancelChoice(body, bandPending.choices.length))) {
           // The question prints "Ukiamua kuacha, andika *GHAIRI*". Before this
           // it did not mean it: isCancel makes releasesParkedQuestion false, the
           // answer parser finds no band word, and the branch re-sent the same
@@ -9992,9 +10029,12 @@ Deno.serve(async (req) => {
         // System commands and protocol answers never set aiEligible, so they
         // still reach their own handlers untouched.
         if (aiEligible && (conversationalAiBudgetBlock || assistantCameBackEmpty || aiFailureClass !== null)) {
-          await replyQuietly(phone, conversationalAiBudgetBlock
+          const failureReply = conversationalAiBudgetBlock
             ? aiBudgetMessage(lang, conversationalAiBudgetBlock.resetAt, conversationalAiBudgetBlock.reason)
-            : assistantFailureMessage(aiFailureClass ?? 'model_empty', lang));
+            : assistantClarificationQuestion(lang, body, pendingClarificationOf(convo));
+          // A provider failure is telemetry, not a business answer. Do not put
+          // the apology/error into conversation history as if it were context.
+          await replyQuietly(phone, failureReply, false);
           await audit(
             db, identity, waMessageId, 'conversational_ai',
             conversationalAiBudgetBlock ? 'budget_block' : (aiFailureClass ?? 'model_empty'),
@@ -12130,11 +12170,13 @@ Deno.serve(async (req) => {
         // assistant's name, which is what "Biashara inaendaje so far" received
         // after a two-minute wait.
         const aiWasTried = aiEligible && (assistantCameBackEmpty || aiFailureClass !== null);
+        const fallbackIsOperational = Boolean(conversationalAiBudgetBlock || aiWasTried);
         await replyQuietly(phone, conversationalAiBudgetBlock
           ? aiBudgetMessage(lang, conversationalAiBudgetBlock.resetAt, conversationalAiBudgetBlock.reason)
           : aiWasTried
-            ? assistantFailureMessage(aiFailureClass ?? 'model_empty', lang)
-            : (intent === 'help' ? `${t('help', lang)}\n\n${buildKnowledgeReply(body, lang)}` : t('onlyRisip', lang)));
+            ? assistantClarificationQuestion(lang, body, pendingClarificationOf(convo))
+            : (intent === 'help' ? `${t('help', lang)}\n\n${buildKnowledgeReply(body, lang)}` : t('onlyRisip', lang)),
+          !fallbackIsOperational);
         await finish('skipped');
         } catch (err) {
           // Whatever went wrong is recorded on the message itself, so the next

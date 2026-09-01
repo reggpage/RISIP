@@ -84,7 +84,7 @@ describe('coming back to his products', () => {
   });
 
   it('still offers all three, bold, with the way out', () => {
-    for (const word of ['*1* *MAUZO*', '*2* *ONGEZA*', '*3* *SAJILI*', '*GHAIRI*']) {
+    for (const word of ['(a) *MAUZO* / *1*', '(b) *ONGEZA* / *2*', '(c) *SAJILI* / *3*', '*GHAIRI*']) {
       expect(bubble).toContain(word);
     }
   });
@@ -141,8 +141,8 @@ describe('the way out of ever being asked about two prices', () => {
 
 describe('GHAIRI, on the question that prints the word', () => {
   const branch = webhook.slice(
-    webhook.indexOf('        if (bandPending && isPendingEscape(body)) {'),
-    webhook.indexOf('        if (bandPending && isPendingEscape(body)) {') + 900,
+    webhook.indexOf('        if (bandPending && (isPendingEscape(body)'),
+    webhook.indexOf('        if (bandPending && (isPendingEscape(body)') + 900,
   );
 
   it('exists at all', () => {
@@ -154,7 +154,7 @@ describe('GHAIRI, on the question that prints the word', () => {
   });
 
   it('is decided before the answer is read', () => {
-    const escape = webhook.indexOf('if (bandPending && isPendingEscape(body)) {');
+    const escape = webhook.indexOf('if (bandPending && (isPendingEscape(body)');
     const parse = webhook.indexOf('const bandHeard = bandPending ? parsePriceBandAnswer(');
     expect(escape).toBeGreaterThan(-1);
     expect(escape).toBeLessThan(parse);

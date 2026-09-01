@@ -45,9 +45,9 @@ describe('when every product is already his', () => {
   it('still gives all three choices, because knowing the products settles nothing', () => {
     // He could be selling them, restocking them, or counting them. The shop
     // recognising a name proves none of the three.
-    expect(asked).toContain('*1* *MAUZO*');
-    expect(asked).toContain('*2* *ONGEZA*');
-    expect(asked).toContain('*3* *SAJILI*');
+    expect(asked).toContain('(a) *MAUZO* / *1*');
+    expect(asked).toContain('(b) *ONGEZA* / *2*');
+    expect(asked).toContain('(c) *SAJILI* / *3*');
   });
 });
 
@@ -68,7 +68,7 @@ describe('when some are new', () => {
   });
 
   it('offers registration, since a new product needs prices before anything else', () => {
-    expect(asked).toContain('*3* *SAJILI*');
+    expect(asked).toContain('(c) *SAJILI* / *3*');
     expect(asked).toContain('bei ya kununua na bei ya kuuza');
   });
 

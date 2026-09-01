@@ -21,12 +21,15 @@ describe('short WhatsApp follow-up memory', () => {
 
   it('resumes sale and purchase meanings but does not guess vague chat', () => {
     expect(parseQuantityMeaningAnswer('ni mauzo')).toBe('sale');
+    expect(parseQuantityMeaningAnswer('(a)')).toBe('sale');
     expect(parseQuantityMeaningAnswer('sales')).toBe('sale');
     expect(parseQuantityMeaningAnswer('ni manunuzi')).toBe('stock_purchase');
+    expect(parseQuantityMeaningAnswer('b')).toBe('stock_purchase');
     expect(parseQuantityMeaningAnswer('stock iliyopo')).toBe('stock_count');
     expect(parseQuantityMeaningAnswer('sawa')).toBeNull();
     expect(wantsToRegisterNewProducts('ndiyo')).toBe(true);
     expect(wantsToRegisterNewProducts('sajili')).toBe(true);
+    expect(wantsToRegisterNewProducts('(c)')).toBe(true);
   });
 
   it('asks naturally and keeps every product on its own line', () => {
@@ -57,6 +60,9 @@ describe('short WhatsApp follow-up memory', () => {
     expect(question).toContain('Zikiwa mpya kweli, chagua *3*');
     expect(question).toContain('bei ya kununua na bei ya kuuza');
     expect(question).toContain('SAJILI');
+    expect(question).toContain('(a)');
+    expect(question).toContain('(b)');
+    expect(question).toContain('(c)');
   });
 
   it('resolves a short portion answer against only the parked choices', () => {

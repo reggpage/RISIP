@@ -45,8 +45,8 @@ export function parseQuantityMeaningAnswer(
   text: string | null | undefined,
 ): 'sale' | 'stock_purchase' | 'stock_count' | null {
   const said = clean(text).replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
-  if (said === '1') return 'sale';
-  if (said === '2') return 'stock_purchase';
+  if (said === '1' || said === 'a') return 'sale';
+  if (said === '2' || said === 'b') return 'stock_purchase';
   if (/^(?:ni\s+)?(?:mauzo|sale|sales|sold)$/.test(said)) return 'sale';
   if (/^(?:ni\s+)?(?:ongeza|manunuzi|stock purchase|purchase|bought|stock niliyonunua)$/.test(said)) {
     return 'stock_purchase';
@@ -65,7 +65,7 @@ export function wantsToRegisterNewProducts(text: string | null | undefined): boo
   // "3" is SAJILI in the three-way question. Bare "ongeza" is gone from this
   // list: it now means adding STOCK, not adding a product. "ongeza bidhaa" —
   // with the noun — still means registration, because that is what it says.
-  if (said === '3') return true;
+  if (said === '3' || said === 'c') return true;
   return /^(?:ndiyo|dio|yes|yeah|yep|sajili|nisajilie|ongeza bidhaa|weka bidhaa|bidhaa mpya)$/.test(said);
 }
 
@@ -136,19 +136,19 @@ export function quantityMeaningQuestion(
       : 'I found quantities for the products you named. What should I do with them?');
   const items = lang === 'sw'
     ? `${opening}\n\n`
-      + '*1* *MAUZO* — nimeuza bidhaa hizi\n'
-      + '*2* *ONGEZA* — nimenunua, ziongezwe kwenye zilizopo\n'
-      + '*3* *SAJILI* — hizi ni bidhaa mpya, ziwekwe kwenye orodha kwanza'
+      + '(a) *MAUZO* / *1* — nimeuza bidhaa hizi\n'
+      + '(b) *ONGEZA* / *2* — nimenunua, ziongezwe kwenye zilizopo\n'
+      + '(c) *SAJILI* / *3* — hizi ni bidhaa mpya, ziwekwe kwenye orodha kwanza'
     : `${opening}\n\n`
-      + '*1* *MAUZO* — I sold these\n'
-      + '*2* *ONGEZA* — I bought them, add them to what I have\n'
-      + '*3* *SAJILI* — these are new products, put them on my list first';
+      + '(a) *SALES* / *1* — I sold these\n'
+      + '(b) *ADD STOCK* / *2* — I bought them, add them to what I have\n'
+      + '(c) *REGISTER* / *3* — these are new products, put them on my list first';
   // "Or tell me in your own words" is not decoration. A person who answers
   // "hizi nimezinunua leo asubuhi" has answered clearly, and the model reads
   // that; the numbers exist for the person who would rather not type.
   return lang === 'sw'
-    ? `${known}${items}${missing}\n\nJibu *1*, *2* au *3* — au niambie kwa maneno yako.\nUkitaka kuacha, andika *GHAIRI*.`
-    : `${known}${items}${missing}\n\nReply *1*, *2* or *3* — or just tell me in your own words.\nTo stop, reply *GHAIRI*.`;
+    ? `${known}${items}${missing}\n\nJibu (a), (b) au (c), au tumia 1, 2, 3 — au niambie kwa maneno yako.\nUkitaka kuacha, andika *GHAIRI*.`
+    : `${known}${items}${missing}\n\nReply (a), (b) or (c), or use 1, 2, 3 — or just tell me in your own words.\nTo stop, reply *GHAIRI*.`;
 }
 
 export function stockPurchaseNeedsPrices(state: ParkedQuantityMeaning, lang: Lang): string {

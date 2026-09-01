@@ -66,6 +66,11 @@ describe('reading the answer', () => {
     expect(parsePriceBandAnswer('wholesale', two)).toEqual(['wholesale', 'wholesale']);
   });
 
+  it('accepts the letter choices printed in the menu', () => {
+    expect(parsePriceBandAnswer('(a)', two)).toEqual(['retail', 'retail']);
+    expect(parsePriceBandAnswer('b', two)).toEqual(['wholesale', 'wholesale']);
+  });
+
   it.each([
     ['reja', 'retail'],
     ['rejarej', 'retail'],
@@ -112,6 +117,9 @@ describe('the question itself', () => {
     expect(asked).toContain('TSh 1,000');  // 2 x 500 retail
     expect(asked).toContain('TSh 800');    // 2 x 400 wholesale
     expect(asked).toContain('REJAREJA');
+    expect(asked).toContain('(a)');
+    expect(asked).toContain('(b)');
+    expect(asked).toContain('(c)');
   });
 
   it('numbers the rows when there are several, and asks once', () => {

@@ -124,9 +124,9 @@ describe('the words he asked to be changed', () => {
     // "Mauzo, Ongeza na Sajili inatakiwa ziwe bold always."
     for (const known of [[], ['soda'], new Array(12).fill('x')]) {
       const asked = quantityMeaningQuestion('sw', [], known);
-      expect(asked).toContain('*1* *MAUZO*');
-      expect(asked).toContain('*2* *ONGEZA*');
-      expect(asked).toContain('*3* *SAJILI*');
+      expect(asked).toContain('(a) *MAUZO* / *1*');
+      expect(asked).toContain('(b) *ONGEZA* / *2*');
+      expect(asked).toContain('(c) *SAJILI* / *3*');
     }
   });
 });

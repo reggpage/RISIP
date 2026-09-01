@@ -72,6 +72,15 @@ describe('choosing the role, which is never guessed', () => {
     expect(branch).not.toContain("options: { kind: 'invite_role' }");
   });
 
+  it('keeps a WhatsApp invite request out of the AI app-only refusal path', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+    const assistant = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/_shared/whatsappAssistant.ts'), 'utf8');
+    expect(source).toContain('|| parseInviteRequest(body)');
+    expect(assistant).toContain('Invite requests are supported directly on WhatsApp.');
+  });
+
   it('tells the owner what he is handing over, and what he is not', () => {
     // "atapofanya ualiko apate bulets za majukumu ya mfanyakazi wake." The list
     // of what the worker will NOT see matters as much as the list of what they

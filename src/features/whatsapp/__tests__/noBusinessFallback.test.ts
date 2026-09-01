@@ -93,7 +93,8 @@ describe('no business prose can stand in for an answer', () => {
   });
 
   it('tells the shop which honest thing went wrong', () => {
-    expect(webhook).toContain('assistantFailureMessage(aiFailureClass ?? ');
+    expect(webhook).toContain('assistantClarificationQuestion(lang, body, pendingClarificationOf(convo))');
+    expect(webhook).toContain('await replyQuietly(phone, failureReply, false);');
     expect(webhook).toContain('classifyAssistantFailure(assistantFailure)');
   });
 });

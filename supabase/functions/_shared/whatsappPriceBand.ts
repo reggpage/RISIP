@@ -75,11 +75,13 @@ export function priceBandQuestion(
       ? `*${one.product}* ${qty(one.quantity)}${unit(one)} — umeuza kwa bei gani?\n\n`
         + `• rejareja ${money(one.retail)} = ${money(one.quantity * one.retail)}\n`
         + `• jumla ${money(one.wholesale)} = ${money(one.quantity * one.wholesale)}\n\n`
-        + `Jibu *REJAREJA* au *JUMLA*. ${pendingEscapeHint(lang)}`
+        + `Chagua (a) *REJAREJA* · (b) *JUMLA* · (c) *GHAIRI*. `
+        + `Unaweza pia kuandika jina kamili. ${pendingEscapeHint(lang)}`
       : `*${one.product}* ${qty(one.quantity)}${unit(one)} — which price did you sell at?\n\n`
         + `• retail ${money(one.retail)} = ${money(one.quantity * one.retail)}\n`
         + `• wholesale ${money(one.wholesale)} = ${money(one.quantity * one.wholesale)}\n\n`
-        + `Reply *REJAREJA* or *JUMLA*. ${pendingEscapeHint(lang)}`;
+        + `Choose (a) *RETAIL* · (b) *WHOLESALE* · (c) *CANCEL*. `
+        + `You can also write the full word. ${pendingEscapeHint(lang)}`;
   }
 
   const rows = choices.map((choice, index) => (lang === 'sw'
@@ -104,12 +106,14 @@ export function priceBandQuestion(
   // so it is taught here rather than left to be discovered.
   return lang === 'sw'
     ? `${done}Hizi zina bei mbili, na hujasema uliyotumia:\n${rows}\n\n`
-      + 'Kama zote ni bei moja, jibu *REJAREJA* au *JUMLA*.\n'
+      + 'Kama zote ni bei moja, chagua (a) *REJAREJA* au (b) *JUMLA*.\n'
       + 'Kama zimechanganyika, andika namba: _1 rejareja, 2 jumla_\n\n'
+      + 'Ukitaka kuacha, chagua (c) *GHAIRI*.\n'
       + `💡 _Ukiandika neno rejareja au jumla mbele ya bidhaa — mfano: daftari 4 jumla, penseli 3 rejareja — sitokuuliza tena._\n${pendingEscapeHint(lang)}`
     : `${done}These have two prices, and the message did not say which:\n${rows}\n\n`
-      + 'If they are all the same, reply *REJAREJA* or *JUMLA*.\n'
+      + 'If they are all the same, choose (a) *RETAIL* or (b) *WHOLESALE*.\n'
       + 'If they are mixed, use the numbers: _1 rejareja, 2 jumla_\n\n'
+      + 'To stop, choose (c) *CANCEL*.\n'
       + `💡 _Put rejareja or jumla next to the product — "daftari 4 jumla, penseli 3 rejareja" — and I will not ask._\n${pendingEscapeHint(lang)}`;
 }
 
@@ -189,6 +193,22 @@ function bandWords(text: string): Band[] {
   return found;
 }
 
+/** The compact choices printed in a single price-band question. */
+function bandMenuChoice(text: string, choiceCount: number): Band | 'cancel' | null {
+  const said = normalize(text);
+  if (!said) return null;
+  if (/^\(?a\)?$/.test(said) || (choiceCount === 1 && said === '1')) return 'retail';
+  if (/^\(?b\)?$/.test(said) || (choiceCount === 1 && said === '2')) return 'wholesale';
+  if (/^\(?c\)?$/.test(said)) return 'cancel';
+  return null;
+}
+
+/** c is the unambiguous letter escape; 3 remains a row number in mixed lists. */
+export function isPriceBandCancelChoice(text: string | null | undefined, choiceCount = 1): boolean {
+  const said = normalize(text ?? '');
+  return /^\(?c\)?$/.test(said) || (choiceCount === 1 && said === '3');
+}
+
 /**
  * Reads the answer, or null when the message was not one.
  *
@@ -210,6 +230,9 @@ export function parsePriceBandAnswer(
 ): (Band | null)[] | null {
   const said = normalize(text);
   if (!said || choices.length === 0) return null;
+  const menu = bandMenuChoice(said, choices.length);
+  if (menu === 'cancel') return null;
+  if (menu) return choices.map(() => menu);
   if (bandWords(said).length === 0) return null;
   const answers: (Band | null)[] = choices.map(() => null);
   let touched = false;
