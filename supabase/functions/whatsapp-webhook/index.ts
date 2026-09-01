@@ -341,7 +341,10 @@ import {
   catalogueTokenResolution,
   nearestCatalogueName,
   normalizeProductReadResolution,
+  parseProductChoiceAnswer,
+  productChoiceCancelled,
   productReadClarification,
+  replaceAskedProduct,
   productReadMatchNotice,
   type ProductReadResolution,
 } from '../_shared/whatsappProductResolver.ts';
@@ -657,6 +660,16 @@ type ComboVariantPending = {
   occurredAt?: string | null;
 };
 
+/** Which of two similarly named products he meant, waiting for a number. */
+type ProductChoicePending = {
+  kind: 'product_read_choice';
+  asked: string;
+  candidates: string[];
+  /** His sentence, replayed once the ambiguity is settled. */
+  originalText: string;
+  sourceMessageId: string;
+};
+
 type PriceBandPending = {
   kind: 'price_band_choice';
   sale: QuantitySale;
@@ -738,7 +751,7 @@ async function priceQuantitySale(
   occurredAt: string | null = null,
 ): Promise<
   | { kind: 'priced'; record: ParsedDailyRecord; lines: PricedLine[]; notCounted: string[]; combos: ComboSplit[] }
-  | { kind: 'blocked'; message: string }
+  | { kind: 'blocked'; message: string; choice?: { asked: string; candidates: string[] } }
   | { kind: 'unknown'; products: string[]; sale: QuantitySale; resolvedProducts: string[] }
   // Both prices registered, the line named neither, and the quantity does not
   // settle it. Guessing here is guessing at the takings.
@@ -833,7 +846,15 @@ async function priceQuantitySale(
     const resolved = await resolveProductForRead(db, identity, item.product);
     if (resolved.error) return { kind: 'skip' };
     if (resolved.resolution.kind === 'ambiguous') {
-      return { kind: 'blocked', message: productReadClarification(resolved.resolution, lang) };
+      return {
+        kind: 'blocked',
+        message: productReadClarification(resolved.resolution, lang),
+        // Carried out so the caller can park it and read the number himself.
+        choice: {
+          asked: resolved.resolution.asked,
+          candidates: resolved.resolution.candidates.slice(0, 3).map((one) => one.productName),
+        },
+      };
     }
     if (resolved.resolution.kind === 'not_found') {
       // "chips yai", "chipssosej", "zege" — goods the shop DOES sell, written
@@ -6729,6 +6750,10 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<QuantityWanted> | null)?.kind === 'quantity_wanted'
           ? convo.options as QuantityWanted
           : null;
+        const productChoicePending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<ProductChoicePending> | null)?.kind === 'product_read_choice'
+          ? convo.options as ProductChoicePending
+          : null;
         const bandPending = convo?.awaiting === 'product_cost'
           && (convo.options as Partial<PriceBandPending> | null)?.kind === 'price_band_choice'
           ? convo.options as PriceBandPending
@@ -7356,6 +7381,46 @@ Deno.serve(async (req) => {
             saved.length > 0 ? 'applied' : 'failed');
           await finish('skipped');
           continue;
+        }
+
+        // WHICH OF THE TWO DID HE MEAN — READ BY US, NOT GUESSED AT.
+        //
+        // The question numbers the candidates and says "Jibu kwa namba". Until
+        // this branch existed nothing read that answer: "1" went to the model,
+        // which had the list in the turn above and usually got it right. The
+        // owner asked for the treatment the other numbered questions get, and
+        // he is right to — this one decides which product a sale is written
+        // against, and "usually" is not good enough for that.
+        //
+        // The answer does not restart anything. His original sentence is
+        // replayed with the ambiguous word swapped for the product he picked,
+        // so the quantities, the prices and the rest of the list survive.
+        if (productChoicePending) {
+          if (isPendingEscape(body)) {
+            await clearConversation(db, identity.id as string);
+            await reply(phone, productChoiceCancelled(lang));
+            await audit(db, identity, waMessageId, 'product_choice', 'cancelled', 'skipped');
+            await finish('skipped');
+            continue;
+          }
+          const chosen = parseProductChoiceAnswer(body, productChoicePending.candidates);
+          if (chosen) {
+            const replaced = replaceAskedProduct(
+              productChoicePending.originalText, productChoicePending.asked, chosen);
+            await clearConversation(db, identity.id as string);
+            convo = null;
+            body = replaced;
+            writeBody = replaced;
+            intent = routeFor(body);
+            await audit(db, identity, waMessageId, 'product_choice', 'answered', 'applied');
+          } else {
+            // Not an answer. A new turn belongs to the model, and holding the
+            // question open would re-ask it forever — the failure that cost
+            // four other branches before this one.
+            await clearConversation(db, identity.id as string);
+            convo = null;
+            await audit(db, identity, waMessageId, 'product_choice', 'released', 'to_model');
+          }
         }
 
         // Which of the two prices was this sold at? The sale waits here, whole,
@@ -10927,6 +10992,25 @@ Deno.serve(async (req) => {
               continue;
             }
             if (priced.kind === 'blocked') {
+              if (priced.choice) {
+                const state: ProductChoicePending = {
+                  kind: 'product_read_choice',
+                  asked: priced.choice.asked,
+                  candidates: priced.choice.candidates,
+                  originalText: body ?? '',
+                  sourceMessageId: waMessageId,
+                };
+                await db.from('whatsapp_conversations').upsert({
+                  identity_id: identity.id,
+                  company_id: identity.company_id,
+                  profile_id: identity.profile_id,
+                  awaiting: 'product_cost',
+                  receipt_id: null,
+                  options: state,
+                  expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'identity_id' });
+              }
               await reply(phone, priced.message);
               await audit(db, identity, waMessageId, 'quantity_sale', 'priced', 'clarification');
               await finish('skipped');

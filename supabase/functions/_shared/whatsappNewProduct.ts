@@ -47,7 +47,7 @@ function money(raw: string | undefined): number | null {
 // selling one. The owner's own example: "Kamusi @5000 nauza 10,000". Shorter
 // than the laboured form and far more likely to actually be typed.
 const BUY = /(?:kununua|ninanunua|nanunua|gharama|buying|cost|@)/i;
-const RETAIL = /(?:rejareja|reja\s*reja|retail|nauza|ninauza|selling)/i;
+const RETAIL = /(?:rejareja|reja\s*reja|retail|nauza|ninauza|nauzia|kuuza|kuuzia|selling)/i;
 const WHOLESALE = /(?:jumla|wholesale)/i;
 
 /**
@@ -88,7 +88,7 @@ export function parseNewProductLine(text: string | null | undefined): NewProduct
     // "Soda @700 nauza rejareja 1000" strips "rejareja 1000" and leaves the
     // shop with a product called "Soda nauza". The welcome now teaches exactly
     // this line, so it has to read cleanly.
-    .replace(/\b(?:nauza|ninauza|selling|sell|rejareja|reja\s*reja|retail|jumla|wholesale|kununua|nanunua|ninanunua|gharama|buying|cost)\b/gi, ' ')
+    .replace(/\b(?:nauza|ninauza|nauzia|kuuza|kuuzia|selling|sell|rejareja|reja\s*reja|retail|jumla|wholesale|kununua|nanunua|ninanunua|gharama|buying|cost)\b/gi, ' ')
     // Standalone numbers only. A digit welded to letters is part of the name —
     // "karatasi A4 rimu" is a real product, and stripping every digit turned it
     // into "karatasi A rimu", a product that does not exist.
@@ -135,8 +135,11 @@ export type IncompletePriceLine = { product: string; hasCost: boolean; hasRetail
 
 export function readIncompletePriceLines(text: string | null | undefined): IncompletePriceLine[] {
   const found: IncompletePriceLine[] = [];
-  for (const raw of String(text ?? '').split(/\r?\n/)) {
-    const line = clean(raw).replace(/^[-•*\d.)\s]+/, '');
+  const raws = String(text ?? '').split(/\r?\n/)
+    .map((one) => clean(one).replace(/^[-•*\d.)\s]+/, ''))
+    .flatMap(splitProductPriceSegments);
+  for (const raw of raws) {
+    const line = raw;
     if (!line || parseNewProductLine(line)) continue;
     const hasCost = new RegExp(`${BUY.source}\\s*(?:ni|is|:)?\\s*${NUMBER}`, 'i').test(line);
     const hasRetail = new RegExp(`${RETAIL.source}\\s*(?:ni|is|:)?\\s*${NUMBER}`, 'i').test(line);
@@ -179,8 +182,52 @@ export function incompletePriceReply(lines: IncompletePriceLine[], lang: Lang): 
 }
 
 /** Several new products in one message, which is how a restock arrives. */
+/**
+ * Two products, one line.
+ *
+ * MEASURED, and the reply it produced was nonsense. He sent:
+ *
+ *   handbag @1000 kuuza 5000 jumla 4500 vikoi @ 10000 kuuza 18000 jumla 15000
+ *
+ * The form asks for one product per line, and he answered on one line — which
+ * is what people do. Everything downstream split on newlines only, so this was
+ * read as a single product literally named "handbag kuuza jumla vikoi kuuza
+ * jumla", and Risip asked him for a price he had already given twice.
+ *
+ * The shape of a registration line is fixed: a name, then labels and numbers.
+ * So once the numbers have started, the next word that is neither a label nor
+ * a number begins the NEXT product. Nothing here guesses at a name — it only
+ * decides where one line stops being about one thing.
+ */
+const SEGMENT_LABEL = new RegExp(
+  `^(?:${BUY.source}|${RETAIL.source}|${WHOLESALE.source}|ni|is|kuanzia|from|starting|at|pcs|vipande)$`,
+  'i',
+);
+
+export function splitProductPriceSegments(line: string): string[] {
+  const words = clean(line).split(' ').filter(Boolean);
+  const segments: string[] = [];
+  let current: string[] = [];
+  let pricing = false;
+  for (const word of words) {
+    // "@1000" is a label welded to its number, and so is a bare "@".
+    const label = /^@/.test(word) || SEGMENT_LABEL.test(word);
+    const number = /^[0-9][0-9,.]*$/.test(word);
+    if (pricing && !label && !number) {
+      segments.push(current.join(' '));
+      current = [];
+      pricing = false;
+    }
+    if (label || number) pricing = true;
+    current.push(word);
+  }
+  if (current.length > 0) segments.push(current.join(' '));
+  return segments.filter((segment) => segment.trim().length > 0);
+}
+
 export function parseNewProductPricing(text: string | null | undefined): NewProductPricing[] {
-  const lines = String(text ?? '').split(/\r?\n/).map(clean).filter(Boolean);
+  const lines = String(text ?? '').split(/\r?\n/).map(clean).filter(Boolean)
+    .flatMap(splitProductPriceSegments);
   const priced: NewProductPricing[] = [];
   for (const line of lines) {
     const one = parseNewProductLine(line);

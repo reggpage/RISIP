@@ -194,3 +194,62 @@ export function productReadMatchNotice(resolution: ProductReadResolution, lang: 
     ? `Nimechukulia “${resolution.asked}” kuwa “${resolution.match.productName}”.\n`
     : `I matched “${resolution.asked}” to “${resolution.match.productName}”.\n`;
 }
+
+/**
+ * "1" — the answer the numbered question asks for.
+ *
+ * The clarification lists the candidates and says "Jibu kwa namba", and until
+ * this existed nothing deterministic read that answer: the reply went to the
+ * model, which had the list in the turn above it and usually got it right.
+ * Usually is not the standard the rest of these questions are held to, and the
+ * owner asked for the same treatment they get.
+ *
+ * A name still works, because somebody who types the whole thing has answered
+ * just as clearly. Returns the chosen candidate, or null — and null means this
+ * was not an answer, so the message belongs to the model as any new turn does.
+ */
+export function parseProductChoiceAnswer(
+  text: string | null | undefined,
+  candidates: string[],
+): string | null {
+  const said = String(text ?? '').replace(/\s+/gu, ' ').trim();
+  if (!said || candidates.length === 0) return null;
+
+  // A bare row number, with or without the punctuation people add to it.
+  const asNumber = /^[(\[]?([0-9]{1,2})[)\].:]?$/.exec(said);
+  if (asNumber) {
+    const row = Number(asNumber[1]) - 1;
+    return row >= 0 && row < candidates.length ? candidates[row] : null;
+  }
+
+  const key = (name: string) => name.toLocaleLowerCase('sw-TZ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const saidKey = key(said);
+  if (!saidKey) return null;
+  // Exact first. "kitabu cha hesabu" must never resolve to whichever candidate
+  // happens to contain it as a substring.
+  const exact = candidates.find((name) => key(name) === saidKey);
+  if (exact) return exact;
+  const contained = candidates.filter((name) => key(name).includes(saidKey));
+  return contained.length === 1 ? contained[0] : null;
+}
+
+/**
+ * Replay his sentence with the ambiguous word swapped for the product he
+ * picked. Whole words only, and every occurrence — "kitabu 20 na kitabu 4"
+ * asked one question and means one product.
+ */
+export function replaceAskedProduct(original: string, asked: string, chosen: string): string {
+  const safe = asked.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const said = String(original ?? '');
+  const swapped = said.replace(new RegExp(`(?<![\\p{L}])${safe}(?![\\p{L}])`, 'giu'), chosen);
+  // If the word cannot be found — a spelling Risip normalised before asking —
+  // the sentence is returned untouched rather than mangled, and the ordinary
+  // resolver runs again on a message that now has an answer behind it.
+  return swapped;
+}
+
+export function productChoiceCancelled(lang: Lang): string {
+  return lang === 'sw'
+    ? 'Sawa, sijaandika chochote. Ukitaka tuendelee, nitumie ujumbe tena.'
+    : 'Fine, nothing was recorded. Send the message again whenever you want.';
+}
