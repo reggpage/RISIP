@@ -103,6 +103,7 @@ import {
   parseProductCost,
   productCostErrorMessage,
   productCostReply,
+  normaliseUnit,
   validateProductCostCandidate,
   type ProductCost,
 } from '../_shared/whatsappProductCosts.ts';
@@ -123,6 +124,13 @@ import { interpretDailyRecordWithAi, MAX_INTERPRETATION_CHARS, validateAiCandida
 import { validateAiTransactionCandidate } from '../_shared/whatsappTransactionAi.ts';
 import { buildKnowledgeReply } from '../_shared/risipKnowledge.ts';
 import { findNameWarnings, nameWarningText, productKey } from '../_shared/whatsappProductNames.ts';
+import {
+  ambiguousProductQuestion,
+  formatCatalogueContext,
+  isSemanticallyAmbiguousProduct,
+  unitChoiceQuestion,
+  type CatalogueContextProduct,
+} from '../_shared/whatsappCatalogueContext.ts';
 import {
   missingSellingPriceReply,
   productPriceComparisonReply,
@@ -698,6 +706,12 @@ type PriceAndCostPending = {
   prices: SellingPrice[];
   costs: ProductCost[];
   unreadable: string[];
+  clarification?: {
+    reason: 'purchase_unit' | 'product_identity' | 'purchase_unit_and_product_identity';
+    product: string;
+    unitOptions: string[];
+    productCandidates: string[];
+  };
 };
 
 type NewProductPricingState = {
@@ -1387,10 +1401,14 @@ async function resolveWhatsAppContext(
  * catalogue dump would grow every request for every company for ever. Words
  * only — the financial values stay behind tools.
  */
-async function loadVocabularyContext(db: Admin, identity: ResolvedWhatsAppIdentity): Promise<string> {
-  const [vocabularyRows, productRows] = await Promise.all([
+async function loadVocabularyContext(db: Admin, identity: ResolvedWhatsAppIdentity): Promise<{ vocabulary: string; catalogue: string }> {
+  const [vocabularyRows, productRows, unitRows] = await Promise.all([
     db.rpc('wa_company_vocabulary', { p_company_id: identity.company_id }),
     db.rpc('company_product_names', { p_company_id: identity.company_id }),
+    db.from('product_units')
+      .select('product_key, product_name, unit_name, base_quantity, is_base, can_purchase, can_sell, can_count')
+      .eq('company_id', identity.company_id)
+      .limit(500),
   ]);
   const vocabulary = vocabularyRows.error ? '' : vocabularyContext(((vocabularyRows.data ?? []) as Array<Record<string, unknown>>).map((row) => ({
     kind: String(row.kind ?? ''),
@@ -1398,14 +1416,59 @@ async function loadVocabularyContext(db: Admin, identity: ResolvedWhatsAppIdenti
     productName: row.product_name ? String(row.product_name) : null,
     meaning: row.meaning ? String(row.meaning) : null,
   })));
-  const products = (productRows.error ? [] : (productRows.data ?? []) as Array<Record<string, unknown>>)
+  const productRowsData = (productRows.error ? [] : (productRows.data ?? []) as Array<Record<string, unknown>>);
+  const products = productRowsData
     .map((row) => String(row.product_name ?? '').trim().slice(0, 80))
     .filter(Boolean)
     .slice(0, 60);
   const catalogue = products.length > 0
-    ? `Products registered by this business (names only; never prices):\n${products.map((name) => `- ${name}`).join('\n')}`
+    ? `Products registered by this business (names only):\n${products.map((name) => `- ${name}`).join('\n')}`
     : '';
-  return [vocabulary, catalogue].filter(Boolean).join('\n\n').slice(0, 6000);
+
+  const namesByKey = new Map(products.map((name) => [productKey(name), name]));
+  const unitProducts = new Map<string, CatalogueContextProduct>();
+  for (const product of products) {
+    const key = productKey(product);
+    if (key) unitProducts.set(key, { product, units: [] });
+  }
+  for (const row of (unitRows.error ? [] : (unitRows.data ?? []) as Array<Record<string, unknown>>)) {
+    const key = productKey(String(row.product_key ?? row.product_name ?? ''));
+    const product = namesByKey.get(key) ?? String(row.product_name ?? '').trim();
+    if (!key || !product) continue;
+    const current = unitProducts.get(key) ?? { product, units: [] };
+    current.units.push({
+      name: String(row.unit_name ?? '').trim(),
+      canPurchase: row.can_purchase === true,
+      canSell: row.can_sell === true,
+      canCount: row.can_count !== false,
+      baseQuantity: Number(row.base_quantity ?? 0),
+      isBase: row.is_base === true,
+    });
+    unitProducts.set(key, current);
+  }
+
+  const { data: pricingRows, error: pricingError } = await db.rpc('wa_product_pricing', {
+    p_company_id: identity.company_id,
+    p_product_keys: products.map((name) => productKey(name)),
+  });
+  for (const row of (pricingError ? [] : (pricingRows ?? []) as Array<Record<string, unknown>>)) {
+    const key = productKey(String(row.product_key ?? ''));
+    const product = namesByKey.get(key);
+    if (!key || !product) continue;
+    const current = unitProducts.get(key) ?? { product, units: [] };
+    current.retailPrice = row.retail_price == null ? null : Number(row.retail_price);
+    current.wholesalePrice = row.wholesale_price == null ? null : Number(row.wholesale_price);
+    current.wholesaleMinQty = row.wholesale_min_qty == null ? null : Number(row.wholesale_min_qty);
+    current.unitCost = row.unit_cost == null ? null : Number(row.unit_cost);
+    unitProducts.set(key, current);
+  }
+  const catalogueRag = formatCatalogueContext([...unitProducts.values()], {
+    includeCosts: canUseCompanyFinanceReads(identity.role),
+  });
+  return {
+    vocabulary: [vocabulary, catalogue].filter(Boolean).join('\n\n').slice(0, 6000),
+    catalogue: catalogueRag,
+  };
 }
 
 function assistantIdentityContext(
@@ -1414,6 +1477,7 @@ function assistantIdentityContext(
   // A model cannot recognise the answer to a question it was never shown. That
   // is exactly why "reja" used to need a parser standing in front of it.
   pending?: PendingClarification | null,
+  catalogueContext?: string,
 ): AssistantIdentityContext {
   return {
     identityId: identity.id,
@@ -1427,8 +1491,77 @@ function assistantIdentityContext(
     reversalEnabled: identity.reversal_enabled,
     payoutsEnabled: identity.payouts_enabled,
     ...(vocabulary ? { vocabulary } : {}),
+    ...(catalogueContext ? { catalogueContext } : {}),
     ...(pending ? { pendingClarification: describePending(pending) ?? undefined } : {}),
   };
+}
+
+function normalizedChoice(value: string): string {
+  return productKey(value).replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+}
+
+function chooseClarificationValue(body: string, choices: string[]): string | null {
+  const text = body.trim();
+  const number = /^(?:choice\s*)?(\d{1,2})$/iu.exec(text);
+  if (number) {
+    const selected = choices[Number(number[1]) - 1];
+    if (selected) return selected;
+  }
+  const key = normalizedChoice(text);
+  return choices.find((choice) => normalizedChoice(choice) === key) ?? null;
+}
+
+async function purchaseUnitsForProducts(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+): Promise<Map<string, string[]>> {
+  const { data, error } = await db.from('product_units')
+    .select('product_key, unit_name, can_purchase')
+    .eq('company_id', identity.company_id)
+    .eq('can_purchase', true)
+    .limit(500);
+  if (error) return new Map();
+  const units = new Map<string, string[]>();
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const product = productKey(String(row.product_key ?? ''));
+    const unit = String(row.unit_name ?? '').trim().slice(0, 40);
+    if (!product || !unit) continue;
+    const current = units.get(product) ?? [];
+    if (!current.some((item) => normalizedChoice(item) === normalizedChoice(unit))) current.push(unit);
+    units.set(product, current);
+  }
+  return units;
+}
+
+function priceAndCostClarificationText(
+  clarification: NonNullable<PriceAndCostPending['clarification']>,
+  lang: Lang,
+): string {
+  const productQuestion = clarification.productCandidates.length > 0
+    ? ambiguousProductQuestion(clarification.product, clarification.productCandidates, lang)
+    : isSemanticallyAmbiguousProduct(clarification.product)
+      ? ambiguousProductQuestion(clarification.product, [], lang)
+      : '';
+  if (productQuestion && clarification.unitOptions.length > 0) {
+    return `${productQuestion}\n\n${lang === 'sw'
+      ? 'Baada ya kuchagua bidhaa, tutauliza pia kipimo cha kununulia.'
+      : 'After choosing the product, I will also ask for its purchase unit.'}`;
+  }
+  if (productQuestion) return productQuestion;
+  return unitChoiceQuestion(clarification.product, clarification.unitOptions, lang);
+}
+
+function priceAndCostConfirmation(pending: PriceAndCostPending, lang: Lang): string {
+  const batch: SellingPriceBatch = {
+    kind: 'selling_price_batch',
+    prices: pending.prices,
+    unreadable: pending.unreadable,
+  };
+  const priceQuestion = sellingPriceBatchConfirmation(batch, lang);
+  if (pending.costs.length === 0) return priceQuestion;
+  const costSummary = (lang === 'sw' ? '\n\nBei za kununua zilizotajwa pia zitawekwa:\n' : '\n\nThe stated buying costs will also be saved:\n')
+    + pending.costs.map((cost) => `• ${cost.product} — TSh ${Math.round(cost.unitCost).toLocaleString('en-US')}${cost.unit ? ` kwa ${cost.unit}` : ''}`).join('\n');
+  return priceQuestion.replace(/\n\nNihifadhi zote\?/u, `${costSummary}\n\nNihifadhi zote?`);
 }
 
 async function loadAssistantHistory(db: Admin, identity: ResolvedWhatsAppIdentity): Promise<AssistantHistoryMessage[]> {
@@ -4978,7 +5111,13 @@ async function runAssistantTool(
           unreadable.push(asked);
           continue;
         }
-        cost = { product: asked, unitCost: costRead.value, unit: null };
+        const unitWording = typeof line.purchase_unit === 'string'
+          ? line.purchase_unit
+          : typeof line.cost_unit_wording === 'string'
+            ? line.cost_unit_wording
+            : typeof line.unit === 'string' ? line.unit : null;
+        const unitName = unitWording?.replace(/^(?:kwa|per|kila)\s+/iu, '').trim() ?? null;
+        cost = { product: asked, unitCost: costRead.value, unit: normaliseUnit(unitName) };
       }
       wanted.push({
         asked,
@@ -5038,9 +5177,50 @@ async function runAssistantTool(
           ? [active as unknown as ProductCost]
           : [];
     const combinedCosts = [...existingCosts, ...costs];
-    const pending: SellingPriceBatch | PriceAndCostPending = combinedCosts.length > 0
+    let pending: SellingPriceBatch | PriceAndCostPending = combinedCosts.length > 0
       ? { kind: 'price_and_cost_pending', prices, costs: combinedCosts, unreadable, }
       : batch;
+
+    // Product cost writes are stricter than selling-price writes: a configured
+    // product must be tied to a declared purchase unit. Do not wait for the
+    // confirmation button to discover that, and do not make the model guess
+    // whether “mafuta” means cooking oil, lamp oil or body oil.
+    if (pending.kind === 'price_and_cost_pending') {
+      const purchaseUnits = await purchaseUnitsForProducts(db, identity);
+      const firstCost = pending.costs[0];
+      const productCandidates = firstCost && isSemanticallyAmbiguousProduct(firstCost.product)
+        ? known.filter((name) => productKey(name) !== productKey(firstCost.product)
+          && productKey(name).includes(productKey(firstCost.product))).slice(0, 8)
+        : [];
+      const unitOptions = firstCost ? (purchaseUnits.get(productKey(firstCost.product)) ?? []) : [];
+      const missingUnit = Boolean(firstCost && unitOptions.length > 0 && !firstCost.unit);
+      const invalidUnit = Boolean(firstCost && firstCost.unit && unitOptions.length > 0
+        && !unitOptions.some((unit) => normalizedChoice(unit) === normalizedChoice(firstCost.unit!)));
+      if (productCandidates.length > 0 || isSemanticallyAmbiguousProduct(firstCost?.product ?? '') || missingUnit || invalidUnit) {
+        const clarification: NonNullable<PriceAndCostPending['clarification']> = {
+          reason: productCandidates.length > 0 || isSemanticallyAmbiguousProduct(firstCost?.product ?? '')
+            ? (missingUnit || invalidUnit ? 'purchase_unit_and_product_identity' : 'product_identity')
+            : 'purchase_unit',
+          product: firstCost?.product ?? wanted[0]?.asked ?? '',
+          unitOptions,
+          productCandidates,
+        };
+        pending = { ...pending, clarification };
+        await db.from('whatsapp_conversations').upsert({
+          identity_id: identity.id,
+          company_id: identity.company_id,
+          profile_id: identity.profile_id,
+          awaiting: 'product_cost',
+          receipt_id: null,
+          options: pending,
+          expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'identity_id' });
+        const clarificationText = priceAndCostClarificationText(clarification, lang);
+        await audit(db, identity, waMessageId, 'price_and_cost_pending', 'clarification', 'skipped');
+        return { content: clarificationText, terminalReply: clarificationText, fallbackReply: clarificationText };
+      }
+    }
     await db.from('whatsapp_conversations').upsert({
       identity_id: identity.id,
       company_id: identity.company_id,
@@ -8784,7 +8964,83 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        if (priceAndCostPending && releasesParkedQuestion(body)) {
+        if (priceAndCostPending?.clarification && releasesParkedQuestion(body)) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'price_and_cost_pending', 'clarification_abandoned', 'skipped');
+        } else if (priceAndCostPending?.clarification && isDailyRecordRejection(body)) {
+          await clearConversation(db, identity.id as string);
+          await replyQuietly(phone, sellingPriceBatchCancelled(lang));
+          await audit(db, identity, waMessageId, 'price_and_cost_pending', 'clarification_cancel', 'applied');
+        } else if (priceAndCostPending?.clarification) {
+          const clarification = priceAndCostPending.clarification;
+          let selectedProduct = clarification.productCandidates.length > 0
+            ? chooseClarificationValue(body, clarification.productCandidates)
+            : null;
+          if (clarification.productCandidates.length > 0 && !selectedProduct) {
+            const ask = priceAndCostClarificationText(clarification, lang);
+            await replyQuietly(phone, ask);
+            await audit(db, identity, waMessageId, 'price_and_cost_pending', 'clarification_reask', 'skipped');
+          } else if (clarification.productCandidates.length === 0 && isSemanticallyAmbiguousProduct(clarification.product)) {
+            // There is no safe mapping from “ya kupikia” to a catalogue item
+            // that does not exist yet. Ask for the complete qualified product
+            // line instead of silently turning a generic noun into a new item.
+            const looksLikeQualifiedAnswer = normalizedChoice(body) !== normalizedChoice(clarification.product)
+              && body.trim().length > clarification.product.length;
+            const ask = looksLikeQualifiedAnswer
+              ? (lang === 'sw'
+                ? 'Sawa. Sasa tuma ujumbe mzima wa bei kwa jina kamili la bidhaa na kipimo, kwa mfano: “mafuta ya kupikia nimenunua kwa 5000 kwa ndoo, uza kwa 8000”.'
+                : 'Okay. Now resend the complete price message with the exact product name and unit, for example: “cooking oil costs 5000 per bucket and sells for 8000”.')
+              : priceAndCostClarificationText(clarification, lang);
+            if (looksLikeQualifiedAnswer) await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, ask);
+            await audit(db, identity, waMessageId, 'price_and_cost_pending', 'clarification_reask', 'skipped');
+          } else {
+            const oldProduct = clarification.product;
+            const product = selectedProduct ?? oldProduct;
+            let unit = clarification.unitOptions.length > 0
+              ? chooseClarificationValue(body, clarification.unitOptions)
+              : null;
+            if (clarification.productCandidates.length > 0 && clarification.unitOptions.length > 0) {
+              // Product selection is the first question; keep the unit question
+              // for the next message so one answer cannot be applied twice.
+              const next: PriceAndCostPending = {
+                ...priceAndCostPending,
+                prices: priceAndCostPending.prices.map((price) => productKey(price.product) === productKey(oldProduct)
+                  ? { ...price, product } : price),
+                costs: priceAndCostPending.costs.map((cost) => productKey(cost.product) === productKey(oldProduct)
+                  ? { ...cost, product } : cost),
+                clarification: { reason: 'purchase_unit', product, unitOptions: clarification.unitOptions, productCandidates: [] },
+              };
+              await db.from('whatsapp_conversations').update({
+                options: next,
+                updated_at: new Date().toISOString(),
+              }).eq('identity_id', identity.id);
+              const ask = unitChoiceQuestion(product, clarification.unitOptions, lang);
+              await replyQuietly(phone, ask);
+              await audit(db, identity, waMessageId, 'price_and_cost_pending', 'product_clarified', 'skipped');
+            } else if (clarification.unitOptions.length > 0 && !unit) {
+              const ask = unitChoiceQuestion(product, clarification.unitOptions, lang);
+              await replyQuietly(phone, ask);
+              await audit(db, identity, waMessageId, 'price_and_cost_pending', 'unit_clarification_reask', 'skipped');
+            } else {
+              const resolved: PriceAndCostPending = {
+                ...priceAndCostPending,
+                prices: priceAndCostPending.prices.map((price) => productKey(price.product) === productKey(oldProduct)
+                  ? { ...price, product } : price),
+                costs: priceAndCostPending.costs.map((cost) => productKey(cost.product) === productKey(oldProduct)
+                  ? { ...cost, product, unit: unit ?? cost.unit } : cost),
+                clarification: undefined,
+              };
+              await db.from('whatsapp_conversations').update({
+                options: resolved,
+                updated_at: new Date().toISOString(),
+              }).eq('identity_id', identity.id);
+              const ask = priceAndCostConfirmation(resolved, lang);
+              await replyQuietly(phone, ask);
+              await audit(db, identity, waMessageId, 'price_and_cost_pending', 'clarification_resolved', 'skipped');
+            }
+          }
+        } else if (priceAndCostPending && releasesParkedQuestion(body)) {
           await clearConversation(db, identity.id as string);
           await audit(db, identity, waMessageId, 'price_and_cost_pending', 'abandoned', 'skipped');
         } else if (priceAndCostPending) {
@@ -9308,6 +9564,7 @@ Deno.serve(async (req) => {
           const budget = await consumeAiBudget(db, identity, contextChars);
           if (budget.allowed) {
             let assistantFailure = 'unknown_failure';
+            const retrieval = await loadVocabularyContext(db, identity);
             // STAGE A: how long the model and its tool loop actually took.
             // Measured here rather than around the whole message so latency is
             // attributable to the interpreter, not to the ledger writes after it.
@@ -9319,8 +9576,9 @@ Deno.serve(async (req) => {
             const assistant = await runConversationalAssistant({
               context: assistantIdentityContext(
                 identity,
-                await loadVocabularyContext(db, identity),
+                retrieval.vocabulary,
                 pendingClarificationOf(convo),
+                retrieval.catalogue,
               ),
               history,
               userText: body!,

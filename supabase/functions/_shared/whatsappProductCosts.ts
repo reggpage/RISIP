@@ -25,6 +25,10 @@ export type ProductCostErrorCode =
   | 'invalid_cost'
   /** A price or count offered in a unit the product is not measured in. */
   | 'unit_mismatch'
+  /** The product has declared purchase units and one was not supplied. */
+  | 'unit_required'
+  /** The supplied purchase unit is not declared as purchasable for the product. */
+  | 'unknown_purchase_unit'
   | 'invalid_quantity'
   | 'unknown';
 
@@ -193,6 +197,8 @@ export function productCostErrorMessage(error: { message?: string; hint?: string
     no_product: 'Sikuweza kutambua jina la bidhaa. Taja bidhaa na bei yake.',
     invalid_cost: 'Bei ya kununua lazima iwe kubwa kuliko sifuri.',
     unit_mismatch: 'Bidhaa hii ina kipimo chake tayari. Tumia kipimo kile kile.',
+    unit_required: 'Bei ya kununua inahitaji kipimo. Taja kama ni kwa kilo, lita, ndoo, au kipimo kilichosanidiwa.',
+    unknown_purchase_unit: 'Kipimo hicho hakijasaniwa kwa ununuzi wa bidhaa hii. Taja kipimo kilichopo kwenye catalogue.',
     invalid_quantity: 'Idadi haiwezi kuwa chini ya sifuri.',
     unknown: 'Sikuweza kuhifadhi bei hiyo. Tafadhali jaribu tena.',
   };
@@ -203,6 +209,8 @@ export function productCostErrorMessage(error: { message?: string; hint?: string
     no_product: 'I could not identify the product name. Include the product and its price.',
     invalid_cost: 'The buying price must be greater than zero.',
     unit_mismatch: 'This product already has a unit. Use the same one.',
+    unit_required: 'This buying cost needs a purchase unit. State whether it is per kilo, litre, bucket, or another configured unit.',
+    unknown_purchase_unit: 'That unit is not configured for purchasing this product. Use a unit from the catalogue.',
     invalid_quantity: 'A quantity cannot be less than zero.',
     unknown: 'I could not save that buying price. Please try again.',
   };

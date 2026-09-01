@@ -238,7 +238,7 @@ describe('mocked Claude tool call and deterministic revalidation wiring', () => 
     expect(deterministicRecord || deterministicCatalogue).toBe(true);
   });
 
-  it('keeps vocabulary bounded and company scoped without exposing prices', () => {
+  it('keeps retrieval bounded and company scoped with finance-filtered catalogue context', () => {
     const loader = webhook.slice(
       webhook.indexOf('async function loadVocabularyContext'),
       webhook.indexOf('function assistantIdentityContext'),
@@ -247,6 +247,8 @@ describe('mocked Claude tool call and deterministic revalidation wiring', () => 
     expect(loader).toContain("db.rpc('company_product_names', { p_company_id: identity.company_id })");
     expect(loader).toContain('.slice(0, 60)');
     expect(loader).toContain('.slice(0, 6000)');
-    expect(loader).not.toMatch(/unit_cost|unit_price|retail_price|wholesale_price/);
+    expect(loader).toMatch(/product_units/);
+    expect(loader).toMatch(/wa_product_pricing/);
+    expect(loader).toMatch(/includeCosts: canUseCompanyFinanceReads\(identity.role\)/);
   });
 });

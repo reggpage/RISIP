@@ -79,7 +79,7 @@ describe('the tool, and the authority it does not have', () => {
         // one, the model's only way to say "uza kwa 8000 jumla ni 7500" was
         // two lines — and the owner was shown shuka twice.
         'wholesale_wording', 'wholesale_candidate',
-        'product', 'cost_wording', 'cost', 'retail_wording', 'retail_price',
+         'product', 'cost_wording', 'cost', 'cost_unit_wording', 'purchase_unit', 'retail_wording', 'retail_price',
         'wholesale_price', 'wholesale_min_qty_wording', 'wholesale_min_qty']);
     // The words are compulsory; the candidate may be null. A price cannot
     // arrive without the sentence it came from.

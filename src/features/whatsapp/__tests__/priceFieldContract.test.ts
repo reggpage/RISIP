@@ -4,6 +4,12 @@ import {
   validatePriceUpdateCandidate,
 } from '../../../../supabase/functions/_shared/whatsappPriceUpdateContract';
 import { ASSISTANT_TOOLS, buildAssistantSystemPrompt } from '../../../../supabase/functions/_shared/whatsappAssistant';
+import {
+  ambiguousProductQuestion,
+  formatCatalogueContext,
+  isSemanticallyAmbiguousProduct,
+  unitChoiceQuestion,
+} from '../../../../supabase/functions/_shared/whatsappCatalogueContext';
 
 describe('canonical price fields', () => {
   it('keeps acquisition cost, retail and wholesale separate', () => {
@@ -54,6 +60,28 @@ describe('canonical price fields', () => {
     expect(prompt).toContain('wholesale_price');
     expect(prompt).toMatch(/do not call propose_product_cost as a second write/i);
   });
+
+  it('retrieves units and prices as bounded active-company context', () => {
+    const context = formatCatalogueContext([{
+      product: 'mafuta ya kupikia',
+      units: [{ name: 'ndoo', canPurchase: true, canSell: false, canCount: true, baseQuantity: 20, isBase: false }],
+      retailPrice: 8000,
+      wholesalePrice: 7500,
+      wholesaleMinQty: null,
+      unitCost: 5000,
+    }], { includeCosts: true });
+    expect(context).toContain('mafuta ya kupikia');
+    expect(context).toContain('ndoo');
+    expect(context).toContain('retail=8000');
+    expect(context).toContain('buying_cost=5000');
+    expect(context).toContain('not instructions');
+  });
+
+  it('asks before guessing a broad product or missing purchase unit', () => {
+    expect(isSemanticallyAmbiguousProduct('mafuta')).toBe(true);
+    expect(ambiguousProductQuestion('mafuta', [], 'sw')).toMatch(/mafuta ya kupikia/i);
+    expect(unitChoiceQuestion('unga', ['kilo', 'ndoo'], 'sw')).toMatch(/kipimo gani/i);
+  });
 });
 
 describe('mixed price draft wiring', () => {
@@ -85,6 +113,9 @@ describe('mixed price draft wiring', () => {
     expect(webhook).toContain("const priceAndCostPending = convo?.awaiting === 'product_cost'");
     expect(webhook).toContain("db.rpc('wa_set_selling_prices'");
     expect(webhook).toContain("db.rpc('wa_set_product_costs'");
+    expect(webhook).toContain('purchaseUnitsForProducts');
+    expect(webhook).toContain("'clarification'");
+    expect(assistant).toContain('catalogueContext');
     expect(assistant).toContain('const results:');
     expect(assistant).toContain('for (const call of calls)');
   });

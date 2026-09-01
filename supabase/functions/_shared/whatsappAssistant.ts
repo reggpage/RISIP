@@ -192,6 +192,8 @@ export type AssistantIdentityContext = {
    * wrongly; a word cannot be misquoted into a ledger.
    */
   vocabulary?: string;
+  /** Bounded catalogue retrieval for the active company; writes still validate server-side. */
+  catalogueContext?: string;
 };
 
 export function sanitizeAssistantFirstName(value: unknown): string | null {
@@ -832,7 +834,7 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
       + 'Many shops trade at TWO prices. When one product is given both — "uza kwa 8000 jumla ni 7500", "rejareja 1000 jumla 900" — put 8000 in retail_price and 7500 in wholesale_price on ONE line. Never two lines for the same product. '
       + 'If the same sentence ALSO says what he paid — "nimenunua kwa 5000 na uza kwa 8000" — put 5000 in cost and 8000 in retail_price on the SAME line. Do not call a second write tool for that message; one confirmation must cover the complete draft. '
       + 'cost means what the shop paid to acquire the product; retail_price means the ordinary price the shop charges; wholesale_price means jumla/trade price; wholesale_min_qty is the stated threshold or null. A missing field is null, never a guess. A sale is propose_business_event — a till roll headed "Mauzo" is never a price list. '
-      + 'Nothing is saved by this call: the server resolves every product against the catalogue, re-reads every number, and waits for NDIYO.',
+     + 'Nothing is saved by this call: the server resolves every product against the catalogue, re-reads every number, and waits for NDIYO. If a product name is semantically broad or a purchase unit is missing, expect a clarification instead of a guess.',
     {
       lines: {
         type: 'array',
@@ -851,6 +853,8 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
             product: { type: ['string', 'null'], description: 'Canonical product wording; same product as product_wording.' },
             cost_wording: { type: ['string', 'null'], description: 'Exact words for what the shop paid, e.g. "nimenunua kwa 5000", or null.' },
             cost: { type: ['number', 'null'], description: 'Buying cost read from cost_wording, or null. Never copy retail_price.' },
+            cost_unit_wording: { type: ['string', 'null'], description: 'Exact purchase-unit words, e.g. "kwa kilo", "kwa ndoo", "per litre"; null when the trader did not state the unit.' },
+            purchase_unit: { type: ['string', 'null'], description: 'Purchase unit read from cost_unit_wording, e.g. kilo, ndoo or lita; null when absent. Never infer it from the product name.' },
             retail_wording: { type: ['string', 'null'], description: 'Exact ordinary/retail selling-price words, or null.' },
             retail_price: { type: ['number', 'null'], description: 'Ordinary selling price read from retail_wording, or null.' },
             wholesale_price: { type: ['number', 'null'], description: 'Jumla/trade price read from wholesale_wording, or null.' },
@@ -859,7 +863,7 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
           },
           required: [
             'product_wording', 'price_wording', 'price_candidate', 'wholesale_wording', 'wholesale_candidate',
-            'product', 'cost_wording', 'cost', 'retail_wording', 'retail_price',
+            'product', 'cost_wording', 'cost', 'cost_unit_wording', 'purchase_unit', 'retail_wording', 'retail_price',
             'wholesale_price', 'wholesale_min_qty_wording', 'wholesale_min_qty',
           ],
           additionalProperties: false,
@@ -1119,7 +1123,7 @@ LIVE CONTEXT
 - Approval flow enabled: ${context.approvalFlowEnabled}
 - Reversal enabled: ${context.reversalEnabled}
 - Payouts enabled: ${context.payoutsEnabled}
-${context.pendingClarification ? `\n${context.pendingClarification}\n` : ''}${context.vocabulary ? `\n${context.vocabulary}\n` : ''}
+${context.pendingClarification ? `\n${context.pendingClarification}\n` : ''}${context.vocabulary ? `\n${context.vocabulary}\n` : ''}${context.catalogueContext ? `\n${context.catalogueContext}\n` : ''}
 - Do not use it in every reply.
 
 EVERY TURN ENDS IN A CAPABILITY
