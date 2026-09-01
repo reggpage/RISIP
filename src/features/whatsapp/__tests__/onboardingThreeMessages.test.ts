@@ -56,17 +56,17 @@ describe('message 6 — what Risip is for', () => {
 });
 
 describe('invited employee welcome', () => {
-  const said = invitedMemberReady('Juma', 'St. Ritha bookshop', 'Boss Asha', 'worker', 'sw');
+  const said = invitedMemberReady('Juma', 'sw');
 
-  it('shows who invited the person, the role, and the business', () => {
-    expect(said).toContain('Umealikwa na *Boss Asha*');
-    expect(said).toContain('*Mfanyakazi*');
-    expect(said).toContain('*St. Ritha bookshop*');
-  });
-
-  it('does not offer the new-business choices to an invited employee', () => {
+  it('gives direct work instructions instead of the new-business choices', () => {
+    expect(said).toContain('Sawa Juma, Utaweza kufanya yafuatayo');
     expect(said).not.toMatch(/Fungua biashara|Jiunge na biashara|Nina akaunti tayari/);
     expect(said).toContain('Kurekodi mauzo na manunuzi');
+    expect(said).toContain('Kusajili bidhaa mpya');
+    expect(said).toContain('nimeuza maji 2, laptop 3');
+    expect(said).toContain('nimeongeza maji 10');
+    expect(said).toContain('rejareja');
+    expect(said).toContain('jumla');
   });
 });
 

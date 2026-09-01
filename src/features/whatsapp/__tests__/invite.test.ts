@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   inviteReady,
+  inviteLanguageQuestion,
   inviteRoleQuestion,
   parseInviteRequest,
   parseInviteRole,
@@ -122,6 +123,17 @@ describe('what the owner gets back', () => {
   it('names the role it was minted for', () => {
     expect(reply).toContain('Mfanyakazi');
     expect(inviteReady('KTM4PQ7X', 'accountant', 'X', '+255', 'sw')).toContain('Mhasibu');
+  });
+});
+
+describe('what a new invited number sees first', () => {
+  it('shows the inviter, role and business before asking for language', () => {
+    const reply = inviteLanguageQuestion('St. Ritha bookshop', 'Asha', 'worker');
+    expect(reply.startsWith('Mambo vip Mdau! Karibu Risip 👋')).toBe(true);
+    expect(reply).toContain('Umealikwa na *Boss Asha* kama *Mfanyakazi* wa *St. Ritha bookshop*');
+    expect(reply).toContain('Chagua lugha:');
+    expect(reply).toContain('1. Kiswahili');
+    expect(reply).toContain('2. English');
   });
 });
 

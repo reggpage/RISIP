@@ -72,6 +72,25 @@ const roleName = (role: InviteRole, lang: Lang) => lang === 'sw'
   ? (role === 'accountant' ? 'Mhasibu' : 'Mfanyakazi')
   : (role === 'accountant' ? 'Accountant' : 'Worker');
 
+function inviterLabel(name: string, lang: Lang): string {
+  const cleanName = name.trim() || (lang === 'sw' ? 'mmiliki wa biashara' : 'the business owner');
+  return /^(?:boss|bosi|owner|mmiliki)\b/i.test(cleanName)
+    ? cleanName
+    : `${lang === 'sw' ? 'Boss' : 'Boss'} ${cleanName}`;
+}
+
+/** The first screen for a new number that pasted a valid invite code. */
+export function inviteLanguageQuestion(
+  businessName: string,
+  inviterName: string,
+  role: InviteRole,
+): string {
+  return 'Mambo vip Mdau! Karibu Risip 👋\n\n'
+    + 'Nimepata namba yako ya mwaliko wa Risip.\n'
+    + `Umealikwa na *${inviterLabel(inviterName, 'sw')}* kama *${roleName(role, 'sw')}* wa *${businessName}*.\n\n`
+    + 'Chagua lugha:\n1. Kiswahili\n2. English';
+}
+
 /**
  * What the owner gets back: the code, and the message to forward.
  *

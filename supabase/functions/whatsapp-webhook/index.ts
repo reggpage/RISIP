@@ -150,6 +150,7 @@ import {
 } from '../_shared/whatsappSellingPriceBatch.ts';
 import {
   inviteCancelled,
+  inviteLanguageQuestion,
   inviteNotAllowed,
   inviteReady,
   inviteRoleQuestion,
@@ -6412,6 +6413,46 @@ async function handleLink(db: Admin, phone: string, waId: string, token: string)
 // photo is acknowledged and dropped — media_id is never written, so
 // whatsapp-worker never picks it up and nothing is extracted. A stranger cannot
 // make us spend money.
+type InvitePreview = {
+  businessName: string;
+  inviterName: string;
+  role: 'worker' | 'accountant';
+};
+
+/** Read only the safe welcome context for a bearer invite code. */
+async function readInvitePreview(db: Admin, code: string): Promise<InvitePreview | null> {
+  const { data: row } = await db.from('company_invite_codes')
+    .select('company_id, created_by, role, expires_at, revoked_at, max_uses, uses')
+    .eq('code', code)
+    .maybeSingle();
+  const invite = row as {
+    company_id?: string;
+    created_by?: string;
+    role?: string;
+    expires_at?: string | null;
+    revoked_at?: string | null;
+    max_uses?: number | null;
+    uses?: number | null;
+  } | null;
+  if (!invite?.company_id || !invite.created_by || invite.revoked_at) return null;
+  if (invite.expires_at && new Date(invite.expires_at).getTime() < Date.now()) return null;
+  if (invite.max_uses !== null && invite.max_uses !== undefined
+    && Number(invite.uses ?? 0) >= Number(invite.max_uses)) return null;
+
+  const [{ data: company }, { data: inviter }] = await Promise.all([
+    db.from('companies').select('name').eq('id', invite.company_id).maybeSingle(),
+    db.from('profiles').select('full_name').eq('id', invite.created_by).maybeSingle(),
+  ]);
+  const businessName = String((company as { name?: string } | null)?.name ?? '').trim();
+  const inviterName = String((inviter as { full_name?: string } | null)?.full_name ?? '').trim();
+  if (!businessName || !inviterName) return null;
+  return {
+    businessName,
+    inviterName,
+    role: invite.role === 'accountant' ? 'accountant' : 'worker',
+  };
+}
+
 async function handleOnboarding(
   db: Admin, phone: string, text: string | null, isImage: boolean,
 ): Promise<string> {
@@ -6425,6 +6466,7 @@ async function handleOnboarding(
   if (fresh) {
     const open = startOnboarding();
     const inviteCode = findInviteCode(text);
+    const invitePreview = inviteCode ? await readInvitePreview(db, inviteCode) : null;
     await db.from('whatsapp_onboarding').upsert({
       phone_e164: phone,
       step: open.step,
@@ -6432,9 +6474,11 @@ async function handleOnboarding(
       expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
       updated_at: new Date().toISOString(),
     }, { onConflict: 'phone_e164' });
-    return inviteCode
-      ? 'Nimepata namba yako ya mwaliko wa Risip. Umealikwa kujiunga na biashara.\n\n'
-        + 'Chagua lugha / Choose a language:\n1. Kiswahili\n2. English'
+    return invitePreview
+      ? inviteLanguageQuestion(invitePreview.businessName, invitePreview.inviterName, invitePreview.role)
+      : inviteCode
+        ? 'Nimepata namba yako ya mwaliko wa Risip. Umealikwa kujiunga na biashara.\n\n'
+          + 'Chagua lugha / Choose a language:\n1. Kiswahili\n2. English'
       : open.reply;
   }
 
@@ -6512,19 +6556,6 @@ async function handleOnboarding(
     const joined = next.action.kind === 'join_business';
     const name = (result as { company_name?: string } | null)?.company_name ?? '';
     const person = next.action.fullName;
-    let inviterName: string | null = null;
-    if (joined) {
-      const { data: inviteRow } = await db.from('company_invite_codes')
-        .select('created_by')
-        .eq('code', next.action.code)
-        .maybeSingle();
-      const inviterId = (inviteRow as { created_by?: string } | null)?.created_by;
-      if (inviterId) {
-        const { data: inviter } = await db.from('profiles')
-          .select('full_name').eq('id', inviterId).maybeSingle();
-        inviterName = (inviter as { full_name?: string } | null)?.full_name?.trim() || null;
-      }
-    }
     // THREE MESSAGES, NOT ONE WALL.
     //
     // MEASURED: businessWelcome is 899 characters over 30 lines and it landed
@@ -6541,9 +6572,6 @@ async function handleOnboarding(
     if (joined) {
       await sendReplyText(phone, invitedMemberReady(
         person,
-        name,
-        inviterName ?? (lang === 'sw' ? 'mmiliki wa biashara' : 'the business owner'),
-        (result as { role?: string } | null)?.role ?? 'worker',
         lang,
       ));
       return lang === 'sw'

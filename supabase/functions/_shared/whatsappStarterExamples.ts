@@ -137,27 +137,31 @@ export function businessReady(person: string, businessName: string, lang: 'sw' |
 /** The first welcome for somebody who joined through a company invite. */
 export function invitedMemberReady(
   person: string,
-  businessName: string,
-  inviterName: string,
-  role: string,
   lang: 'sw' | 'en',
 ): string {
-  const roleName = role === 'accountant'
-    ? (lang === 'sw' ? 'Mhasibu' : 'Accountant')
-    : (lang === 'sw' ? 'Mfanyakazi' : 'Worker');
   return lang === 'sw'
-    ? `✅ Umealikwa na *${inviterName}* kama *${roleName}* wa biashara *${businessName}*. Karibu, ${person}.\n\n`
-      + 'Utaweza:\n'
+    ? `Sawa ${person}, Utaweza kufanya yafuatayo.\n`
       + '• Kurekodi mauzo na manunuzi\n'
       + '• Kuhesabu bidhaa zilizopo\n'
-      + '• Kutuma picha ya rekodi\n\n'
+      + '• Kusajili bidhaa mpya na kuongeza idadi ya bidhaa zilizoisha stoo\n\n'
       + 'Hutaona faida na ripoti za fedha za biashara.'
-    : `✅ You were invited by *${inviterName}* as the *${roleName}* of *${businessName}*. Welcome, ${person}.\n\n`
-      + 'You can:\n'
+      + '\n\nAnza kwa kutuma:\n'
+      + '_Mfano: nimeuza maji 2, laptop 3_\n\n'
+      + 'Mifano ya vitendo:\n'
+      + '• Kuongeza stoo: _nimeongeza maji 10_\n'
+      + '• Kusajili bidhaa mpya: _sajili maji @800 nauza 1200_\n'
+      + '• Ikiwa bidhaa ina bei mbili: _nimeuza maji 2 rejareja_ au _nimeuza maji 2 jumla_'
+    : `Okay ${person}, you can do the following.\n`
       + '• Record sales and purchases\n'
       + '• Count stock on hand\n'
-      + '• Send a photo of a record\n\n'
-      + 'You will not see the business profit or financial reports.';
+      + '• Register new products and add stock when items run out\n\n'
+      + 'You will not see the business profit or financial reports.\n\n'
+      + 'Start by sending:\n'
+      + '_Example: I sold 2 bottles of water, 3 laptops_\n\n'
+      + 'Examples:\n'
+      + '• Add stock: _I added 10 bottles of water_\n'
+      + '• Register a new product: _register water @800 sell 1200_\n'
+      + '• Two prices: _I sold 2 water retail_ or _I sold 2 water wholesale_';
 }
 
 /**
