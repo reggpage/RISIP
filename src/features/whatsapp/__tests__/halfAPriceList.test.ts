@@ -70,23 +70,26 @@ describe('a registration line that is trying and missing one half', () => {
   });
 });
 
-describe('the webhook answers it instead of the model', () => {
+describe('the webhook sends it to the model first', () => {
   const gate = webhook.slice(
-    webhook.indexOf('// HALF A PRICE LIST IS STILL A PRICE LIST.'),
-    webhook.indexOf('// HALF A PRICE LIST IS STILL A PRICE LIST.') + 1600,
+    webhook.indexOf('const aiEligible = messageGoesToModel'),
+    webhook.indexOf('let messageRoute'),
   );
 
-  it('only looks while a registration is actually pending', () => {
-    expect(gate).toContain('registrationPending && !answeringWithPrices');
+  it('does not inspect a half-price sentence before AI', () => {
+    expect(gate).not.toContain('readIncompletePriceLines');
+    expect(gate).not.toContain('incompletePriceReply');
+    expect(gate).toContain('messageGoesToModel(convo, body, systemCommand)');
   });
 
-  it('replies and ends the turn, so nothing reaches Claude', () => {
-    expect(gate).toContain('incompletePriceReply(incompletePrices, lang)');
-    expect(gate).toContain("await finish('skipped');");
+  it('keeps the fallback parser below the AI attempt', () => {
+    const ai = webhook.indexOf('const aiEligible = messageGoesToModel');
+    const fallback = webhook.indexOf('const newProducts = parseNewProductPricing');
+    expect(fallback).toBeGreaterThan(ai);
   });
 
-  it('records why, so nobody deletes it as noise', () => {
-    expect(gate).toContain('kofia and wrote shuka');
+  it('does not contain the old parser gate', () => {
+    expect(webhook).not.toContain('registrationPending && !answeringWithPrices');
   });
 });
 

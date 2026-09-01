@@ -46,7 +46,7 @@ function money(raw: string | undefined): number | null {
 // "@" is how a trader writes a buying price, and "nauza" is how they say the
 // selling one. The owner's own example: "Kamusi @5000 nauza 10,000". Shorter
 // than the laboured form and far more likely to actually be typed.
-const BUY = /(?:kununua|ninanunua|nanunua|gharama|buying|cost|@)/i;
+const BUY = /(?:kununua|nimenunua|nilinunua|nimechukua|ninanunua|nanunua|gharama|buying|cost|@)/i;
 const RETAIL = /(?:rejareja|reja\s*reja|retail|nauza|ninauza|nauzia|kuuza|kuuzia|selling)/i;
 const WHOLESALE = /(?:jumla|wholesale)/i;
 
@@ -83,12 +83,13 @@ export function parseNewProductLine(text: string | null | undefined): NewProduct
     .replace(new RegExp(`${WHOLESALE.source}\\s*(?:ni|is|:)?\\s*${NUMBER}`, 'gi'), ' ')
     .replace(/(?:kuanzia|from|starting(?:\s+at)?)\s*(?:pcs|vipande)?\s*[0-9]+(?:\.[0-9]+)?/gi, ' ')
     .replace(/\s(?:kwa|per|kila)\s+(?:kilo|kilos|kg|gramu|lita|litre|liter|ml|mita|futi|gunia|debe|ndoo|pakiti|boksi|rimu|dazeni)\s*$/i, ' ')
+    .replace(/\b(?:bei|price)\s+(?:ya|of)\b/gi, ' ')
     .replace(/\b(?:bei|price|ongeza|weka|bidhaa|product|add|nasajili|sajili|register)\b/gi, ' ')
     // A label left standing because a LATER label matched the number first:
     // "Soda @700 nauza rejareja 1000" strips "rejareja 1000" and leaves the
     // shop with a product called "Soda nauza". The welcome now teaches exactly
     // this line, so it has to read cleanly.
-    .replace(/\b(?:nauza|ninauza|nauzia|kuuza|kuuzia|selling|sell|rejareja|reja\s*reja|retail|jumla|wholesale|kununua|nanunua|ninanunua|gharama|buying|cost)\b/gi, ' ')
+    .replace(/\b(?:nauza|ninauza|nauzia|kuuza|kuuzia|selling|sell|rejareja|reja\s*reja|retail|jumla|wholesale|kununua|nimenunua|nilinunua|nimechukua|nanunua|ninanunua|gharama|buying|cost)\b/gi, ' ')
     // Standalone numbers only. A digit welded to letters is part of the name —
     // "karatasi A4 rimu" is a real product, and stripping every digit turned it
     // into "karatasi A rimu", a product that does not exist.
@@ -200,7 +201,7 @@ export function incompletePriceReply(lines: IncompletePriceLine[], lang: Lang): 
  * decides where one line stops being about one thing.
  */
 const SEGMENT_LABEL = new RegExp(
-  `^(?:${BUY.source}|${RETAIL.source}|${WHOLESALE.source}|ni|is|kuanzia|from|starting|at|pcs|vipande)$`,
+  `^(?:${BUY.source}|${RETAIL.source}|${WHOLESALE.source}|bei|price|ya|ni|is|kuanzia|from|starting|at|pcs|vipande)$`,
   'i',
 );
 

@@ -22,10 +22,10 @@ import { parseNewProductPricing } from '../../../../supabase/functions/_shared/w
 // was registered; two buying costs were.
 //
 // parseNewProductPricing reads that message perfectly — both products, all
-// three prices each, verified below. But it lives eight hundred lines below the
-// model gate, and 'product_cost' is a bounded state whose only bypass is a
-// yes/no. So the message went to the model, which read it as propose_product_cost
-// and called it twice.
+// three prices each, verified below. It is a deterministic outage fallback,
+// never the normal route. The live path must send this sentence to the model,
+// together with the parked registration context, so Claude can choose the
+// correct proposal tool and preserve the whole message.
 //
 // THE RULE: an answer in the exact syntax Risip printed a moment earlier is not
 // language. It is a form we handed them. Reinterpreting our own form is not
@@ -54,32 +54,27 @@ describe('the message he actually sent', () => {
   });
 });
 
-describe('the gate that was letting it through', () => {
+describe('the gate sends the form to the model', () => {
   const gate = webhook.slice(
-    webhook.indexOf('// A FORM WE HANDED THEM IS NOT LANGUAGE.'),
-    webhook.indexOf('// A FORM WE HANDED THEM IS NOT LANGUAGE.') + 3600,
+    webhook.indexOf('const aiEligible = messageGoesToModel'),
+    webhook.indexOf('let messageRoute'),
   );
 
-  it('keeps the model out when a registration was asked for and answered', () => {
-    expect(gate).toContain('const answeringWithPrices = registrationPending');
-    expect(gate).toContain('parseNewProductPricing(writeBody).length > 0');
+  it('has one AI-first eligibility decision', () => {
+    expect(gate).toContain('const aiEligible = messageGoesToModel(convo, body, systemCommand)');
+    expect(gate).not.toContain('parseNewProductPricing');
+    expect(gate).not.toContain('readIncompletePriceLines');
   });
 
-  it('covers all three states that ask for prices', () => {
-    // The offer, the sale-blocked variant, and the confirmation step. Missing
-    // one is one route back to the model.
-    expect(gate).toContain('newProductOfferSetup || newProductSaleSetup || newProductPending');
+  it('does not let a parked registration state intercept a sentence', () => {
+    expect(gate).not.toContain('registrationPending');
+    expect(gate).not.toContain('answeringWithPrices');
   });
 
-  it('subtracts from the model gate rather than replacing it', () => {
-    // Everything else about eligibility still applies; this only removes the
-    // one case that was never language.
-    expect(gate).toContain('messageGoesToModel(convo, body, systemCommand) && !answeringWithPrices');
-  });
-
-  it('records what it cost, so nobody widens the gate back', () => {
-    expect(gate).toContain('He approved one thing and a different thing was written.');
-    expect(gate).toContain('Reinterpreting our own form is not');
+  it('keeps the deterministic parser available only below the AI attempt', () => {
+    const ai = webhook.indexOf('const aiEligible = messageGoesToModel');
+    const fallback = webhook.indexOf('const newProducts = parseNewProductPricing');
+    expect(fallback).toBeGreaterThan(ai);
   });
 });
 

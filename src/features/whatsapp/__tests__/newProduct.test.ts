@@ -173,6 +173,16 @@ describe('the way the owner asked for it to be written', () => {
       .toMatchObject({ product: 'Sukari', unit: 'kilo', unitCost: 2500, retail: 3500 });
   });
 
+  it('keeps the Swahili purchase verb out of the product name', () => {
+    expect(parseNewProductPricing(
+      'vest nimenunua 2000 nauza 8000 bei ya jumla ni 6000\n'
+      + 'belt nimenunua 3000 nauza 7000 bei ya jumla ni 5800',
+    )).toMatchObject([
+      { product: 'vest', unitCost: 2000, retail: 8000, wholesale: 6000 },
+      { product: 'belt', unitCost: 3000, retail: 7000, wholesale: 5800 },
+    ]);
+  });
+
   it('reads a whole opening list in one message', () => {
     const priced = parseNewProductPricing(
       'Kamusi @5000 nauza 10000\nDaftari @1200 nauza 1500\nSukari @2500 nauza 3500 kwa kilo');

@@ -173,9 +173,7 @@ import {
   newProductSaleOffer,
   newProductSaleWorkerBlocked,
   newProductSaved,
-  incompletePriceReply,
   parseNewProductPricing,
-  readIncompletePriceLines,
   type NewProductPricing,
 } from '../_shared/whatsappNewProduct.ts';
 import {
@@ -9511,52 +9509,12 @@ Deno.serve(async (req) => {
         // narrow: a shop asked "Rejareja au jumla?" that instead types "leo
         // nimeuza shingapi" has changed the subject, and changing the subject
         // goes to Claude like any other sentence.
-        // A FORM WE HANDED THEM IS NOT LANGUAGE.
-        //
-        // MEASURED, on the owner's screen, and it wrote the wrong product to
-        // his books. Risip asked him to register two products in an exact
-        // shape, he sent it exactly:
-        //
-        //   kofia @4000 nauza 7000 jumla 6500
-        //   shuka @9000 nauza 15000 jumla ni 10000
-        //
-        // parseNewProductPricing reads both perfectly — verified — but that
-        // parser lives eight hundred lines below this gate, and 'product_cost'
-        // is a bounded state whose only bypass is yes/no. So the message went
-        // to the model, which read it as propose_product_cost and called it
-        // TWICE. The confirmation on screen named kofia; the row that saved was
-        // shuka. He approved one thing and a different thing was written.
-        //
-        // The model is right for language and this is not language: it is the
-        // answer to a form Risip printed a moment earlier, in the syntax Risip
-        // dictated. Reinterpreting our own form is not intelligence.
-        const registrationPending = Boolean(
-          newProductOfferSetup || newProductSaleSetup || newProductPending,
-        );
-        const answeringWithPrices = registrationPending
-          && parseNewProductPricing(writeBody).length > 0;
-
-        // HALF A PRICE LIST IS STILL A PRICE LIST.
-        //
-        // "kofia @4000" is somebody registering a product who has not typed the
-        // second number yet. parseNewProductLine needs both and returns null
-        // without either, so before this the line read as nothing, fell past
-        // every deterministic branch, and landed on the model — the same route
-        // that once showed a confirmation for kofia and wrote shuka.
-        //
-        // The owner asked for it: "bidhaa mpya ikiingia bila bei za kununua na
-        // kuuza ai inotice mapema na kumsaidia mtu."
-        const incompletePrices = registrationPending && !answeringWithPrices
-          ? readIncompletePriceLines(writeBody)
-          : [];
-        if (incompletePrices.length > 0) {
-          await reply(phone, incompletePriceReply(incompletePrices, lang));
-          await audit(db, identity, waMessageId, 'new_product', 'prices_half_given', 'clarification');
-          await finish('skipped');
-          continue;
-        }
-
-        const aiEligible = messageGoesToModel(convo, body, systemCommand) && !answeringWithPrices;
+        // Ordinary words and sentences always reach the model, even when a
+        // registration or clarification is parked. A pending state is context
+        // for Claude; it is not permission for a business parser to intercept
+        // the next message. Only system commands and exact protocol answers
+        // are excluded by messageGoesToModel().
+        const aiEligible = messageGoesToModel(convo, body, systemCommand);
         // Watched in production: ai_primary is what an ordinary business
         // message must be. If parsers ever start eating them again, this is
         // where it shows first.

@@ -120,9 +120,11 @@ describe('an answer to a question Risip asked stays deterministic', () => {
   });
 
   it('owns the destructive confirmations outright', () => {
-    // A wrong reading here deletes an account or ends a session.
+    // Only exact control answers are protocol. An arbitrary sentence must
+    // remain language, even while a destructive confirmation is parked.
     for (const awaiting of ['logout_confirm', 'account_delete_confirm']) {
-      expect(answersPendingQuestion({ awaiting, options: {} }, 'chochote'), awaiting).toBe(true);
+      expect(answersPendingQuestion({ awaiting, options: {} }, 'chochote'), awaiting).toBe(false);
+      expect(answersPendingQuestion({ awaiting, options: {} }, 'ndiyo'), awaiting).toBe(true);
     }
   });
 });

@@ -64,11 +64,6 @@ const BOUNDED_QUESTION_STATES = new Set([
   'project',
 ]);
 
-/** Destructive or identity-changing states. Their answer is never a sentence. */
-const PROTOCOL_ONLY_STATES = new Set([
-  'logout_confirm', 'account_delete_confirm', 'language', 'business', 'project',
-]);
-
 export type PendingConversation = {
   awaiting?: string | null;
   options?: unknown;
@@ -89,14 +84,10 @@ export function answersPendingQuestion(convo: PendingConversation, said: string 
   if (!awaiting || !text) return false;
   if (!BOUNDED_QUESTION_STATES.has(awaiting)) return false;
 
-  // Onboarding, language, business switching and the two destructive
-  // confirmations own their whole turn. Their answers are names and codes, not
-  // business language, and a wrong reading changes an identity or deletes data.
-  if (PROTOCOL_ONLY_STATES.has(awaiting)) return true;
-
-  // A drafted record is waiting for a yes or a no, and semantic drift on the
-  // one step that writes to a ledger is not worth the intelligence it would
-  // buy. This is the ONLY conversational bypass left.
+  // This is the ONLY conversational bypass left: exact control answers to a
+  // confirmation. A name, explanation, correction, amount, price, payment
+  // method or any other sentence is language and must reach the model—even
+  // when onboarding or a protected confirmation is parked.
   //
   // What used to be here as well:
   //
