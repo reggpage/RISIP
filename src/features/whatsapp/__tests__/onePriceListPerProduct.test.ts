@@ -55,8 +55,8 @@ describe('the tool can finally say what he said', () => {
   });
 
   it('tells it not to drop the buying price in the same sentence', () => {
-    expect(tool?.description).toMatch(/call propose_product_cost as well/i);
-    expect(tool?.description).toMatch(/that number is lost/i);
+    expect(tool?.description).toMatch(/put 5000 in cost and 8000 in retail_price/i);
+    expect(tool?.description).toMatch(/Do not call a second write tool/i);
   });
 });
 
@@ -118,7 +118,7 @@ describe('a product that arrives twice is collapsed, not listed twice', () => {
   it('is what the AI price path actually calls', () => {
     // Behaviour above proves the rule; this proves the rule is wired in. A
     // deliberately reverted webhook slipped past the suite without it.
-    expect(webhook).toContain('addPriceTier(prices, resolved, one.price, one.wholesale);');
+    expect(webhook).toContain('addPriceTier(prices, resolved, one.price, one.wholesale, one.minQty);');
     expect(webhook).not.toContain('prices.push({ product: resolved, retail: one.price');
   });
 

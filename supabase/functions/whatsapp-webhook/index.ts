@@ -433,12 +433,16 @@ import {
 } from '../_shared/whatsappStock.ts';
 import {
   type ProductCostBatch,
+  type ProductCost,
   costBatchCancelled,
   costBatchConfirmation,
   costBatchFailed,
   costBatchSaved,
   parseProductCostBatch,
 } from '../_shared/whatsappCostBatch.ts';
+import {
+  validatePriceUpdateCandidate,
+} from '../_shared/whatsappPriceUpdateContract.ts';
 import {
   type CostPrompt,
   costAccepted,
@@ -681,6 +685,19 @@ type PriceBandPending = {
   credit?: { party: string } | null;
   paymentMethod?: QuantityWanted['paymentMethod'];
   occurredAt?: string | null;
+};
+
+/**
+ * One confirmation for a message that states both acquisition cost and selling
+ * prices.  The old implementation parked these in the same database slot as
+ * two unrelated drafts; whichever tool finished last won, which is how a
+ * reply of `1` could save cost=5000 instead of the selling prices 8000/7500.
+ */
+type PriceAndCostPending = {
+  kind: 'price_and_cost_pending';
+  prices: SellingPrice[];
+  costs: ProductCost[];
+  unreadable: string[];
 };
 
 type NewProductPricingState = {
@@ -4782,13 +4799,40 @@ async function runAssistantTool(
       .order('effective_from', { ascending: false })
       .limit(1)
       .maybeSingle();
+    // A mixed price message can still arrive from an older model that calls
+    // this tool after propose_price_update. Merge into the same draft instead
+    // of letting the last tool overwrite the other half.
+    const { data: activeConversation } = await db.from('whatsapp_conversations')
+      .select('options')
+      .eq('identity_id', identity.id)
+      .maybeSingle();
+    const active = (activeConversation?.options ?? null) as Record<string, unknown> | null;
+    const activeKind = String(active?.kind ?? '');
+    const mergedPending: PriceAndCostPending | null = activeKind === 'selling_price_batch'
+      ? {
+        kind: 'price_and_cost_pending',
+        prices: Array.isArray(active?.prices) ? active.prices as SellingPrice[] : [],
+        costs: [cost],
+        unreadable: Array.isArray(active?.unreadable) ? active.unreadable as string[] : [],
+      }
+      : activeKind === 'price_and_cost_pending'
+        ? {
+          kind: 'price_and_cost_pending',
+          prices: Array.isArray(active?.prices) ? active.prices as SellingPrice[] : [],
+          costs: [
+            ...(Array.isArray(active?.costs) ? active.costs as ProductCost[] : []),
+            cost,
+          ],
+          unreadable: Array.isArray(active?.unreadable) ? active.unreadable as string[] : [],
+        }
+        : null;
     await db.from('whatsapp_conversations').upsert({
       identity_id: identity.id,
       company_id: identity.company_id,
       profile_id: identity.profile_id,
       awaiting: 'product_cost',
       receipt_id: null,
-      options: cost,
+      options: mergedPending ?? cost,
       expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
       updated_at: new Date().toISOString(),
     }, { onConflict: 'identity_id' });
@@ -4893,23 +4937,55 @@ async function runAssistantTool(
     }
 
     const unreadable: string[] = [];
-    const wanted: Array<{ asked: string; price: number }> = [];
+    const wanted: Array<{
+      asked: string;
+      price: number;
+      wholesale: number | null;
+      minQty: number | null;
+      cost: ProductCost | null;
+    }> = [];
     for (const entry of raw) {
       const line = (entry ?? {}) as Record<string, unknown>;
-      const asked = String(line.product_wording ?? '').trim().slice(0, 80);
+      const asked = String(line.product ?? line.product_wording ?? '').trim().slice(0, 80);
       // Bounded the same way a selling price is bounded everywhere else: a
       // price of zero is not a price, and eight figures is a typo.
-      const reading = readNumber(line.price_wording, line.price_candidate, { min: 0, max: 100_000_000 });
-      if (!asked || reading.kind !== 'value') {
+      const retailWording = typeof line.retail_wording === 'string' && line.retail_wording.trim()
+        ? line.retail_wording : line.price_wording;
+      const retailCandidate = line.retail_price ?? line.price_candidate;
+      const reading = readNumber(retailWording, retailCandidate, { min: 0, max: 100_000_000 });
+      const canonical = validatePriceUpdateCandidate({
+        product: asked,
+        cost: line.cost,
+        retail_price: reading.kind === 'value' ? reading.value : null,
+        wholesale_price: line.wholesale_price ?? line.wholesale_candidate,
+        wholesale_min_qty: line.wholesale_min_qty,
+      });
+      if (!asked || reading.kind !== 'value' || canonical.kind !== 'ok') {
         unreadable.push(asked || String(line.price_wording ?? '').slice(0, 40));
         continue;
       }
-      const trade = readNumber(line.wholesale_wording, line.wholesale_candidate,
+      const trade = readNumber(line.wholesale_wording, canonical.value.wholesale_price,
         { min: 0, max: 100_000_000 });
+      if (line.wholesale_price !== null && line.wholesale_price !== undefined && trade.kind !== 'value') {
+        unreadable.push(asked);
+        continue;
+      }
+      const costWording = typeof line.cost_wording === 'string' ? line.cost_wording : null;
+      let cost: ProductCost | null = null;
+      if (costWording || line.cost !== null && line.cost !== undefined) {
+        const costRead = readNumber(costWording, line.cost, { min: 0, max: 1_000_000_000 });
+        if (costRead.kind !== 'value') {
+          unreadable.push(asked);
+          continue;
+        }
+        cost = { product: asked, unitCost: costRead.value, unit: null };
+      }
       wanted.push({
         asked,
         price: reading.value,
-        wholesale: trade.kind === 'value' ? trade.value : null,
+        wholesale: trade.kind === 'value' ? trade.value : canonical.value.wholesale_price,
+        minQty: canonical.value.wholesale_min_qty,
+        cost,
       });
     }
 
@@ -4933,7 +5009,8 @@ async function runAssistantTool(
       }
       // One product is one line. See addPriceTier — this is where the owner
       // was shown shuka twice, once for each of its two prices.
-      addPriceTier(prices, resolved, one.price, one.wholesale);
+      addPriceTier(prices, resolved, one.price, one.wholesale, one.minQty);
+      if (one.cost) one.cost.product = resolved;
     }
 
     if (prices.length === 0) {
@@ -4942,18 +5019,45 @@ async function runAssistantTool(
       return { content: ask, terminalReply: ask };
     }
 
+    const costs = wanted
+      .map((one) => one.cost)
+      .filter((one): one is ProductCost => Boolean(one))
+      .map((one) => ({ ...one }));
     const batch: SellingPriceBatch = { kind: 'selling_price_batch', prices, unreadable };
+    const { data: activeConversation } = await db.from('whatsapp_conversations')
+      .select('options')
+      .eq('identity_id', identity.id)
+      .maybeSingle();
+    const active = (activeConversation?.options ?? null) as Record<string, unknown> | null;
+    const activeKind = String(active?.kind ?? '');
+    const existingCosts = activeKind === 'product_cost_batch'
+      ? (Array.isArray(active?.costs) ? active.costs as ProductCost[] : [])
+      : activeKind === 'price_and_cost_pending'
+        ? (Array.isArray(active?.costs) ? active.costs as ProductCost[] : [])
+        : active && typeof active.product === 'string' && active.unitCost !== undefined
+          ? [active as unknown as ProductCost]
+          : [];
+    const combinedCosts = [...existingCosts, ...costs];
+    const pending: SellingPriceBatch | PriceAndCostPending = combinedCosts.length > 0
+      ? { kind: 'price_and_cost_pending', prices, costs: combinedCosts, unreadable, }
+      : batch;
     await db.from('whatsapp_conversations').upsert({
       identity_id: identity.id,
       company_id: identity.company_id,
       profile_id: identity.profile_id,
       awaiting: 'product_cost',
       receipt_id: null,
-      options: batch,
+      options: pending,
       expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
       updated_at: new Date().toISOString(),
     }, { onConflict: 'identity_id' });
-    const question = sellingPriceBatchConfirmation(batch, lang);
+    const priceQuestion = sellingPriceBatchConfirmation(batch, lang);
+    const costSummary = combinedCosts.length === 0 ? ''
+      : (lang === 'sw' ? '\n\nBei za kununua zilizotajwa pia zitawekwa:\n' : '\n\nThe stated buying costs will also be saved:\n')
+        + combinedCosts.map((cost) => `• ${cost.product} — TSh ${Math.round(cost.unitCost).toLocaleString('en-US')}`).join('\n');
+    const question = costSummary
+      ? priceQuestion.replace(/\n\nNihifadhi zote\?/u, `${costSummary}\n\nNihifadhi zote?`)
+      : priceQuestion;
     return { content: question, terminalReply: question };
   }
   if (name === 'propose_record_void') {
@@ -6736,6 +6840,10 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<SellingPriceBatch> | null)?.kind === 'selling_price_batch'
           ? convo.options as SellingPriceBatch
           : null;
+        const priceAndCostPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<PriceAndCostPending> | null)?.kind === 'price_and_cost_pending'
+          ? convo.options as PriceAndCostPending
+          : null;
         const queuePending = convo?.awaiting === 'product_cost'
           && (convo.options as Partial<RecordQueuePending> | null)?.kind === 'record_queue'
           ? convo.options as RecordQueuePending
@@ -6915,7 +7023,7 @@ Deno.serve(async (req) => {
           await replyQuietly(phone, prefix + priceBandQuestion(choices, lang));
         };
         const costConversation = convo?.awaiting === 'product_cost' && convo.options
-          && !costPrompt && !costBatchPending && !stockBatchPending && !sellingBatchPending
+          && !costPrompt && !costBatchPending && !stockBatchPending && !sellingBatchPending && !priceAndCostPending
           && !newProductPending && !newProductSaleSetup && !portionSizePending && !portionConfirmPending
           && !quantityMeaningPending && !portionQuantityPending && !productRenamePending
           && !addProductSetupPending && !bandPending && !comboPending && !comboSavePending
@@ -8671,6 +8779,75 @@ Deno.serve(async (req) => {
           } else {
             await replyQuietly(phone, newProductConfirmation(pendingProducts, lang));
             await audit(db, identity, waMessageId, 'new_product', 'reask', 'skipped');
+          }
+          await finish('skipped');
+          continue;
+        }
+
+        if (priceAndCostPending && releasesParkedQuestion(body)) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'price_and_cost_pending', 'abandoned', 'skipped');
+        } else if (priceAndCostPending) {
+          if (isDailyRecordConfirmation(body)) {
+            // The model's mixed message is one business decision. Re-read and
+            // validate both lists at the write boundary, then use the existing
+            // audited RPCs; neither side is ever inferred from the other.
+            const { data: savedCosts, error: costError } = await db.rpc('wa_set_product_costs', {
+              p_phone: phone,
+              p_items: priceAndCostPending.costs.map((cost) => ({
+                product: cost.product, unit_cost: cost.unitCost, unit: cost.unit,
+              })),
+            });
+            if (costError) {
+              // Selling prices are already committed by the existing RPC. Keep
+              // the response explicit so the owner knows which half needs
+              // retrying; never claim the complete mixed draft was saved.
+              await replyQuietly(phone, productCostErrorMessage(costError, lang));
+              await audit(db, identity, waMessageId, 'price_and_cost_pending', 'failed_costs', 'failed');
+              await finish('failed');
+              continue;
+            }
+            const { error: priceError } = await db.rpc('wa_set_selling_prices', {
+              p_phone: phone,
+              p_items: priceAndCostPending.prices.map((price) => ({
+                product: price.product,
+                retail: price.retail,
+                wholesale: price.wholesale,
+                min_qty: price.minQty,
+              })),
+            });
+            if (priceError) {
+              // The costs have already been committed. Remove only that half
+              // from the retry draft so pressing 1 again cannot duplicate the
+              // successful cost write; the prices remain pending.
+              await db.from('whatsapp_conversations').update({
+                options: { ...priceAndCostPending, costs: [] },
+                updated_at: new Date().toISOString(),
+              }).eq('identity_id', identity.id);
+              await replyQuietly(phone, productCostErrorMessage(priceError, lang));
+              await audit(db, identity, waMessageId, 'price_and_cost_pending', 'failed_prices', 'failed');
+              await finish('failed');
+              continue;
+            }
+            await clearConversation(db, identity.id as string);
+            const saved = (savedCosts ?? null) as { saved?: number; company_name?: string } | null;
+            await replyQuietly(phone, lang === 'sw'
+              ? `✅ Nimehifadhi bei za kuuza ${priceAndCostPending.prices.length} na bei za kununua ${saved?.saved ?? priceAndCostPending.costs.length}.`
+              : `✅ Saved ${priceAndCostPending.prices.length} selling prices and ${saved?.saved ?? priceAndCostPending.costs.length} buying costs.`);
+            await audit(db, identity, waMessageId, 'price_and_cost_pending', 'applied',
+              `${priceAndCostPending.prices.length}+${priceAndCostPending.costs.length}`);
+          } else if (isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, sellingPriceBatchCancelled(lang));
+            await audit(db, identity, waMessageId, 'price_and_cost_pending', 'cancel', 'applied');
+          } else {
+            const batch: SellingPriceBatch = {
+              kind: 'selling_price_batch',
+              prices: priceAndCostPending.prices,
+              unreadable: priceAndCostPending.unreadable,
+            };
+            await replyQuietly(phone, sellingPriceBatchConfirmation(batch, lang));
+            await audit(db, identity, waMessageId, 'price_and_cost_pending', 'reask', 'skipped');
           }
           await finish('skipped');
           continue;

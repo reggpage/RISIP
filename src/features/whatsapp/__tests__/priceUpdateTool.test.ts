@@ -78,7 +78,9 @@ describe('the tool, and the authority it does not have', () => {
         // This shop trades at two prices. Until the tool carried the second
         // one, the model's only way to say "uza kwa 8000 jumla ni 7500" was
         // two lines — and the owner was shown shuka twice.
-        'wholesale_wording', 'wholesale_candidate']);
+        'wholesale_wording', 'wholesale_candidate',
+        'product', 'cost_wording', 'cost', 'retail_wording', 'retail_price',
+        'wholesale_price', 'wholesale_min_qty_wording', 'wholesale_min_qty']);
     // The words are compulsory; the candidate may be null. A price cannot
     // arrive without the sentence it came from.
     const required = (schema.properties.lines.items as unknown as { required: string[] }).required;
@@ -86,8 +88,8 @@ describe('the tool, and the authority it does not have', () => {
   });
 
   it('says which of the three price questions it answers', () => {
-    expect(tool?.description).toMatch(/price the shop CHARGES/);
-    expect(tool?.description).toMatch(/buying cost is propose_product_cost/);
+    expect(tool?.description).toMatch(/ordinary price the shop charges/i);
+    expect(tool?.description).toMatch(/cost means what the shop paid/i);
     expect(tool?.description).toMatch(/a till roll headed "Mauzo" is never a price list/i);
   });
 

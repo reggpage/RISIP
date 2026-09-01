@@ -263,6 +263,7 @@ export function addPriceTier(
   product: string,
   retail: number,
   wholesale: number | null,
+  minQty: number | null = null,
 ): void {
   const key = product.toLocaleLowerCase('sw-TZ');
   const at = prices.findIndex((seen) => seen.product.toLocaleLowerCase('sw-TZ') === key);
@@ -274,7 +275,7 @@ export function addPriceTier(
     product: seen?.product ?? product,
     retail: Math.max(...both),
     wholesale: both.length > 1 ? Math.min(...both) : null,
-    minQty: seen?.minQty ?? null,
+    minQty: minQty ?? seen?.minQty ?? null,
   };
   if (at >= 0) prices[at] = entry; else prices.push(entry);
 }

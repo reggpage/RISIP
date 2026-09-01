@@ -828,10 +828,10 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
     'propose_price_update',
     'The trader is SETTING SELLING PRICES, for one product or for many in one message. '
       + 'Any phrasing: "bei ya birika iwe 5000", "weka bei birika 5000 sodaa 2000 daftari 1500", "panga bei mpya: birika elfu tano na sodaa elfu mbili", a pasted list under a "bei" heading. '
-      + 'Split it into one line per product. price_wording is the amount EXACTLY as the trader wrote it — "5000", "elfu tano" — never your own figure; price_candidate is your reading of those same words and the server checks the two against each other. '
-      + 'Many shops trade at TWO prices. When one product is given both — "uza kwa 8000 jumla ni 7500", "rejareja 1000 jumla 900" — put the retail one in price_wording and the trade one in wholesale_wording, on ONE line. Never two lines for the same product. '
-      + 'This is the price the shop CHARGES. A buying cost is propose_product_cost, and a sale is propose_business_event — a till roll headed "Mauzo" is never a price list. '
-      + 'If the same sentence ALSO says what he paid — "nimenunua kwa 5000 na uza kwa 8000" — call propose_product_cost as well, in the same turn, or that number is lost. '
+      + 'Split it into one line per product and ALWAYS use the canonical fields product, cost, retail_price, wholesale_price and wholesale_min_qty. The wording fields are the trader\'s exact words; the numeric fields are only your reading of those words and the server checks them. Never copy one field into another. '
+      + 'Many shops trade at TWO prices. When one product is given both — "uza kwa 8000 jumla ni 7500", "rejareja 1000 jumla 900" — put 8000 in retail_price and 7500 in wholesale_price on ONE line. Never two lines for the same product. '
+      + 'If the same sentence ALSO says what he paid — "nimenunua kwa 5000 na uza kwa 8000" — put 5000 in cost and 8000 in retail_price on the SAME line. Do not call a second write tool for that message; one confirmation must cover the complete draft. '
+      + 'cost means what the shop paid to acquire the product; retail_price means the ordinary price the shop charges; wholesale_price means jumla/trade price; wholesale_min_qty is the stated threshold or null. A missing field is null, never a guess. A sale is propose_business_event — a till roll headed "Mauzo" is never a price list. '
       + 'Nothing is saved by this call: the server resolves every product against the catalogue, re-reads every number, and waits for NDIYO.',
     {
       lines: {
@@ -845,8 +845,23 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
             price_candidate: { type: ['number', 'null'], description: 'Your reading of those words, or null. The server verifies it against them.' },
             wholesale_wording: { type: ['string', 'null'], description: 'The wholesale/jumla price exactly as said, or null when only one price was given.' },
             wholesale_candidate: { type: ['number', 'null'], description: 'Your reading of the wholesale words, or null.' },
+            // Canonical fields. The legacy wording/candidate fields above are
+            // retained for one deployment cycle so an older model response can
+            // still be validated and migrated into this contract.
+            product: { type: ['string', 'null'], description: 'Canonical product wording; same product as product_wording.' },
+            cost_wording: { type: ['string', 'null'], description: 'Exact words for what the shop paid, e.g. "nimenunua kwa 5000", or null.' },
+            cost: { type: ['number', 'null'], description: 'Buying cost read from cost_wording, or null. Never copy retail_price.' },
+            retail_wording: { type: ['string', 'null'], description: 'Exact ordinary/retail selling-price words, or null.' },
+            retail_price: { type: ['number', 'null'], description: 'Ordinary selling price read from retail_wording, or null.' },
+            wholesale_price: { type: ['number', 'null'], description: 'Jumla/trade price read from wholesale_wording, or null.' },
+            wholesale_min_qty_wording: { type: ['string', 'null'], description: 'Exact words for a wholesale quantity threshold, or null.' },
+            wholesale_min_qty: { type: ['number', 'null'], description: 'Wholesale threshold read from wholesale_min_qty_wording, or null.' },
           },
-          required: ['product_wording', 'price_wording', 'price_candidate', 'wholesale_wording', 'wholesale_candidate'],
+          required: [
+            'product_wording', 'price_wording', 'price_candidate', 'wholesale_wording', 'wholesale_candidate',
+            'product', 'cost_wording', 'cost', 'retail_wording', 'retail_price',
+            'wholesale_price', 'wholesale_min_qty_wording', 'wholesale_min_qty',
+          ],
           additionalProperties: false,
         },
       },
@@ -1162,16 +1177,15 @@ WRITES AND HUMAN CONTROL
 - Anything whose subject IS a sum of money the user said out loud goes to propose_money_event: an expense, a customer clearing a debt, a payment to a supplier, or a sale stated as a lump sum with no product named. Both create a pending draft only; neither confirms or posts it. propose_product_cost prepares a buying-cost confirmation and does not save it immediately.
 - Never claim a record is saved or confirmed until the server says so. Explicit NDIYO/YES is required and role policy is enforced server-side.
 - Never approve, pay, reverse, correct, void, delete, invite, change settings, or move money over plain WhatsApp text. Explain that the user must open Risip for those protected actions.
-- A SELLING PRICE IS NOT A PROTECTED SETTING, and neither is a buying cost or a stock count. The server reads all three straight from a WhatsApp message and asks the owner to confirm before saving. Never tell somebody to open the app for these — tell them the words to send:
-    price:  "bei ya Velvet napkin rejareja 4000"     (add "jumla 3500 kuanzia 10" for a trade price)
-    two at once: "bei ya velvet napkin iwe 4000 na sodaa iwe 2000"
-    cost:   "Velvet napkin nimenunua kwa 500 kila moja"
-    count:  "nina Velvet napkin 20"
-  Saying "I can't change prices from here" when the owner has just been told to raise a price is the assistant refusing the one action its own advice asked for.
+- A SELLING PRICE, buying cost and stock count can be set from WhatsApp; server confirms. Examples: price "bei ya Velvet napkin rejareja 4000", cost "Velvet napkin nimenunua kwa 500 kila moja", count "nina Velvet napkin 20".
 - Sending a link is not a protected action. When a tool result contains a Risip link, pass it on — it opens the ordinary signed-in page and only works for someone already entitled to see it. Never say you cannot send a link when the tool gave you one.
 - WHEN A DETAIL IS MISSING, STILL CALL THE TOOL. This is the rule that matters most, and it is the opposite of what feels polite. If the message describes a business event but leaves out the quantity, the unit, the party or the amount, call the proposing tool anyway with what was said and name the gaps in missing_fields. The server knows this shop's catalogue, its units, its customers and its balances; you do not. It decides what is genuinely missing and asks. A question you write yourself instead of calling the tool is a question asked without any of that knowledge — it asks which meat when the shop sells one, and it asks for a price the ledger already holds.
 - MEASURED: of the intent failures left after the tool contract was widened, sixteen were this exact mistake. The model had understood perfectly — one reply even began "Hiyo ni owner_use" — and then asked its own question instead of proposing the event. Understanding it and not calling the tool is the same outcome for the shop as not understanding it at all.
 - Never guess a value to fill a gap. Naming a gap in missing_fields is not guessing; inventing a quantity is.
+
+PRICE FIELD CONTRACT: cost=buying cost; retail_price=ordinary/rejareja; wholesale_price=jumla/trade; wholesale_min_qty=explicit threshold only.
+- Mixed example: "shuka nimenunua kwa 5000 na uza kwa 8000 jumla ni 7500" -> call propose_price_update once with product=shuka, cost=5000, retail_price=8000, wholesale_price=7500; do not call propose_product_cost as a second write.
+- Never copy a number between fields or split one product into two lines; unclear roles stay null for server clarification.
 
 ${BUSINESS_RULES}
 
@@ -1757,7 +1771,14 @@ ${userText}` },
       };
     }
 
-    const results = await Promise.all(calls.map(async (call) => {
+    // Writes are deliberately executed in call order. Two write tools can be
+    // returned for one mixed sentence (especially while an older model is
+    // still in circulation), and both may target the same WhatsApp pending
+    // row. Parallel execution made the last writer win nondeterministically.
+    // The small latency tradeoff is intentional: state ordering is part of the
+    // safety contract for this conversation turn.
+    const results: Array<{ call: Extract<ReturnType<typeof toolCalls>[number], { id: string }>; result: AssistantToolExecution }> = [];
+    for (const call of calls) {
       const known = ASSISTANT_TOOL_NAMES.includes(call.name as typeof ASSISTANT_TOOL_NAMES[number]);
       let result: AssistantToolExecution;
       try {
@@ -1774,8 +1795,8 @@ ${userText}` },
       }
       executed.push({ name: call.name, input: call.input });
       evidence.push(result.content);
-      return { call, result };
-    }));
+      results.push({ call, result });
+    }
 
     const terminal = results.find(({ result }) => Boolean(result.terminalReply))?.result.terminalReply;
     if (terminal) {
