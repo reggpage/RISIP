@@ -3716,7 +3716,10 @@ function normalizedNewProductUnit(value: string | null): string | null {
   if (['kg', 'kilo', 'kilos', 'kilogram', 'kilograms'].includes(unit)) return 'kilo';
   if (['lita', 'litre', 'liter', 'litres', 'liters'].includes(unit)) return 'lita';
   if (['ml', 'mililita', 'millilitre', 'milliliter'].includes(unit)) return 'ml';
-  if (['pcs', 'piece', 'pieces', 'kipande', 'vipande', 'idadi'].includes(unit)) return null;
+  // Keep an explicitly stated count distinct from an omitted unit. This is
+  // important for names such as "mafuta": oil/lotion/cream is not necessarily
+  // liquid, so "mafuta vipande 3" must not be treated as an unanswered measure.
+  if (['pcs', 'piece', 'pieces', 'kipande', 'vipande', 'idadi'].includes(unit)) return 'kipande';
   return unit;
 }
 
@@ -3746,8 +3749,9 @@ function resolveNewProductStock(
 
   const stock: NewProductStock[] = [];
   for (const [index, product] of products.entries()) {
-    const selected = units.has(index) ? units.get(index)! : product.unit ?? null;
-    if (product.unit && selected && normalizedNewProductUnit(product.unit) !== selected) {
+    const configured = normalizedNewProductUnit(product.unit) ?? product.unit ?? null;
+    const selected = units.has(index) ? units.get(index)! : configured;
+    if (product.unit && selected && configured !== selected) {
       return {
         kind: 'invalid',
         message: `*${product.product}* imewekwa kwa ${product.unit}. Taja quantity kwa ${product.unit}, si ${selected}.`,
@@ -3759,7 +3763,10 @@ function resolveNewProductStock(
         message: `Kwa *${product.product}* sijui bado kipimo. Taja kama ni *kilo*, *lita*, *ml* au *vipande*, pamoja na quantity, kwa mfano: _${product.product} lita 5_.`,
       };
     }
-    stock.push({ product: product.product, quantity: quantities.get(index)!, unit: selected });
+    // The stock RPC uses null for the ordinary countable base unit. The
+    // internal "kipande" marker only exists long enough to distinguish an
+    // explicit count from an omitted unit during validation.
+    stock.push({ product: product.product, quantity: quantities.get(index)!, unit: selected === 'kipande' ? null : selected });
   }
   return { kind: 'ready', stock };
 }
