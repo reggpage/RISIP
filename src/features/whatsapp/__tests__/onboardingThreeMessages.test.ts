@@ -63,6 +63,9 @@ describe('invited employee welcome', () => {
     expect(said).not.toMatch(/Fungua biashara|Jiunge na biashara|Nina akaunti tayari/);
     expect(said).toContain('Kurekodi mauzo na manunuzi');
     expect(said).toContain('Kusajili bidhaa mpya');
+    expect(said).toContain('Mifano ya kuanza');
+    expect(said).not.toContain('Hutaona faida na ripoti za fedha za biashara');
+    expect(said).not.toContain('Anza kwa kutuma');
     expect(said).toContain('nimeuza maji 2, laptop 3');
     expect(said).toContain('nimeongeza maji 10');
     expect(said).toContain('rejareja');

@@ -86,7 +86,6 @@ export function inviteLanguageQuestion(
   role: InviteRole,
 ): string {
   return 'Mambo vip Mdau! Karibu Risip 👋\n\n'
-    + 'Nimepata namba yako ya mwaliko wa Risip.\n'
     + `Umealikwa na *${inviterLabel(inviterName, 'sw')}* kama *${roleName(role, 'sw')}* wa *${businessName}*.\n\n`
     + 'Chagua lugha:\n1. Kiswahili\n2. English';
 }
@@ -122,7 +121,7 @@ export function inviteReady(
       + `Namba ya siri: *${code}*\n`
       + '_Inatumika mara moja tu, na inaisha baada ya siku 3._\n\n'
       + '── Nakala ya kutuma kwake ──\n'
-      + '☝️ Nakili ujumbe huu, kisha tuma kwenye namba ya mfanyakazi wako:\n\n'
+      + '👉 Nakili ujumbe huu, kisha tuma kwenye namba ya mfanyakazi wako:\n\n'
       + forward
       + '\n──\n\n'
       + 'Mtumie wewe mwenyewe kutoka kwenye contacts zako. Situmi mimi — '
@@ -131,7 +130,7 @@ export function inviteReady(
       + `Code: *${code}*\n`
       + '_Single use, expires in 3 days._\n\n'
       + '── Forward this to them ──\n'
-      + '☝️ Copy this message, then send it to your worker’s number:\n\n'
+      + '👉 Copy this message, then send it to your worker’s number:\n\n'
       + forward
       + '\n──\n\n'
       + 'Send it yourself from your own contacts. I do not send it — '

@@ -58,8 +58,8 @@ const T = {
     sw: 'Mambo vip Mdau! Karibu Risip 👋\n\nChagua lugha / Choose a language:\n1. Kiswahili\n2. English',
   },
   inviteLang: {
-    en: 'Nimepata namba yako ya mwaliko wa Risip. Umealikwa kujiunga na biashara.\n\nChagua lugha / Choose a language:\n1. Kiswahili\n2. English',
-    sw: 'Nimepata namba yako ya mwaliko wa Risip. Umealikwa kujiunga na biashara.\n\nChagua lugha / Choose a language:\n1. Kiswahili\n2. English',
+    en: 'Umealikwa kujiunga na biashara kwenye Risip.\n\nChagua lugha / Choose a language:\n1. Kiswahili\n2. English',
+    sw: 'Umealikwa kujiunga na biashara kwenye Risip.\n\nChagua lugha / Choose a language:\n1. Kiswahili\n2. English',
   },
   menu: {
     sw: 'Vizuri. Chagua:\n1. Fungua biashara mpya\n2. Jiunge na biashara niliyoalikwa\n3. Nina akaunti tayari',

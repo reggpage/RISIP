@@ -6477,7 +6477,7 @@ async function handleOnboarding(
     return invitePreview
       ? inviteLanguageQuestion(invitePreview.businessName, invitePreview.inviterName, invitePreview.role)
       : inviteCode
-        ? 'Nimepata namba yako ya mwaliko wa Risip. Umealikwa kujiunga na biashara.\n\n'
+        ? 'Umealikwa kujiunga na biashara kwenye Risip.\n\n'
           + 'Chagua lugha / Choose a language:\n1. Kiswahili\n2. English'
       : open.reply;
   }

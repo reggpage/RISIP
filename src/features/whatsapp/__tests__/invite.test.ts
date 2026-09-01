@@ -112,7 +112,7 @@ describe('what the owner gets back', () => {
     // It will be pasted into a chat with somebody who has never heard of Risip.
     expect(reply).toContain('Karibu St. Ritha bookshop');
     expect(reply).toContain('+255 700 000 000');
-    expect(reply).toContain('☝️ Nakili ujumbe huu, kisha tuma kwenye namba ya mfanyakazi wako');
+    expect(reply).toContain('👉 Nakili ujumbe huu, kisha tuma kwenye namba ya mfanyakazi wako');
   });
 
   it('says plainly that Risip does not send it, and why', () => {
@@ -131,6 +131,7 @@ describe('what a new invited number sees first', () => {
     const reply = inviteLanguageQuestion('St. Ritha bookshop', 'Asha', 'worker');
     expect(reply.startsWith('Mambo vip Mdau! Karibu Risip 👋')).toBe(true);
     expect(reply).toContain('Umealikwa na *Boss Asha* kama *Mfanyakazi* wa *St. Ritha bookshop*');
+    expect(reply).not.toContain('Nimepata namba yako ya mwaliko wa Risip');
     expect(reply).toContain('Chagua lugha:');
     expect(reply).toContain('1. Kiswahili');
     expect(reply).toContain('2. English');

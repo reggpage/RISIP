@@ -52,6 +52,12 @@ describe('the menu understands sentences, not only digits', () => {
     expect(next.draft.code).toBe('KG4E94N6');
   });
 
+  it('does not show the removed invite-introduction sentence', () => {
+    const reply = advanceOnboarding('lang', 'KG4E94N6', 'sw').reply;
+    expect(reply).toContain('Umealikwa kujiunga na biashara kwenye Risip');
+    expect(reply).not.toContain('Nimepata namba yako ya mwaliko wa Risip');
+  });
+
   it('goes from language to the invited person name, not the three-way menu', () => {
     const next = advanceOnboarding('lang', '2', 'en', { code: 'KG4E94N6' });
     expect(next.step).toBe('join_person');
