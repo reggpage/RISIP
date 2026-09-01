@@ -45,9 +45,9 @@ describe('when every product is already his', () => {
   it('still gives all three choices, because knowing the products settles nothing', () => {
     // He could be selling them, restocking them, or counting them. The shop
     // recognising a name proves none of the three.
-    expect(asked).toContain('(a) *MAUZO* / *1*');
-    expect(asked).toContain('(b) *ONGEZA* / *2*');
-    expect(asked).toContain('(c) *SAJILI* / *3*');
+    expect(asked).toContain('(a) *MAUZO* —');
+    expect(asked).toContain('(b) *ONGEZA* —');
+    expect(asked).toContain('(c) *SAJILI* —');
   });
 });
 
@@ -63,12 +63,12 @@ describe('when some are new', () => {
   it('leans towards purchase without deciding it', () => {
     // "Kama umezinunua" — if you bought them. A conditional, not a conclusion:
     // a first-ever stock count also contains names Risip has never seen.
-    expect(asked).toContain('Zikiwa mpya kweli, chagua *3*');
+    expect(asked).toContain('Zikiwa mpya kweli, chagua *(c) SAJILI*');
     expect(asked).not.toContain('Nimerekodi');
   });
 
   it('offers registration, since a new product needs prices before anything else', () => {
-    expect(asked).toContain('(c) *SAJILI* / *3*');
+    expect(asked).toContain('(c) *SAJILI* —');
     expect(asked).toContain('bei ya kununua na bei ya kuuza');
   });
 

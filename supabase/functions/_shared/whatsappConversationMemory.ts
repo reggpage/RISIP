@@ -113,9 +113,9 @@ export function quantityMeaningQuestion(
 
   const missing = missingProducts.length === 0 ? '' : lang === 'sw'
     ? `\n\nHizi sijaziona kwenye stoo yako — ni mpya: ${missingProducts.map((name) => `*${name}*`).join(', ')}.\n`
-      + 'Zikiwa mpya kweli, chagua *3* — nitakuomba bei ya kununua na bei ya kuuza.'
+      + 'Zikiwa mpya kweli, chagua *(c) SAJILI* — nitakuomba bei ya kununua na bei ya kuuza.'
     : `\n\nI do not see these in your store — they are new: ${missingProducts.map((name) => `*${name}*`).join(', ')}.\n`
-      + 'If they really are new, choose *3* — I will ask for buying and selling prices.';
+      + 'If they really are new, choose *(c) REGISTER* — I will ask for buying and selling prices.';
   // THE OWNER'S THREE WORDS, AND WHAT EACH ONE MEANS.
   //
   // His wording: "iwe Mauzo, Ongeza na Sajili… pia mtu apewe maana zake."
@@ -136,19 +136,16 @@ export function quantityMeaningQuestion(
       : 'I found quantities for the products you named. What should I do with them?');
   const items = lang === 'sw'
     ? `${opening}\n\n`
-      + '(a) *MAUZO* / *1* — nimeuza bidhaa hizi\n'
-      + '(b) *ONGEZA* / *2* — nimenunua, ziongezwe kwenye zilizopo\n'
-      + '(c) *SAJILI* / *3* — hizi ni bidhaa mpya, ziwekwe kwenye orodha kwanza'
+      + '(a) *MAUZO* — nimeuza bidhaa hizi\n'
+      + '(b) *ONGEZA* — nimenunua, ziongezwe kwenye zilizopo\n'
+      + '(c) *SAJILI* — hizi ni bidhaa mpya, ziwekwe kwenye orodha kwanza'
     : `${opening}\n\n`
-      + '(a) *SALES* / *1* — I sold these\n'
-      + '(b) *ADD STOCK* / *2* — I bought them, add them to what I have\n'
-      + '(c) *REGISTER* / *3* — these are new products, put them on my list first';
-  // "Or tell me in your own words" is not decoration. A person who answers
-  // "hizi nimezinunua leo asubuhi" has answered clearly, and the model reads
-  // that; the numbers exist for the person who would rather not type.
+      + '(a) *SALES* — I sold these\n'
+      + '(b) *ADD STOCK* — I bought them, add them to what I have\n'
+      + '(c) *REGISTER* — these are new products, put them on my list first';
   return lang === 'sw'
-    ? `${known}${items}${missing}\n\nJibu (a), (b) au (c), au tumia 1, 2, 3 — au niambie kwa maneno yako.\nUkitaka kuacha, andika *GHAIRI*.`
-    : `${known}${items}${missing}\n\nReply (a), (b) or (c), or use 1, 2, 3 — or just tell me in your own words.\nTo stop, reply *GHAIRI*.`;
+    ? `${known}${items}${missing}\n\nChagua (a), (b) au (c).\nUkitaka kuacha, andika *GHAIRI*.`
+    : `${known}${items}${missing}\n\nChoose (a), (b) or (c).\nTo stop, reply *GHAIRI*.`;
 }
 
 export function stockPurchaseNeedsPrices(state: ParkedQuantityMeaning, lang: Lang): string {

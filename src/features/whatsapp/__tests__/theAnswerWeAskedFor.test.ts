@@ -84,7 +84,7 @@ describe('coming back to his products', () => {
   });
 
   it('still offers all three, bold, with the way out', () => {
-    for (const word of ['(a) *MAUZO* / *1*', '(b) *ONGEZA* / *2*', '(c) *SAJILI* / *3*', '*GHAIRI*']) {
+    for (const word of ['(a) *MAUZO* —', '(b) *ONGEZA* —', '(c) *SAJILI* —', '*GHAIRI*']) {
       expect(bubble).toContain(word);
     }
   });

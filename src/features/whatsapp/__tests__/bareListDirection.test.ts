@@ -111,9 +111,9 @@ describe('the three choices the shopkeeper is given', () => {
     // "iwe Mauzo, Ongeza na Sajili." STOCK left the menu: an absolute shelf
     // count is a rarer and more deliberate act, and it keeps its own header
     // word rather than sitting between two everyday ones.
-    expect(asked).toContain('(a) *MAUZO* / *1*');
-    expect(asked).toContain('(b) *ONGEZA* / *2*');
-    expect(asked).toContain('(c) *SAJILI* / *3*');
+    expect(asked).toContain('(a) *MAUZO* —');
+    expect(asked).toContain('(b) *ONGEZA* —');
+    expect(asked).toContain('(c) *SAJILI* —');
     expect(asked).not.toContain('MANUNUZI');
   });
 
@@ -125,10 +125,12 @@ describe('the three choices the shopkeeper is given', () => {
     expect(asked).toContain('bidhaa mpya, ziwekwe kwenye orodha kwanza');
   });
 
-  it('invites their own words as well as a number', () => {
-    // "nachotaka hata mtu akijielezea kwa maswali ai iwe na uwezo wa kuelewa
-    // kama chatgpt." The numbers are for whoever would rather not type.
-    expect(asked).toContain('au niambie kwa maneno yako');
+  it('shows one choice format without repeating numeric aliases', () => {
+    expect(asked).toContain('Chagua (a), (b) au (c).');
+    expect(asked).not.toContain('/ *1*');
+    expect(asked).not.toContain('/ *2*');
+    expect(asked).not.toContain('/ *3*');
+    expect(asked).not.toContain('niambie kwa maneno yako');
   });
 });
 

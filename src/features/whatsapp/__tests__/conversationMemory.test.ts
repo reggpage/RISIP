@@ -57,7 +57,7 @@ describe('short WhatsApp follow-up memory', () => {
     // and pointing at the choice that fits: the owner asked for the question to
     // lean on what Risip can already see rather than read like a form.
     expect(question).toContain('sijaziona kwenye stoo yako — ni mpya');
-    expect(question).toContain('Zikiwa mpya kweli, chagua *3*');
+    expect(question).toContain('Zikiwa mpya kweli, chagua *(c) SAJILI*');
     expect(question).toContain('bei ya kununua na bei ya kuuza');
     expect(question).toContain('SAJILI');
     expect(question).toContain('(a)');
