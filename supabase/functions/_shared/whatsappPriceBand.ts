@@ -106,11 +106,11 @@ export function priceBandQuestion(
     ? `${done}Hizi zina bei mbili, na hujasema uliyotumia:\n${rows}\n\n`
       + 'Kama zote ni bei moja, jibu *REJAREJA* au *JUMLA*.\n'
       + 'Kama zimechanganyika, andika namba: _1 rejareja, 2 jumla_\n\n'
-      + `_Ukiandika "Mauzo ya leo rejareja" juu ya orodha, sitauliza tena._\n${pendingEscapeHint(lang)}`
+      + `💡 _Ukiandika neno rejareja au jumla mbele ya bidhaa — mfano: daftari 4 jumla, penseli 3 rejareja — sitokuuliza tena._\n${pendingEscapeHint(lang)}`
     : `${done}These have two prices, and the message did not say which:\n${rows}\n\n`
       + 'If they are all the same, reply *REJAREJA* or *JUMLA*.\n'
       + 'If they are mixed, use the numbers: _1 rejareja, 2 jumla_\n\n'
-      + `_Head the list "Mauzo ya leo rejareja" and I will not ask again._\n${pendingEscapeHint(lang)}`;
+      + `💡 _Put rejareja or jumla next to the product — "daftari 4 jumla, penseli 3 rejareja" — and I will not ask._\n${pendingEscapeHint(lang)}`;
 }
 
 /**
@@ -261,6 +261,20 @@ export function parsePriceBandAnswer(
   }
 
   return touched ? answers : null;
+}
+
+/**
+ * GHAIRI, on the one question that printed the word and then ignored it.
+ *
+ * MEASURED. The band question ends with "Ukiamua kuacha, andika *GHAIRI*",
+ * and GHAIRI did not release: isCancel makes releasesParkedQuestion return
+ * false, the answer parser reads no band word in it, and the branch re-sent
+ * the same question. A way out that we advertise has to actually be one.
+ */
+export function priceBandCancelled(lang: Lang): string {
+  return lang === 'sw'
+    ? 'Sawa, sijaandika mauzo hayo. Ukitaka tuanze upya, nitumie orodha tena.'
+    : 'Fine, I have not recorded that sale. Send the list again whenever you want.';
 }
 
 /** The follow-up when only some of the lines were answered. */

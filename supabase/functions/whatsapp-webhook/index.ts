@@ -312,6 +312,7 @@ import {
   type Band,
   needsBandChoice,
   parsePriceBandAnswer,
+  priceBandCancelled,
   type PriceBandChoice,
   priceBandQuestion,
   priceBandStillOpen,
@@ -7360,15 +7361,40 @@ Deno.serve(async (req) => {
         // Which of the two prices was this sold at? The sale waits here, whole,
         // until the answer comes back, and then goes through pricing again as
         // though the message had said "jumla" in the first place.
-        const bandSwitchesTopic = Boolean(bandPending && releasesParkedQuestion(body ?? ''));
+        //
+        // OUR OWN FORM IS AN ANSWER, NOT A NEW SUBJECT.
+        //
+        // MEASURED, on his own number. The question taught "1 rejareja,
+        // 2 jumla"; he sent "1 jumla 2 rejareja 3 jumla ..." for all ten
+        // rows. releasesParkedQuestion releases on everything that is not a
+        // yes / no / cancel, and it was asked BEFORE the answer was read —
+        // so the parked sale was dropped and the model, which had never
+        // seen the ten rows, said it did not understand.
+        //
+        // parsePriceBandAnswer reads that message correctly. It was never
+        // called. Read the answer first; release only what is not one.
+        if (bandPending && isPendingEscape(body)) {
+          // The question prints "Ukiamua kuacha, andika *GHAIRI*". Before this
+          // it did not mean it: isCancel makes releasesParkedQuestion false, the
+          // answer parser finds no band word, and the branch re-sent the same
+          // question. A way out we advertise has to be one.
+          await clearConversation(db, identity.id as string);
+          await reply(phone, priceBandCancelled(lang));
+          await audit(db, identity, waMessageId, 'price_band', 'cancelled', 'skipped');
+          await finish('skipped');
+          continue;
+        }
+        const bandHeard = bandPending ? parsePriceBandAnswer(body, bandPending.choices) : null;
+        const bandSwitchesTopic = Boolean(
+          bandPending && !bandHeard && releasesParkedQuestion(body ?? ''),
+        );
         if (bandSwitchesTopic) {
           await clearConversation(db, identity.id as string);
           await clearAssistantMemory(db, identity);
           await audit(db, identity, waMessageId, 'price_band', 'abandoned', 'skipped');
           convo = null;
         } else if (bandPending) {
-          const bandAnswer = parsePriceBandAnswer(body, bandPending.choices);
-          const heard = bandAnswer;
+          const heard = bandHeard;
           if (!heard) {
             await reply(phone, priceBandQuestion(bandPending.choices, lang));
             await audit(db, identity, waMessageId, 'price_band', 'reask', 'skipped');
@@ -8383,8 +8409,8 @@ Deno.serve(async (req) => {
                 expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
                 updated_at: new Date().toISOString(),
               }, { onConflict: 'identity_id' });
-              await replyQuietly(phone, `${newProductSaved(pendingProducts, lang, true)}\n\n`
-                + quantityMeaningQuestion(lang, [], pendingSale.items.map((item) => item.product)));
+              await replyQuietly(phone, `${newProductSaved(pendingProducts, lang, 'question')}\n\n`
+                + quantityMeaningQuestion(lang, [], pendingSale.items.map((item) => item.product), true));
               await audit(db, identity, waMessageId, 'quantity_meaning', 'direction_after_register', 'clarification');
             } else if (pendingSale && newProductPending.pendingDirection === 'stock_purchase') {
               // HE SAID MANUNUZI, SO IT IS MANUNUZI — for all of them.

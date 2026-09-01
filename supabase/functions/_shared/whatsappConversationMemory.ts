@@ -92,8 +92,18 @@ export function quantityMeaningQuestion(
   lang: Lang,
   missingProducts: string[] = [],
   knownProducts: string[] = [],
+  /**
+   * True when this question comes straight after a registration.
+   *
+   * The owner read that bubble and said what was wrong with it: it announced
+   * "Bidhaa zote 11 zipo kwenye orodha yako" and then "Nimepata idadi za
+   * bidhaa ulizotaja" — two lines telling him things he had just been told,
+   * before the one line that mattered. Resuming, the question introduces
+   * itself in his own words and nothing else.
+   */
+  resuming = false,
 ): string {
-  const known = knownProducts.length === 0 ? '' : (missingProducts.length === 0
+  const known = resuming || knownProducts.length === 0 ? '' : (missingProducts.length === 0
     ? (lang === 'sw'
       ? `_Bidhaa zote ${knownProducts.length} zipo kwenye orodha yako._\n\n`
       : `_All ${knownProducts.length} are already in your product list._\n\n`)
@@ -117,12 +127,19 @@ export function quantityMeaningQuestion(
   // Each line says what will HAPPEN, not just what it is called. "MANUNUZI"
   // told somebody the category; "nimenunua, ongeza kwenye zilizopo" tells them
   // the consequence.
+  const opening = lang === 'sw'
+    ? (resuming
+      ? 'Sasa turudi kwenye bidhaa ulizonitumia awali — unataka tuzifanye nini?'
+      : 'Nimepata idadi za bidhaa ulizotaja. Unataka nizifanye nini?')
+    : (resuming
+      ? 'Now back to the products you sent me earlier — what should I do with them?'
+      : 'I found quantities for the products you named. What should I do with them?');
   const items = lang === 'sw'
-    ? 'Nimepata idadi za bidhaa ulizotaja. Unataka nizifanye nini?\n\n'
+    ? `${opening}\n\n`
       + '*1* *MAUZO* — nimeuza bidhaa hizi\n'
       + '*2* *ONGEZA* — nimenunua, ziongezwe kwenye zilizopo\n'
       + '*3* *SAJILI* — hizi ni bidhaa mpya, ziwekwe kwenye orodha kwanza'
-    : 'I found quantities for the products you named. What should I do with them?\n\n'
+    : `${opening}\n\n`
       + '*1* *MAUZO* — I sold these\n'
       + '*2* *ONGEZA* — I bought them, add them to what I have\n'
       + '*3* *SAJILI* — these are new products, put them on my list first';

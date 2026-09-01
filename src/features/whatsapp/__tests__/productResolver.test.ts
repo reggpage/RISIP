@@ -28,7 +28,7 @@ describe('company-scoped product read resolver', () => {
     ], 'bibilia');
     expect(resolution.kind).toBe('ambiguous');
     if (resolution.kind !== 'ambiguous') return;
-    expect(productReadClarification(resolution, 'sw')).toContain('Biblia au Biblia kubwa');
+    expect(productReadClarification(resolution, 'sw')).toContain('*1.* Biblia');
   });
 
   it('keeps the migration read-only and company-catalogue scoped', () => {

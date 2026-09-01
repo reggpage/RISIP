@@ -162,7 +162,7 @@ describe('two prices do not stop the other products', () => {
   });
 
   it('teaches the shortcut so he never sees this again', () => {
-    expect(asked).toContain('Ukiandika "Mauzo ya leo rejareja" juu ya orodha, sitauliza tena');
+    expect(asked).toContain('Ukiandika neno rejareja au jumla mbele ya bidhaa');
   });
 
   it('says nothing about finished work when there is none', () => {

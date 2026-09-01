@@ -168,7 +168,7 @@ describe('the answer put back on the sale', () => {
 describe('the way out of the question', () => {
   it('teaches the header that stops it being asked again', () => {
     const two = [choice(), choice({ index: 1, product: 'Daftari', quantity: 10, retail: 1000, wholesale: 800 })];
-    expect(priceBandQuestion(two, 'sw')).toContain('Mauzo ya leo rejareja');
+    expect(priceBandQuestion(two, 'sw')).toContain('rejareja au jumla mbele ya bidhaa');
     expect(priceBandQuestion(two, 'sw')).toContain('andika *GHAIRI*');
   });
 
@@ -194,11 +194,13 @@ describe('pending conversation escapes and topic switches', () => {
       resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
     const stop = webhook.indexOf('if (isStopCommand(body)) {');
     const bandSwitch = webhook.indexOf('const bandSwitchesTopic =');
-    const bandParser = webhook.indexOf('const bandAnswer = parsePriceBandAnswer(body, bandPending.choices);');
+    const bandParser = webhook.indexOf('const bandHeard = bandPending ? parsePriceBandAnswer(');
     expect(stop).toBeGreaterThan(-1);
     expect(stop).toBeLessThan(bandParser);
-    expect(bandSwitch).toBeLessThan(bandParser);
-    expect(webhook.slice(bandSwitch, bandParser)).toContain('convo = null;');
+    // The answer is read BEFORE anything decides the subject changed. It was
+    // the other way round, and it cost him a ten-product sale.
+    expect(bandParser).toBeLessThan(bandSwitch);
+    expect(webhook.slice(bandSwitch, bandSwitch + 900)).toContain('convo = null;');
     expect(webhook).toContain("isProactiveNotificationStop(body) && !(convo && isPendingEscape(body))");
   });
 });

@@ -307,9 +307,25 @@ export function newProductConfirmation(products: NewProductPricing[], lang: Lang
     : `New products — ${products.length}:\n${rows}${warning}\n\nAdd them to the store? YES / NO`;
 }
 
-export function newProductSaved(products: NewProductPricing[], lang: Lang, saleWillResume = false): string {
+/**
+ * @param resume  false — nothing was waiting, so teach the next step.
+ *                'sale' — a parked sale follows, and it is shown below.
+ *                'question' — the direction question follows, and IT carries
+ *                the "now back to your products" line. Repeating it here gave
+ *                the owner the same sentence twice in one bubble.
+ */
+export function newProductSaved(
+  products: NewProductPricing[],
+  lang: Lang,
+  resume: boolean | 'sale' | 'question' = false,
+): string {
   const first = products[0]?.product ?? '';
-  if (saleWillResume) {
+  if (resume === 'question') {
+    return lang === 'sw'
+      ? `✅ Nimesajili bidhaa ${products.length}.`
+      : `✅ Registered ${products.length} product(s).`;
+  }
+  if (resume) {
     return lang === 'sw'
       ? `✅ Nimesajili bidhaa ${products.length}.\n\nSasa turudi kwenye bidhaa ulizonitumia awali.`
       : `✅ Registered ${products.length} product(s).\n\nNow back to the products you sent me earlier.`;

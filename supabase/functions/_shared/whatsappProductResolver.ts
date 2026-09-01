@@ -173,13 +173,19 @@ export function catalogueTokenResolution(
 }
 
 export function productReadClarification(resolution: Extract<ProductReadResolution, { kind: 'ambiguous' }>, lang: Lang): string {
+  // ALWAYS NUMBERED, EVEN WHEN THERE ARE ONLY TWO.
+  //
+  // The owner's own wording: "kwenye stoo yako kuna bidhaa x zinazoanza na
+  // jina au kufanana na jina (kitabu) … mtu achague kwa namba." The old
+  // two-name form ran them together with "au", which asks somebody to retype
+  // a five-word product name to answer a question about spelling.
   const names = resolution.candidates.slice(0, 3).map((candidate) => candidate.productName);
-  const choices = names.length === 2
-    ? (lang === 'sw' ? `${names[0]} au ${names[1]}` : `${names[0]} or ${names[1]}`)
-    : names.map((name, index) => `${index + 1}. ${name}`).join('\n');
+  const choices = names.map((name, index) => `*${index + 1}.* ${name}`).join('\n');
   return lang === 'sw'
-    ? `Kwenye orodha yako, “${resolution.asked}” inaweza kuwa mbili. Ni ipi?\n${choices}\n\nUkitaka kuacha, andika *GHAIRI*.`
-    : `In your list, “${resolution.asked}” could be either of two. Which one?\n${choices}\n\nTo stop, reply *GHAIRI*.`;
+    ? `Kwenye stoo yako kuna bidhaa ${names.length} zinazoanza na jina au kufanana na jina “${resolution.asked}”:\n\n`
+      + `${choices}\n\nUlikuwa unamaanisha bidhaa gani kati ya hizi? Jibu kwa namba.\n\nUkitaka kuacha, andika *GHAIRI*.`
+    : `Your store has ${names.length} products that start like or look like “${resolution.asked}”:\n\n`
+      + `${choices}\n\nWhich one did you mean? Reply with the number.\n\nTo stop, reply *GHAIRI*.`;
 }
 
 export function productReadMatchNotice(resolution: ProductReadResolution, lang: Lang): string {
