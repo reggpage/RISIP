@@ -8997,10 +8997,13 @@ Deno.serve(async (req) => {
           } else {
             const oldProduct = clarification.product;
             const product = selectedProduct ?? oldProduct;
-            let unit = clarification.unitOptions.length > 0
-              ? chooseClarificationValue(body, clarification.unitOptions)
+            const refreshedUnits = clarification.productCandidates.length > 0
+              ? (await purchaseUnitsForProducts(db, identity)).get(productKey(product)) ?? []
+              : clarification.unitOptions;
+            const unit = refreshedUnits.length > 0
+              ? chooseClarificationValue(body, refreshedUnits)
               : null;
-            if (clarification.productCandidates.length > 0 && clarification.unitOptions.length > 0) {
+            if (clarification.productCandidates.length > 0 && refreshedUnits.length > 0) {
               // Product selection is the first question; keep the unit question
               // for the next message so one answer cannot be applied twice.
               const next: PriceAndCostPending = {
@@ -9009,7 +9012,7 @@ Deno.serve(async (req) => {
                   ? { ...price, product } : price),
                 costs: priceAndCostPending.costs.map((cost) => productKey(cost.product) === productKey(oldProduct)
                   ? { ...cost, product } : cost),
-                clarification: { reason: 'purchase_unit', product, unitOptions: clarification.unitOptions, productCandidates: [] },
+                clarification: { reason: 'purchase_unit', product, unitOptions: refreshedUnits, productCandidates: [] },
               };
               await db.from('whatsapp_conversations').update({
                 options: next,
@@ -9018,8 +9021,8 @@ Deno.serve(async (req) => {
               const ask = unitChoiceQuestion(product, clarification.unitOptions, lang);
               await replyQuietly(phone, ask);
               await audit(db, identity, waMessageId, 'price_and_cost_pending', 'product_clarified', 'skipped');
-            } else if (clarification.unitOptions.length > 0 && !unit) {
-              const ask = unitChoiceQuestion(product, clarification.unitOptions, lang);
+            } else if (refreshedUnits.length > 0 && !unit) {
+              const ask = unitChoiceQuestion(product, refreshedUnits, lang);
               await replyQuietly(phone, ask);
               await audit(db, identity, waMessageId, 'price_and_cost_pending', 'unit_clarification_reask', 'skipped');
             } else {
