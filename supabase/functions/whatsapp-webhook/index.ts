@@ -90,6 +90,7 @@ import {
 import {
   advanceOnboarding,
   businessList,
+  findInviteCode,
   isLoginRequest,
   isSwitchRequest,
   parseBusinessChoice,
@@ -304,7 +305,13 @@ import { lowStockNotice, type StockLevel } from '../_shared/whatsappLowStock.ts'
 import {
   formatBarcode, isScanRequest, isSellScanRequest, parseBarcodeMessage,
 } from '../_shared/barcode.ts';
-import { businessReady, businessWelcome, firstProductsPrompt, workerOffer } from '../_shared/whatsappStarterExamples.ts';
+import {
+  businessReady,
+  businessWelcome,
+  firstProductsPrompt,
+  invitedMemberReady,
+  workerOffer,
+} from '../_shared/whatsappStarterExamples.ts';
 import {
   parseBareExpense,
   parseBareQuantityList,
@@ -6417,12 +6424,18 @@ async function handleOnboarding(
   const fresh = !state || new Date(state.expires_at as string) < new Date();
   if (fresh) {
     const open = startOnboarding();
+    const inviteCode = findInviteCode(text);
     await db.from('whatsapp_onboarding').upsert({
-      phone_e164: phone, step: open.step, draft: {},
+      phone_e164: phone,
+      step: open.step,
+      draft: inviteCode ? { code: inviteCode } : {},
       expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
       updated_at: new Date().toISOString(),
     }, { onConflict: 'phone_e164' });
-    return open.reply;
+    return inviteCode
+      ? 'Nimepata namba yako ya mwaliko wa Risip. Umealikwa kujiunga na biashara.\n\n'
+        + 'Chagua lugha / Choose a language:\n1. Kiswahili\n2. English'
+      : open.reply;
   }
 
   const lang: Lang = (state.lang as Lang | null) ?? 'en';
@@ -6496,8 +6509,22 @@ async function handleOnboarding(
         .eq('id', companyId);
     }
 
+    const joined = next.action.kind === 'join_business';
     const name = (result as { company_name?: string } | null)?.company_name ?? '';
     const person = next.action.fullName;
+    let inviterName: string | null = null;
+    if (joined) {
+      const { data: inviteRow } = await db.from('company_invite_codes')
+        .select('created_by')
+        .eq('code', next.action.code)
+        .maybeSingle();
+      const inviterId = (inviteRow as { created_by?: string } | null)?.created_by;
+      if (inviterId) {
+        const { data: inviter } = await db.from('profiles')
+          .select('full_name').eq('id', inviterId).maybeSingle();
+        inviterName = (inviter as { full_name?: string } | null)?.full_name?.trim() || null;
+      }
+    }
     // THREE MESSAGES, NOT ONE WALL.
     //
     // MEASURED: businessWelcome is 899 characters over 30 lines and it landed
@@ -6511,6 +6538,18 @@ async function handleOnboarding(
     //
     // The onboarding row is gone by this point, so the offer is parked on the
     // ordinary conversation state like every other question.
+    if (joined) {
+      await sendReplyText(phone, invitedMemberReady(
+        person,
+        name,
+        inviterName ?? (lang === 'sw' ? 'mmiliki wa biashara' : 'the business owner'),
+        (result as { role?: string } | null)?.role ?? 'worker',
+        lang,
+      ));
+      return lang === 'sw'
+        ? 'Tayari umejiunga. Anza kwa kutuma, kwa mfano: *nimeuza bidhaa 2*.'
+        : 'You are all set. Start by sending, for example: *I sold 2 products*.';
+    }
     await sendReplyText(phone, businessReady(person, name, lang));
     const { data: freshIdentity } = await db
       .from('whatsapp_identities')

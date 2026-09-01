@@ -134,6 +134,32 @@ export function businessReady(person: string, businessName: string, lang: 'sw' |
       + '• Close the day and report it';
 }
 
+/** The first welcome for somebody who joined through a company invite. */
+export function invitedMemberReady(
+  person: string,
+  businessName: string,
+  inviterName: string,
+  role: string,
+  lang: 'sw' | 'en',
+): string {
+  const roleName = role === 'accountant'
+    ? (lang === 'sw' ? 'Mhasibu' : 'Accountant')
+    : (lang === 'sw' ? 'Mfanyakazi' : 'Worker');
+  return lang === 'sw'
+    ? `✅ Umealikwa na *${inviterName}* kama *${roleName}* wa biashara *${businessName}*. Karibu, ${person}.\n\n`
+      + 'Utaweza:\n'
+      + '• Kurekodi mauzo na manunuzi\n'
+      + '• Kuhesabu bidhaa zilizopo\n'
+      + '• Kutuma picha ya rekodi\n\n'
+      + 'Hutaona faida na ripoti za fedha za biashara.'
+    : `✅ You were invited by *${inviterName}* as the *${roleName}* of *${businessName}*. Welcome, ${person}.\n\n`
+      + 'You can:\n'
+      + '• Record sales and purchases\n'
+      + '• Count stock on hand\n'
+      + '• Send a photo of a record\n\n'
+      + 'You will not see the business profit or financial reports.';
+}
+
 /**
  * MESSAGE 7 — asked now, because later means never.
  *

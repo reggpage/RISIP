@@ -111,6 +111,7 @@ describe('what the owner gets back', () => {
     // It will be pasted into a chat with somebody who has never heard of Risip.
     expect(reply).toContain('Karibu St. Ritha bookshop');
     expect(reply).toContain('+255 700 000 000');
+    expect(reply).toContain('☝️ Nakili ujumbe huu, kisha tuma kwenye namba ya mfanyakazi wako');
   });
 
   it('says plainly that Risip does not send it, and why', () => {

@@ -57,6 +57,10 @@ const T = {
     en: 'Mambo vip Mdau! Karibu Risip 👋\n\nChagua lugha / Choose a language:\n1. Kiswahili\n2. English',
     sw: 'Mambo vip Mdau! Karibu Risip 👋\n\nChagua lugha / Choose a language:\n1. Kiswahili\n2. English',
   },
+  inviteLang: {
+    en: 'Nimepata namba yako ya mwaliko wa Risip. Umealikwa kujiunga na biashara.\n\nChagua lugha / Choose a language:\n1. Kiswahili\n2. English',
+    sw: 'Nimepata namba yako ya mwaliko wa Risip. Umealikwa kujiunga na biashara.\n\nChagua lugha / Choose a language:\n1. Kiswahili\n2. English',
+  },
   menu: {
     sw: 'Vizuri. Chagua:\n1. Fungua biashara mpya\n2. Jiunge na biashara niliyoalikwa\n3. Nina akaunti tayari',
     en: 'Good. Choose:\n1. Start a new business\n2. Join a business I was invited to\n3. I already have an account',
@@ -202,10 +206,29 @@ export function advanceOnboarding(
 
   switch (step) {
     case 'lang': {
+      const pasted = findInviteCode(said);
+      if (pasted) {
+        return {
+          step: 'lang',
+          reply: T.inviteLang.en,
+          action: { kind: 'none' },
+          draft: { ...draft, code: pasted },
+        };
+      }
       const picked: Lang | null = /^1$|kiswahili|swahili/i.test(said) ? 'sw'
         : /^2$|english/i.test(said) ? 'en'
         : null;
       if (!picked) return stay(T.lang.en);
+      if (draft.code) {
+        return {
+          step: 'join_person',
+          reply: picked === 'sw'
+            ? 'Mwaliko wako umeonekana. Umealikwa kujiunga na biashara. Wewe unaitwa nani?'
+            : 'Your invite was found. You have been invited to join a business. What is your name?',
+          action: { kind: 'set_language', lang: picked },
+          draft,
+        };
+      }
       return {
         step: 'menu',
         reply: T.menu[picked],

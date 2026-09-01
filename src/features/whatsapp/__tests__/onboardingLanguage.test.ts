@@ -52,6 +52,15 @@ describe('the menu understands sentences, not only digits', () => {
     expect(next.draft.code).toBe('KG4E94N6');
   });
 
+  it('goes from language to the invited person name, not the three-way menu', () => {
+    const next = advanceOnboarding('lang', '2', 'en', { code: 'KG4E94N6' });
+    expect(next.step).toBe('join_person');
+    expect(next.action).toEqual({ kind: 'set_language', lang: 'en' });
+    expect(next.reply).toMatch(/Your invite was found/i);
+    expect(next.reply).toMatch(/What is your name/i);
+    expect(next.reply).not.toMatch(/Start a new business|already have an account/i);
+  });
+
   it('offers a way forward instead of only refusing', () => {
     const reply = advanceOnboarding('menu', 'sijui', 'sw').reply;
     expect(reply).toMatch(/mfano/);       // gives an example

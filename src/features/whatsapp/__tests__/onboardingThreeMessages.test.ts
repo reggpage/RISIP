@@ -5,6 +5,7 @@ import {
   businessReady,
   businessWelcome,
   firstProductsPrompt,
+  invitedMemberReady,
   workerOffer,
 } from '../../../../supabase/functions/_shared/whatsappStarterExamples';
 
@@ -51,6 +52,21 @@ describe('message 6 — what Risip is for', () => {
 
   it('is short enough to be read', () => {
     expect(said.length).toBeLessThan(320);
+  });
+});
+
+describe('invited employee welcome', () => {
+  const said = invitedMemberReady('Juma', 'St. Ritha bookshop', 'Boss Asha', 'worker', 'sw');
+
+  it('shows who invited the person, the role, and the business', () => {
+    expect(said).toContain('Umealikwa na *Boss Asha*');
+    expect(said).toContain('*Mfanyakazi*');
+    expect(said).toContain('*St. Ritha bookshop*');
+  });
+
+  it('does not offer the new-business choices to an invited employee', () => {
+    expect(said).not.toMatch(/Fungua biashara|Jiunge na biashara|Nina akaunti tayari/);
+    expect(said).toContain('Kurekodi mauzo na manunuzi');
   });
 });
 
