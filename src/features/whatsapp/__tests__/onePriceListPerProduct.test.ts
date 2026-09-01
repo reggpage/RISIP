@@ -118,7 +118,7 @@ describe('a product that arrives twice is collapsed, not listed twice', () => {
   it('is what the AI price path actually calls', () => {
     // Behaviour above proves the rule; this proves the rule is wired in. A
     // deliberately reverted webhook slipped past the suite without it.
-    expect(webhook).toContain('addPriceTier(prices, resolved, one.price, one.wholesale, one.minQty);');
+    expect(webhook).toContain('addPriceTier(prices, exact, one.price, one.wholesale, one.minQty);');
     expect(webhook).not.toContain('prices.push({ product: resolved, retail: one.price');
   });
 

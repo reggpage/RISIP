@@ -87,11 +87,11 @@ describe('SAJILI is not a direction', () => {
 
   it('asks the direction once registration is finished', () => {
     const resume = webhook.slice(
-      webhook.indexOf("newProductPending.pendingDirection === 'ask'"),
-      webhook.indexOf("newProductPending.pendingDirection === 'stock_purchase'"),
+      webhook.indexOf('async function resumeSaleAfterNewProductRegistration('),
+      webhook.indexOf('async function resumeSaleAfterNewProductRegistration(') + 1800,
     );
     expect(resume).toContain('quantityMeaningQuestion(lang, []');
-    expect(resume).toContain('clean two-way');
+    expect(resume).toContain("pendingDirection === 'ask'");
   });
 });
 

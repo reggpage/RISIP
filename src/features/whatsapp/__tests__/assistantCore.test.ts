@@ -144,7 +144,10 @@ describe('Risip conversational AI core', () => {
     expect(webhook).toContain('newProductSaleWorkerBlocked(priced.products, lang)');
     expect(webhook).toContain('pendingSale: newProductSaleSetup.sale');
     expect(webhook).toContain('sourceMessageId: newProductSaleSetup.sourceMessageId');
-    expect(webhook).toContain('newProductSaved(pendingProducts, lang, true)');
+    // Registration completion now resumes the interrupted transaction through
+    // one shared helper, so the success message is emitted there.
+    expect(webhook).toContain('newProductSaved(products, lang, true)');
+    expect(webhook).toContain('resumeSaleAfterNewProductRegistration(');
     expect(webhook).not.toContain("if (sale.items.length === 1) return { kind: 'skip' }");
   });
 

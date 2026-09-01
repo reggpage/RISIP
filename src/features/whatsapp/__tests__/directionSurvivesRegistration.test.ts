@@ -34,56 +34,45 @@ describe('the answer survives the interruption', () => {
   });
 
   it('is actually read on the way out', () => {
-    // It was written in one commit and read in none. A field nothing consumes
-    // is a field that does not exist.
-    const reads = webhook.match(/newProductPending\.pendingDirection/g) ?? [];
-    expect(reads.length).toBeGreaterThanOrEqual(1);
+    // The final registration-confirmation handler delegates the interrupted
+    // transaction to one helper, which consumes the stored direction.
+    expect(webhook).toContain('resumeSaleAfterNewProductRegistration(');
+    expect(webhook).toContain('newProductRegistrationPending.pendingDirection');
   });
 
   it('sends a purchase down the purchase road', () => {
-    const branch = webhook.slice(
-      webhook.indexOf('// HE SAID MANUNUZI, SO IT IS MANUNUZI'),
-      webhook.indexOf('} else if (pendingSale && pendingSourceMessageId) {'),
-    );
-    expect(branch).toContain('stockPurchaseNeedsPrices(');
-    expect(branch).not.toContain('priceQuantitySale(');
+    const helper = webhook.slice(webhook.indexOf('async function resumeSaleAfterNewProductRegistration('));
+    expect(helper).toContain("if (pendingDirection === 'stock_purchase')");
+    expect(helper).toContain('stockPurchaseNeedsPrices(');
   });
 
   it('checks the direction BEFORE the sale path, or it would never be reached', () => {
-    const purchase = webhook.indexOf("newProductPending.pendingDirection === 'stock_purchase'");
-    const sale = webhook.indexOf('} else if (pendingSale && pendingSourceMessageId) {');
+    const helper = webhook.slice(webhook.indexOf('async function resumeSaleAfterNewProductRegistration('));
+    const purchase = helper.indexOf("pendingDirection === 'stock_purchase'");
+    const sale = helper.indexOf('const priced = await priceQuantitySale(');
     expect(purchase).toBeGreaterThan(-1);
     expect(sale).toBeGreaterThan(purchase);
   });
 
   it('covers every product, not only the two that were registered', () => {
     // "manunuzi kwa bidhaa zote au hizo mpya?" — all of them. The parked sale
-    // is the whole message, and it is what gets priced.
-    const branch = webhook.slice(
-      webhook.indexOf('// HE SAID MANUNUZI, SO IT IS MANUNUZI'),
-      webhook.indexOf('} else if (pendingSale && pendingSourceMessageId) {'),
-    );
-    expect(branch).toContain('sale: pendingSale,');
+    // is the whole message, and it is what gets resumed.
+    const helper = webhook.slice(webhook.indexOf('async function resumeSaleAfterNewProductRegistration('));
+    expect(helper).toContain('pendingSale.items.map((item) => item.product)');
+    expect(helper).toContain('pendingSale.expenses.map');
   });
 
   it('asks what he PAID rather than assuming the registered cost', () => {
-    // A shop buying the same soap twice in a month rarely pays the same twice,
-    // and a purchase recorded at last month's price is a wrong profit figure
-    // that nothing will ever flag.
-    const branch = webhook.slice(
-      webhook.indexOf('// HE SAID MANUNUZI, SO IT IS MANUNUZI'),
-      webhook.indexOf('} else if (pendingSale && pendingSourceMessageId) {'),
-    );
-    expect(branch).toContain('rarely');
-    expect(branch).toContain('pays the same twice');
+    // A purchase must continue through the explicit purchase-price prompt,
+    // rather than silently assuming the registered product cost.
+    const helper = webhook.slice(webhook.indexOf('async function resumeSaleAfterNewProductRegistration('));
+    expect(helper).toContain('stockPurchaseNeedsPrices(');
+    expect(helper).toContain('kind: \'quantity_meaning_clarification\'');
   });
 
   it('confirms the registration before asking the next thing', () => {
-    const branch = webhook.slice(
-      webhook.indexOf('// HE SAID MANUNUZI, SO IT IS MANUNUZI'),
-      webhook.indexOf('} else if (pendingSale && pendingSourceMessageId) {'),
-    );
-    expect(branch).toContain('newProductSaved(pendingProducts, lang, true)');
+    const helper = webhook.slice(webhook.indexOf('async function resumeSaleAfterNewProductRegistration('));
+    expect(helper).toContain('newProductSaved(products, lang, true)');
   });
 });
 
@@ -91,7 +80,8 @@ describe('what the sale path still does', () => {
   it('is untouched for anyone who did not choose a direction', () => {
     // Most registrations arrive from a plain sale that named an unknown
     // product. That path was correct and stays exactly as it was.
-    expect(webhook).toContain('} else if (pendingSale && pendingSourceMessageId) {');
-    expect(webhook).toContain('const priced = await priceQuantitySale(');
+    const helper = webhook.slice(webhook.indexOf('async function resumeSaleAfterNewProductRegistration('));
+    expect(helper).toContain('const priced = await priceQuantitySale(');
+    expect(helper).toContain('createDailyRecordDraft');
   });
 });
