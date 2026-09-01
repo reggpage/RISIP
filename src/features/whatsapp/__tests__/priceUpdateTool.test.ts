@@ -74,7 +74,11 @@ describe('the tool, and the authority it does not have', () => {
       properties: { lines: { items: { properties: Record<string, unknown> } } };
     };
     expect(Object.keys(schema.properties.lines.items.properties))
-      .toEqual(['product_wording', 'price_wording', 'price_candidate']);
+      .toEqual(['product_wording', 'price_wording', 'price_candidate',
+        // This shop trades at two prices. Until the tool carried the second
+        // one, the model's only way to say "uza kwa 8000 jumla ni 7500" was
+        // two lines — and the owner was shown shuka twice.
+        'wholesale_wording', 'wholesale_candidate']);
     // The words are compulsory; the candidate may be null. A price cannot
     // arrive without the sentence it came from.
     const required = (schema.properties.lines.items as unknown as { required: string[] }).required;
@@ -95,7 +99,7 @@ describe('the tool, and the authority it does not have', () => {
   it('saves nothing by itself', () => {
     expect(tool?.description).toMatch(/Nothing is saved by this call/i);
     const at = webhook.indexOf("if (name === 'propose_price_update')");
-    const branch = webhook.slice(at, at + 3600);
+    const branch = webhook.slice(at, at + 6000);
     // It parks the same pending state the deterministic path parks, and the
     // write stays in the confirmation branch where NDIYO reaches it.
     expect(branch).toContain("kind: 'selling_price_batch'");
@@ -104,7 +108,7 @@ describe('the tool, and the authority it does not have', () => {
 
   it('resolves names before asking, so one typo cannot cost the certain ones', () => {
     const at = webhook.indexOf("if (name === 'propose_price_update')");
-    const branch = webhook.slice(at, at + 3600);
+    const branch = webhook.slice(at, at + 6000);
     expect(branch).toContain("db.rpc('company_product_names'");
     // An unresolvable name is listed back, never dropped: a price that
     // vanishes quietly is worse than one refused loudly.

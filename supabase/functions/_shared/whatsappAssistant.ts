@@ -829,7 +829,9 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
     'The trader is SETTING SELLING PRICES, for one product or for many in one message. '
       + 'Any phrasing: "bei ya birika iwe 5000", "weka bei birika 5000 sodaa 2000 daftari 1500", "panga bei mpya: birika elfu tano na sodaa elfu mbili", a pasted list under a "bei" heading. '
       + 'Split it into one line per product. price_wording is the amount EXACTLY as the trader wrote it — "5000", "elfu tano" — never your own figure; price_candidate is your reading of those same words and the server checks the two against each other. '
+      + 'Many shops trade at TWO prices. When one product is given both — "uza kwa 8000 jumla ni 7500", "rejareja 1000 jumla 900" — put the retail one in price_wording and the trade one in wholesale_wording, on ONE line. Never two lines for the same product. '
       + 'This is the price the shop CHARGES. A buying cost is propose_product_cost, and a sale is propose_business_event — a till roll headed "Mauzo" is never a price list. '
+      + 'If the same sentence ALSO says what he paid — "nimenunua kwa 5000 na uza kwa 8000" — call propose_product_cost as well, in the same turn, or that number is lost. '
       + 'Nothing is saved by this call: the server resolves every product against the catalogue, re-reads every number, and waits for NDIYO.',
     {
       lines: {
@@ -841,8 +843,10 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
             product_wording: { type: 'string', description: 'The product as the trader named it, copied from the message.' },
             price_wording: { type: 'string', description: 'The price exactly as said. Never a number you formatted or converted.' },
             price_candidate: { type: ['number', 'null'], description: 'Your reading of those words, or null. The server verifies it against them.' },
+            wholesale_wording: { type: ['string', 'null'], description: 'The wholesale/jumla price exactly as said, or null when only one price was given.' },
+            wholesale_candidate: { type: ['number', 'null'], description: 'Your reading of the wholesale words, or null.' },
           },
-          required: ['product_wording', 'price_wording', 'price_candidate'],
+          required: ['product_wording', 'price_wording', 'price_candidate', 'wholesale_wording', 'wholesale_candidate'],
           additionalProperties: false,
         },
       },

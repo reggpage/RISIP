@@ -239,3 +239,42 @@ export function sellingPriceBatchSaved(saved: number, businessName: string, lang
 export function sellingPriceBatchCancelled(lang: Lang): string {
   return lang === 'sw' ? 'Sawa, sijahifadhi bei yoyote.' : 'Fine, nothing was saved.';
 }
+
+/**
+ * THE SAME PRODUCT TWICE IS TWO TIERS, NOT TWO PRODUCTS.
+ *
+ * MEASURED, on the owner's screen: "weka bei kwenye shuka nimenua kwa 5000 na
+ * uza kwa 8000 jumla ni 7500" came back as
+ *
+ *   1. shuka — TSh 8,000
+ *   2. shuka — TSh 7,500
+ *
+ * The model was not confused. This shop trades at two prices — the whole
+ * REJAREJA/JUMLA question exists because of it — and the tool that SETS prices
+ * had one field, so two rows was the only way it could say what he had said.
+ * The field exists now; this collapses whatever still arrives doubled.
+ *
+ * The lower of the two is the trade price, because a wholesale above retail is
+ * not a bargain, it is a slip. Nothing is discarded: both numbers survive, and
+ * the confirmation shows them before anything is written.
+ */
+export function addPriceTier(
+  prices: SellingPrice[],
+  product: string,
+  retail: number,
+  wholesale: number | null,
+): void {
+  const key = product.toLocaleLowerCase('sw-TZ');
+  const at = prices.findIndex((seen) => seen.product.toLocaleLowerCase('sw-TZ') === key);
+  const seen = at >= 0 ? prices[at] : null;
+  const both = [seen?.retail, seen?.wholesale, retail, wholesale]
+    .filter((value): value is number => typeof value === 'number' && value > 0);
+  if (both.length === 0) return;
+  const entry: SellingPrice = {
+    product: seen?.product ?? product,
+    retail: Math.max(...both),
+    wholesale: both.length > 1 ? Math.min(...both) : null,
+    minQty: seen?.minQty ?? null,
+  };
+  if (at >= 0) prices[at] = entry; else prices.push(entry);
+}

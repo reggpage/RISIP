@@ -130,6 +130,7 @@ import {
 } from '../_shared/whatsappProductPriceReads.ts';
 import {
   parseSellingPriceBatch,
+  addPriceTier,
   sellingPriceBatchCancelled,
   sellingPriceBatchConfirmation,
   sellingPriceBatchCostWarnings,
@@ -4259,6 +4260,54 @@ async function executeMoneyEvent(
  * whatever the tool decided to say, and threading it through each branch is
  * how one of them would eventually be forgotten.
  */
+/**
+ * Hold the candidates so the number he is asked for can be read by us.
+ *
+ * The clarification prints "Jibu kwa namba" from six different places. Only
+ * the sale path parked it at first, so the same question was deterministic in
+ * one route and left to the model in the others — which is the sort of split
+ * nobody can hold in their head. Every route that asks now parks.
+ *
+ * Nothing is written and nothing is refused: a wrong answer, or no answer at
+ * all, simply releases and the message carries on as any new turn.
+ */
+async function parkProductChoice(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  waMessageId: string,
+  asked: string,
+  candidates: string[],
+  originalText: string | null | undefined,
+): Promise<void> {
+  if (!asked || candidates.length === 0 || !originalText) return;
+  const state: ProductChoicePending = {
+    kind: 'product_read_choice',
+    asked,
+    candidates,
+    originalText,
+    sourceMessageId: waMessageId,
+  };
+  try {
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id,
+      company_id: identity.company_id,
+      profile_id: identity.profile_id,
+      awaiting: 'product_cost',
+      receipt_id: null,
+      options: state,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+  } catch {
+    /* A question that cannot be parked is still a question worth asking. */
+  }
+}
+
+/** The names offered, in the order they are numbered on his screen. */
+function choiceNames(resolution: Extract<ProductReadResolution, { kind: 'ambiguous' }>): string[] {
+  return resolution.candidates.slice(0, 3).map((one) => one.productName);
+}
+
 async function executeAssistantTool(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
@@ -4384,6 +4433,7 @@ async function runAssistantTool(
     }
     if (resolved.resolution.kind === 'ambiguous') {
       const clarification = productReadClarification(resolved.resolution, lang);
+      await parkProductChoice(db, identity, waMessageId, resolved.resolution.asked, choiceNames(resolved.resolution), said);
       return { content: clarification, isError: true, terminalReply: clarification };
     }
     if (resolved.resolution.kind === 'not_found') {
@@ -4452,6 +4502,7 @@ async function runAssistantTool(
     }
     if (resolved.resolution.kind === 'ambiguous') {
       const clarification = productReadClarification(resolved.resolution, lang);
+      await parkProductChoice(db, identity, waMessageId, resolved.resolution.asked, choiceNames(resolved.resolution), said);
       return { content: clarification, isError: true, terminalReply: clarification };
     }
     if (resolved.resolution.kind === 'not_found') {
@@ -4641,6 +4692,7 @@ async function runAssistantTool(
       return { content: lang === 'sw' ? 'Sikuweza kutafuta bidhaa hiyo sasa.' : 'I could not look up that product right now.' };
     }
     if (resolved?.resolution.kind === 'ambiguous') {
+      await parkProductChoice(db, identity, waMessageId, resolved.resolution.asked, choiceNames(resolved.resolution), said);
       return { content: productReadClarification(resolved.resolution, lang) };
     }
     if (resolved?.resolution.kind === 'not_found') {
@@ -4852,7 +4904,13 @@ async function runAssistantTool(
         unreadable.push(asked || String(line.price_wording ?? '').slice(0, 40));
         continue;
       }
-      wanted.push({ asked, price: reading.value });
+      const trade = readNumber(line.wholesale_wording, line.wholesale_candidate,
+        { min: 0, max: 100_000_000 });
+      wanted.push({
+        asked,
+        price: reading.value,
+        wholesale: trade.kind === 'value' ? trade.value : null,
+      });
     }
 
     // Names are resolved before anything is asked, so one uncertain spelling
@@ -4873,7 +4931,9 @@ async function runAssistantTool(
         unreadable.push(one.asked);
         continue;
       }
-      prices.push({ product: resolved, retail: one.price, wholesale: null, minQty: null });
+      // One product is one line. See addPriceTier — this is where the owner
+      // was shown shuka twice, once for each of its two prices.
+      addPriceTier(prices, resolved, one.price, one.wholesale);
     }
 
     if (prices.length === 0) {
@@ -5236,6 +5296,10 @@ ${trendShapeFacts(days)}`,
       db, identity, interpreted.sale, lang, [], interpreted.credit, aiOccurredAt,
     );
     if (priced.kind === 'blocked') {
+      if (priced.choice) {
+        await parkProductChoice(db, identity, waMessageId,
+          priced.choice.asked, priced.choice.candidates, said);
+      }
       return { content: priced.message, isError: true, terminalReply: priced.message };
     }
     if (priced.kind === 'unknown') {
@@ -9314,6 +9378,8 @@ Deno.serve(async (req) => {
             continue;
           }
           if (!resolved.error && resolved.resolution.kind === 'ambiguous') {
+            await parkProductChoice(db, identity, waMessageId,
+              resolved.resolution.asked, choiceNames(resolved.resolution), body);
             await reply(phone, productReadClarification(resolved.resolution, lang));
             await audit(db, identity, waMessageId, 'add_product', 'ambiguous', 'clarification');
             await finish('skipped');
@@ -9927,6 +9993,8 @@ Deno.serve(async (req) => {
             .filter(Boolean);
           const prefixResolution = cataloguePrefixResolution(ambiguousStockChange.product, catalogueNames);
           if (prefixResolution?.kind === 'ambiguous') {
+            await parkProductChoice(db, identity, waMessageId,
+              prefixResolution.asked, choiceNames(prefixResolution), body);
             await reply(phone, productReadClarification(prefixResolution, lang));
           } else {
             const canonical = prefixResolution?.kind === 'matched'
@@ -9993,6 +10061,8 @@ Deno.serve(async (req) => {
           // sells creates a product nobody sells.
           const named = await resolveProductForWrite(db, identity, sellingPrice.product);
           if (named.kind === 'ambiguous') {
+            await parkProductChoice(db, identity, waMessageId,
+              named.asked, choiceNames(named), body);
             await reply(phone, productReadClarification(named, lang));
             await audit(db, identity, waMessageId, 'selling_price', 'ambiguous', 'clarification');
             await finish('skipped');
