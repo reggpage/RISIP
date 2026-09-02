@@ -27,8 +27,9 @@
  *                   itself just asked.
  *   Claude:         every other message that carries language.
  *   After Claude:   the backend, which owns every figure.
- *   Instead of Claude: the deterministic parsers, but only when the model
- *                   could not be reached at all.
+ *   No free-text fallback: if Claude cannot answer, the user gets a truthful
+ *                     clarification/unavailable response. Business parsers
+ *                     never get to answer that same free-text turn.
  *
  * The narrow exception matters as much as the rule. When Risip has drafted a
  * record and asked "Jibu *1* Ndiyo · *2* Hapana", the word "ndiyo" is not a sentence
@@ -44,7 +45,7 @@ export type MessageRoute =
   | 'ai_primary'
   /** It answered a bounded question Risip had already asked. */
   | 'pending_protocol'
-  /** Claude could not be reached, so the deterministic parsers served it. */
+  /** Claude could not answer; no business parser was allowed to take over. */
   | 'ai_outage_fallback';
 
 /**

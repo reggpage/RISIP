@@ -208,13 +208,32 @@ describe('the route is visible', () => {
   });
 });
 
-describe('the parsers survive as the outage answer', () => {
-  it('is still possible to record a sale when the model is unreachable', () => {
-    // Deleting them would mean a shop cannot write down a sale during an
-    // Anthropic outage. They keep their place — behind the model, not in front.
+describe('AI remains the only free-text business responder', () => {
+  it('stops before the deterministic quantity-meaning menu', () => {
+    const aiFailureBoundary = webhook.slice(
+      webhook.indexOf("if (aiEligible && (conversationalAiBudgetBlock"),
+      webhook.indexOf('// Adding a product is checked before anything records money'),
+    );
+    expect(aiFailureBoundary).toContain('if (aiEligible)');
+    expect(aiFailureBoundary).toContain('assistantClarificationQuestion');
+    expect(aiFailureBoundary).not.toContain('quantityMeaningQuestion(lang, missingProducts)');
+  });
+});
+
+describe('business parsers never answer an AI-eligible turn', () => {
+  it('remain available only to bounded protocol/backend paths', () => {
+    // They remain in the codebase for validation and protected protocol paths,
+    // but the hard stop above prevents them from replying to ordinary text
+    // after an AI attempt or outage.
     for (const parser of ['parseDailyRecord', 'parseStockLoss', 'parseSupplierCreditPurchase']) {
       expect(webhook, parser).toContain(parser);
     }
+    const afterAi = webhook.slice(
+      webhook.indexOf('if (aiEligible) {'),
+      webhook.indexOf('// Adding a product is checked before anything records money'),
+    );
+    expect(afterAi).toContain("await finish('skipped');");
+    expect(afterAi).toContain('continue;');
   });
 });
 

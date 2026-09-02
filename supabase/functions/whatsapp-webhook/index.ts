@@ -9884,10 +9884,10 @@ Deno.serve(async (req) => {
         // through the same validation, the same product resolution, the same
         // pricing RPCs and the same NDIYO as before.
         //
-        // The deterministic parsers below are no longer the gatekeepers. They
-        // are the fallback for when the model is unavailable, over budget or
-        // silent — a shop must still be able to record a sale when Anthropic
-        // is down.
+        // The deterministic parsers below are no longer the gatekeepers and
+        // are not a free-text outage fallback. If the model is unavailable,
+        // over budget or silent, the user receives a truthful clarification;
+        // ordinary business language is never handed to a parser instead.
         //
         // AI-FIRST, FOR REAL THIS TIME.
         //
@@ -10135,6 +10135,22 @@ Deno.serve(async (req) => {
             conversationalAiBudgetBlock ? 'budget_block' : (aiFailureClass ?? 'model_empty'),
             'failed',
           );
+          await finish('skipped');
+          continue;
+        }
+
+        // AI is the sole owner of ordinary business language. Do not allow a
+        // deterministic business parser to answer after the model returned a
+        // safety-deferred reply (for example, a record-shaped sentence with
+        // no proposal tool call). Falling through here used to produce the
+        // MAUZO / ONGEZA / SAJILI menu and made free text appear parser-owned.
+        // Protocol answers and system commands are excluded by aiEligible and
+        // continue through their bounded handlers below.
+        if (aiEligible) {
+          await replyQuietly(phone, assistantClarificationQuestion(
+            lang, body, pendingClarificationOf(convo),
+          ), false);
+          await audit(db, identity, waMessageId, 'conversational_ai', 'no_usable_response', 'failed');
           await finish('skipped');
           continue;
         }
@@ -11200,7 +11216,8 @@ Deno.serve(async (req) => {
         // Every other linked free-text business turn is interpreted by the
         // model first, with bounded client tools and recent company-scoped
         // conversation history. The deterministic parsers below remain the
-        // availability fallback when the provider or budget is unavailable.
+        // Protocol/validation handlers below are not a free-text fallback;
+        // ordinary language has already been stopped above if AI was eligible.
         const outOfStockQuestion = parseOutOfStockQuestion(body);
 
         // MEASURED FAILURE, three replies in the owner's own screenshot:
