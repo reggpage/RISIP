@@ -5,6 +5,7 @@ import {
   isLoginRequest,
   isSwitchRequest,
   parseBusinessChoice,
+  parseBusinessTime,
   startOnboarding,
   type OnboardingStep,
 } from '../../../../supabase/functions/_shared/whatsappOnboarding';
@@ -88,10 +89,14 @@ describe('creating a business', () => {
     expect(b.step).toBe('create_person');
     expect(b.draft.businessSubCategory).toBe('Stationery na Fedha');
     const c = advanceOnboarding(b.step, 'Asha Mwinyi', 'sw', b.draft);
-    expect(c.action).toMatchObject({
+    const d = advanceOnboarding(c.step, 'Mwenge, Dar es Salaam', 'sw', c.draft);
+    const e = advanceOnboarding(d.step, 'saa mbili asubuhi', 'sw', d.draft);
+    const f = advanceOnboarding(e.step, 'saa kumi na mbili jioni', 'sw', e.draft);
+    expect(f.action).toMatchObject({
       kind: 'create_business', businessName: 'Duka la Asha', fullName: 'Asha Mwinyi',
       category: 'Services & Micro-Manufacturing', subCategory: 'Stationery na Fedha',
       description: 'Nauza daftari, kalamu na kutoa photocopy',
+      location: 'Mwenge, Dar es Salaam', openingTime: '08:00', closingTime: '18:00',
     });
   });
 
@@ -103,10 +108,21 @@ describe('creating a business', () => {
     const b = advanceOnboarding(a.step, 'nafanya vitu vingi vya hapa mtaani', 'sw', a.draft);
     expect(b.step).toBe('create_person');
     const c = advanceOnboarding(b.step, 'Mzee Juma', 'sw', b.draft);
-    expect(c.action).toMatchObject({
+    const d = advanceOnboarding(c.step, 'Kariakoo', 'sw', c.draft);
+    const e = advanceOnboarding(d.step, '8am', 'sw', d.draft);
+    const f = advanceOnboarding(e.step, '6pm', 'sw', e.draft);
+    expect(f.action).toMatchObject({
       kind: 'create_business', category: null, subCategory: null,
       description: 'nafanya vitu vingi vya hapa mtaani',
     });
+  });
+
+  it('understands digital and Swahili clock wording without guessing a bare number', () => {
+    expect(parseBusinessTime('8am')).toBe('08:00');
+    expect(parseBusinessTime('6pm')).toBe('18:00');
+    expect(parseBusinessTime('saa mbili asubuhi')).toBe('08:00');
+    expect(parseBusinessTime('saa kumi na mbili jioni')).toBe('18:00');
+    expect(parseBusinessTime('8')).toBeNull();
   });
 
   it('refuses a name too short to be one', () => {
@@ -171,11 +187,14 @@ describe('a whole conversation, start to finish', () => {
     const r4 = advanceOnboarding(step, 'Nauza daftari na kutoa photocopy', 'sw', draft);
     step = r4.step; draft = r4.draft;
 
-    const r5 = advanceOnboarding(step, 'ndiyo', 'sw', draft);
+    const r5 = advanceOnboarding(step, 'Asha', 'sw', draft);
     step = r5.step; draft = r5.draft;
-
-    const r6 = advanceOnboarding(step, 'Asha', 'sw', draft);
-    expect(r6.action).toMatchObject({
+    const r6 = advanceOnboarding(step, 'Kariakoo', 'sw', draft);
+    step = r6.step; draft = r6.draft;
+    const r7 = advanceOnboarding(step, '8am', 'sw', draft);
+    step = r7.step; draft = r7.draft;
+    const r8 = advanceOnboarding(step, '6pm', 'sw', draft);
+    expect(r8.action).toMatchObject({
       kind: 'create_business', businessName: 'Duka la Asha', fullName: 'Asha',
       subCategory: 'Stationery na Fedha',
     });

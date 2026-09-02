@@ -248,7 +248,7 @@ const T = {
     sw: 'Karibu Risip. Chagua lugha:\n\nJibu *1* kwa Kiswahili\nJibu *2* kwa English',
   },
   languageSet: { en: 'Done. I will reply in English.', sw: 'Sawa. Nitakujibu kwa Kiswahili.' },
-  cancelled: { en: 'Cancelled. Send a new receipt photo whenever you are ready.', sw: 'Imeghairiwa. Tuma picha nyingine wakati wowote.' },
+  cancelled: { en: 'Cancelled. Nothing was recorded. Send a new message whenever you are ready.', sw: 'Sawa, nimeghairi. Hakuna kilichohifadhiwa. Tuma ujumbe mwingine ukitaka kuendelea.' },
   // MSAADA.
   //
   // The owner asked what it should show, and the answer is: not everything.

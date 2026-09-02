@@ -2611,6 +2611,10 @@ async function buildDayCloseFacts(
     .filter((row) => Boolean(row.has_count) && Number(row.on_hand ?? 0) <= 0)
     .map((row) => String(row.product_name ?? ''))
     .filter(Boolean);
+  const lowStock = ((shelfRows ?? []) as Array<Record<string, unknown>>)
+    .filter((row) => Boolean(row.has_count) && Number(row.on_hand ?? 0) > 0 && Number(row.on_hand ?? 0) <= 5)
+    .map((row) => ({ name: String(row.product_name ?? ''), quantity: Number(row.on_hand ?? 0) }))
+    .filter((row) => Boolean(row.name));
 
   return {
     businessName: identity.company_name as string,
@@ -2636,6 +2640,7 @@ async function buildDayCloseFacts(
     outstandingDebt: debtors.reduce((sum, debtor) => sum + debtor.balance, 0),
     outstandingDebtors: debtors.length,
     outOfStock,
+    lowStock,
     profitCoveragePct: Math.round(profit.coverage * 100),
   };
 }
@@ -6525,7 +6530,7 @@ async function handleOnboarding(
       ? db.rpc('wa_create_business', {
           p_user: created.user.id, p_phone: phone,
           p_full_name: next.action.fullName,
-          p_company_name: next.action.businessName, p_location: '',
+          p_company_name: next.action.businessName, p_location: next.action.location,
           p_category: next.action.category,
           p_subcategory: next.action.subCategory,
           p_confidence: next.action.confidence,
@@ -6551,6 +6556,16 @@ async function handleOnboarding(
       await db.from('companies')
         .update({ business_description: next.action.description.slice(0, 300) })
         .eq('id', companyId);
+    }
+    if (next.action.kind === 'create_business') {
+      const { error: hoursError } = await db.rpc('wa_set_business_hours', {
+        p_phone: phone,
+        p_opening_time: next.action.openingTime,
+        p_closing_time: next.action.closingTime,
+      });
+      if (hoursError) {
+        console.error('business hours save failed', hoursError.message);
+      }
     }
 
     const joined = next.action.kind === 'join_business';
@@ -6972,6 +6987,12 @@ Deno.serve(async (req) => {
         const leftover = secondAction && claimsWrite(secondAction.action) ? secondAction : null;
         let leftoverPending = leftover !== null;
         let writeBody = mixed ? mixed.action : (leftover ? leftover.action : body);
+        // When a numeric product-choice answer resumes a parked sentence, keep
+        // the replayed sentence as the evidence passed to business tools. The
+        // visible body is also replaced below, but this explicit variable makes
+        // it impossible for the tool loop to fall back to the bare answer (for
+        // example "2") and ask for MAUZO/ONGEZA/SAJILI again.
+        let assistantEvidenceBody = body;
         let riderPending = mixed !== null;
         let visibleTurnRemembered = false;
         /**
@@ -8181,6 +8202,7 @@ Deno.serve(async (req) => {
             convo = null;
             body = replaced;
             writeBody = replaced;
+            assistantEvidenceBody = replaced;
             intent = routeFor(body);
             await audit(db, identity, waMessageId, 'product_choice', 'answered', 'applied');
           } else {
@@ -9923,7 +9945,9 @@ Deno.serve(async (req) => {
               ),
               history,
               userText: body!,
-              executeTool: (name, input) => executeAssistantTool(db, identity, waMessageId, lang, name, input, body!),
+              executeTool: (name, input) => executeAssistantTool(
+                db, identity, waMessageId, lang, name, input, assistantEvidenceBody ?? body!,
+              ),
               onFailure: (code) => { assistantFailure = code; },
             });
             // A record-looking sentence may never be acknowledged as saved by

@@ -20,7 +20,7 @@ const COPY = {
     title: 'WhatsApp account notifications',
     intro: 'Choose the account updates Risip may send without waiting for you to message first.',
     daily: 'Daily business summary',
-    dailyHelp: 'Sent once after closing, and only when the business recorded activity that day.',
+    dailyHelp: 'Sent once two hours after closing, and only when the business recorded activity that day.',
     debt: 'Outstanding debt reminders',
     debtHelp: 'One debtor per reminder. Risip never puts several customer balances in one message.',
     time: 'Business closing time',

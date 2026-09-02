@@ -62,6 +62,8 @@ export type DayCloseFacts = {
   outOfStock: string[];
   /** True when the profit figure covers only part of the catalogue. */
   profitCoveragePct: number;
+  /** Products with a counted shelf quantity at or below the low-stock guard. */
+  lowStock?: Array<{ name: string; quantity: number }>;
 };
 
 const money = (value: number) => `TSh ${Math.round(value).toLocaleString('en-US')}`;
@@ -188,7 +190,13 @@ export function dayClosedReply(facts: DayCloseFacts, closedAtLabel: string, lang
 export function ownerDayListReply(facts: DayCloseFacts, lang: Lang): string {
   const sw = lang === 'sw';
   const out: string[] = [
-    sw ? `Miamala ya *${facts.dateLabel}*` : `Records for *${facts.dateLabel}*`,
+    sw ? '*Muhtasiri wa leo*' : '*Today’s summary*',
+    sw ? 'Hii ni taarifa ya leo katika biashara yako.' : 'This is today’s report for your business.',
+    '',
+    '━━━━━━━━━━━━━━━━━━',
+    sw ? `🏪 *Biashara:* ${facts.businessName}` : `🏪 *Business:* ${facts.businessName}`,
+    sw ? `📅 *Tarehe:* ${facts.dateLabel}` : `📅 *Date:* ${facts.dateLabel}`,
+    '━━━━━━━━━━━━━━━━━━',
   ];
 
   for (const worker of facts.workers) {
@@ -223,6 +231,21 @@ export function ownerDayListReply(facts: DayCloseFacts, lang: Lang): string {
       out.push(`• *${debtor.name}* — ${money(debtor.amount)}`);
     }
   }
+
+  if (facts.outOfStock.length > 0 || (facts.lowStock?.length ?? 0) > 0) {
+    out.push('', sw ? '*⚠️ Bidhaa za kuangalia*' : '*⚠️ Stock to watch*');
+    for (const name of facts.outOfStock) out.push(sw ? `• *${name}* — imeisha` : `• *${name}* — out of stock`);
+    for (const item of facts.lowStock ?? []) {
+      out.push(sw ? `• *${item.name}* — inakaribia kuisha (${qty(item.quantity)})` : `• *${item.name}* — running low (${qty(item.quantity)})`);
+    }
+  }
+
+  out.push('', sw ? '*🤖 Uchambuzi wa siku*' : '*🤖 Day analysis*');
+  out.push(facts.profit > 0
+    ? (sw ? '• Biashara imefanya faida baada ya gharama na matumizi yaliyorekodiwa.' : '• The business made a profit after recorded costs and expenses.')
+    : facts.profit < 0
+      ? (sw ? '• Siku imefungwa kwa hasara; kagua gharama na matumizi.' : '• The day ended at a loss; review costs and expenses.')
+      : (sw ? '• Mauzo na gharama vimekaribiana; endelea kufuatilia margin.' : '• Sales and costs were close; keep watching margins.'));
 
   out.push('');
   out.push(sw

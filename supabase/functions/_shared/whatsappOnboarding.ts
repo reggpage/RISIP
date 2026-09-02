@@ -24,6 +24,9 @@ export type OnboardingStep =
   | 'create_description' // what does the business sell or do?
   | 'create_category_confirm' // confirm the bounded classification
   | 'create_person' // and what is your name?
+  | 'create_location' // where is the business?
+  | 'create_opening_time' // when does it open?
+  | 'create_closing_time' // when does it close?
   | 'join_code'     // what is the invite code?
   | 'join_person';  // and what is your name?
 
@@ -40,6 +43,9 @@ export type OnboardingAction =
       detectedKeywords: string[];
       /** What the shopkeeper typed about the shop, in their own words. */
       description: string;
+      location: string;
+      openingTime: string;
+      closingTime: string;
     }
   | { kind: 'join_business'; code: string; fullName: string }
   | { kind: 'explain_linking' };   // they already have an account: link from the web
@@ -72,6 +78,22 @@ const T = {
   askPerson: {
     sw: 'Wewe unaitwa nani?',
     en: 'What is your name?',
+  },
+  askLocation: {
+    sw: 'Biashara yako inapatikana wapi? Andika eneo, mfano “Mwenge, Dar es Salaam”.',
+    en: 'Where is your business located? Write the area, for example “Mwenge, Dar es Salaam”.',
+  },
+  askOpeningTime: {
+    sw: 'Unafungua biashara saa ngapi? Mfano: “saa mbili asubuhi”, “8:00” au “8am”.',
+    en: 'What time do you open? For example: “8 in the morning”, “08:00” or “8am”.',
+  },
+  askClosingTime: {
+    sw: 'Unafunga biashara saa ngapi? Mfano: “saa kumi na mbili jioni”, “18:00” au “6pm”.',
+    en: 'What time do you close? For example: “6 in the evening”, “18:00” or “6pm”.',
+  },
+  badTime: {
+    sw: 'Sijaweza kutambua muda huo kwa uhakika. Andika kama “saa mbili asubuhi”, “8:00” au “8am”.',
+    en: 'I could not safely read that time. Write it as “8 in the morning”, “08:00” or “8am”.',
   },
   askDescription: {
     sw: 'Biashara yako inauza nini au inatoa huduma gani? Mfano: “nauza daftari, kalamu na kutoa photocopy”.',
@@ -164,6 +186,44 @@ export function startOnboarding(): OnboardingResult {
 }
 
 const clean = (s: string | null | undefined) => (s ?? '').replace(/\s+/g, ' ').trim();
+
+const SW_TIME_NUMBERS: Record<string, number> = {
+  moja: 1, mbili: 2, tatu: 3, nne: 4, tano: 5, sita: 6,
+  saba: 7, nane: 8, tisa: 9, kumi: 10, 'kumi na moja': 11, 'kumi na mbili': 12,
+};
+const EN_TIME_NUMBERS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6,
+  seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+};
+
+/** Convert the common ways a Tanzanian trader writes time into HH:MM. */
+export function parseBusinessTime(text: string | null | undefined): string | null {
+  const said = clean(text).toLowerCase().replace(/[.]/g, ':');
+  if (!said) return null;
+  const clock = said.match(/\b([01]?\d|2[0-3])(?::([0-5]\d))?\s*(am|pm)\b/i);
+  if (clock) {
+    let hour = Number(clock[1]);
+    const minute = Number(clock[2] ?? 0);
+    if (clock[3].toLowerCase() === 'pm' && hour < 12) hour += 12;
+    if (clock[3].toLowerCase() === 'am' && hour === 12) hour = 0;
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+  const twentyFour = said.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+  if (twentyFour) return `${String(Number(twentyFour[1])).padStart(2, '0')}:${twentyFour[2]}`;
+
+  const words = said.replace(/\bsaa\b/g, '').replace(/\s+/g, ' ').trim();
+  const numberWord = [...Object.keys(SW_TIME_NUMBERS), ...Object.keys(EN_TIME_NUMBERS)]
+    .sort((a, b) => b.length - a.length)
+    .find((word) => words.includes(word));
+  const numeric = said.match(/\bsaa\s+(\d{1,2})\b/);
+  const swHour = numeric ? Number(numeric[1]) : numberWord ? (SW_TIME_NUMBERS[numberWord] ?? EN_TIME_NUMBERS[numberWord]) : null;
+  if (swHour === null || swHour < 1 || swHour > 12) return null;
+  const hasContext = /\b(asubuhi|morning|mchana|afternoon|jioni|evening|usiku|night)\b/.test(said);
+  if (!hasContext) return null;
+  // Tanzanian clock notation starts at 06:00: saa moja = 07:00.
+  const hour = (6 + swHour) % 24;
+  return `${String(hour).padStart(2, '0')}:00`;
+}
 
 /**
  * The exact alphabet create_company_invite_code draws from: no O, I, L, 0 or 1,
@@ -319,19 +379,46 @@ export function advanceOnboarding(
         detectedKeywords = [];
       }
       return {
-        step: 'create_person',
-        reply: '',
+        step: 'create_location',
+        reply: T.askLocation[lang],
         action: {
-          kind: 'create_business',
-          businessName: draft.businessName ?? '',
-          fullName: said.slice(0, 80),
-          category,
-          subCategory,
-          confidence,
-          detectedKeywords,
-          description: draft.businessDescription ?? '',
+          kind: 'none',
         },
-        draft,
+        draft: { ...draft, fullName: said.slice(0, 80), businessCategory: category ?? '', businessSubCategory: subCategory ?? '', classificationConfidence: String(confidence ?? ''), classificationKeywords: JSON.stringify(detectedKeywords) },
+      };
+    }
+
+    case 'create_location': {
+      if (said.length < 2) return stay(T.askLocation[lang]);
+      return { step: 'create_opening_time', reply: T.askOpeningTime[lang], action: { kind: 'none' }, draft: { ...draft, location: said.slice(0, 160) } };
+    }
+
+    case 'create_opening_time': {
+      const time = parseBusinessTime(said);
+      if (!time) return stay(T.badTime[lang]);
+      return { step: 'create_closing_time', reply: T.askClosingTime[lang], action: { kind: 'none' }, draft: { ...draft, openingTime: time } };
+    }
+
+    case 'create_closing_time': {
+      const time = parseBusinessTime(said);
+      if (!time) return stay(T.badTime[lang]);
+      const category = (draft.businessCategory || null) as BusinessCategory | null;
+      const subCategory = (draft.businessSubCategory || null) as BusinessSubCategory | null;
+      const rawConfidence = Number(draft.classificationConfidence);
+      const confidence = Number.isFinite(rawConfidence) ? rawConfidence : null;
+      let detectedKeywords: string[] = [];
+      try {
+        const parsed = JSON.parse(draft.classificationKeywords ?? '[]');
+        if (Array.isArray(parsed)) detectedKeywords = parsed.filter((item): item is string => typeof item === 'string').slice(0, 8);
+      } catch { /* keep empty */ }
+      return {
+        step: 'create_closing_time', reply: '',
+        action: {
+          kind: 'create_business', businessName: draft.businessName ?? '', fullName: draft.fullName ?? '',
+          category, subCategory, confidence, detectedKeywords, description: draft.businessDescription ?? '',
+          location: draft.location ?? '', openingTime: draft.openingTime ?? '', closingTime: time,
+        },
+        draft: { ...draft, closingTime: time },
       };
     }
 

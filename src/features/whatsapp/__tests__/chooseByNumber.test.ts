@@ -145,6 +145,9 @@ describe('the branch that reads it', () => {
     expect(branch).toContain('replaceAskedProduct(');
     expect(branch).toContain('productChoicePending.originalText');
     expect(branch).toContain('intent = routeFor(body);');
+    expect(webhook).toContain('let assistantEvidenceBody = body;');
+    expect(webhook).toContain('assistantEvidenceBody = replaced;');
+    expect(webhook).toContain('assistantEvidenceBody ?? body!');
   });
 
   it('lets GHAIRI out, since the question prints the word', () => {
