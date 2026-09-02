@@ -19,9 +19,9 @@ import { newProductSaved } from '../../../../supabase/functions/_shared/whatsapp
 // so the parked sale was dropped and the message handed to a model that had
 // never seen the ten rows.
 //
-// THE RULE, and it is the same one that cost him kofia and shuka: a message
-// in the exact shape Risip printed a moment earlier is an ANSWER. Read it
-// before deciding it is a new subject.
+// THE RULE: the written answer is ordinary language. The LLM reads it with the
+// pending price question still attached, then the server validates the meanings
+// and re-prices the parked sale.
 
 const webhook = readFileSync(
   resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
@@ -52,16 +52,20 @@ describe('the ordering that dropped it', () => {
     webhook.indexOf('        // OUR OWN FORM IS AN ANSWER, NOT A NEW SUBJECT.') + 1600,
   );
 
-  it('reads the answer before asking whether the subject changed', () => {
-    expect(branch).toContain('const bandHeard = bandPending ? parsePriceBandAnswer(body, bandPending.choices) : null;');
+  it('keeps the answer in the LLM context instead of parsing it in the webhook', () => {
+    expect(branch).not.toContain('parsePriceBandAnswer(body, bandPending.choices)');
+    expect(branch).toContain('Keep the parked sale visible to the LLM');
   });
 
-  it('only releases a message that is NOT an answer', () => {
-    expect(branch).toContain('bandPending && !bandHeard && releasesParkedQuestion');
+  it('reserves the deterministic branch for the advertised cancel protocol', () => {
+    expect(branch).toContain('isPriceBandCancelChoice(body, bandPending.choices.length)');
+    expect(webhook).toContain('messageGoesToModel(convo, body, systemCommand)');
   });
 
-  it('records what it cost, so the order is not swapped back', () => {
-    expect(branch).toContain('said it did not understand');
+  it('passes canonical multi-row meanings to the guarded resume path', () => {
+    expect(webhook).toContain('const bandAnswers = answers.filter((answer) => answer.field === \'price_band\');');
+    expect(webhook).toContain('the model, not a word parser, decided each meaning');
+    expect(webhook).toContain('applyPriceBands(bandPending.sale.items, choices, settled)');
   });
 });
 
@@ -153,11 +157,12 @@ describe('GHAIRI, on the question that prints the word', () => {
     expect(branch).toContain('priceBandCancelled(lang)');
   });
 
-  it('is decided before the answer is read', () => {
+  it('is decided before ordinary price language reaches the LLM', () => {
     const escape = webhook.indexOf('if (bandPending && (isPendingEscape(body)');
-    const parse = webhook.indexOf('const bandHeard = bandPending ? parsePriceBandAnswer(');
+    const language = webhook.indexOf('A written price answer is ordinary language');
     expect(escape).toBeGreaterThan(-1);
-    expect(escape).toBeLessThan(parse);
+    expect(language).toBeGreaterThan(-1);
+    expect(escape).toBeLessThan(language);
   });
 
   it('says nothing was written down', () => {

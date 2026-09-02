@@ -197,18 +197,14 @@ describe('pending conversation escapes and topic switches', () => {
     expect(pendingEscapeHint('sw')).toContain('GHAIRI');
   });
 
-  it('cancels before a price-band answer is parsed and releases a new topic', () => {
+  it('keeps written price answers in the LLM context and reserves protocol for cancel', () => {
     const webhook = readFileSync(
       resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
     const stop = webhook.indexOf('if (isStopCommand(body)) {');
-    const bandSwitch = webhook.indexOf('const bandSwitchesTopic =');
-    const bandParser = webhook.indexOf('const bandHeard = bandPending ? parsePriceBandAnswer(');
     expect(stop).toBeGreaterThan(-1);
-    expect(stop).toBeLessThan(bandParser);
-    // The answer is read BEFORE anything decides the subject changed. It was
-    // the other way round, and it cost him a ten-product sale.
-    expect(bandParser).toBeLessThan(bandSwitch);
-    expect(webhook.slice(bandSwitch, bandSwitch + 900)).toContain('convo = null;');
+    expect(webhook).not.toContain('const bandHeard = bandPending ? parsePriceBandAnswer(');
+    expect(webhook).toContain('Keep the parked sale visible to the LLM');
+    expect(webhook).toContain('if (bandPending && (isPendingEscape(body)');
     expect(webhook).toContain("isProactiveNotificationStop(body) && !(convo && isPendingEscape(body))");
   });
 });

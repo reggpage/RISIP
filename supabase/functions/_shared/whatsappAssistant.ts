@@ -755,7 +755,7 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
     'resolve_pending_clarification',
     'Use ONLY when Risip has asked a question and this message answers it. The pending question and the answers it accepts are stated in the context above. '
       + 'YOU decide what the trader meant — the server no longer reads their words at all. Send canonical_value as one of the allowed values for that field, and raw_wording as what they actually typed so the shop can be shown its own words back. '
-      + 'For a quantity send numeric_value: "thelathini" is 30, "mbili na nusu" is 2.5. Send one quantity answer per named product when the pending question lists several products; include that product name in raw_wording. For a product or a person, canonical_value is the name as they said it and the server resolves it against this shop\'s own catalogue and customers. '
+      + 'For a quantity send numeric_value: "thelathini" is 30, "mbili na nusu" is 2.5. Send one quantity answer per named product when the pending question lists several products; include that product name in raw_wording. For a price_band question with several products, return one price_band answer per product in the exact order listed in context; a single price_band answer means the same band for all open products. For a product or a person, canonical_value is the name as they said it and the server resolves it against this shop\'s own catalogue and customers. '
       + 'Answer several fields at once when one message settles several — "mpesa na ilikuwa jana", "hisense kilo tatu" — and the server takes each one it can. '
       + 'If the message changes the subject instead of answering, do NOT use this: answer the new subject, and the server releases the parked question.',
     {

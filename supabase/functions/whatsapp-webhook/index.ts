@@ -330,11 +330,9 @@ import {
   type Band,
   needsBandChoice,
   isPriceBandCancelChoice,
-  parsePriceBandAnswer,
   priceBandCancelled,
   type PriceBandChoice,
   priceBandQuestion,
-  priceBandStillOpen,
 } from '../_shared/whatsappPriceBand.ts';
 import {
   type ComboCandidate,
@@ -3536,7 +3534,19 @@ async function priceAndDraftSale(
   const priced = await priceQuantitySale(
     db, identity, args.sale, lang, [], args.credit as never, args.occurredAt,
   );
-  if (priced.kind === 'blocked') return askBack(priced.message);
+  if (priced.kind === 'blocked') {
+    if (priced.choice) {
+      await parkProductChoice(
+        db,
+        identity,
+        waMessageId,
+        priced.choice.asked,
+        priced.choice.candidates,
+        args.said,
+      );
+    }
+    return { content: priced.message, terminalReply: priced.message, fallbackReply: priced.message };
+  }
   if (priced.kind === 'unknown') {
     if (!canUseCompanyFinanceReads(identity.role)) {
       return askBack(newProductSaleWorkerBlocked(priced.products, lang));
@@ -3716,11 +3726,17 @@ function pendingClarificationOf(convo: { awaiting?: string | null; options?: unk
     };
   }
   if (awaiting === 'product_cost' && kind === 'price_band_choice') {
-    const choices = Array.isArray(options.choices) ? options.choices as Array<{ productName?: string }> : [];
+    const choices = Array.isArray(options.choices)
+      ? options.choices as Array<{ product?: string; productName?: string }>
+      : [];
+    const names = choices.map((choice) => choice?.productName ?? choice?.product).filter(Boolean);
     return {
       field: 'price_band',
       intent: 'sale',
-      product: choices.map((choice) => choice?.productName).filter(Boolean).join(', ') || null,
+      product: names.join(', ') || null,
+      details: choices.length > 1
+        ? `There are ${choices.length} open products. If the trader gives one price for all, return one price_band answer. If they give mixed prices, return exactly one price_band answer per product, in this order: ${choices.map((choice, index) => `${index + 1}=${choice?.productName ?? choice?.product ?? 'product'}`).join(' | ')}. Keep raw_wording as the trader's wording; use the answer order to attach each meaning to the matching product.`
+        : 'One price_band answer settles this product. The trader may say the price in Kiswahili, English, or a shorthand; decide the canonical meaning and let the server validate it.',
     };
   }
   if (awaiting === 'product_cost' && kind === 'new_product_quantity') {
@@ -4040,17 +4056,34 @@ async function executeClarification(
 
   // ── which price the shop meant ───────────────────────────────────────────
   if (pending.field === 'price_band') {
-    const checked = checkCanonicalValue('price_band', main.canonicalValue);
-    const band = checked.kind === 'ok' ? asBand(checked.value) : null;
-    if (!band) {
+    const bandAnswers = answers.filter((answer) => answer.field === 'price_band');
+    const bands = bandAnswers.map((answer) => {
+      const checked = checkCanonicalValue('price_band', answer.canonicalValue);
+      return checked.kind === 'ok' ? asBand(checked.value) : null;
+    });
+    if (bands.length === 0 || bands.some((band) => band === null)) {
       const question = priceBandQuestion((options.choices ?? []) as PriceBandChoice[], lang);
       return { content: question, terminalReply: question };
     }
     const bandPending = options as unknown as PriceBandPending;
     const choices = bandPending.choices ?? [];
-    // The word answers every band still open. A shop that says "jumla" to two
-    // products means jumla for both; it does not mean the first one only.
-    const settled = choices.map((_, at) => bandPending.answered?.[at] ?? band);
+    const openIndexes = choices
+      .map((_, at) => at)
+      .filter((at) => bandPending.answered?.[at] == null);
+    // One model answer means one band for every open row. Multiple model
+    // answers are attached by the order of the products in the pending
+    // question; the model, not a word parser, decided each meaning.
+    if (bands.length > 1 && bands.length !== openIndexes.length) {
+      const question = priceBandQuestion(choices, lang);
+      return { content: question, terminalReply: question };
+    }
+    const settled = choices.map((_, at) => {
+      const previous = bandPending.answered?.[at] ?? null;
+      if (previous !== null) return previous;
+      if (bands.length === 1) return bands[0];
+      const openAt = openIndexes.indexOf(at);
+      return openAt >= 0 ? bands[openAt] : null;
+    });
     await clearConversation(db, identity.id as string);
     return await priceAndDraftSale(db, identity, waMessageId, lang, {
       sale: { ...bandPending.sale, items: applyPriceBands(bandPending.sale.items, choices, settled) },
@@ -8221,15 +8254,9 @@ Deno.serve(async (req) => {
         //
         // OUR OWN FORM IS AN ANSWER, NOT A NEW SUBJECT.
         //
-        // MEASURED, on his own number. The question taught "1 rejareja,
-        // 2 jumla"; he sent "1 jumla 2 rejareja 3 jumla ..." for all ten
-        // rows. releasesParkedQuestion releases on everything that is not a
-        // yes / no / cancel, and it was asked BEFORE the answer was read —
-        // so the parked sale was dropped and the model, which had never
-        // seen the ten rows, said it did not understand.
-        //
-        // parsePriceBandAnswer reads that message correctly. It was never
-        // called. Read the answer first; release only what is not one.
+        // A written answer such as "1 jumla 2 rejareja" is language, not a
+        // numeric menu selection. Keep the parked sale visible to the LLM so
+        // it can interpret every row with the product context still attached.
         if (bandPending && (isPendingEscape(body)
           || isPriceBandCancelChoice(body, bandPending.choices.length))) {
           // The question prints "Ukiamua kuacha, andika *GHAIRI*". Before this
@@ -8242,54 +8269,11 @@ Deno.serve(async (req) => {
           await finish('skipped');
           continue;
         }
-        const bandHeard = bandPending ? parsePriceBandAnswer(body, bandPending.choices) : null;
-        const bandSwitchesTopic = Boolean(
-          bandPending && !bandHeard && releasesParkedQuestion(body ?? ''),
-        );
-        if (bandSwitchesTopic) {
-          await clearConversation(db, identity.id as string);
-          await clearAssistantMemory(db, identity);
-          await audit(db, identity, waMessageId, 'price_band', 'abandoned', 'skipped');
-          convo = null;
-        } else if (bandPending) {
-          const heard = bandHeard;
-          if (!heard) {
-            await reply(phone, priceBandQuestion(bandPending.choices, lang));
-            await audit(db, identity, waMessageId, 'price_band', 'reask', 'skipped');
-            await finish('skipped');
-            continue;
-          }
-          // What was said now, over what was said before. A shopkeeper who
-          // corrects themselves means the correction.
-          const settled = bandPending.choices.map((_, at) =>
-            heard[at] ?? bandPending.answered[at] ?? null);
-          const stillOpen = bandPending.choices.filter((_, at) => settled[at] === null);
-          if (stillOpen.length > 0) {
-            await db.from('whatsapp_conversations').upsert({
-              identity_id: identity.id,
-              company_id: identity.company_id,
-              profile_id: identity.profile_id,
-              awaiting: 'product_cost',
-              receipt_id: null,
-              options: { ...bandPending, answered: settled } satisfies PriceBandPending,
-              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
-              updated_at: new Date().toISOString(),
-            }, { onConflict: 'identity_id' });
-            await reply(phone, priceBandStillOpen(stillOpen, lang));
-            await audit(db, identity, waMessageId, 'price_band', 'partial', 'pending');
-            await finish('skipped');
-            continue;
-          }
-          resumedQuantitySale = {
-            ...bandPending.sale,
-            items: applyPriceBands(bandPending.sale.items, bandPending.choices, settled),
-          };
-          resumedQuantityCredit = bandPending.credit ?? null;
-          resumedQuantityPaymentMethod = bandPending.paymentMethod ?? null;
-          resumedQuantityOccurredAt = bandPending.occurredAt ?? null;
-          await clearConversation(db, identity.id as string);
-          await audit(db, identity, waMessageId, 'price_band', 'answered', 'applied');
-        }
+        // A written price answer is ordinary language and must reach the LLM
+        // with this pending sale as context. Only the advertised cancel words
+        // above are protocol; the model decides whether "juml", "reja" or a
+        // mixed numbered sentence means retail or wholesale, then returns
+        // canonical values through resolve_pending_clarification.
 
         // A bare list such as "kitabu 7, biblia 3" is parked because it could
         // mean sales or stock. A short answer resumes the exact list instead of
