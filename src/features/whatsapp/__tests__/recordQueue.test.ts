@@ -126,6 +126,16 @@ describe('the safety of shipping it', () => {
     expect(webhook).toContain('if (ceiling === null) return null;');
   });
 
+  it('never replaces a completed sale confirmation with a queue tick', () => {
+    const start = webhook.indexOf('async function priceAndDraftSale(');
+    const end = webhook.indexOf('\n/**', start + 1);
+    const completedSale = webhook.slice(start, end > start ? end : start + 5000);
+    expect(completedSale).toContain('await pendingDraftState(db, identity, created.id, waMessageId, guarded);');
+    expect(completedSale).toContain('quantitySaleConfirmation(priced.lines');
+    expect(completedSale).not.toContain('queueRecordDraft(db, identity, lang)');
+    expect(completedSale).toContain('Nimepokea (1/5)');
+  });
+
   it('stores nothing new', () => {
     // A draft was already a row waiting on pending_confirmation.
     expect(migration).toContain("r.status = 'pending_confirmation'");

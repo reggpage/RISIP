@@ -3598,16 +3598,10 @@ async function priceAndDraftSale(
   const guarded = await addHistoricalPriceWarnings(db, identity.company_id, saleRecord);
   const created = await createDailyRecordDraft(db, identity, waMessageId, guarded, lang, args.said);
   if (created.error || !created.id) return askBack(notSaved);
-  // THE QUEUE, and it lives here because this is the one line that decides
-  // whether the shopkeeper waits.
-  //
-  // With no ceiling set, nothing below runs and the behaviour is exactly what
-  // it has always been: park this draft on its own and write a confirmation.
-  // With one set, the draft joins the others already waiting and the shop gets
-  // a tick — no second model call, no six-second pause at the counter.
-  const queued = await queueRecordDraft(db, identity, lang);
-  if (queued) return queued;
-
+  // This sale has just completed a clarification (often a multi-product price
+  // answer). It must show its lines, total, and one confirmation immediately.
+  // A queue tick such as "Nimepokea (1/5)" is only an internal acknowledgement;
+  // using it here hides the amount and leaves the trader without a safe NDIYO.
   await pendingDraftState(db, identity, created.id, waMessageId, guarded);
   const confirmation = `${identity.company_name} — ${quantitySaleConfirmation(priced.lines, lang, [], priced.notCounted)}`;
   return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
