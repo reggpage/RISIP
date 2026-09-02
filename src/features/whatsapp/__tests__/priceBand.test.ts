@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  alignPriceBandAnswers,
   type PriceBandChoice,
   applyPriceBands,
   type Band,
@@ -107,6 +108,28 @@ describe('reading the answer', () => {
 
   it('ignores a row number nobody was asked about', () => {
     expect(parsePriceBandAnswer('7 jumla', two)).toEqual(['wholesale', 'wholesale']);
+  });
+});
+
+describe('aligning ordered AI answers with open rows', () => {
+  it('accepts a full-sale answer and skips a row already priced', () => {
+    expect(alignPriceBandAnswers(
+      ['wholesale', 'retail', 'wholesale', 'retail'],
+      4,
+      [0, 1, 3],
+    )).toEqual(['wholesale', 'retail', 'retail']);
+  });
+
+  it('still accepts answers ordered only by the open question', () => {
+    expect(alignPriceBandAnswers(
+      ['wholesale', 'retail', 'retail'],
+      4,
+      [0, 1, 3],
+    )).toEqual(['wholesale', 'retail', 'retail']);
+  });
+
+  it('rejects an answer count that cannot map safely', () => {
+    expect(alignPriceBandAnswers(['retail', 'wholesale'], 4, [0, 1, 3])).toBeNull();
   });
 });
 

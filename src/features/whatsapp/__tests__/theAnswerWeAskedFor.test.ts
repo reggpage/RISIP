@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { parsePriceBandAnswer, priceBandCancelled, priceBandQuestion } from '../../../../supabase/functions/_shared/whatsappPriceBand';
+import { alignPriceBandAnswers, parsePriceBandAnswer, priceBandCancelled, priceBandQuestion } from '../../../../supabase/functions/_shared/whatsappPriceBand';
 import { productReadClarification } from '../../../../supabase/functions/_shared/whatsappProductResolver';
 import { quantityMeaningQuestion } from '../../../../supabase/functions/_shared/whatsappConversationMemory';
 import { newProductSaved } from '../../../../supabase/functions/_shared/whatsappNewProduct';
@@ -64,8 +64,20 @@ describe('the ordering that dropped it', () => {
 
   it('passes canonical multi-row meanings to the guarded resume path', () => {
     expect(webhook).toContain('const bandAnswers = answers.filter((answer) => answer.field === \'price_band\');');
-    expect(webhook).toContain('the model, not a word parser, decided each meaning');
+    expect(webhook).toContain('The model, not a word parser, decided each meaning.');
+    expect(webhook).toContain('alignPriceBandAnswers(');
+    expect(webhook).toContain('settled: priced.settled ?? []');
     expect(webhook).toContain('applyPriceBands(bandPending.sale.items, choices, settled)');
+  });
+});
+
+describe('the full-sale answer shape', () => {
+  it('maps the original numbered rows around an already-priced product', () => {
+    expect(alignPriceBandAnswers(
+      ['wholesale', 'retail', 'wholesale', 'retail'],
+      4,
+      [0, 1, 3],
+    )).toEqual(['wholesale', 'retail', 'retail']);
   });
 });
 

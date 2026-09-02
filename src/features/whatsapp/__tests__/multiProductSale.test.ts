@@ -95,7 +95,8 @@ describe('one backend pricing and one draft', () => {
     expect(webhook).toContain('paymentMethod: quantityPaymentMethod,');
     expect(webhook).toContain('resumedQuantityCredit = comboPending.credit ?? null;');
     expect(webhook).toContain('const bandAnswers = answers.filter((answer) => answer.field === \'price_band\');');
-    expect(webhook).toContain('const openIndexes = choices');
+    expect(webhook).toContain('const openChoices = choices.filter');
+    expect(webhook).toContain('const openSaleIndexes = openChoices.map');
     expect(webhook).toContain('credit: newProductSaleSetup.credit ?? null,');
     expect(webhook).toContain('const recordWithPayment = quantityPaymentMethod');
   });

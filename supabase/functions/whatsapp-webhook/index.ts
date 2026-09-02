@@ -326,6 +326,7 @@ import {
   type QuantitySale,
 } from '../_shared/whatsappQuantitySale.ts';
 import {
+  alignPriceBandAnswers,
   applyPriceBands,
   type Band,
   needsBandChoice,
@@ -697,6 +698,8 @@ type PriceBandPending = {
   choices: PriceBandChoice[];
   /** Bands already settled by an earlier, partial answer. */
   answered: (Band | null)[];
+  /** Lines that already had one unambiguous price when this question opened. */
+  settled?: PricedLine[];
   sourceMessageId: string;
   credit?: { party: string } | null;
   paymentMethod?: QuantityWanted['paymentMethod'];
@@ -3582,6 +3585,7 @@ async function priceAndDraftSale(
     const state: PriceBandPending = {
       kind: 'price_band_choice', sale: priced.sale, choices: priced.choices,
       answered: priced.choices.map(() => chosen), sourceMessageId: waMessageId,
+      settled: priced.settled ?? [],
       credit: args.credit as never, paymentMethod: args.paymentMethod, occurredAt: args.occurredAt,
     };
     await db.from('whatsapp_conversations').upsert({
@@ -3721,15 +3725,28 @@ function pendingClarificationOf(convo: { awaiting?: string | null; options?: unk
   }
   if (awaiting === 'product_cost' && kind === 'price_band_choice') {
     const choices = Array.isArray(options.choices)
-      ? options.choices as Array<{ product?: string; productName?: string }>
+      ? options.choices as Array<{ index?: number; product?: string; productName?: string }>
       : [];
     const names = choices.map((choice) => choice?.productName ?? choice?.product).filter(Boolean);
+    const sale = options.sale as { items?: unknown } | null | undefined;
+    const saleItems = Array.isArray(sale?.items)
+      ? sale.items as Array<{ product?: string; quantity?: number }>
+      : [];
+    const settled = Array.isArray(options.settled)
+      ? options.settled as Array<{ product?: string; quantity?: number }>
+      : [];
+    const openOrder = choices
+      .map((choice, index) => `${index + 1}=${choice?.productName ?? choice?.product ?? 'product'} (sale row ${Number(choice?.index ?? index) + 1})`)
+      .join(' | ');
+    const fullOrder = saleItems
+      .map((item, index) => `${index + 1}=${item.product ?? 'product'}${item.quantity == null ? '' : ` (${item.quantity})`}`)
+      .join(' | ');
     return {
       field: 'price_band',
       intent: 'sale',
       product: names.join(', ') || null,
       details: choices.length > 1
-        ? `There are ${choices.length} open products. If the trader gives one price for all, return one price_band answer. If they give mixed prices, return exactly one price_band answer per product, in this order: ${choices.map((choice, index) => `${index + 1}=${choice?.productName ?? choice?.product ?? 'product'}`).join(' | ')}. Keep raw_wording as the trader's wording; use the answer order to attach each meaning to the matching product.`
+        ? `There are ${choices.length} open products. Open-product order is: ${openOrder}. The original sale order is: ${fullOrder || openOrder}. Already-priced rows are: ${settled.map((row) => row.product ?? 'product').join(', ') || 'none'}. If the trader gives one price for all open products, return one price_band answer. If they give mixed prices, return exactly one answer per product. If they number the full original sale, return one answer per original sale row in original order; the server will ignore rows already settled. If they number only the open list, return one answer per open product in open order. canonical_value must be exactly retail or wholesale; keep raw_wording as typed. Example: "1 jumla 2 rejareja ... 12 jumla" means twelve answers in original sale order, and the already-settled row is ignored.`
         : 'One price_band answer settles this product. The trader may say the price in Kiswahili, English, or a shorthand; decide the canonical meaning and let the server validate it.',
     };
   }
@@ -3887,6 +3904,7 @@ async function resumeSaleAfterNewProductRegistration(
     const state: PriceBandPending = {
       kind: 'price_band_choice', sale: priced.sale, choices: priced.choices,
       answered: priced.choices.map(() => null), sourceMessageId,
+      settled: priced.settled ?? [],
       credit, paymentMethod, occurredAt,
     };
     await db.from('whatsapp_conversations').upsert({
@@ -3896,7 +3914,7 @@ async function resumeSaleAfterNewProductRegistration(
       updated_at: new Date().toISOString(),
     }, { onConflict: 'identity_id' });
     return {
-      message: `${newProductSaved(products, lang, true)}\n\n` + priceBandQuestion(priced.choices, lang),
+      message: `${newProductSaved(products, lang, true)}\n\n` + priceBandQuestion(priced.choices, lang, priced.settled ?? []),
       conversationKept: true,
     };
   }
@@ -4056,27 +4074,32 @@ async function executeClarification(
       return checked.kind === 'ok' ? asBand(checked.value) : null;
     });
     if (bands.length === 0 || bands.some((band) => band === null)) {
-      const question = priceBandQuestion((options.choices ?? []) as PriceBandChoice[], lang);
+      const pendingBand = options as unknown as PriceBandPending;
+      const question = priceBandQuestion(pendingBand.choices ?? [], lang, pendingBand.settled ?? []);
       return { content: question, terminalReply: question };
     }
     const bandPending = options as unknown as PriceBandPending;
     const choices = bandPending.choices ?? [];
-    const openIndexes = choices
-      .map((_, at) => at)
-      .filter((at) => bandPending.answered?.[at] == null);
+    const openChoices = choices.filter((_, at) => bandPending.answered?.[at] == null);
+    const openSaleIndexes = openChoices.map((choice) => Number(choice.index));
     // One model answer means one band for every open row. Multiple model
-    // answers are attached by the order of the products in the pending
-    // question; the model, not a word parser, decided each meaning.
-    if (bands.length > 1 && bands.length !== openIndexes.length) {
-      const question = priceBandQuestion(choices, lang);
+    // answers may be ordered by the open question or by every original sale
+    // row. The model, not a word parser, decided each meaning.
+    const aligned = alignPriceBandAnswers(
+      bands,
+      Array.isArray(bandPending.sale?.items) ? bandPending.sale.items.length : 0,
+      openSaleIndexes,
+    );
+    if (!aligned) {
+      const question = priceBandQuestion(choices, lang, bandPending.settled ?? []);
       return { content: question, terminalReply: question };
     }
     const settled = choices.map((_, at) => {
       const previous = bandPending.answered?.[at] ?? null;
       if (previous !== null) return previous;
-      if (bands.length === 1) return bands[0];
-      const openAt = openIndexes.indexOf(at);
-      return openAt >= 0 ? bands[openAt] : null;
+      if (aligned.length === 1) return aligned[0];
+      const openAt = openChoices.indexOf(choices[at]);
+      return openAt >= 0 ? aligned[openAt] : null;
     });
     await clearConversation(db, identity.id as string);
     return await priceAndDraftSale(db, identity, waMessageId, lang, {
@@ -5976,6 +5999,7 @@ ${trendShapeFacts(days)}`,
         choices: priced.choices,
         answered: priced.choices.map(() => null),
         sourceMessageId: waMessageId,
+        settled: priced.settled ?? [],
         credit: interpreted.credit,
         paymentMethod: interpreted.paymentMethod,
         occurredAt: aiOccurredAt,
@@ -7593,6 +7617,7 @@ Deno.serve(async (req) => {
           credit: { party: string } | null = null,
           paymentMethod: QuantityWanted['paymentMethod'] = null,
           occurredAt: string | null = null,
+          settled: PricedLine[] = [],
         ) => {
           await db.from('whatsapp_conversations').upsert({
             identity_id: identity.id,
@@ -7658,6 +7683,7 @@ Deno.serve(async (req) => {
               sale,
               choices,
               answered: choices.map(() => null),
+              settled,
               sourceMessageId,
               credit,
               paymentMethod,
@@ -7666,7 +7692,7 @@ Deno.serve(async (req) => {
             expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
             updated_at: new Date().toISOString(),
           }, { onConflict: 'identity_id' });
-          await replyQuietly(phone, prefix + priceBandQuestion(choices, lang));
+          await replyQuietly(phone, prefix + priceBandQuestion(choices, lang, settled));
         };
         const costConversation = convo?.awaiting === 'product_cost' && convo.options
           && !costPrompt && !costBatchPending && !stockBatchPending && !sellingBatchPending && !priceAndCostPending
@@ -11041,7 +11067,10 @@ Deno.serve(async (req) => {
               continue;
             }
             if (priced.kind === 'band') {
-              await askForPriceBand(priced.choices, priced.sale, waMessageId);
+              await askForPriceBand(
+                priced.choices, priced.sale, waMessageId, '', null, null, null,
+                priced.settled ?? [],
+              );
               await audit(db, identity, waMessageId, 'bare_quantity_sale', 'band', 'pending');
               await finish('skipped');
               continue;
@@ -11837,6 +11866,7 @@ Deno.serve(async (req) => {
                 priced.choices, priced.sale, waMessageId, '',
                 quantityCredit, quantityPaymentMethod,
                 quantityOccurredAt,
+                priced.settled ?? [],
               );
               await audit(db, identity, waMessageId, 'quantity_sale', 'band', 'pending');
               await finish('skipped');

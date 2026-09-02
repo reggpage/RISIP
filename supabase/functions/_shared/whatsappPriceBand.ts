@@ -58,6 +58,26 @@ export function needsBandChoice(
   return true;
 }
 
+/**
+ * Align ordered model answers with the rows that are still open. The model
+ * may answer only open rows, or may number every row from the original sale,
+ * including rows that already had one unambiguous price. This is positional
+ * structure, not a word parser: the model already supplied the validated
+ * retail/wholesale enum values.
+ */
+export function alignPriceBandAnswers(
+  bands: Band[],
+  saleItemCount: number,
+  openSaleIndexes: number[],
+): Band[] | null {
+  if (bands.length === 1) return bands;
+  if (bands.length === openSaleIndexes.length) return bands;
+  if (bands.length !== saleItemCount) return null;
+
+  const selected: Array<Band | null> = openSaleIndexes.map((index) => bands[index] ?? null);
+  return selected.some((band) => band === null) ? null : selected as Band[];
+}
+
 const money = (value: number) => `TSh ${Math.round(value).toLocaleString('en-US')}`;
 const qty = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 3 });
 
@@ -106,6 +126,7 @@ export function priceBandQuestion(
   // so it is taught here rather than left to be discovered.
   return lang === 'sw'
     ? `${done}Hizi zina bei mbili, na hujasema uliyotumia:\n${rows}\n\n`
+      + 'Namba hizi ni za bidhaa zenye bei mbili pekee; bidhaa zilizokwisha pimiwa juu hazihitaji jibu.\n'
       + 'Kama zote ni bei moja, chagua (a) *REJAREJA* au (b) *JUMLA*.\n'
       + 'Kama zimechanganyika, andika namba: _1 rejareja, 2 jumla_\n\n'
       + 'Ukitaka kuacha, chagua (c) *GHAIRI*.\n'
