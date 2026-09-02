@@ -7617,7 +7617,6 @@ Deno.serve(async (req) => {
           credit: { party: string } | null = null,
           paymentMethod: QuantityWanted['paymentMethod'] = null,
           occurredAt: string | null = null,
-          settled: PricedLine[] = [],
         ) => {
           await db.from('whatsapp_conversations').upsert({
             identity_id: identity.id,
@@ -7671,6 +7670,7 @@ Deno.serve(async (req) => {
           credit: { party: string } | null = null,
           paymentMethod: QuantityWanted['paymentMethod'] = null,
           occurredAt: string | null = null,
+          settled: PricedLine[] = [],
         ) => {
           await db.from('whatsapp_conversations').upsert({
             identity_id: identity.id,

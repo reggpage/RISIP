@@ -231,3 +231,15 @@ describe('pending conversation escapes and topic switches', () => {
     expect(webhook).toContain("isProactiveNotificationStop(body) && !(convo && isPendingEscape(body))");
   });
 });
+
+describe('price-band helper wiring', () => {
+  it('keeps settled rows scoped to askForPriceBand', () => {
+    const webhook = readFileSync(
+      resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+    const start = webhook.indexOf('const askForPriceBand = async (');
+    const end = webhook.indexOf('const costConversation =', start);
+    const helper = webhook.slice(start, end);
+    expect(helper).toContain('settled: PricedLine[] = [],');
+    expect(helper).toContain('answered: choices.map(() => null),\n              settled,');
+  });
+});
