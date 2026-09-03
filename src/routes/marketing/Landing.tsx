@@ -46,6 +46,23 @@ const COPY = {
       ['Risip inaandika rekodi bila ruhusa yangu?', 'Hapana. Risip inakuonyesha ilichoelewa na inasubiri uthibitishe kabla ya kuhifadhi rekodi ya pesa.'],
       ['Naweza kuongeza wafanyakazi?', 'Ndiyo. Mmiliki anaweza kuwaalika wafanyakazi na kuwapa ruhusa zinazolingana na kazi zao.'],
     ],
+    pricingNav: 'Bei',
+    pricing: {
+      title: 'Bei iliyo wazi, bila mafichoni',
+      lead: 'Lipa kwa ujumbe unaotuma kwa Risip. Majibu ya Risip hayahesabiwi. Jaribu bure kwa wiki moja, bila kadi.',
+      monthly: 'Kila mwezi', yearly: 'Kwa mwaka', save: 'okoa miezi 2',
+      perMonth: 'kwa mwezi', perYear: 'kwa mwaka', msgs: 'ujumbe unaotuma, kwa mwezi',
+      popular: 'Wengi huchagua', soon: 'hivi karibuni', cta: 'Anza wiki ya bure',
+      note: 'Bei zote ni za Shilingi ya Tanzania. Malipo yanashughulikiwa na Snippe. Ukizidi ujumbe, unapata taarifa kwanza — hakuna kinachokatika ghafla.',
+      plans: [
+        { name: 'Ndogo', tagline: 'Duka moja, unayefanya mwenyewe', m: '29,999', y: '299,990', cap: '300', popular: false,
+          feats: ['Mauzo, manunuzi, matumizi na stoo', 'Bei mbili: rejareja na jumla', 'Ukumbusho wa kila jioni', 'Dashboard ya web kwa simu na kompyuta', 'Mtumiaji 1'] },
+        { name: 'Kati', tagline: 'Duka lenye wafanyakazi na madeni', m: '39,999', y: '399,990', cap: '500', popular: true,
+          feats: ['Kila kitu cha Ndogo, pamoja na:', 'Ripoti za siku, wiki na mwezi', 'Madeni ya wateja na wasambazaji', 'Kuuza na kusajili kwa barcode', 'Faida kwa kila bidhaa', 'Watumiaji 3'] },
+        { name: 'Kubwa', tagline: 'Maduka zaidi ya moja, au biashara ya jumla', m: '70,000', y: '700,000', cap: '700', popular: false,
+          feats: ['Kila kitu cha Kati, pamoja na:', 'Maduka 3 kwenye namba moja', 'Kulinganisha maduka', 'Ankara za PDF__soon', 'Kutoa data: Excel au PDF__soon', 'Watumiaji 10'] },
+      ],
+    },
     ctaTitle: 'Anza kuweka biashara yako sawa leo.',
     ctaBody: 'Hakuna password ya kukumbuka. Fungua WhatsApp, sajili biashara na uanze kurekodi.',
     chat: 'Ongea na Risip', footerAbout: 'Kuhusu Risip', footerAboutText: 'Risip ni mfumo wa mauzo, bidhaa na rekodi rahisi za biashara kwa wajasiriamali wa Tanzania.',
@@ -84,6 +101,23 @@ const COPY = {
       ['Can Risip save a record without my permission?', 'No. Risip shows what it understood and waits for your confirmation before it saves a money record.'],
       ['Can I add employees?', 'Yes. The owner can invite employees and give them permissions that match their work.'],
     ],
+    pricingNav: 'Pricing',
+    pricing: {
+      title: 'Clear pricing, nothing hidden',
+      lead: 'Pay for the messages you send to Risip. Replies from Risip are not counted. Try it free for a week, no card.',
+      monthly: 'Monthly', yearly: 'Yearly', save: 'save 2 months',
+      perMonth: 'per month', perYear: 'per year', msgs: 'messages you send, per month',
+      popular: 'Most popular', soon: 'coming soon', cta: 'Start the free week',
+      note: 'All prices are in Tanzanian Shillings. Payments are handled by Snippe. If you go over, you are told first — nothing is cut off suddenly.',
+      plans: [
+        { name: 'Ndogo', tagline: 'One shop, run by you', m: '29,999', y: '299,990', cap: '300', popular: false,
+          feats: ['Sales, purchases, expenses and stock', 'Two prices: retail and wholesale', 'An evening reminder', 'Web dashboard on phone and computer', '1 user'] },
+        { name: 'Kati', tagline: 'A shop with staff and customer debts', m: '39,999', y: '399,990', cap: '500', popular: true,
+          feats: ['Everything in Ndogo, plus:', 'Daily, weekly and monthly reports', 'Customer and supplier debts', 'Sell and register by barcode', 'Profit per product', '3 users'] },
+        { name: 'Kubwa', tagline: 'More than one shop, or wholesale', m: '70,000', y: '700,000', cap: '700', popular: false,
+          feats: ['Everything in Kati, plus:', '3 shops on one number', 'Compare shops', 'PDF invoices__soon', 'Export data: Excel or PDF__soon', '10 users'] },
+      ],
+    },
     ctaTitle: 'Put your business records in order today.',
     ctaBody: 'There is no password to remember. Open WhatsApp, register your business and start recording.',
     chat: 'Chat with Risip', footerAbout: 'About Risip', footerAboutText: 'Risip is a simple sales, product and bookkeeping system made for Tanzanian entrepreneurs.',
@@ -100,6 +134,7 @@ export default function Landing() {
   const auth = useAuth();
   const lang = getLang();
   const c = COPY[lang];
+  const [yearly, setYearly] = useState(false);
   const chatUrl = buildRisipWhatsAppUrl('support', lang);
   if (auth.status === 'signed-in' && auth.profile) return <Navigate to="/dashboard" replace />;
 
@@ -110,6 +145,7 @@ export default function Landing() {
           <Link to="/" aria-label="Risip" className="text-role-admin"><RisipLogo className="h-10 w-auto" /></Link>
           <nav className="flex items-center gap-1 sm:gap-3">
             <a href="#features" className="hidden px-3 py-2 text-sm font-medium text-ink-muted hover:text-ink sm:block">{c.features}</a>
+            <a href="#pricing" className="hidden px-3 py-2 text-sm font-medium text-ink-muted hover:text-ink sm:block">{c.pricingNav}</a>
             <a href="#faq" className="hidden px-3 py-2 text-sm font-medium text-ink-muted hover:text-ink sm:block">{c.faqNav}</a>
             <Link to="/login"><Button variant="ghost">{c.login}</Button></Link>
             <Link to="/signup" className="hidden sm:block"><Button tint="admin">{c.start}</Button></Link>
@@ -155,7 +191,81 @@ export default function Landing() {
           </div>
         </section>
 
-        <section id="faq" className="bg-surface py-16 sm:py-20">
+        <section id="pricing" className="bg-surface py-16 sm:py-20">
+          <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+            <div className="mx-auto max-w-2xl text-center">
+              <h2 className="text-3xl font-bold">{c.pricing.title}</h2>
+              <p className="mt-3 text-ink-muted">{c.pricing.lead}</p>
+            </div>
+
+            <div className="mt-8 flex justify-center">
+              <div className="inline-flex rounded-full border border-surface-border bg-surface-muted p-1" role="group">
+                <button
+                  type="button"
+                  onClick={() => setYearly(false)}
+                  aria-pressed={!yearly}
+                  className={`rounded-full px-5 py-2 text-sm font-semibold transition ${!yearly ? 'bg-role-admin text-white shadow-sm' : 'text-ink-muted hover:text-ink'}`}
+                >{c.pricing.monthly}</button>
+                <button
+                  type="button"
+                  onClick={() => setYearly(true)}
+                  aria-pressed={yearly}
+                  className={`rounded-full px-5 py-2 text-sm font-semibold transition ${yearly ? 'bg-role-admin text-white shadow-sm' : 'text-ink-muted hover:text-ink'}`}
+                >{c.pricing.yearly}<span className="ml-1.5 text-xs font-medium opacity-80">{c.pricing.save}</span></button>
+              </div>
+            </div>
+
+            <div className="mt-12 grid items-start gap-6 lg:grid-cols-3">
+              {c.pricing.plans.map((plan) => (
+                <article
+                  key={plan.name}
+                  className={`relative flex flex-col rounded-2xl bg-surface p-8 shadow-sm ${plan.popular ? 'border-2 border-role-admin shadow-lg lg:-mt-4 lg:mb-4' : 'border border-surface-border'}`}
+                >
+                  {plan.popular && (
+                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-role-admin px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">
+                      {c.pricing.popular}
+                    </span>
+                  )}
+                  <h3 className="text-xl font-bold">{plan.name}</h3>
+                  <p className="mt-1 min-h-[2.5rem] text-sm text-ink-muted">{plan.tagline}</p>
+                  <div className="mt-5 flex items-baseline gap-1">
+                    <span className="text-sm font-semibold text-ink-muted">TSh</span>
+                    <span className="text-4xl font-bold tabular-nums tracking-tight">{yearly ? plan.y : plan.m}</span>
+                  </div>
+                  <p className="mt-1 text-sm text-ink-muted">{yearly ? c.pricing.perYear : c.pricing.perMonth}</p>
+                  <div className="mt-5 rounded-lg bg-surface-muted px-4 py-3 text-sm">
+                    <span className="font-bold tabular-nums text-ink">{plan.cap}</span>
+                    <span className="text-ink-muted"> {c.pricing.msgs}</span>
+                  </div>
+                  <ul className="mt-6 flex-1 space-y-3">
+                    {plan.feats.map((raw) => {
+                      const soon = raw.endsWith('__soon');
+                      const label = soon ? raw.slice(0, -6) : raw;
+                      return (
+                        <li key={raw} className="flex items-start gap-3 text-sm">
+                          <Check className="mt-0.5 h-4 w-4 shrink-0 text-role-admin" />
+                          <span className="text-ink-muted">
+                            {label}
+                            {soon && <span className="ml-2 rounded bg-role-admin/10 px-1.5 py-0.5 text-xs font-semibold text-role-admin">{c.pricing.soon}</span>}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <Link to="/signup" className="mt-8">
+                    <Button tint="admin" fullWidth variant={plan.popular ? 'primary' : 'secondary'} className="justify-center py-3">
+                      {c.pricing.cta}
+                    </Button>
+                  </Link>
+                </article>
+              ))}
+            </div>
+
+            <p className="mx-auto mt-10 max-w-3xl text-center text-sm leading-7 text-ink-muted">{c.pricing.note}</p>
+          </div>
+        </section>
+
+        <section id="faq" className="bg-surface-muted/40 py-16 sm:py-20">
           <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
             <div className="text-center"><h2 className="text-3xl font-bold">{c.faqTitle}</h2><p className="mt-3 text-ink-muted">{c.faqLead}</p></div>
             <div className="mt-12 space-y-4">
