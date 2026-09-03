@@ -18,6 +18,7 @@ import InvoiceEditor from '@/routes/invoices/InvoiceEditor';
 import PublicInvoice from '@/routes/invoices/PublicInvoice';
 import PettyCashPage from '@/routes/pettyCash/PettyCashPage';
 import SettingsPage from '@/routes/settings/SettingsPage';
+import BillingPage from '@/routes/billing/BillingPage';
 import NotificationsPage from '@/routes/notifications/NotificationsPage';
 import RetirementsPage from '@/routes/retirements/RetirementsPage';
 import ReimbursementsPage from '@/routes/reimbursements/ReimbursementsPage';
@@ -120,6 +121,16 @@ export default function App() {
         />
 
         <Route path="/settings" element={<SettingsPage />} />
+        {/* Billing is the owner's business: a worker who guesses this URL is
+            turned away here, and RLS turns them away again underneath. */}
+        <Route
+          path="/billing"
+          element={(
+            <RequireRole allowed={['owner']}>
+              <BillingPage />
+            </RequireRole>
+          )}
+        />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

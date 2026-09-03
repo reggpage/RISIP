@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, FolderKanban, Receipt, FileText, Settings, Wallet, X, LogOut, Handshake, Bell, HandCoins,
-  Banknote, ClipboardList, Package, ScanLine,
+  Banknote, ClipboardList, Package, ScanLine, CreditCard,
 } from 'lucide-react';
 import RisipLogo from '@/components/ui/RisipLogo';
 import { useNotifications } from '@/features/notifications/notifications';
@@ -29,6 +29,7 @@ const allItems: Item[] = [
   { key: 'products', to: '/products', label: getLang() === 'sw' ? 'Bidhaa' : 'Products', icon: Package, allowed: ['owner', 'accountant', 'worker'] },
   { key: 'daily-records', to: '/daily-records', label: getLang() === 'sw' ? 'Rekodi za Siku' : 'Daily Records', icon: ClipboardList, allowed: ['owner', 'accountant', 'worker'] },
   { key: 'notifications', to: '/notifications', label: getLang() === 'sw' ? 'Taarifa' : 'Notifications', icon: Bell, allowed: ['owner', 'accountant', 'worker'] },
+  { key: 'billing', to: '/billing', label: getLang() === 'sw' ? 'Bili' : 'Billing', icon: CreditCard, allowed: ['owner'] },
   { key: 'settings', to: '/settings', label: sw.nav.settings, icon: Settings, allowed: ['owner', 'accountant', 'worker'] },
 
   { key: 'projects', to: '/projects', label: sw.nav.projects, icon: FolderKanban, allowed: ['owner', 'accountant', 'worker'] },

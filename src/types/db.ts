@@ -434,6 +434,86 @@ export type Database = {
         Update: never;
         Relationships: [];
       };
+      // ── Billing ────────────────────────────────────────────────────
+      //
+      // Read-only from the app on purpose. A period is marked paid by a signed
+      // Snippe webhook and by nothing else, so Insert and Update are `never`:
+      // the type system refuses what RLS would refuse anyway, but at the point
+      // where somebody is writing the code rather than running it.
+      billing_plans: {
+        Row: {
+          code: string;
+          name_sw: string;
+          monthly_tzs: number;
+          yearly_tzs: number;
+          message_allowance: number;
+          overage_tzs: number;
+          max_users: number;
+          max_projects: number;
+          sort_order: number;
+          created_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      subscriptions: {
+        Row: {
+          id: string;
+          company_id: string;
+          plan: string;
+          cycle: 'monthly' | 'yearly';
+          status: 'trialing' | 'active' | 'past_due' | 'suspended' | 'cancelled';
+          trial_ends_at: string | null;
+          current_period_start: string;
+          current_period_end: string;
+          grace_until: string | null;
+          billing_phone: string | null;
+          cancelled_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      subscription_invoices: {
+        Row: {
+          id: string;
+          subscription_id: string;
+          company_id: string;
+          plan: string;
+          cycle: string;
+          amount_tzs: number;
+          period_start: string;
+          period_end: string;
+          status: 'open' | 'paid' | 'failed' | 'void';
+          snippe_reference: string | null;
+          snippe_status: string | null;
+          attempts: number;
+          paid_at: string | null;
+          paid_manually_by: string | null;
+          created_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
+      subscription_usage: {
+        Row: {
+          id: string;
+          subscription_id: string;
+          company_id: string;
+          period_start: string;
+          period_end: string;
+          messages_used: number;
+          allowance: number;
+          refreshed_at: string;
+        };
+        Insert: never;
+        Update: never;
+        Relationships: [];
+      };
       companies: {
         Row: Company;
         Insert: Partial<Company> & { name: string; hq_location: string };
@@ -873,6 +953,38 @@ export type Database = {
           p_min_qty: number | null;
         };
         Returns: { id: string; product: string };
+      };
+      /**
+       * This period's message count for the signed-in owner's company, plus
+       * how many periods in a row they have gone over.
+       *
+       * Null when there is nothing counted yet, which is not an error: a shop
+       * in its first hours has a subscription and no counted period.
+       */
+      billing_usage_now: {
+        Args: Record<string, never>;
+        Returns: {
+          period_start: string;
+          period_end: string;
+          messages_used: number;
+          allowance: number;
+          over_by: number;
+          consecutive_over: number;
+          refreshed_at: string;
+        } | null;
+      };
+      /**
+       * Null when the shop may write. A reason when it may not, so a banner can
+       * go up BEFORE somebody types a sale and loses it to an exception.
+       */
+      billing_write_block: {
+        Args: Record<string, never>;
+        Returns: {
+          blocked: true;
+          status: 'suspended' | 'cancelled';
+          plan: string;
+          period_end: string;
+        } | null;
       };
     };
     Enums: {
