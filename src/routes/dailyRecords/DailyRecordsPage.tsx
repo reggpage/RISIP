@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Check, CheckCircle2, ChevronLeft, Filter, RefreshCw, X } from 'lucide-react';
+import { Check, CheckCircle2, ChevronLeft, Download, Filter, RefreshCw, X } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Select from '@/components/ui/Select';
@@ -19,14 +19,15 @@ import {
   type DailyRecordWithDetails,
 } from '@/features/dailyRecords/dailyRecords';
 import { isSameLocalDay, moveDailyRecordsDate, startOfLocalDay } from '@/features/dailyRecords/uiRules';
+import { downloadCsv, exportFilename, recordsToCsv } from '@/features/dailyRecords/exportRecords';
 import { groupByDay, type DayGroup } from './groupByDay';
 import type { DailyRecordAudit, DailyRecordKind, DailyRecordStatus } from '@/types/db';
 
 const lang = getLang();
 const ui = lang === 'sw' ? {
-  title: 'Rekodi za Siku', description: 'Rekodi za shughuli kutoka WhatsApp na app. Zinatenganishwa na matumizi ya risiti.', refresh: 'Onyesha upya', filter: 'Chuja', filterRecords: 'Chuja rekodi', kind: 'Aina', status: 'Hali', source: 'Chanzo', allKinds: 'Aina zote', allStatuses: 'Hali zote', allSources: 'Vyanzo vyote', app: 'App / kwa mkono', other: 'Nyingine', empty: 'Bado hakuna rekodi za siku.', emptyHint: 'Tuma mauzo, matumizi, madeni, au malipo kupitia WhatsApp.', loading: 'Inapakia rekodi za siku…', confirmed: 'Imethibitishwa', pending: 'Inasubiri uthibitisho', voided: 'Imeghairiwa', sale: 'Mauzo', expense: 'Matumizi', stockPurchase: 'Ununuzi wa bidhaa', wholeAnimalProcurement: 'Ununuzi wa ng\'ombe mzima', debt: 'Mkopo uliotolewa', payment: 'Malipo ya mteja', stockLoss: 'Upotevu wa bidhaa', ownerUse: 'Zimechukuliwa nyumbani', supplierPayable: 'Deni la muuzaji', supplierPayment: 'Malipo kwa muuzaji', daily: 'Rekodi ya siku', occurred: 'Ilitokea', created: 'Iliundwa', confirm: 'Thibitisha', saving: 'Inahifadhi…', void: 'Ghairi', details: 'Maelezo ya rekodi ya siku', total: 'Jumla', descriptionLabel: 'Maelezo', party: 'Mhusika', recordedBy: 'Iliyorekodiwa na', calculation: 'Mgawanyo wa hesabu', audit: 'Historia ya ukaguzi', historyLoading: 'Inapakia historia…', auditError: 'Historia ya ukaguzi haikuweza kupakiwa.', close: 'Funga', voidTitle: 'Ghairi rekodi ya siku', voidExplanation: 'Ghairi inaweka rekodi hii kuwa imefutwa kwa matumizi ya hesabu. Haifutwi. Rekodi ya awali na historia ya ukaguzi vinabaki, lakini haijumuishwi kwenye jumla.', reason: 'Sababu', reasonPlaceholder: 'Eleza kwa nini rekodi hii inaghairiwa', cancel: 'Ghairi', voidRecord: 'Ghairi rekodi', voiding: 'Inaghairi…', confirmSuccess: 'Rekodi ya siku imethibitishwa.', voidSuccess: 'Rekodi ya siku imeghairiwa. Historia yake imehifadhiwa.', reasonError: 'Andika sababu yenye maana kabla ya kughairi rekodi hii.', confirmError: 'Imeshindikana kuthibitisha rekodi hii.', voidError: 'Imeshindikana kughairi rekodi hii.', whatsApp: 'WhatsApp', voidReason: 'Sababu ya kughairi', today: 'Leo', yesterday: 'Jana', previousDay: 'Juzi', back: 'Nyuma', dateNavigation: 'Urambazaji wa tarehe', oneEntry: 'kipengele 1', manyEntries: 'vipengele {n}',
+  title: 'Rekodi za Siku', description: 'Rekodi za shughuli kutoka WhatsApp na app. Zinatenganishwa na matumizi ya risiti.', refresh: 'Onyesha upya', filter: 'Chuja', filterRecords: 'Chuja rekodi', kind: 'Aina', status: 'Hali', source: 'Chanzo', allKinds: 'Aina zote', allStatuses: 'Hali zote', allSources: 'Vyanzo vyote', app: 'App / kwa mkono', other: 'Nyingine', empty: 'Bado hakuna rekodi za siku.', emptyHint: 'Tuma mauzo, matumizi, madeni, au malipo kupitia WhatsApp.', loading: 'Inapakia rekodi za siku…', confirmed: 'Imethibitishwa', pending: 'Inasubiri uthibitisho', voided: 'Imeghairiwa', sale: 'Mauzo', expense: 'Matumizi', stockPurchase: 'Ununuzi wa bidhaa', wholeAnimalProcurement: 'Ununuzi wa ng\'ombe mzima', debt: 'Mkopo uliotolewa', payment: 'Malipo ya mteja', stockLoss: 'Upotevu wa bidhaa', ownerUse: 'Zimechukuliwa nyumbani', supplierPayable: 'Deni la muuzaji', supplierPayment: 'Malipo kwa muuzaji', daily: 'Rekodi ya siku', occurred: 'Ilitokea', created: 'Iliundwa', confirm: 'Thibitisha', saving: 'Inahifadhi…', void: 'Ghairi', details: 'Maelezo ya rekodi ya siku', total: 'Jumla', descriptionLabel: 'Maelezo', party: 'Mhusika', recordedBy: 'Iliyorekodiwa na', calculation: 'Mgawanyo wa hesabu', audit: 'Historia ya ukaguzi', historyLoading: 'Inapakia historia…', auditError: 'Historia ya ukaguzi haikuweza kupakiwa.', close: 'Funga', voidTitle: 'Ghairi rekodi ya siku', voidExplanation: 'Ghairi inaweka rekodi hii kuwa imefutwa kwa matumizi ya hesabu. Haifutwi. Rekodi ya awali na historia ya ukaguzi vinabaki, lakini haijumuishwi kwenye jumla.', reason: 'Sababu', reasonPlaceholder: 'Eleza kwa nini rekodi hii inaghairiwa', cancel: 'Ghairi', voidRecord: 'Ghairi rekodi', voiding: 'Inaghairi…', confirmSuccess: 'Rekodi ya siku imethibitishwa.', voidSuccess: 'Rekodi ya siku imeghairiwa. Historia yake imehifadhiwa.', reasonError: 'Andika sababu yenye maana kabla ya kughairi rekodi hii.', confirmError: 'Imeshindikana kuthibitisha rekodi hii.', voidError: 'Imeshindikana kughairi rekodi hii.', whatsApp: 'WhatsApp', voidReason: 'Sababu ya kughairi', today: 'Leo', yesterday: 'Jana', previousDay: 'Juzi', back: 'Nyuma', dateNavigation: 'Urambazaji wa tarehe', oneEntry: 'kipengele 1', manyEntries: 'vipengele {n}', export: 'Pakua CSV', exportEmpty: 'Hakuna rekodi za kupakua.', hDate: 'Tarehe', hParty: 'Mhusika', hAmount: 'Kiasi', pCash: 'Taslimu', pMobile: 'Simu', pBank: 'Benki', pOther: 'Nyingine',
 } : {
-  title: 'Daily Records', description: 'Operational records from WhatsApp and the app. They stay separate from receipt expenses.', refresh: 'Refresh', filter: 'Filter', filterRecords: 'Filter records', kind: 'Kind', status: 'Status', source: 'Source', allKinds: 'All kinds', allStatuses: 'All statuses', allSources: 'All sources', app: 'App / manual', other: 'Other', empty: 'No daily records yet.', emptyHint: 'Send sales, expenses, debts, or payments on WhatsApp.', loading: 'Loading daily records…', confirmed: 'Confirmed', pending: 'Pending confirmation', voided: 'Voided', sale: 'Sale', expense: 'Expense', stockPurchase: 'Product purchase', wholeAnimalProcurement: 'Whole-animal procurement', debt: 'Debt issued', payment: 'Customer payment', stockLoss: 'Stock loss', ownerUse: 'Taken by owner', supplierPayable: 'Owed to supplier', supplierPayment: 'Paid to supplier', daily: 'Daily record', occurred: 'Occurred', created: 'Created', confirm: 'Confirm', saving: 'Saving…', void: 'Void', details: 'Daily record details', total: 'Total', descriptionLabel: 'Description', party: 'Party', recordedBy: 'Recorded by', calculation: 'Calculation breakdown', audit: 'Audit history', historyLoading: 'Loading history…', auditError: 'Audit history could not be loaded.', close: 'Close', voidTitle: 'Void daily record', voidExplanation: 'Void marks this record as cancelled. It is not deleted. The original record and audit history remain, but it is excluded from totals.', reason: 'Reason', reasonPlaceholder: 'Explain why this record is being voided', cancel: 'Cancel', voidRecord: 'Void record', voiding: 'Voiding…', confirmSuccess: 'Daily record confirmed.', voidSuccess: 'Daily record voided. Its history is preserved.', reasonError: 'Enter a meaningful reason before voiding this record.', confirmError: 'Could not confirm this daily record.', voidError: 'Could not void this daily record.', whatsApp: 'WhatsApp', voidReason: 'Void reason', today: 'Today', yesterday: 'Yesterday', previousDay: 'Previous day', back: 'Back', dateNavigation: 'Date navigation', oneEntry: '1 entry', manyEntries: '{n} entries',
+  title: 'Daily Records', description: 'Operational records from WhatsApp and the app. They stay separate from receipt expenses.', refresh: 'Refresh', filter: 'Filter', filterRecords: 'Filter records', kind: 'Kind', status: 'Status', source: 'Source', allKinds: 'All kinds', allStatuses: 'All statuses', allSources: 'All sources', app: 'App / manual', other: 'Other', empty: 'No daily records yet.', emptyHint: 'Send sales, expenses, debts, or payments on WhatsApp.', loading: 'Loading daily records…', confirmed: 'Confirmed', pending: 'Pending confirmation', voided: 'Voided', sale: 'Sale', expense: 'Expense', stockPurchase: 'Product purchase', wholeAnimalProcurement: 'Whole-animal procurement', debt: 'Debt issued', payment: 'Customer payment', stockLoss: 'Stock loss', ownerUse: 'Taken by owner', supplierPayable: 'Owed to supplier', supplierPayment: 'Paid to supplier', daily: 'Daily record', occurred: 'Occurred', created: 'Created', confirm: 'Confirm', saving: 'Saving…', void: 'Void', details: 'Daily record details', total: 'Total', descriptionLabel: 'Description', party: 'Party', recordedBy: 'Recorded by', calculation: 'Calculation breakdown', audit: 'Audit history', historyLoading: 'Loading history…', auditError: 'Audit history could not be loaded.', close: 'Close', voidTitle: 'Void daily record', voidExplanation: 'Void marks this record as cancelled. It is not deleted. The original record and audit history remain, but it is excluded from totals.', reason: 'Reason', reasonPlaceholder: 'Explain why this record is being voided', cancel: 'Cancel', voidRecord: 'Void record', voiding: 'Voiding…', confirmSuccess: 'Daily record confirmed.', voidSuccess: 'Daily record voided. Its history is preserved.', reasonError: 'Enter a meaningful reason before voiding this record.', confirmError: 'Could not confirm this daily record.', voidError: 'Could not void this daily record.', whatsApp: 'WhatsApp', voidReason: 'Void reason', today: 'Today', yesterday: 'Yesterday', previousDay: 'Previous day', back: 'Back', dateNavigation: 'Date navigation', oneEntry: '1 entry', manyEntries: '{n} entries', export: 'Download CSV', exportEmpty: 'No records to download.', hDate: 'Date', hParty: 'Party', hAmount: 'Amount', pCash: 'Cash', pMobile: 'Mobile money', pBank: 'Bank', pOther: 'Other',
 };
 const kindLabels: Record<DailyRecordKind, string> = {
   sale: ui.sale, expense: ui.expense, stock_purchase: ui.stockPurchase,
@@ -84,6 +85,26 @@ export default function DailyRecordsPage() {
       && (!source || record.source === source);
   }), [kind, selectedDate, source, state.records, status]);
 
+  // What the export writes: the whole ledger under the current kind/status/
+  // source filter, but NOT the single selected day — "download my data" means
+  // all of it, not just the day on screen.
+  const exportRows = useMemo(() => state.records.filter((record) =>
+    (!kind || record.kind === kind)
+    && (!status || record.status === status)
+    && (!source || record.source === source)), [kind, source, state.records, status]);
+  const canExport = canManage;
+
+  function exportRecords() {
+    if (exportRows.length === 0) { toast.info(ui.exportEmpty); return; }
+    const csv = recordsToCsv(exportRows, {
+      headers: { date: ui.hDate, kind: ui.kind, party: ui.hParty, description: ui.descriptionLabel, amount: ui.hAmount, payment: ui.whatsApp === 'WhatsApp' ? 'Malipo' : 'Payment', status: ui.status },
+      kind: kindLabels,
+      status: statusLabels,
+      payment: { cash: ui.pCash, mobile_money: ui.pMobile, bank: ui.pBank, other: ui.pOther },
+    });
+    downloadCsv(csv, exportFilename());
+  }
+
   async function handleConfirm(record: DailyRecordWithDetails) {
     setBusyId(record.id);
     try {
@@ -129,6 +150,14 @@ export default function DailyRecordsPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" className="sm:hidden" onClick={() => setFiltersOpen(true)}><Filter className="h-4 w-4" /> {ui.filter}</Button>
+          {/* Exports exactly what is on screen — the current filter and date —
+              so "download what I am looking at" is what happens. Owner and
+              accountant only, the same wall the reports live behind. */}
+          {canExport && (
+            <Button variant="secondary" onClick={exportRecords} disabled={exportRows.length === 0}>
+              <Download className="h-4 w-4" /> {ui.export}
+            </Button>
+          )}
           <Button variant="secondary" onClick={state.reload} disabled={state.status === 'loading'}>
             <RefreshCw className="h-4 w-4" /> {ui.refresh}
           </Button>

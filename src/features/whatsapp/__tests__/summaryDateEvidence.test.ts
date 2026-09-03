@@ -57,9 +57,12 @@ const empty = calculateBusinessSummary([]);
 // itself is, so this test does not rot every time the wall clock crosses into
 // a new month. "jana" on 2 Sep is Septemba; on 1 Sep it is Agosti; the test
 // must accept whichever is true today.
-const resolvedMonth = (said: string) =>
-  new Intl.DateTimeFormat('sw-TZ', { month: 'long', timeZone: 'Africa/Dar_es_Salaam' })
-    .format(new Date(resolveDateRange(said).from));
+const resolvedMonth = (said: string) => {
+  const range = resolveDateRange(said);
+  if (!range) throw new Error(`resolveDateRange returned null for "${said}"`);
+  return new Intl.DateTimeFormat('sw-TZ', { month: 'long', timeZone: 'Africa/Dar_es_Salaam' })
+    .format(new Date(range.from));
+};
 
 describe('every summary the assistant can receive carries its date', () => {
   // The invariant that was missing. Two builders answer the same question and
