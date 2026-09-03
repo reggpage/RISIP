@@ -1,7 +1,17 @@
 import type { Lang } from './whatsappIntent.ts';
+import {
+  billingDueSoon,
+  billingOverdue,
+  billingSuspended,
+} from './billingMessages.ts';
 import { closeReminderReply } from './whatsappDayClose.ts';
 
-export type ProactiveNotificationKind = 'daily_summary' | 'debt_reminder' | 'close_reminder';
+export type ProactiveNotificationKind =
+  | 'daily_summary' | 'debt_reminder' | 'close_reminder'
+  // Billing. Plain text, and therefore subject to the same 24-hour rule as the
+  // close reminder: a shop that has not written today has no window, and its
+  // bill has to wait for an approved template.
+  | 'billing_due' | 'billing_overdue' | 'billing_suspended';
 
 export type ClaimedNotification = {
   delivery_id: string;
@@ -87,11 +97,38 @@ export function isPlainTextNotification(claim: ClaimedNotification): boolean {
   return String((claim.parameters ?? {}).channel ?? '') === 'text';
 }
 
+/**
+ * A bill, as plain text.
+ *
+ * Kept beside the close reminder rather than in its own sender because the
+ * queue, the retries and the claim already work; a second delivery path for
+ * money would be a second delivery path to keep correct.
+ *
+ * Every figure comes from the queued row, which came from an invoice. Nothing
+ * here computes a total.
+ */
+function billingBody(claim: ClaimedNotification): string | null {
+  const p = claim.parameters ?? {};
+  const notice = {
+    businessName: String(p.business_name ?? 'Risip'),
+    planName: String(p.plan_name ?? ''),
+    amountTzs: Math.max(0, Math.round(Number(p.amount_tzs ?? 0))),
+    periodStart: String(p.period_start ?? ''),
+    graceDaysLeft: p.grace_days_left == null ? null : Number(p.grace_days_left),
+  };
+  switch (claim.notification_kind) {
+    case 'billing_due': return billingDueSoon(notice, claim.lang);
+    case 'billing_overdue': return billingOverdue(notice, claim.lang);
+    case 'billing_suspended': return billingSuspended(notice, claim.lang);
+    default: return null;
+  }
+}
+
 export function proactiveTextPayload(claim: ClaimedNotification) {
   const p = claim.parameters ?? {};
   const name = String(p.full_name ?? '').trim() || null;
   const recorded = Math.max(0, Math.round(Number(p.recorded_today ?? 0)));
-  const body = closeReminderReply(name, recorded, claim.lang);
+  const body = billingBody(claim) ?? closeReminderReply(name, recorded, claim.lang);
   return {
     messaging_product: 'whatsapp' as const,
     recipient_type: 'individual' as const,
