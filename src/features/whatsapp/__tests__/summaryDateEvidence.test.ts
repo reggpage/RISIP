@@ -53,6 +53,14 @@ const snapshot = {
 
 const empty = calculateBusinessSummary([]);
 
+// The Swahili long month for a resolved day word, computed the way the label
+// itself is, so this test does not rot every time the wall clock crosses into
+// a new month. "jana" on 2 Sep is Septemba; on 1 Sep it is Agosti; the test
+// must accept whichever is true today.
+const resolvedMonth = (said: string) =>
+  new Intl.DateTimeFormat('sw-TZ', { month: 'long', timeZone: 'Africa/Dar_es_Salaam' })
+    .format(new Date(resolveDateRange(said).from));
+
 describe('every summary the assistant can receive carries its date', () => {
   // The invariant that was missing. Two builders answer the same question and
   // only one of them had the date; nothing anywhere required both to.
@@ -107,7 +115,7 @@ describe('the exact sentences the owner was shown, through the real path', () =>
       'Jana: mauzo TSh 105,000, faida ghafi TSh 84,250. Tarehe kamili ya "jana" haikutolewa na mfumo katika matokeo haya.',
     );
     expect(cleaned).not.toMatch(/haikutolewa|haikuwepo|haikupatikana/i);
-    expect(cleaned).toContain('Agosti');
+    expect(cleaned).toContain(resolvedMonth('jana'));
     expect(findFalseDateCaveat(cleaned, evidence)).toHaveLength(0);
   });
 
@@ -117,7 +125,7 @@ describe('the exact sentences the owner was shown, through the real path', () =>
       'Juzi: mauzo TSh 0, faida ghafi TSh 0. Tarehe kamili ya "juzi" haikutolewa na mfumo katika matokeo haya.',
     );
     expect(cleaned).not.toMatch(/haikutolewa|haikuwepo|haikupatikana/i);
-    expect(cleaned).toContain('Agosti');
+    expect(cleaned).toContain(resolvedMonth('juzi'));
   });
 
   it('handles the parenthesised form the first two replies used', () => {
@@ -126,7 +134,7 @@ describe('the exact sentences the owner was shown, through the real path', () =>
       'Jana, mauzo yalikuwa TSh 105,000, faida ghafi TSh 84,250. (Tarehe kamili haikutolewa na mfumo.)',
     );
     expect(cleaned).not.toContain('(Tarehe');
-    expect(cleaned).toContain('Agosti');
+    expect(cleaned).toContain(resolvedMonth('jana'));
   });
 });
 
