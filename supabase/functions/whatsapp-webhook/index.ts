@@ -450,7 +450,6 @@ import {
 } from '../_shared/whatsappStock.ts';
 import {
   type ProductCostBatch,
-  type ProductCost,
   costBatchCancelled,
   costBatchConfirmation,
   costBatchFailed,
