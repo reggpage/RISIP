@@ -149,6 +149,9 @@ export const swahiliOverrides = {
       failed: 'Imeshindikana',
       void: 'Imefutwa',
     },
+    allowance: 'Ukomo wa ujumbe',
+    receipt: 'Risiti',
+    receiptFailed: 'Sijaweza kutengeneza risiti. Jaribu tena.',
     noSubscription: 'Biashara hii bado haina plan. Hakuna kinachotozwa.',
   },
   invoices: {

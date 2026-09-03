@@ -18,6 +18,17 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import {
+  billingAskProvider,
+  billingPushFailed,
+  billingPushSent,
+  parseBillingAnswer,
+} from '../_shared/billingMessages.ts';
+import {
+  createSnippePayment,
+  providerForPhone,
+  splitName,
+} from '../_shared/snippePayment.ts';
+import {
   buildUnlinkedReply,
   evaluateLinkToken,
   linkFailureMessage,
@@ -9919,6 +9930,87 @@ Deno.serve(async (req) => {
         // for Claude; it is not permission for a business parser to intercept
         // the next message. Only system commands and exact protocol answers
         // are excluded by messageGoesToModel().
+        // "1" AGAINST A BILL.
+        //
+        // A one-character answer to a question Risip asked, which is exactly
+        // what the parser is for. Three guards, and all three are needed:
+        //
+        //   nothing else is parked, so this can never steal the "1" that
+        //   belongs to MAUZO/ONGEZA/SAJILI or to a two-name product choice;
+        //   an OPEN invoice exists, so "1" out of nowhere is still language;
+        //   the answer is exactly a payment word, so "nitalipa kesho" goes to
+        //   the model like any other sentence.
+        //
+        // Nothing here marks anything paid. It asks Snippe to ring the
+        // handset; only the signed webhook may say the month was bought.
+        if (!convo && identity?.company_id && parseBillingAnswer(body) === 'pay') {
+          const { data: openInvoice } = await db
+            .from('subscription_invoices')
+            .select('id, amount_tzs, attempts, period_start')
+            .eq('company_id', identity.company_id)
+            .eq('status', 'open')
+            .order('period_start', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (openInvoice) {
+            const provider = providerForPhone(phone);
+            if (!provider) {
+              // Guessing the network wrong is a prompt that reaches nobody,
+              // which is the failure this whole flow already had once. An
+              // unrecognised prefix asks rather than guesses.
+              await reply(phone, billingAskProvider(lang));
+              await audit(db, identity, waMessageId, 'billing', 'provider_unknown', 'clarification');
+              await finish('skipped');
+              continue;
+            }
+
+            const { data: owner } = await db
+              .from('profiles')
+              .select('id, full_name')
+              .eq('company_id', identity.company_id)
+              .eq('role', 'owner')
+              .is('deactivated_at', null)
+              .limit(1)
+              .maybeSingle();
+            const account = owner?.id ? await db.auth.admin.getUserById(owner.id) : null;
+            const email = account?.data?.user?.email ?? '';
+
+            const result = await createSnippePayment({
+              invoiceId: String(openInvoice.id),
+              amountTzs: Number(openInvoice.amount_tzs),
+              phone,
+              provider,
+              customer: { ...splitName(owner?.full_name), email },
+              webhookUrl: `${Deno.env.get('SUPABASE_URL') ?? ''}/functions/v1/snippe-webhook`,
+              apiKey: Deno.env.get('SNIPPE_API_KEY') ?? '',
+              // Every "1" after the first starts a NEW payment, because the
+              // previous one expires in ten minutes and the same key would
+              // keep handing back the dead one forever.
+              attempt: Number(openInvoice.attempts ?? 0) + 1,
+            });
+
+            await db.from('subscription_invoices').update({
+              attempts: Number(openInvoice.attempts ?? 0) + 1,
+              ...(result.reference ? { snippe_reference: result.reference } : {}),
+              ...(result.status ? { snippe_status: result.status } : {}),
+            }).eq('id', openInvoice.id);
+
+            await db.from('subscription_events').insert({
+              company_id: identity.company_id,
+              invoice_id: openInvoice.id,
+              kind: `payment.requested.${result.httpStatus}`,
+              payload: { via: 'whatsapp', provider, received: result.payload },
+            });
+
+            await reply(phone, result.ok ? billingPushSent(lang) : billingPushFailed(lang));
+            await audit(db, identity, waMessageId, 'billing',
+              result.ok ? 'push_sent' : 'push_failed', result.ok ? 'applied' : 'failed');
+            await finish('skipped');
+            continue;
+          }
+        }
+
         const aiEligible = messageGoesToModel(convo, body, systemCommand);
         // Watched in production: ai_primary is what an ordinary business
         // message must be. If parsers ever start eating them again, this is

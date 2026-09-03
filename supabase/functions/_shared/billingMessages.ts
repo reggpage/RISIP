@@ -142,3 +142,20 @@ export function parseBillingAnswer(text: string | null | undefined): BillingAnsw
   if (/^(ghairi|acha|cancel|stop|hapana|no)$/.test(said)) return 'cancel';
   return null;
 }
+
+/**
+ * When the phone number's network cannot be told from its prefix.
+ *
+ * Asking beats guessing here: a push sent to the wrong network is silence, and
+ * silence in a payment flow reads as a broken product rather than as a wrong
+ * guess. Numbered, because that is how every other choice in Risip is made.
+ */
+export function billingAskProvider(lang: Lang): string {
+  return lang === 'sw'
+    ? 'Kabla sijatuma ombi la malipo, niambie mtandao wa namba hii:\n\n'
+      + '*1* M-Pesa\n*2* Airtel Money\n*3* Mixx by Yas\n*4* Halopesa\n\n'
+      + 'Jibu kwa namba. Ukitaka kuacha, andika *GHAIRI*.'
+    : 'Before I send the payment request, which network is this number on?\n\n'
+      + '*1* M-Pesa\n*2* Airtel Money\n*3* Mixx by Yas\n*4* Halopesa\n\n'
+      + 'Reply with the number. To stop, reply *GHAIRI*.';
+}

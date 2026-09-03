@@ -309,6 +309,9 @@ const english = {
       failed: 'Failed',
       void: 'Cancelled',
     },
+    allowance: 'Message allowance',
+    receipt: 'Receipt',
+    receiptFailed: 'The receipt could not be built. Try again.',
     noSubscription: 'This business has no plan yet. Nothing is being charged.',
   },
   settings: {
