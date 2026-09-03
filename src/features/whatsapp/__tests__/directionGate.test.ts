@@ -80,7 +80,7 @@ describe('messages that do NOT say, and must be asked about', () => {
 describe('the gate in the webhook', () => {
   const branch = webhook.slice(
     webhook.indexOf('const ambiguousKind = event.kind'),
-    webhook.indexOf('const ambiguousKind = event.kind') + 1200,
+    webhook.indexOf('const ambiguousKind = event.kind') + 2400,
   );
 
   it('no longer waits for the model to volunteer it', () => {

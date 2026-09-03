@@ -84,6 +84,7 @@ export type PendingClarification = {
 export function describePending(pending: PendingClarification | null): string | null {
   if (!pending) return null;
   const allowed = ALLOWED_VALUES[pending.field] ?? pending.choices;
+  const saleRecovery = pending.intent === 'sale_missing_selling_price';
   const parts = [
     `RISIP IS WAITING FOR AN ANSWER: field=${pending.field}`,
     `pending_intent=${pending.intent}`,
@@ -91,13 +92,13 @@ export function describePending(pending: PendingClarification | null): string | 
   if (pending.product) parts.push(`about_product=${pending.product}`);
   if (allowed?.length) parts.push(`allowed_values=${allowed.join('|')}`);
   if (pending.details) parts.push(pending.details);
-  parts.push(
-    'If this message answers that question, call resolve_pending_clarification. Send canonical_value as'
-    + " one of the allowed values above — YOU decide which of them the trader's words mean, because the"
-    + ' server no longer reads their words at all. Send raw_wording as what they actually typed, so the'
-    + ' shop can be shown its own words back. If the message changes the subject instead, treat it as a'
-    + ' new message and answer that; the server releases the parked question.',
-  );
+  parts.push(saleRecovery
+    ? 'This is a recovery of the original sale. Do not call resolve_pending_clarification or propose_price_update. If the trader corrects product names, call propose_business_event with the original quantities and corrected names so the server can use the catalogue prices. If the trader gives genuinely new prices, handle that as a new explicit price-setting request.'
+    : 'If this message answers that question, call resolve_pending_clarification. Send canonical_value as'
+      + " one of the allowed values above — YOU decide which of them the trader's words mean, because the"
+      + ' server no longer reads their words at all. Send raw_wording as what they actually typed, so the'
+      + ' shop can be shown its own words back. If the message changes the subject instead, treat it as a'
+      + ' new message and answer that; the server releases the parked question.');
   return parts.join('\n');
 }
 

@@ -99,7 +99,7 @@ describe('the server asks instead of writing', () => {
     // below only normalises quantities it was already handed. The reasoning
     // sits in the comment block ABOVE the guard, not inside it.
     const guard = webhook.indexOf("if ((event.missingFields.includes('direction') || directionUnstated)");
-    expect(webhook.slice(Math.max(0, guard - 1400), guard))
+    expect(webhook.slice(Math.max(0, guard - 2200), guard))
       .toContain('it is not deciding what the message meant');
   });
 });

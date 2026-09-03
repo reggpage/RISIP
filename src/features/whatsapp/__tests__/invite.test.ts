@@ -3,17 +3,24 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   inviteReady,
+  inviteForwardMessage,
   inviteLanguageQuestion,
   inviteRoleQuestion,
   parseInviteRequest,
   parseInviteRole,
   workerCanDo,
 } from '../../../../supabase/functions/_shared/whatsappInvite';
+import {
+  canReadCompanyReporting,
+  canUseCompanyFinanceReads,
+} from '../../../../supabase/functions/_shared/whatsappAssistant';
 
 describe('asking to bring somebody in', () => {
   it('takes the owner’s own words', () => {
     expect(parseInviteRequest('nataka kumuinvite mtu')).toBe(true);
     expect(parseInviteRequest('nataka kualika mfanyakazi')).toBe(true);
+    expect(parseInviteRequest('nayaka kumaalika mtu')).toBe(true);
+    expect(parseInviteRequest('mualiko')).toBe(true);
     expect(parseInviteRequest('invite someone')).toBe(true);
     expect(parseInviteRequest('add a worker')).toBe(true);
   });
@@ -69,7 +76,7 @@ describe('choosing the role, which is never guessed', () => {
       webhook.indexOf('// ONE ROLE, SO NO QUESTION.') + 1600,
     );
     expect(branch).toContain("p_phone: phone, p_role: 'worker', p_days: 3,");
-    expect(branch).toContain('await sendReplyText(phone, workerCanDo(lang), waMessageId);');
+    expect(branch).toContain('await sendReplyText(phone, inviteForwardMessage(');
     expect(branch).not.toContain("options: { kind: 'invite_role' }");
   });
 
@@ -83,22 +90,21 @@ describe('choosing the role, which is never guessed', () => {
   });
 
   it('tells the owner what he is handing over, and what he is not', () => {
-    // "atapofanya ualiko apate bulets za majukumu ya mfanyakazi wake." The list
-    // of what the worker will NOT see matters as much as the list of what they
-    // will — without it, "mfanyakazi" is a word to trust rather than a boundary
-    // to read.
+    // The first bubble lists the worker's duties and the company information
+    // they may read. It does not expose an unnecessary "Hataona" list.
     const said = workerCanDo('sw');
     expect(said).toContain('Kurekodi mauzo na manunuzi');
     expect(said).toContain('Kuhesabu bidhaa zilizopo');
-    expect(said).toContain('*Hataona:*');
-    expect(said).toContain('Faida ya biashara');
-    expect(said).toContain('Madeni ya wateja wote');
-    expect(said).toContain('ondoa');
+    expect(said).toContain('Kuona faida ya biashara');
+    expect(said).toContain('Kuona madeni ya wateja wote');
+    expect(said).toContain('Kuona ripoti za fedha');
+    expect(said).not.toContain('Hataona');
+    expect(said).not.toContain('picha');
   });
 });
 
 describe('what the owner gets back', () => {
-  const reply = inviteReady('KTM4PQ7X', 'worker', 'St. Ritha bookshop', '+255 700 000 000', 'sw');
+  const reply = inviteReady('KTM4PQ7X', 'worker', 'sw');
 
   it('carries the code and what it costs to lose it', () => {
     expect(reply).toContain('KTM4PQ7X');
@@ -108,21 +114,25 @@ describe('what the owner gets back', () => {
     expect(reply).toMatch(/siku 3/);
   });
 
-  it('writes the forwardable half to the newcomer, not to the owner', () => {
-    // It will be pasted into a chat with somebody who has never heard of Risip.
-    expect(reply).toContain('Karibu St. Ritha bookshop');
-    expect(reply).toContain('+255 700 000 000');
-    expect(reply).toContain('👉 Nakili ujumbe huu, kisha tuma kwenye namba ya mfanyakazi wako');
+  it('keeps the owner bubble separate from the forwardable message', () => {
+    expect(reply).toContain('Mwaliko wa *Mfanyakazi* uko tayari');
+    expect(reply).toContain('────────');
+    expect(reply).toContain('👇 Mtumie ujumbe huu hapo chini:');
+    expect(reply).not.toContain('Karibu St. Ritha bookshop');
+    expect(reply).not.toContain('Nakili ujumbe huu');
   });
 
-  it('says plainly that Risip does not send it, and why', () => {
-    expect(reply).toMatch(/Situmi mimi/);
-    expect(reply).toMatch(/namba ikikosewa/);
+  it('creates the exact clean bubble the owner can forward', () => {
+    expect(inviteForwardMessage(
+      'G38EGXTM', 'St. Ritha bookshop', '+255 750 513 538', 'sw',
+    )).toBe(
+      'Karibu St. Ritha bookshop. Tuma neno G38EGXTM kwenye WhatsApp namba +255 750 513 538, kisha fuata maswali mawili. Ndipo utaweza kurekodi mauzo kwa simu yako.',
+    );
   });
 
   it('names the role it was minted for', () => {
     expect(reply).toContain('Mfanyakazi');
-    expect(inviteReady('KTM4PQ7X', 'accountant', 'X', '+255', 'sw')).toContain('Mhasibu');
+    expect(inviteReady('KTM4PQ7X', 'accountant', 'sw')).toContain('Mhasibu');
   });
 });
 
@@ -138,11 +148,21 @@ describe('what a new invited number sees first', () => {
   });
 });
 
+describe('worker reporting permissions', () => {
+  it('allows report reads without granting finance writes', () => {
+    expect(canReadCompanyReporting('worker')).toBe(true);
+    expect(canReadCompanyReporting('owner')).toBe(true);
+    expect(canReadCompanyReporting('accountant')).toBe(true);
+    expect(canUseCompanyFinanceReads('worker')).toBe(false);
+    expect(canUseCompanyFinanceReads('owner')).toBe(true);
+  });
+});
+
 describe('when Meta will not say what the number is', () => {
   it('still produces a usable invite', () => {
-    const reply = inviteReady('KTM4PQ7X', 'worker', 'St. Ritha bookshop', null, 'sw');
+    const reply = inviteForwardMessage('KTM4PQ7X', 'St. Ritha bookshop', null, 'sw');
     expect(reply).toContain('KTM4PQ7X');
-    expect(reply).toMatch(/namba hii ya Risip/);
+    expect(reply).toMatch(/WhatsApp namba hii ya Risip/);
     expect(reply).not.toMatch(/null|undefined/);
   });
 });

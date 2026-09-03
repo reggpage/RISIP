@@ -104,7 +104,10 @@ describe('typing is requested for every message, not only the first', () => {
       webhook.indexOf('function typingRecorder(') + 900,
     );
     expect(recorderBody).toContain('await showTyping(waMessageId)');
-    expect((webhook.match(/await pulseTyping\(\)/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    // The pre-AI mixed-message pass was removed, so its extra pulse is gone;
+    // the inbound preflight and the AI turn each still pulse through the
+    // recorder.
+    expect((webhook.match(/await pulseTyping\(\)/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 
   it('gives a queued message its own pulse rather than riding the first one', () => {

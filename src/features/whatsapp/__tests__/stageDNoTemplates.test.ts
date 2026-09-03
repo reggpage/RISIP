@@ -208,7 +208,18 @@ describe('the prompt got shorter, not longer', () => {
     // for a figure, and an unbolded number in a paragraph is a number they have
     // to find twice. The rule also says what NOT to bold, because a reply where
     // everything is bold has nothing bold in it.
-    expect(prompt.length).toBeLessThan(20_200);
+    // Raised by 500, measured at 20,606 the day it moved, for two rules that
+    // each fixed a photographed failure. First: workers may now READ company
+    // reports, profit and debts (migration 0158), so the SCOPE line that told
+    // the model to withhold them from a worker was actively wrong and had to be
+    // rewritten to the real boundary — read yes, change no. Second: a
+    // product-NAME correction to a stalled sale ("rosali ni Rosali ya Maria")
+    // was being read as a price update and pricing the sale from history; the
+    // rule now says a correction replays the sale with catalogue prices and is
+    // never a price change. Both are load-bearing, both are one sentence, and
+    // a ceiling that never moves for a measured fix is a ceiling that gets
+    // ignored.
+    expect(prompt.length).toBeLessThan(20_800);
   });
 
   it('tells the adviser to stop, and says what it costs not to', () => {

@@ -17,6 +17,19 @@ export type PriceUpdateContractResult =
   | { kind: 'ok'; value: PriceUpdateCandidate }
   | { kind: 'ask'; reason: 'missing_product' | 'missing_selling_price' | 'invalid_number' | 'wholesale_above_retail' };
 
+/**
+ * A price-setting tool call must have price evidence in the CURRENT message.
+ * History may resolve a product name, but an old catalogue price must never
+ * become a new write. Number reading itself remains the server contract below.
+ */
+export function hasExplicitPriceUpdateEvidence(text: unknown): boolean {
+  const said = String(text ?? '').replace(/\s+/gu, ' ').trim();
+  if (!said) return false;
+  const priceCue = /\b(?:bei|price|panga|weka|ongeza|badili(?:sha)?|kuuza|uza|rejareja|reja|jumla|retail|wholesale)\b/iu;
+  const amount = /(?:\d[\d.,]*|\b(?:moja|mbili|tatu|nne|tano|sita|saba|nane|tisa|kumi|ishirini|thelathini|arobaini|hamsini|sitini|sabini|themanini|tisini|mia|elfu|laki|milioni|one|two|three|four|five|six|seven|eight|nine|ten|hundred|thousand|million)\b)/iu;
+  return priceCue.test(said) && amount.test(said);
+}
+
 function clean(value: unknown): string {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, 80) : '';
 }

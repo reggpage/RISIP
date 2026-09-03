@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { ASSISTANT_TOOLS } from '../../../../supabase/functions/_shared/whatsappAssistant';
 import { parseSellingPriceBatch } from '../../../../supabase/functions/_shared/whatsappSellingPriceBatch';
 import { readNumber } from '../../../../supabase/functions/_shared/whatsappBusinessEvent';
+import { hasExplicitPriceUpdateEvidence } from '../../../../supabase/functions/_shared/whatsappPriceUpdateContract';
 
 // SETTING PRICES, however the sentence happens to come out.
 //
@@ -40,6 +41,15 @@ describe('the shapes the parser alone could not read', () => {
   it('reads the one shape it was built for', () => {
     const batch = parseSellingPriceBatch('bei ya velvet napkin iwe 4000 na sodaa iwe 2000');
     expect(batch?.prices).toHaveLength(2);
+  });
+});
+
+describe('price updates cannot be invented from context', () => {
+  it('requires a price in the current message', () => {
+    expect(hasExplicitPriceUpdateEvidence('nilikuwa na maanisha rosali ya maria na atlas ni atlasi')).toBe(false);
+    expect(hasExplicitPriceUpdateEvidence('bei ya rosali ya maria iwe 7000')).toBe(true);
+    expect(hasExplicitPriceUpdateEvidence('panga bei ya rosali elfu saba')).toBe(true);
+    expect(hasExplicitPriceUpdateEvidence('Puch 3000 kuuza 8000 jumla 6500')).toBe(true);
   });
 });
 
@@ -96,6 +106,8 @@ describe('the tool, and the authority it does not have', () => {
   it('carries the phrasings the parser could not', () => {
     expect(tool?.description).toMatch(/weka bei birika 5000 sodaa 2000/);
     expect(tool?.description).toMatch(/elfu tano/);
+    expect(tool?.description).toMatch(/Puch 3000 kuuza 8000 jumla 6500/);
+    expect(tool?.description).toMatch(/first number is cost/);
   });
 
   it('saves nothing by itself', () => {
@@ -119,5 +131,12 @@ describe('the tool, and the authority it does not have', () => {
     expect(branch).toContain("product: one.asked");
     expect(branch).toContain("kind: 'new_product_pricing'");
     expect(branch).toContain('Do not answer yet. Call propose_price_update again');
+  });
+
+  it('keeps a missing-price sale alive for a later name correction', () => {
+    expect(webhook).toContain("kind: 'sale_missing_prices'");
+    expect(webhook).toContain('The original sale is still pending');
+    expect(webhook).toContain('Use existing catalogue prices');
+    expect(webhook).toContain("options.kind === 'sale_missing_prices'");
   });
 });

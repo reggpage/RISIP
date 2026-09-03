@@ -164,8 +164,8 @@ import {
   inviteLanguageQuestion,
   inviteNotAllowed,
   inviteReady,
+  inviteForwardMessage,
   inviteRoleQuestion,
-  workerCanDo,
   parseInviteRequest,
   parseInviteRole,
 } from '../_shared/whatsappInvite.ts';
@@ -411,12 +411,6 @@ import {
 import { messageStatesDirection } from '../_shared/whatsappDirection.ts';
 import { shopMayAlreadyStock } from '../_shared/whatsappKnownProduct.ts';
 import {
-  riderQuestionNotice,
-  secondInstructionNotice,
-  splitSecondInstruction,
-  splitRiderQuestion,
-} from '../_shared/whatsappMixedTopics.ts';
-import {
   parseSellingPrice,
   priceBandNotice,
   sellingPriceSaved,
@@ -468,6 +462,7 @@ import {
   parseProductCostBatch,
 } from '../_shared/whatsappCostBatch.ts';
 import {
+  hasExplicitPriceUpdateEvidence,
   validatePriceUpdateCandidate,
 } from '../_shared/whatsappPriceUpdateContract.ts';
 import {
@@ -506,6 +501,7 @@ import {
   type AccountDeletionState,
 } from '../_shared/whatsappAccountDeletion.ts';
 import {
+  canReadCompanyReporting,
   canUseCompanyFinanceReads,
   runConversationalAssistant,
   shouldDeferRecordLikeReply,
@@ -615,6 +611,21 @@ type ResolvedWhatsAppIdentity = {
 
 type NewProductSaleSetup = {
   kind: 'new_product_sale_setup';
+  missingProducts: string[];
+  sale: QuantitySale;
+  sourceMessageId: string;
+  credit?: { party: string } | null;
+  paymentMethod?: QuantityWanted['paymentMethod'];
+  occurredAt?: string | null;
+};
+
+/**
+ * The original sale stays alive when one or more catalogue prices are missing.
+ * This lets a later name correction replay the sale instead of making the AI
+ * reconstruct it from history alone.
+ */
+type MissingSalePricesPending = {
+  kind: 'sale_missing_prices';
   missingProducts: string[];
   sale: QuantitySale;
   sourceMessageId: string;
@@ -2379,7 +2390,7 @@ async function productAnalyticsToolReply(
   request: ProductAnalyticsRequest,
   lang: Lang,
 ): Promise<string> {
-  if (!canUseCompanyFinanceReads(String(identity.role ?? 'worker'))) {
+  if (!canReadCompanyReporting(String(identity.role ?? 'worker'))) {
     return lang === 'sw'
       ? 'Taarifa za mauzo ya bidhaa za kampuni nzima zinaonekana kwa owner au accountant tu.'
       : 'Company-wide product sales information is available only to an owner or accountant.';
@@ -3025,7 +3036,7 @@ async function salesTrendToolReply(
   period: 'week' | 'month',
   lang: Lang,
 ): Promise<string> {
-  if (!canUseCompanyFinanceReads(identity.role)) {
+  if (!canReadCompanyReporting(identity.role)) {
     return lang === 'sw'
       ? 'Ulinganisho wa mauzo ya biashara nzima unaonekana kwa owner au accountant tu.'
       : 'A whole-business sales comparison is available only to an owner or accountant.';
@@ -3103,7 +3114,7 @@ async function hypotheticalProfitToolReply(
   /** How many the question named, when it named one. Null means the shelf. */
   askedQuantity: number | null = null,
 ): Promise<{ text: string; pending: HypotheticalPortionChoice | null }> {
-  if (!canUseCompanyFinanceReads(identity.role)) {
+  if (!canReadCompanyReporting(identity.role)) {
     return { text: lang === 'sw'
       ? 'Makisio ya faida ya kampuni yanaonekana kwa owner au accountant tu.'
       : 'Company profit estimates are available only to an owner or accountant.', pending: null };
@@ -3239,8 +3250,13 @@ async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest,
   const { from, to } = readPeriodBounds(request);
   const companyId = String(identity.company_id);
   const profileId = String(identity.profile_id);
-  const financeOnly = new Set(['ai_business_summary', 'ai_business_summary_facts', 'ai_debtors', 'ai_debtor_detail', 'daily_profit_estimate', 'ai_stock_loss', 'ai_owner_use', 'ai_whole_animals', 'ai_pending_approvals']);
-  if (financeOnly.has(request.tool) && !canUseCompanyFinanceReads(String(identity.role ?? 'worker'))) {
+  const workerReadableCompanyReports = new Set([
+    'ai_business_summary', 'ai_business_summary_facts', 'ai_debtors', 'ai_debtor_detail',
+    'daily_profit_estimate', 'ai_stock_loss', 'ai_owner_use', 'ai_whole_animals',
+  ]);
+  const financeOnly = new Set(['ai_pending_approvals']);
+  if ((workerReadableCompanyReports.has(request.tool) && !canReadCompanyReporting(String(identity.role ?? 'worker')))
+    || (financeOnly.has(request.tool) && !canUseCompanyFinanceReads(String(identity.role ?? 'worker')))) {
     return lang === 'sw'
       ? 'Taarifa za kampuni nzima zinaonekana kwa owner au accountant tu. Unaweza kuniuliza kuhusu risiti zako, petty cash yako au reimbursement yako.'
       : 'Company-wide financial information is available only to an owner or accountant. You can ask about your own receipts, petty cash, or reimbursement.';
@@ -3548,6 +3564,33 @@ async function priceAndDraftSale(
     db, identity, args.sale, lang, [], args.credit as never, args.occurredAt,
   );
   if (priced.kind === 'blocked') {
+    const missingProducts = [...new Set(
+      priced.message.match(/\*([^*]+)\*/gu)?.map((entry) => entry.slice(1, -1)) ?? [],
+    )];
+    // Keep the sale, not only the question. A follow-up such as
+    // "rosali ni Rosali ya Maria" is a correction to this sale, not a new
+    // price-setting request. The model can now see the exact original lines.
+    if (missingProducts.length > 0) {
+      const pending: MissingSalePricesPending = {
+        kind: 'sale_missing_prices',
+        missingProducts,
+        sale: args.sale,
+        sourceMessageId: waMessageId,
+        credit: args.credit,
+        paymentMethod: args.paymentMethod,
+        occurredAt: args.occurredAt,
+      };
+      await db.from('whatsapp_conversations').upsert({
+        identity_id: identity.id,
+        company_id: identity.company_id,
+        profile_id: identity.profile_id,
+        awaiting: 'product_cost',
+        receipt_id: null,
+        options: pending,
+        expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'identity_id' });
+    }
     if (priced.choice) {
       await parkProductChoice(
         db,
@@ -3779,6 +3822,16 @@ function pendingClarificationOf(convo: { awaiting?: string | null; options?: unk
   }
   if (awaiting === 'product_cost' && kind === 'quantity_meaning') {
     return { field: 'event_type', intent: 'unknown' };
+  }
+  if (awaiting === 'product_cost' && kind === 'sale_missing_prices') {
+    const pending = options as unknown as MissingSalePricesPending;
+    const saleLines = pending.sale?.items?.map((item) => `${item.product} (${item.quantity})`).join(' | ') ?? '';
+    return {
+      field: 'product',
+      intent: 'sale_missing_selling_price',
+      product: pending.missingProducts?.join(', ') || null,
+      details: `The original sale is still pending: ${saleLines}. The trader may be correcting product names, for example "rosali ni Rosali ya Maria" or "atlas ni atlasi". This is NOT a price update. If the current message corrects names, call propose_business_event again using the original quantities and the corrected product names. Use existing catalogue prices; never call propose_price_update unless the current message explicitly gives new prices. Do not call resolve_pending_clarification for this recovery state.`,
+    };
   }
   return null;
 }
@@ -4031,6 +4084,12 @@ async function executeClarification(
   }
 
   const options = (convo?.options ?? {}) as Record<string, unknown>;
+  if (options.kind === 'sale_missing_prices') {
+    return {
+      content: 'This is a sale recovery state, not a closed-choice question. Re-read the original sale and call propose_business_event with the corrected product names and original quantities. Do not set prices from history.',
+      isError: true,
+    };
+  }
   // One message can settle several facts — "mpesa na ilikuwa jana", "hisense
   // kilo tatu". Each is taken on its own; whatever is valid survives even when
   // something else in the same breath does not.
@@ -4291,8 +4350,21 @@ async function executeBusinessEvent(
     || event.kind === 'stock_purchase'
     || event.kind === 'stock_count';
   const settledByContext = Boolean(event.partyWording) || Boolean(event.creditWording);
+  // A BARE NUMBER IS NEVER AN AMBIGUOUS PRODUCT LIST.
+  //
+  // MEASURED, telemetry 14:03: "Ongeza Nguvu ya Sala 10 stoo" was drafted by
+  // the model as a stock_purchase and asked its cost. The owner answered
+  // "80000". The model understood it — it re-drafted the stock_purchase with
+  // the amount — but the server then re-derived the direction from the raw
+  // message "80000", saw no direction word in it, and asked MAUZO/ONGEZA/SAJILI
+  // all over again. The direction was stated in the ORIGINAL message and the
+  // model carried it; the amount answer cannot un-state it. The MAUZO/ONGEZA/
+  // SAJILI question exists to disambiguate a fresh product-quantity list, and a
+  // message that is only a number is never one, so it must not re-trigger it.
+  const messageIsOnlyANumber = /^[s]*[d][d.,s]*$/.test(String(said ?? ''));
   const directionUnstated = ambiguousKind
     && !settledByContext
+    && !messageIsOnlyANumber
     && !messageStatesDirection(said);
 
   if ((event.missingFields.includes('direction') || directionUnstated) && event.lines.length > 0) {
@@ -4977,7 +5049,7 @@ async function runAssistantTool(
     return { content: await salesTrendToolReply(db, identity, period, lang) };
   }
   if (name === 'get_business_advice') {
-    if (!canUseCompanyFinanceReads(identity.role)) {
+    if (!canReadCompanyReporting(identity.role)) {
       const denied = lang === 'sw'
         ? 'Mchanganuo wa biashara nzima unaonekana kwa owner au accountant tu.'
         : 'A whole-business review is available only to an owner or accountant.';
@@ -5419,6 +5491,14 @@ async function runAssistantTool(
     return { content: said, terminalReply: said };
   }
   if (name === 'propose_price_update') {
+    if (!hasExplicitPriceUpdateEvidence(said)) {
+      return {
+        content: lang === 'sw'
+          ? 'Huu ujumbe hauna bei mpya iliyotajwa. Ufafanuzi wa jina la bidhaa si kubadilisha bei. Tumia propose_business_event kuendelea na tukio la awali, na tumia bei zilizopo kwenye katalogi.'
+          : 'The current message does not state a new price. A product-name correction is not a price update. Use propose_business_event to continue the earlier event and use the catalogue prices.',
+        isError: true,
+      };
+    }
     // The model SPLITS the sentence; the server READS every number. Same
     // boundary as every proposing tool: price_wording is the trader's own
     // words, price_candidate is the model's reading of them, and a
@@ -5725,7 +5805,7 @@ async function runAssistantTool(
   if (name === 'get_debtor_history') {
     // Same boundary as every other whole-ledger read: who owes the shop and
     // for how long is a company financial, not a worker's own record.
-    if (!canUseCompanyFinanceReads(identity.role)) {
+    if (!canReadCompanyReporting(identity.role)) {
       const denied = lang === 'sw'
         ? 'Historia ya madeni inaonekana kwa owner au accountant tu.'
         : 'Debt history is available to an owner or accountant only.';
@@ -5773,7 +5853,7 @@ async function runAssistantTool(
     };
   }
   if (name === 'get_daily_breakdown') {
-    if (!canUseCompanyFinanceReads(identity.role)) {
+    if (!canReadCompanyReporting(identity.role)) {
       const denied = lang === 'sw'
         ? 'Mchanganuo wa siku kwa siku unaonekana kwa owner au accountant tu.'
         : 'The day-by-day breakdown is available to an owner or accountant only.';
@@ -5807,7 +5887,7 @@ ${trendShapeFacts(days)}`,
     // reached for get_day_records, whose answer is terminal and ends the turn,
     // so the second date had nowhere to go and was dropped in silence. Half an
     // answer, delivered with the confidence of a whole one.
-    if (!canUseCompanyFinanceReads(identity.role)) {
+    if (!canReadCompanyReporting(identity.role)) {
       const denied = lang === 'sw'
         ? 'Kulinganisha siku kunaonekana kwa owner au accountant tu.'
         : 'Comparing days is available to an owner or accountant only.';
@@ -5864,7 +5944,7 @@ ${trendShapeFacts(days)}`,
   if (name === 'get_day_records') {
     // A whole day's entries is a company financial: it shows what every worker
     // sold and what every customer owes. Same boundary as the summary.
-    if (!canUseCompanyFinanceReads(identity.role)) {
+    if (!canReadCompanyReporting(identity.role)) {
       const denied = lang === 'sw'
         ? 'Orodha ya miamala ya siku nzima inaonekana kwa owner au accountant tu.'
         : 'The full day’s records are available to an owner or accountant only.';
@@ -7005,16 +7085,6 @@ Deno.serve(async (req) => {
             : status === 'done'
               ? 'done'
               : 'skipped';
-          // A second instruction is named on the way out, whichever branch
-          // handled the first one. MEASURED FAILURE: the notice used to hang
-          // off reply(), and the sale and daily-record confirmations do not go
-          // through reply() — they send their own chunks — so on exactly the
-          // messages where somebody had asked for two things, the second was
-          // dropped in silence.
-          if (leftoverPending && leftover && identity) {
-            leftoverPending = false;
-            await sendReplyText(phone, secondInstructionNotice(leftover.leftover, lang).trimStart(), waMessageId);
-          }
           const { error: finishError } = await db.from('whatsapp_messages')
             .update({
               status: messageStatus, ...(error ? { last_error: error } : {}),
@@ -7028,38 +7098,21 @@ Deno.serve(async (req) => {
         // was done with it. Cleared per message so nothing leaks across.
         rememberForAudit(body);
 
-        // ── One message, two topics ───────────────────────────────────────
-        // "nimeuza daftari 5 kwa 7500, faida ya leo ni ngapi?" used to be
-        // claimed whole by the first parser that matched, and the question was
-        // dropped without a word. The split is only trusted when the action
-        // half genuinely reaches a write parser — otherwise the whole message
-        // goes to the read path untouched, which already handles it.
-        const rider = splitRiderQuestion(body);
-        const claimsWrite = (said: string) => Boolean(
-          parseStockCountBatch(said) ?? parseStockCount(said) ?? parseSellingPrice(said)
-          ?? parseProductCostBatch(said) ?? parseProductCost(said),
-        ) || isDailyRecordCandidate(said);
-        const mixed = rider && claimsWrite(rider.action) ? rider : null;
-        // Two instructions with nothing between them: "…10 rejareja naongeza
-        // daftari 100 stoo". Only trusted when the first half still reaches a
-        // write parser on its own, and only when the rider split found nothing
-        // — a question riding along is answered, and that path already works.
-        const secondAction = mixed ? null : splitSecondInstruction(body);
-        const leftover = secondAction && claimsWrite(secondAction.action) ? secondAction : null;
-        let leftoverPending = leftover !== null;
-        let writeBody = mixed ? mixed.action : (leftover ? leftover.action : body);
+        // ── AI owns ordinary language ──────────────────────────────────────
+        // The complete message must reach Claude before any business parser
+        // classifies it. This preserves mixed requests such as a sale plus a
+        // profit question and lets the tool loop decide whether one or more
+        // capabilities are needed. The backend still validates every tool
+        // argument and performs writes only through protected RPCs.
+        const mixed = null;
+        let writeBody = body;
         // When a numeric product-choice answer resumes a parked sentence, keep
         // the replayed sentence as the evidence passed to business tools. The
         // visible body is also replaced below, but this explicit variable makes
         // it impossible for the tool loop to fall back to the bare answer (for
         // example "2") and ask for MAUZO/ONGEZA/SAJILI again.
         let assistantEvidenceBody = body;
-        let riderPending = mixed !== null;
         let visibleTurnRemembered = false;
-        /**
-         * The write branches reply through this, so the rider question is named
-         * once — on the first reply the message produces — and then answered.
-         */
         /**
          * Send, and remember that it was said.
          *
@@ -7083,84 +7136,7 @@ Deno.serve(async (req) => {
           }
         };
 
-        const reply = async (to: string, text: string) => {
-          if (!mixed || !riderPending) {
-            await replyQuietly(to, text);
-            if (identity && body?.trim() && !visibleTurnRemembered) {
-              visibleTurnRemembered = await storeAssistantExchange(
-                db, identity, waMessageId, body, text,
-                { topic: null, entities: {}, lastTool: null },
-              );
-            }
-            return;
-          }
-          riderPending = false;
-          const visible = text + riderQuestionNotice(mixed.question, lang);
-          await replyQuietly(to, visible);
-          if (identity && body?.trim() && !visibleTurnRemembered) {
-            visibleTurnRemembered = await storeAssistantExchange(
-              db, identity, waMessageId, body, visible,
-              { topic: null, entities: {}, lastTool: null },
-            );
-          }
-          if (!identity) return;
-          // The second answer is a fresh wait for the reader. WhatsApp drops the
-          // typing indicator after about twenty-five seconds and it is gone the
-          // moment the first message lands, so it has to be raised again or the
-          // chat looks finished while Risip is still working.
-          await pulseTyping();
-          // Read-only, so it runs now rather than after the confirmation. The
-          // notice above already says the figure excludes what is pending.
-          const hypotheticalProduct = parseHypotheticalProfitRequest(mixed.question);
-          if (hypotheticalProduct) {
-            await replyQuietly(to, (await hypotheticalProfitToolReply(
-              db, identity, hypotheticalProduct, lang, parseHypotheticalQuantity(mixed.question))).text);
-            await audit(db, identity, waMessageId, 'rider_question', 'hypothetical_product_profit', 'applied');
-            return;
-          }
-          const product = parseProductAnalyticsRequest(mixed.question);
-          if (product) {
-            await answerProductAnalytics(db, identity, to, product, lang, waMessageId);
-            await audit(db, identity, waMessageId, 'rider_question', 'product_analytics', 'applied');
-            return;
-          }
-          const read = parseReadRequest(mixed.question);
-          if (read) {
-            try {
-              await replyQuietly(to, await readOnlyToolReply(db, identity, read, lang));
-              await audit(db, identity, waMessageId, 'rider_question', read.tool, 'applied');
-            } catch {
-              await replyQuietly(to, lang === 'sw'
-                ? 'Sikuweza kupata jibu la swali lako la pili sasa. Liulize peke yake.'
-                : 'I could not answer your second question just now. Ask it on its own.');
-              await audit(db, identity, waMessageId, 'rider_question', read.tool, 'failed');
-            }
-            return;
-          }
-          // MEASURED FAILURE: the two parsers above cover a narrow set of exact
-          // phrases, so "nionyeshe risiti za leo" — which the assistant answers
-          // perfectly well — came back as "I did not understand", in the same
-          // breath as an answer. The assistant gets the question too.
-          const budget = await consumeAiBudget(db, identity, mixed.question.length);
-          const assistant = budget.allowed
-            ? await runConversationalAssistant({
-              context: assistantIdentityContext(identity),
-              history: [],
-              userText: mixed.question,
-              executeTool: (name, input) => executeAssistantTool(db, identity, waMessageId, lang, name, input, mixed.question),
-              onFailure: () => {},
-            })
-            : null;
-          if (assistant) {
-            await replyQuietly(to, assistant.reply);
-            await audit(db, identity, waMessageId, 'rider_question', 'conversational_ai', 'applied');
-            return;
-          }
-          await replyQuietly(to, lang === 'sw'
-            ? 'Swali lako la pili sikulielewa. Liulize peke yake ili nikujibu vizuri.'
-            : 'I did not understand your second question. Ask it on its own so I can answer properly.');
-          await audit(db, identity, waMessageId, 'rider_question', 'unknown', 'clarification');
-        };
+        const reply = async (to: string, text: string) => replyQuietly(to, text);
 
         if (rawIdentity && !identity) {
           await replyQuietly(phone, lang === 'sw'
@@ -9091,9 +9067,14 @@ Deno.serve(async (req) => {
             continue;
           }
           const result = made as { code?: string; company_name?: string } | null;
+          const inviteCode = String(result?.code ?? '');
+          const inviteBusiness = result?.company_name ?? '';
+          const risipNumber = await whatsAppDisplayNumber();
           await replyQuietly(phone, inviteReady(
-            String(result?.code ?? ''), role, result?.company_name ?? '',
-            await whatsAppDisplayNumber(), lang,
+            inviteCode, role, lang,
+          ));
+          await replyQuietly(phone, inviteForwardMessage(
+            inviteCode, inviteBusiness, risipNumber, lang,
           ));
           await audit(db, identity, waMessageId, 'invite', role, 'applied');
           await finish('skipped');
@@ -10353,10 +10334,12 @@ Deno.serve(async (req) => {
               } else {
                 const invite = made as { code?: string; company_name?: string } | null;
                 await reply(phone, inviteReady(
-                  String(invite?.code ?? ''), 'worker', invite?.company_name ?? '',
-                  await whatsAppDisplayNumber(), lang,
+                  String(invite?.code ?? ''), 'worker', lang,
                 ));
-                await sendReplyText(phone, workerCanDo(lang), waMessageId);
+                await sendReplyText(phone, inviteForwardMessage(
+                  String(invite?.code ?? ''), invite?.company_name ?? '',
+                  await whatsAppDisplayNumber(), lang,
+                ), waMessageId);
               }
             }
             // Either answer leads here. The offer was a detour; products are
@@ -10405,13 +10388,14 @@ Deno.serve(async (req) => {
           }
           const invite = made as { code?: string; company_name?: string } | null;
           await reply(phone, inviteReady(
-            String(invite?.code ?? ''), 'worker', invite?.company_name ?? '',
-            await whatsAppDisplayNumber(), lang,
+            String(invite?.code ?? ''), 'worker', lang,
           ));
-          // Its own message. The code is what he asked for and ends where it
-          // ends; this is the boundary he is handing over, and he should read
-          // it as a separate thing.
-          await sendReplyText(phone, workerCanDo(lang), waMessageId);
+          // Its own message, with no owner-facing instructions mixed into it,
+          // so the owner can forward this bubble as-is.
+          await sendReplyText(phone, inviteForwardMessage(
+            String(invite?.code ?? ''), invite?.company_name ?? '',
+            await whatsAppDisplayNumber(), lang,
+          ), waMessageId);
           await audit(db, identity, waMessageId, 'invite', 'worker', 'applied');
           await finish('skipped');
           continue;

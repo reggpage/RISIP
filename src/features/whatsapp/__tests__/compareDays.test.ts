@@ -75,7 +75,7 @@ describe('who may ask, and what comes back', () => {
   );
 
   it('is a company financial, gated like every other one', () => {
-    expect(handler).toContain('if (!canUseCompanyFinanceReads(identity.role))');
+    expect(handler).toContain('if (!canReadCompanyReporting(identity.role))');
   });
 
   it('subtracts on the server, so the model never works a figure out', () => {

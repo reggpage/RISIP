@@ -57,6 +57,12 @@ describe('nothing that reads business language stands in front of Claude', () =>
       expect(gate, `${parser} still gates the model`).not.toContain(parser);
       expect(predicate.slice(0, 900), `${parser} is in the predicate`).not.toContain(parser);
     }
+    // Mixed-topic detection used to call stock/price parsers before the gate,
+    // which meant a sentence containing two capabilities could still bypass
+    // Claude even though the predicate itself looked clean.
+    expect(webhook).not.toContain('splitRiderQuestion(body)');
+    expect(webhook).not.toContain('splitSecondInstruction(body)');
+    expect(webhook).not.toContain('claimsWrite');
   });
 
   it('keeps only security, transport and protocol answers in front', () => {

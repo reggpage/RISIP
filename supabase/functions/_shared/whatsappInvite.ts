@@ -29,7 +29,11 @@ export function parseInviteRequest(text: string | null | undefined): boolean {
   // inside the verb — ku-M-ualika, ku-WA-alika, ni-M-ualike — so the stem is
   // what to match on, with the infix optional.
   // "mw" is the same infix written the way people type it — mwalike, mwalika.
-  return /\b(?:ku|ni|tu|a)?(?:mw|mu|m|wa|w)?(?:alika|alike)\b|\b(?:invite|inviting)\b|\bku(?:mu|wa)?invite\b|\bkuongeza mtu\b|\badd (?:a )?(?:user|worker|staff|member)\b|\b(?:mfanyakazi|staff|mtumiaji) mpya\b/
+  // Accept the forms people actually type in WhatsApp: "mualiko", doubled
+  // vowels in "kumaalika", and a small typo in the lead-in such as
+  // "nayaka kumaalika mtu". The invite verb plus a person word is enough;
+  // it does not depend on the exact spelling of "nataka".
+  return /\b(?:ku|ni|tu|a)?(?:mw|mu|m|wa|w)?a{0,2}lik(?:a|e|o)\b|\b(?:invite|inviting)\b|\bku(?:mu|wa)?invite\b|\bkuongeza mtu\b|\badd (?:a )?(?:user|worker|staff|member)\b|\b(?:mfanyakazi|staff|mtumiaji) mpya\b/
     .test(said);
 }
 
@@ -90,85 +94,74 @@ export function inviteLanguageQuestion(
     + 'Chagua lugha:\n1. Kiswahili\n2. English';
 }
 
-/**
- * What the owner gets back: the code, and the message to forward.
- *
- * The forwardable part is written in the second person and carries everything
- * the newcomer needs in one block, because it will be pasted into a chat with
- * somebody who has never heard of Risip.
- */
-export function inviteReady(
+/** The one clean bubble the owner can forward to the invited person. */
+export function inviteForwardMessage(
   code: string,
-  role: InviteRole,
   businessName: string,
   risipNumber: string | null,
   lang: Lang,
 ): string {
-  // Meta is asked for the display number, and can fail to give it. An invite
-  // without it is still worth sending — the owner knows the number, it is the
-  // one they are reading this on — so the sentence just changes shape.
   const where = risipNumber
-    ? (lang === 'sw' ? `WhatsApp namba ${risipNumber}` : `WhatsApp on ${risipNumber}`)
-    : (lang === 'sw' ? 'namba hii ya Risip' : 'this Risip number');
-  const forward = lang === 'sw'
-    ? `Karibu ${businessName}. Tuma neno *${code}* kwenye ${where}, `
-      + 'kisha fuata maswali mawili. Ndipo utaweza kurekodi mauzo kwa simu yako.'
-    : `Welcome to ${businessName}. Send *${code}* to ${where}, `
-      + 'then answer two short questions. That is all you need to start recording sales.';
+    ? (lang === 'sw' ? `WhatsApp namba ${risipNumber}` : `WhatsApp number ${risipNumber}`)
+    : (lang === 'sw' ? 'WhatsApp namba hii ya Risip' : 'this Risip WhatsApp number');
+  return lang === 'sw'
+    ? `Karibu ${businessName}. Tuma neno ${code} kwenye ${where}, kisha fuata maswali mawili. Ndipo utaweza kurekodi mauzo kwa simu yako.`
+    : `Welcome to ${businessName}. Send the word ${code} to ${where}, then answer two questions. That is when you can start recording sales on your phone.`;
+}
 
+function inviteResponsibilities(role: InviteRole, lang: Lang): string {
+  if (role === 'worker') return workerCanDo(lang);
+  return lang === 'sw'
+    ? '*Mhasibu wako ataweza:*\n'
+      + '• Kusimamia kumbukumbu za fedha\n'
+      + '• Kuona faida, madeni na ripoti za fedha'
+    : '*Your accountant will be able to:*\n'
+      + '• Manage financial records\n'
+      + '• View profit, debts and financial reports';
+}
+
+/** The first bubble shown to the owner after the invite code is created. */
+export function inviteReady(
+  code: string,
+  role: InviteRole,
+  lang: Lang,
+): string {
   return lang === 'sw'
     ? `✅ Mwaliko wa *${roleName(role, lang)}* uko tayari.\n\n`
       + `Namba ya siri: *${code}*\n`
       + '_Inatumika mara moja tu, na inaisha baada ya siku 3._\n\n'
-      + '── Nakala ya kutuma kwake ──\n'
-      + '👉 Nakili ujumbe huu, kisha tuma kwenye namba ya mfanyakazi wako:\n\n'
-      + forward
-      + '\n──\n\n'
-      + 'Mtumie wewe mwenyewe kutoka kwenye contacts zako. Situmi mimi — '
-      + 'namba ikikosewa hata tarakimu moja, mwaliko unaenda kwa mtu usiyemjua.'
+      + inviteResponsibilities(role, lang)
+      + '\n\n────────\n'
+      + '👇 Mtumie ujumbe huu hapo chini:'
     : `✅ *${roleName(role, lang)}* invite is ready.\n\n`
       + `Code: *${code}*\n`
       + '_Single use, expires in 3 days._\n\n'
-      + '── Forward this to them ──\n'
-      + '👉 Copy this message, then send it to your worker’s number:\n\n'
-      + forward
-      + '\n──\n\n'
-      + 'Send it yourself from your own contacts. I do not send it — '
-      + 'one wrong digit and the invite reaches somebody you do not know.';
+      + inviteResponsibilities(role, lang)
+      + '\n\n────────\n'
+      + '👇 Send the message below:';
 }
 
 /**
  * What the owner is handing over, said before the person joins rather than after.
  *
- * The owner asked for it: "atapofanya ualiko apate bulets za majukumu ya
- * mfanyakazi wake." He is giving somebody a way into his books. The list of
- * what they will NOT see matters as much as the list of what they will —
- * without it, "mfanyakazi" is a word he has to trust rather than a boundary he
- * can read.
- *
- * Sent as its own message, after the code. Kanuni 3: the invite is the thing
- * he asked for and it ends where it ends; this is the explanation behind it.
+ * The owner asked for the worker's duties in the first bubble. Workers may
+ * read the company's profit, customer debts and financial reports; the server
+ * still enforces the separate read-only/write boundaries.
  */
 export function workerCanDo(lang: Lang): string {
   return lang === 'sw'
     ? '*Mfanyakazi wako ataweza:*\n'
       + '• Kurekodi mauzo na manunuzi\n'
       + '• Kuhesabu bidhaa zilizopo\n'
-      + '• Kutuma picha ya rekodi\n\n'
-      + '*Hataona:*\n'
-      + '• Faida ya biashara\n'
-      + '• Madeni ya wateja wote\n'
-      + '• Ripoti za fedha\n\n'
-      + '_Ukibadilisha mawazo, tuma *ondoa* na jina lake._'
+      + '• Kuona faida ya biashara\n'
+      + '• Kuona madeni ya wateja wote\n'
+      + '• Kuona ripoti za fedha'
     : '*Your worker will be able to:*\n'
       + '• Record sales and purchases\n'
       + '• Count stock on hand\n'
-      + '• Send a photo of a record\n\n'
-      + '*They will not see:*\n'
-      + '• The business profit\n'
-      + '• Every customer’s debt\n'
-      + '• Financial reports\n\n'
-      + '_If you change your mind, send *ondoa* and their name._';
+      + '• View the business profit\n'
+      + '• View every customer’s debt\n'
+      + '• View financial reports';
 }
 
 export function inviteCancelled(lang: Lang): string {
