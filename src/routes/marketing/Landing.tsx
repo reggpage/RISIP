@@ -62,6 +62,25 @@ const COPY = {
         { name: 'Kubwa', tagline: 'Maduka zaidi ya moja, au biashara ya jumla', m: '70,000', y: '700,000', cap: '700', popular: false,
           feats: ['Kila kitu cha Kati, pamoja na:', 'Maduka 3 kwenye namba moja', 'Kulinganisha maduka', 'Ankara za PDF__soon', 'Kutoa data: Excel au PDF__soon', 'Watumiaji 10'] },
       ],
+      compareTitle: 'Kulinganisha plan',
+      cols: ['Ndogo', 'Kati', 'Kubwa'],
+      soonLabel: 'Inakuja',
+      compare: [
+        ['Ujumbe unaotuma, kwa mwezi', '300', '500', '700'],
+        ['Watumiaji', '1', '3', '10'],
+        ['Maduka', '1', '1', '3'],
+        ['Rekodi za mauzo, manunuzi na stoo', true, true, true],
+        ['Bei mbili: rejareja na jumla', true, true, true],
+        ['Dashboard ya web', true, true, true],
+        ['Ukumbusho wa kila jioni', true, true, true],
+        ['Ripoti za siku, wiki na mwezi', false, true, true],
+        ['Madeni ya wateja', false, true, true],
+        ['Kuuza na kusajili kwa barcode', false, true, true],
+        ['Faida kwa kila bidhaa', false, true, true],
+        ['Kulinganisha maduka', false, false, true],
+        ['Ankara za PDF', false, false, 'soon'],
+        ['Kutoa data: PDF au Excel', false, false, 'soon'],
+      ],
     },
     ctaTitle: 'Anza kuweka biashara yako sawa leo.',
     ctaBody: 'Hakuna password ya kukumbuka. Fungua WhatsApp, sajili biashara na uanze kurekodi.',
@@ -116,6 +135,25 @@ const COPY = {
           feats: ['Everything in Ndogo, plus:', 'Daily, weekly and monthly reports', 'Customer and supplier debts', 'Sell and register by barcode', 'Profit per product', '3 users'] },
         { name: 'Kubwa', tagline: 'More than one shop, or wholesale', m: '70,000', y: '700,000', cap: '700', popular: false,
           feats: ['Everything in Kati, plus:', '3 shops on one number', 'Compare shops', 'PDF invoices__soon', 'Export data: Excel or PDF__soon', '10 users'] },
+      ],
+      compareTitle: 'Compare plans',
+      cols: ['Ndogo', 'Kati', 'Kubwa'],
+      soonLabel: 'Coming soon',
+      compare: [
+        ['Messages you send, per month', '300', '500', '700'],
+        ['Users', '1', '3', '10'],
+        ['Shops', '1', '1', '3'],
+        ['Sales, purchases and stock records', true, true, true],
+        ['Two prices: retail and wholesale', true, true, true],
+        ['Web dashboard', true, true, true],
+        ['An evening reminder', true, true, true],
+        ['Daily, weekly and monthly reports', false, true, true],
+        ['Customer debts', false, true, true],
+        ['Sell and register by barcode', false, true, true],
+        ['Profit per product', false, true, true],
+        ['Compare shops', false, false, true],
+        ['PDF invoices', false, false, 'soon'],
+        ['Export data: PDF or Excel', false, false, 'soon'],
       ],
     },
     ctaTitle: 'Put your business records in order today.',
@@ -262,6 +300,42 @@ export default function Landing() {
             </div>
 
             <p className="mx-auto mt-10 max-w-3xl text-center text-sm leading-7 text-ink-muted">{c.pricing.note}</p>
+
+            <div className="mt-16">
+              <h3 className="text-center text-xl font-bold">{c.pricing.compareTitle}</h3>
+              <div className="mt-6 overflow-x-auto rounded-2xl border border-surface-border bg-surface shadow-sm">
+                <table className="w-full min-w-[36rem] text-sm">
+                  <thead>
+                    <tr className="border-b border-surface-border">
+                      <th className="px-5 py-4" />
+                      {c.pricing.cols.map((col) => (
+                        <th key={col} className="px-5 py-4 text-center text-xs font-semibold uppercase tracking-widest text-ink-muted">{col}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {c.pricing.compare.map(([label, ...cells]) => (
+                      <tr key={label as string} className="border-b border-surface-border/70 last:border-0">
+                        <th scope="row" className="px-5 py-4 text-left font-normal text-ink">{label as string}</th>
+                        {cells.map((cell, i) => (
+                          <td key={i} className="px-5 py-4 text-center tabular-nums">
+                            {cell === true ? (
+                              <Check className="mx-auto h-5 w-5 text-role-admin" aria-label="ndiyo" />
+                            ) : cell === false ? (
+                              <span aria-label="hapana" className="text-lg text-ink-muted/40">×</span>
+                            ) : cell === 'soon' ? (
+                              <span className="text-xs font-medium text-ink-muted">{c.pricing.soonLabel}</span>
+                            ) : (
+                              <span className="font-semibold text-ink">{cell as string}</span>
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </section>
 
