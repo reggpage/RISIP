@@ -210,3 +210,32 @@ describe('the function that uses it', () => {
     expect(fn).not.toContain('amount_tzs:');
   });
 });
+
+describe('what the first live payment taught us', () => {
+  const fn = readFileSync(
+    resolve(process.cwd(), 'supabase/functions/snippe-webhook/index.ts'), 'utf8');
+
+  it('handles payment.cancelled, which the docs do not list', () => {
+    // It arrived at 07:41:50 on the first live test, for a push that expired
+    // unpaid. An undocumented event that changes what a shop owes cannot be
+    // quietly dropped.
+    expect(fn).toContain("event.type === 'payment.cancelled'");
+  });
+
+  it('moves BOTH ends of the period', () => {
+    // The first live payment left a subscription reading 27 August to 3
+    // October: five weeks nobody had bought, because only the end moved.
+    expect(fn).toContain('current_period_start: invoice.period_start,');
+    expect(fn).toContain('current_period_end: invoice.period_end,');
+  });
+
+  it('reads period_start, or the fix above cannot work', () => {
+    expect(fn).toContain('status, period_start, period_end, amount_tzs');
+  });
+
+  it('records that Snippe ignores our external_reference', () => {
+    // Snippe returned "e62DOYL0BHqV" instead of our invoice id. The match
+    // survives only because snippe_reference is stored at creation time.
+    expect(fn).toContain('Snippe IGNORES the external_reference');
+  });
+});

@@ -92,9 +92,15 @@ Deno.serve(async (req) => {
   // Our invoice id travels as external_reference, so a payment always names the
   // period it settles. Falling back to Snippe's own reference covers a payment
   // created before that convention existed.
+  // MEASURED on the first live payment: Snippe IGNORES the external_reference
+  // we send on create and returns one of its own ("e62DOYL0BHqV"). So the only
+  // reliable link back to an invoice is the reference Snippe itself issued,
+  // which billing-charge stores the moment the payment is created. The
+  // external_reference branch stays in case they honour it later; it is not
+  // what carries the match today.
   const { data: invoice } = await db
     .from('subscription_invoices')
-    .select('id, subscription_id, company_id, status, period_end, amount_tzs')
+    .select('id, subscription_id, company_id, status, period_start, period_end, amount_tzs')
     .or(`id.eq.${/^[0-9a-f-]{36}$/i.test(reference) ? reference : '00000000-0000-0000-0000-000000000000'},`
       + `snippe_reference.eq.${event.reference ?? '-'}`)
     .maybeSingle();
@@ -104,9 +110,14 @@ Deno.serve(async (req) => {
     return json(200, { received: true, matched: false });
   }
 
+  // payment.cancelled is NOT in Snippe's documented list of event types. It
+  // arrived anyway, on the first live test, for a push that expired unpaid.
+  // An undocumented event that changes what a shop owes is exactly the kind we
+  // must not silently ignore.
   const outcome = event.type === 'payment.completed' ? 'paid'
     : event.type === 'payment.failed' ? 'failed'
-    : event.type === 'payment.voided' || event.type === 'payment.expired' ? 'void'
+    : event.type === 'payment.voided' || event.type === 'payment.expired'
+      || event.type === 'payment.cancelled' ? 'void'
     : null;
   if (!outcome) return json(200, { received: true });
 
@@ -131,8 +142,12 @@ Deno.serve(async (req) => {
     // The period the shop just bought is the one the invoice named. Reading it
     // from the invoice rather than from "today" means a payment that arrives
     // three days late still buys the month it was for, not a month from now.
+    // BOTH ENDS OF THE PERIOD, not just the far one. The first live payment
+    // left a subscription reading 27 August to 3 October, a stretch of five
+    // weeks that nobody had bought, because only the end was moved.
     await db.from('subscriptions').update({
       status: 'active',
+      current_period_start: invoice.period_start,
       current_period_end: invoice.period_end,
       grace_until: null,
       updated_at: new Date().toISOString(),

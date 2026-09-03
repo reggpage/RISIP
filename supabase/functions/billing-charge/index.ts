@@ -46,7 +46,14 @@ const json = (status: number, body: Record<string, unknown>) =>
   });
 
 function authorised(req: Request): boolean {
-  if (!secret) return false;
+  if (!secret) {
+    // MEASURED, and it cost a round trip to find: the secret was saved in the
+    // dashboard as "BILLING_SECRET " with a trailing space, so Deno.env.get
+    // returned nothing and every call answered 403. The reply stays opaque to
+    // the caller; the reason belongs in the log, where only we read it.
+    console.error('billing-charge: BILLING_SECRET is not set (check for a trailing space in the name)');
+    return false;
+  }
   const given = new URL(req.url).searchParams.get('secret')
     ?? req.headers.get('x-billing-secret') ?? '';
   // Compared as hex-safe strings of equal length only; anything else is false
@@ -156,19 +163,76 @@ Deno.serve(async (req) => {
       return json(400, { error: `amount out of range: ${amount}` });
     }
 
+    // WHO IS PAYING. Snippe rejects a payment without a named customer:
+    //   "customer.firstname is required; customer.lastname is required;
+    //    customer.email is required"
+    // Their quickstart shows none of this, so it cost one live 400 to learn.
+    // The details come from the shop's OWNER, because billing is the owner's
+    // business and the name on a payment should be the person who agreed to it.
+    const { data: owner } = await db
+      .from('profiles')
+      .select('id, full_name')
+      .eq('company_id', invoice.company_id)
+      .eq('role', 'owner')
+      .is('deactivated_at', null)
+      .limit(1)
+      .maybeSingle<{ id: string; full_name: string | null }>();
+    if (!owner) return json(409, { error: 'this company has no active owner' });
+
+    // The email lives in auth.users, which PostgREST does not expose. The admin
+    // client reads it directly, and it never leaves this function.
+    const { data: account } = await db.auth.admin.getUserById(owner.id);
+    const email = account?.user?.email ?? '';
+    if (!email) {
+      return json(409, { error: 'the owner has no email address on their account' });
+    }
+
+    const whole = String(owner.full_name ?? '').replace(/\s+/g, ' ').trim();
+    if (!whole) return json(409, { error: 'the owner has no name saved' });
+    const cut = whole.lastIndexOf(' ');
+    // One name is a real answer in Tanzania. A payment must not fail because
+    // somebody wrote "Reagan" and stopped, so a single name fills both fields
+    // rather than blocking the charge.
+    const firstname = cut > 0 ? whole.slice(0, cut) : whole;
+    const lastname = cut > 0 ? whole.slice(cut + 1) : whole;
+
+    // WHICH NETWORK. MEASURED: sending payment_type "mobile" with no provider
+    // produced a payment Snippe accepted and a USSD push the owner never
+    // received, because nothing said whose handset to ring. A Tanzanian number
+    // does not announce its network to us reliably enough to guess, and a
+    // guess here is a prompt that goes nowhere.
+    const provider = (params.get('provider') ?? '').trim().toLowerCase();
+    const KNOWN = ['mpesa', 'm-pesa', 'airtel', 'mixx', 'tigo', 'halotel', 'halopesa'];
+    if (provider && !KNOWN.includes(provider)) {
+      return json(400, { error: `provider must be one of ${KNOWN.join(', ')}` });
+    }
+
+    // A DELIBERATE RETRY. The idempotency key is the invoice, which is what
+    // stops a refreshed browser becoming a second charge. But a payment that
+    // expired unpaid can never be completed, and the same key would keep
+    // returning that dead payment forever. Bumping `attempt` by hand starts a
+    // genuinely new one; the invoice can still only be PAID once, because only
+    // a signed webhook may mark it so.
+    const attemptRaw = Number(params.get('attempt') ?? 1);
+    const attempt = Number.isInteger(attemptRaw) && attemptRaw >= 1 && attemptRaw <= 20
+      ? attemptRaw : 1;
+
     const response = await fetch(`${SNIPPE_BASE}/v1/payments`, {
       method: 'POST',
       headers: {
         'authorization': `Bearer ${snippeKey}`,
         'content-type': 'application/json',
-        // The invoice id, so a retry of THIS request can never become a second
-        // charge on the same shop for the same month.
-        'idempotency-key': invoice.id,
+        'idempotency-key': attempt === 1 ? invoice.id : `${invoice.id}:${attempt}`,
       },
       body: JSON.stringify({
         payment_type: 'mobile',
         details: { amount, currency: 'TZS' },
         phone_number: phone,
+        // Exactly the keys the 400 named. No extra spellings: a strict
+        // validator is as likely to refuse an unknown field as a missing one.
+        customer: { firstname, lastname, email, phone },
+        // The shape their own webhook payload uses: channel.type + provider.
+        ...(provider ? { channel: { type: 'mobile_money', provider } } : {}),
         // Sent so the webhook can name the invoice directly. If Snippe ignores
         // either field the flow still works, because the reference they return
         // is stored below and the webhook matches on that too.
@@ -207,5 +271,45 @@ Deno.serve(async (req) => {
     });
   }
 
-  return json(400, { error: 'action must be sweep or pay' });
+  // ── status: ask Snippe what actually happened ──────────────────────────
+  //
+  // Read-only, and it exists because "pending" in our own table only ever
+  // means "nothing has told us otherwise". When a webhook has not arrived,
+  // that could be a payment nobody finished OR a notification with nowhere to
+  // go, and those two need very different fixes.
+  if (action === 'status') {
+    if (!snippeKey) return json(500, { error: 'SNIPPE_API_KEY is not set' });
+
+    const invoiceId = params.get('invoice') ?? '';
+    if (!/^[0-9a-f-]{36}$/i.test(invoiceId)) return json(400, { error: 'invoice id required' });
+
+    const { data: invoice } = await db
+      .from('subscription_invoices')
+      .select('id, company_id, status, snippe_reference, amount_tzs, paid_at')
+      .eq('id', invoiceId)
+      .maybeSingle<Invoice & { paid_at: string | null }>();
+    if (!invoice) return json(404, { error: 'no such invoice' });
+    if (!invoice.snippe_reference) {
+      return json(200, { ours: invoice, snippe: null, note: 'no payment has been requested yet' });
+    }
+
+    const response = await fetch(
+      `${SNIPPE_BASE}/v1/payments/${encodeURIComponent(invoice.snippe_reference)}`,
+      { headers: { authorization: `Bearer ${snippeKey}` } },
+    );
+    const text = await response.text();
+    let payload: Record<string, unknown> = {};
+    try { payload = JSON.parse(text) as Record<string, unknown>; } catch { /* keep the text */ }
+
+    // Deliberately NOT written back to the invoice. Only a signed webhook is
+    // allowed to mark a period paid; a polled read is for looking, not for
+    // deciding, and mixing the two is how a poll becomes a second way in.
+    return json(200, {
+      ours: invoice,
+      snippe_http: response.status,
+      snippe: payload,
+    });
+  }
+
+  return json(400, { error: 'action must be sweep, pay or status' });
 });
