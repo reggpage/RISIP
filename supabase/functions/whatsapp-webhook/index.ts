@@ -4568,9 +4568,44 @@ async function executeBusinessEvent(
     if (!quantities.ok) return askBack(quantities.question);
     if (event.amount.kind === 'ask') return askBack(numberQuestion('amount', event.amount, lang));
     if (event.amount.kind === 'absent') {
-      return askBack(lang === 'sw'
+      // OFFER THE LAST PRICE, do not just ask into the void.
+      //
+      // The owner's ask: "hiyo bidhaa sii ngeni sababu buying price ipo" — if
+      // the shop already bought this product, it already knows roughly what a
+      // unit costs, so a restock should quote that and let him confirm or
+      // correct it, instead of making him look it up and retype it every time.
+      // The amount is still HIS to state, because a purchase price changes with
+      // every load; this only saves him the typing when it has not.
+      //
+      // Best-effort: if the lookup finds nothing, or the shop trades this in
+      // several units, it falls back to the plain question rather than quote a
+      // number it is unsure of.
+      let lastCostHint = '';
+      if (event.lines.length === 1) {
+        const only = event.lines[0].productWording;
+        const resolved = await resolveProductForRead(db, identity, only);
+        if (!resolved.error && resolved.resolution.kind === 'matched') {
+          const { data: pricing } = await db.rpc('wa_product_pricing', {
+            p_company_id: identity.company_id,
+            p_product_keys: [resolved.resolution.match.productKey],
+          });
+          const cost = ((pricing ?? []) as Array<Record<string, unknown>>)[0]?.unit_cost;
+          const unit = cost == null ? null : Number(cost);
+          const qty = quantities.quantities[0];
+          if (unit && unit > 0 && qty > 0) {
+            const each = 'TSh ' + Math.round(unit).toLocaleString('en-US');
+            const whole = 'TSh ' + Math.round(unit * qty).toLocaleString('en-US');
+            lastCostHint = lang === 'sw'
+              ? `\n\nMara ya mwisho ilikuwa ${each} kila moja (jumla ${whole}). `
+                + 'Kama ni bei ile ile, niandikie jumla hiyo; kama imebadilika, niandikie uliyolipa sasa.'
+              : `\n\nLast time it was ${each} each (${whole} in total). `
+                + 'If it is the same, send that total; if it changed, send what you paid now.';
+          }
+        }
+      }
+      return askBack((lang === 'sw'
         ? 'Umeingiza mzigo — ulilipa kiasi gani? Niandikie kwa tarakimu.'
-        : 'Stock came in — how much did you pay? Write it in digits.');
+        : 'Stock came in — how much did you pay? Write it in digits.') + lastCostHint);
     }
     const total = event.amount.value;
     const count = event.lines.length;
