@@ -55,6 +55,8 @@ const COPY = {
       popular: 'Wengi huchagua', soon: 'hivi karibuni', cta: 'Anza wiki ya bure',
       note: 'Bei zote ni za Shilingi ya Tanzania. Malipo yanashughulikiwa na Snippe. Ukizidi ujumbe, unapata taarifa kwanza — hakuna kinachokatika ghafla.',
       plans: [
+        { name: 'Kianzio', tagline: 'Kuanza, kwa rekodi chache kila siku', m: '15,000', y: '150,000', cap: '150', popular: false,
+          feats: ['Mauzo, manunuzi, matumizi na stoo', 'Bei mbili: rejareja na jumla', 'Ukumbusho wa kila jioni', 'Dashboard ya web kwa simu na kompyuta', 'Mtumiaji 1'] },
         { name: 'Ndogo', tagline: 'Duka moja, unayefanya mwenyewe', m: '29,999', y: '299,990', cap: '300', popular: false,
           feats: ['Mauzo, manunuzi, matumizi na stoo', 'Bei mbili: rejareja na jumla', 'Ukumbusho wa kila jioni', 'Dashboard ya web kwa simu na kompyuta', 'Mtumiaji 1'] },
         { name: 'Kati', tagline: 'Duka lenye wafanyakazi na madeni', m: '39,999', y: '399,990', cap: '500', popular: true,
@@ -63,23 +65,23 @@ const COPY = {
           feats: ['Kila kitu cha Kati, pamoja na:', 'Maduka 3 kwenye namba moja', 'Kulinganisha maduka', 'Ankara za PDF__soon', 'Kutoa data: Excel, CSV, PDF', 'Watumiaji 10'] },
       ],
       compareTitle: 'Kulinganisha plan',
-      cols: ['Ndogo', 'Kati', 'Kubwa'],
+      cols: ['Kianzio', 'Ndogo', 'Kati', 'Kubwa'],
       soonLabel: 'Inakuja',
       compare: [
-        ['Ujumbe unaotuma, kwa mwezi', '300', '500', '700'],
-        ['Watumiaji', '1', '3', '10'],
-        ['Maduka', '1', '1', '3'],
-        ['Rekodi za mauzo, manunuzi na stoo', true, true, true],
-        ['Bei mbili: rejareja na jumla', true, true, true],
-        ['Dashboard ya web', true, true, true],
-        ['Ukumbusho wa kila jioni', true, true, true],
-        ['Ripoti za siku, wiki na mwezi', false, true, true],
-        ['Madeni ya wateja', false, true, true],
-        ['Kuuza na kusajili kwa barcode', false, true, true],
-        ['Faida kwa kila bidhaa', false, true, true],
-        ['Kulinganisha maduka', false, false, true],
-        ['Ankara za PDF', false, false, 'soon'],
-        ['Kutoa data: Excel, CSV, PDF', true, true, true],
+        ['Ujumbe unaotuma, kwa mwezi', '150', '300', '500', '700'],
+        ['Watumiaji', '1', '1', '3', '10'],
+        ['Maduka', '1', '1', '1', '3'],
+        ['Rekodi za mauzo, manunuzi na stoo', true, true, true, true],
+        ['Bei mbili: rejareja na jumla', true, true, true, true],
+        ['Dashboard ya web', true, true, true, true],
+        ['Ukumbusho wa kila jioni', true, true, true, true],
+        ['Ripoti za siku, wiki na mwezi', false, false, true, true],
+        ['Madeni ya wateja', false, false, true, true],
+        ['Kuuza na kusajili kwa barcode', false, false, true, true],
+        ['Faida kwa kila bidhaa', false, false, true, true],
+        ['Kulinganisha maduka', false, false, false, true],
+        ['Ankara za PDF', false, false, false, 'soon'],
+        ['Kutoa data: Excel, CSV, PDF', true, true, true, true],
       ],
     },
     ctaTitle: 'Anza kuweka biashara yako sawa leo.',
@@ -129,6 +131,8 @@ const COPY = {
       popular: 'Most popular', soon: 'coming soon', cta: 'Start the free week',
       note: 'All prices are in Tanzanian Shillings. Payments are handled by Snippe. If you go over, you are told first — nothing is cut off suddenly.',
       plans: [
+        { name: 'Kianzio', tagline: 'Starting out, a few records a day', m: '15,000', y: '150,000', cap: '150', popular: false,
+          feats: ['Sales, purchases, expenses and stock', 'Two prices: retail and wholesale', 'An evening reminder', 'Web dashboard on phone and computer', '1 user'] },
         { name: 'Ndogo', tagline: 'One shop, run by you', m: '29,999', y: '299,990', cap: '300', popular: false,
           feats: ['Sales, purchases, expenses and stock', 'Two prices: retail and wholesale', 'An evening reminder', 'Web dashboard on phone and computer', '1 user'] },
         { name: 'Kati', tagline: 'A shop with staff and customer debts', m: '39,999', y: '399,990', cap: '500', popular: true,
@@ -137,23 +141,23 @@ const COPY = {
           feats: ['Everything in Kati, plus:', '3 shops on one number', 'Compare shops', 'PDF invoices__soon', 'Export data: Excel, CSV, PDF', '10 users'] },
       ],
       compareTitle: 'Compare plans',
-      cols: ['Ndogo', 'Kati', 'Kubwa'],
+      cols: ['Kianzio', 'Ndogo', 'Kati', 'Kubwa'],
       soonLabel: 'Coming soon',
       compare: [
-        ['Messages you send, per month', '300', '500', '700'],
-        ['Users', '1', '3', '10'],
-        ['Shops', '1', '1', '3'],
-        ['Sales, purchases and stock records', true, true, true],
-        ['Two prices: retail and wholesale', true, true, true],
-        ['Web dashboard', true, true, true],
-        ['An evening reminder', true, true, true],
-        ['Daily, weekly and monthly reports', false, true, true],
-        ['Customer debts', false, true, true],
-        ['Sell and register by barcode', false, true, true],
-        ['Profit per product', false, true, true],
-        ['Compare shops', false, false, true],
-        ['PDF invoices', false, false, 'soon'],
-        ['Export data: Excel, CSV, PDF', true, true, true],
+        ['Messages you send, per month', '150', '300', '500', '700'],
+        ['Users', '1', '1', '3', '10'],
+        ['Shops', '1', '1', '1', '3'],
+        ['Sales, purchases and stock records', true, true, true, true],
+        ['Two prices: retail and wholesale', true, true, true, true],
+        ['Web dashboard', true, true, true, true],
+        ['An evening reminder', true, true, true, true],
+        ['Daily, weekly and monthly reports', false, false, true, true],
+        ['Customer debts', false, false, true, true],
+        ['Sell and register by barcode', false, false, true, true],
+        ['Profit per product', false, false, true, true],
+        ['Compare shops', false, false, false, true],
+        ['PDF invoices', false, false, false, 'soon'],
+        ['Export data: Excel, CSV, PDF', true, true, true, true],
       ],
     },
     ctaTitle: 'Put your business records in order today.',
@@ -253,7 +257,7 @@ export default function Landing() {
               </div>
             </div>
 
-            <div className="mt-12 grid items-start gap-6 lg:grid-cols-3">
+            <div className="mt-12 grid items-start gap-6 sm:grid-cols-2 lg:grid-cols-4">
               {c.pricing.plans.map((plan) => (
                 <article
                   key={plan.name}
@@ -304,7 +308,7 @@ export default function Landing() {
             <div className="mt-16">
               <h3 className="text-center text-xl font-bold">{c.pricing.compareTitle}</h3>
               <div className="mt-6 overflow-x-auto rounded-2xl border border-surface-border bg-surface shadow-sm">
-                <table className="w-full min-w-[36rem] text-sm">
+                <table className="w-full min-w-[44rem] text-sm">
                   <thead>
                     <tr className="border-b border-surface-border">
                       <th className="px-5 py-4" />
