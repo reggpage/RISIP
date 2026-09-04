@@ -160,7 +160,12 @@ describe('nothing about financial authority moved', () => {
     // ends the turn, so the second date had nowhere to go. It subtracts nothing
     // itself — the server hands over both days and the difference already
     // computed — so the surface grew and the authority again did not.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(36);
+    // 37 with get_my_subscription. The shop could not ask what it was paying
+    // for: no tool and no knowledge covered the plan, the price, or how many
+    // messages were left, so "nimebakiza ngapi" had nowhere to land. It takes
+    // no arguments, reads only billing_plans and a count of the shop's own
+    // messages, and can change nothing.
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(37);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('respond_conversationally');
     expect(shown).not.toContain('propose_catalogue_transaction');

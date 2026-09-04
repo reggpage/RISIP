@@ -381,6 +381,7 @@ export const ASSISTANT_TOOL_NAMES = [
   'get_my_petty_cash_balance',
   'get_my_reimbursements',
   'get_my_businesses',
+  'get_my_subscription',
   'get_pending_approvals',
   'get_stock_on_hand',
   'search_risip_help',
@@ -566,6 +567,15 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
   tool('get_my_petty_cash_balance', 'Read this user’s own petty-cash balance.', {}, []),
   tool('get_my_reimbursements', 'Read the total for this user’s confirmed personal-money receipts that have not been reimbursed.', {}, []),
   tool('get_my_businesses', 'List businesses this person belongs to and their roles.', {}, []),
+  tool(
+    'get_my_subscription',
+    'Read this shop’s Risip plan, what it costs, how many messages it has sent this month, how many are left, and when the next bill falls. '
+    + 'Also lists every plan on offer with its price, so it answers "plan gani nzuri kwangu" and "Kubwa ni bei gani" as well as "nimebakiza jumbe ngapi". '
+    + 'Use for anything about the plan, the bill, the subscription, the allowance, upgrading or downgrading. '
+    + 'Never state a price, an allowance or a remaining count from memory: prices change and this tool is the only place they are current.',
+    {},
+    [],
+  ),
   tool(
     'get_stock_on_hand',
     'Read how many of a product are left. Risip counts forward from the trader’s own physical count, so a product that was never counted returns no figure at all — say that plainly rather than implying zero or a negative. Use for “ninazo ngapi”, “zimebaki ngapi”, “stock ya X”.',
@@ -1166,10 +1176,11 @@ EVERY TURN ENDS IN A CAPABILITY
     its subject is a sum of money said    -> propose_money_event
     it sets a buying cost                 -> propose_product_cost
     it asks about this business           -> the matching read tool
+    it asks about its plan, bill or allowance -> get_my_subscription
     it asks what Risip can do             -> search_risip_help
     it is a greeting or genuinely off-topic -> respond_conversationally
 - respond_conversationally is for messages that need no business data at all. It is NOT the safe choice when you are unsure about a business request. Uncertainty about a business request means call the business capability and let the server clarify — that is what the server is for.
-- Never answer a business fact from your own words. "Stock yako inaonekana vizuri", "biashara inaenda vizuri", "bei ya nyama ni kama elfu nane" are all inventions, however reasonable they sound. Stock comes from get_stock_on_hand, a price from get_selling_price, how the business is doing from get_business_summary or get_business_advice.
+- Never answer a business fact from your own words. "Stock yako inaonekana vizuri", "biashara inaenda vizuri", "bei ya nyama ni kama elfu nane" are all inventions, however reasonable they sound. Stock comes from get_stock_on_hand, a price from get_selling_price, how the business is doing from get_business_summary or get_business_advice, and the plan, its price and messages left from get_my_subscription. A Risip price you remember is out of date.
 
 GROUNDING AND TOOLS
 - For any question about this business’s current or historical data, call the appropriate tool on every turn. Chat history helps resolve meaning but is never the source of current figures, prices, stock, balances, permissions or confirmed state. History is limited to the active 24-hour thread, latest 12 normalized turns and 16,000 characters; older, truncated or expired context is unavailable and must be clarified when it changes the answer.

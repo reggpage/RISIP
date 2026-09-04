@@ -635,3 +635,78 @@ export function buildPendingApprovalsReply(count: number, lang: 'sw' | 'en'): st
     ? `Kuna rekodi ${count} zinazosubiri hatua ya finance.`
     : `There are ${count} receipts waiting for a finance decision.`;
 }
+
+/** What the shop is on, and what it has spent, as facts the model may quote. */
+export type SubscriptionFacts = {
+  planName: string;
+  cycle: 'monthly' | 'yearly';
+  status: string;
+  priceTzs: number;
+  allowance: number;
+  used: number;
+  windowStart: string;
+  windowEnd: string;
+  /** Null while a shop is still in its free week and nothing is due yet. */
+  nextBillOn: string | null;
+  trialEndsOn: string | null;
+};
+
+export type PlanOnOffer = {
+  name: string;
+  monthlyTzs: number;
+  yearlyTzs: number;
+  allowance: number;
+  maxUsers: number;
+};
+
+/**
+ * The shop's own plan and usage, written out for the model to quote.
+ *
+ * EVERY NUMBER THE MODEL MAY SAY HAS TO BE IN HERE. The grounding guard
+ * refuses any figure a tool did not return, so "umebakiza 43" is only sayable
+ * because 43 is computed here rather than left for the model to subtract. That
+ * is deliberate: a shopkeeper acts on a remaining-messages number, and a model
+ * doing arithmetic in its head is exactly where an invented figure comes from.
+ */
+export function buildSubscriptionReply(facts: SubscriptionFacts, lang: 'sw' | 'en'): string {
+  const remaining = Math.max(0, facts.allowance - facts.used);
+  const over = Math.max(0, facts.used - facts.allowance);
+  const cycle = lang === 'sw'
+    ? (facts.cycle === 'yearly' ? 'kwa mwaka' : 'kwa mwezi')
+    : (facts.cycle === 'yearly' ? 'yearly' : 'monthly');
+
+  const lines: string[] = [];
+  if (lang === 'sw') {
+    lines.push(`Plan yako ni *${facts.planName}*, ${cycle}, ${money(facts.priceTzs, lang)}.`);
+    lines.push(`Umetuma jumbe *${facts.used}* kati ya *${facts.allowance}* kwa mwezi huu (${facts.windowStart} hadi ${facts.windowEnd}).`);
+    lines.push(over > 0 ? `Umezidi kwa jumbe *${over}*.` : `Umebakiza jumbe *${remaining}*.`);
+    if (facts.trialEndsOn) lines.push(`Wiki yako ya bure inaisha ${facts.trialEndsOn}.`);
+    if (facts.nextBillOn) lines.push(`Bili ijayo ni ${facts.nextBillOn}.`);
+    lines.push(`Hali ya akaunti: ${facts.status}.`);
+  } else {
+    lines.push(`Your plan is *${facts.planName}*, ${cycle}, ${money(facts.priceTzs, lang)}.`);
+    lines.push(`You have sent *${facts.used}* of *${facts.allowance}* messages this month (${facts.windowStart} to ${facts.windowEnd}).`);
+    lines.push(over > 0 ? `You are over by *${over}* messages.` : `You have *${remaining}* messages left.`);
+    if (facts.trialEndsOn) lines.push(`Your free week ends ${facts.trialEndsOn}.`);
+    if (facts.nextBillOn) lines.push(`The next bill is ${facts.nextBillOn}.`);
+    lines.push(`Account status: ${facts.status}.`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Every plan on offer, priced from the table rather than from memory.
+ *
+ * The prices changed twice in one day while this was being built, which is the
+ * whole argument against writing them into a prompt: the catalogue is read
+ * live so the model cannot quote last week's price.
+ */
+export function buildPlansReply(plans: PlanOnOffer[], lang: 'sw' | 'en'): string {
+  if (plans.length === 0) {
+    return lang === 'sw' ? 'Sikuweza kupata orodha ya plan sasa.' : 'I could not load the plans right now.';
+  }
+  const rows = plans.map((plan) => (lang === 'sw'
+    ? `${plan.name}: ${money(plan.monthlyTzs, lang)} kwa mwezi (au ${money(plan.yearlyTzs, lang)} kwa mwaka), jumbe ${plan.allowance} kwa mwezi, watumiaji ${plan.maxUsers}`
+    : `${plan.name}: ${money(plan.monthlyTzs, lang)} per month (or ${money(plan.yearlyTzs, lang)} per year), ${plan.allowance} messages a month, ${plan.maxUsers} users`));
+  return (lang === 'sw' ? 'Plan za Risip:\n' : 'Risip plans:\n') + rows.join('\n');
+}

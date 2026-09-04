@@ -525,6 +525,8 @@ import {
 } from '../_shared/whatsappAiBudget.ts';
 import {
   buildBusinessesReply,
+  buildPlansReply,
+  buildSubscriptionReply,
   buildBusinessSummaryReply,
   businessSummaryFacts,
   buildDebtorDetailReply,
@@ -5431,6 +5433,82 @@ async function runAssistantTool(
   }
   if (name === 'get_my_businesses') {
     return { content: await readOnlyToolReply(db, identity, { tool: 'ai_my_businesses', period: 'today' }, lang) };
+  }
+  if (name === 'get_my_subscription') {
+    const parts: string[] = [];
+
+    // The catalogue is what anyone may ask about; it is a price list, not the
+    // shop's business. Read live, because a price written into a prompt is a
+    // price from before the last change.
+    {
+      const { data: plans } = await db.from('billing_plans')
+        .select('name_sw, monthly_tzs, yearly_tzs, message_allowance, max_users')
+        .order('sort_order');
+      parts.push(buildPlansReply((plans ?? []).map((row: Record<string, unknown>) => ({
+        name: String(row.name_sw), monthlyTzs: Number(row.monthly_tzs), yearlyTzs: Number(row.yearly_tzs),
+        allowance: Number(row.message_allowance), maxUsers: Number(row.max_users),
+      })), lang));
+    }
+
+    // WHAT THIS SHOP PAYS IS THE OWNER'S BUSINESS. The usage table itself is
+    // owner-only under RLS; a worker asking is answered about the catalogue
+    // rather than refused outright, because the prices are not a secret.
+    {
+      if (String(identity.role ?? 'worker') !== 'owner') {
+        parts.push(lang === 'sw'
+          ? 'Taarifa za bili na plan ya biashara zinaonekana kwa owner tu.'
+          : 'Billing and plan details are visible to the owner only.');
+      } else {
+        const { data: sub } = await db.from('subscriptions')
+          .select('plan, cycle, status, trial_ends_at, current_period_start, current_period_end')
+          .eq('company_id', identity.company_id).maybeSingle();
+        if (!sub) {
+          parts.push(lang === 'sw'
+            ? 'Biashara hii bado haina subscription iliyosajiliwa.'
+            : 'This business has no subscription on record yet.');
+        } else {
+          // NOT billing_usage_now: that RPC reads the caller's JWT to find the
+          // company, and this runs on the service role with no user token, so
+          // it would have returned null and every shop would have been told it
+          // had sent zero messages. The window comes from the same function the
+          // nightly sweep uses, and the count is taken live rather than from
+          // the sweep's row, which can be a day old.
+          const [{ data: plan }, { data: windowRows }] = await Promise.all([
+            db.from('billing_plans')
+              .select('name_sw, monthly_tzs, yearly_tzs, message_allowance')
+              .eq('code', sub.plan).maybeSingle(),
+            db.rpc('billing_usage_window', {
+              p_period_start: sub.current_period_start,
+              p_period_end: sub.current_period_end,
+            }),
+          ]);
+          const win = (Array.isArray(windowRows) ? windowRows[0] : windowRows) as
+            { window_start?: string; window_end?: string } | null;
+          const windowStart = String(win?.window_start ?? sub.current_period_start);
+          const windowEnd = String(win?.window_end ?? sub.current_period_end);
+          const { count: sent } = await db.from('whatsapp_messages')
+            .select('id', { count: 'exact', head: true })
+            .eq('company_id', identity.company_id)
+            .gte('created_at', `${windowStart}T00:00:00+03:00`)
+            .lt('created_at', `${windowEnd}T23:59:59.999+03:00`);
+          parts.push(buildSubscriptionReply({
+            planName: String(plan?.name_sw ?? sub.plan),
+            cycle: sub.cycle === 'yearly' ? 'yearly' : 'monthly',
+            status: String(sub.status),
+            priceTzs: Number(sub.cycle === 'yearly' ? plan?.yearly_tzs ?? 0 : plan?.monthly_tzs ?? 0),
+            allowance: Number(plan?.message_allowance ?? 0),
+            used: Number(sent ?? 0),
+            windowStart,
+            windowEnd,
+            nextBillOn: sub.status === 'trialing' ? null : String(sub.current_period_end),
+            trialEndsOn: sub.status === 'trialing' && sub.trial_ends_at
+              ? String(sub.trial_ends_at).slice(0, 10) : null,
+          }, lang));
+        }
+      }
+    }
+
+    return { content: parts.join('\n\n') };
   }
   if (name === 'get_stock_on_hand') {
     const asked = typeof input.product_name === 'string' ? input.product_name.trim().slice(0, 80) : '';

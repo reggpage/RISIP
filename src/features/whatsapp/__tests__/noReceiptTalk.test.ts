@@ -100,9 +100,12 @@ describe('the two receipt tools', () => {
     expect(shown).not.toContain('get_receipt_details');
   });
 
-  it('leaves the visible surface at twenty-eight', () => {
-    // The number the model actually sees. Thirty-six is the full list, eight
+  it('leaves the visible surface at twenty-nine', () => {
+    // The number the model actually sees. Thirty-seven is the full list, eight
     // of which are hidden — a distinction that was got wrong once already.
-    expect(shown).toHaveLength(28);
+    // Twenty-nine since get_my_subscription: the shop could not ask what it was
+    // paying for, and the answer must be visible to the model or the question
+    // has nowhere to land.
+    expect(shown).toHaveLength(29);
   });
 });

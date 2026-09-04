@@ -41,7 +41,7 @@ export type SemanticIntent =
   | 'business_summary' | 'profit_query' | 'product_performance' | 'sales_trend'
   | 'stock_query' | 'receivables_query' | 'payables_query' | 'price_query'
   | 'cost_query' | 'price_comparison' | 'missing_selling_price' | 'advice' | 'receipts_query' | 'invoice_query'
-  | 'petty_cash_query' | 'reimbursement_query' | 'businesses_query'
+  | 'petty_cash_query' | 'reimbursement_query' | 'businesses_query' | 'subscription_query'
   | 'approvals_query' | 'hypothetical_profit' | 'help'
   | 'conversational'
   // A parked question answered through the model rather than by a parser.
@@ -78,6 +78,7 @@ const TOOL_INTENT: Record<string, SemanticIntent> = {
   get_my_petty_cash_balance: 'petty_cash_query',
   get_my_reimbursements: 'reimbursement_query',
   get_my_businesses: 'businesses_query',
+  get_my_subscription: 'subscription_query',
   get_pending_approvals: 'approvals_query',
   get_stock_on_hand: 'stock_query',
   search_risip_help: 'help',

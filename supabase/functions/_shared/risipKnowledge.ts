@@ -2,7 +2,7 @@ import type { Lang } from './whatsappIntent.ts';
 
 export type KnowledgeChunk = {
   id: string;
-  topic: 'product' | 'permissions' | 'receipts' | 'daily_records' | 'projects' | 'debts' | 'payments' | 'onboarding' | 'security' | 'retirements' | 'supplier_claims' | 'invoices' | 'notifications' | 'audit' | 'errors' | 'faq';
+  topic: 'product' | 'permissions' | 'receipts' | 'daily_records' | 'projects' | 'debts' | 'payments' | 'onboarding' | 'security' | 'retirements' | 'supplier_claims' | 'invoices' | 'notifications' | 'audit' | 'errors' | 'faq' | 'billing';
   keywords: string[];
   sw: string;
   en: string;
@@ -11,6 +11,11 @@ export type KnowledgeChunk = {
 // Small, versioned retrieval corpus for WhatsApp help. It is intentionally local
 // and deterministic in this phase: no user data is sent to a model to answer FAQs.
 export const RISIP_KNOWLEDGE: KnowledgeChunk[] = [
+  { id: 'billing-what-counts', topic: 'billing', keywords: ['ujumbe', 'jumbe', 'message', 'kikomo', 'allowance', 'limit', 'zimebaki', 'remaining'], sw: 'Kinachohesabiwa ni ujumbe UNAOTUMA kwa Risip. Majibu ya Risip hayahesabiwi. Kikomo huanza upya kila mwezi, hata kama umelipia mwaka mzima. Kwa idadi yako halisi, Risip itaisoma kwenye akaunti yako.', en: 'What counts is the messages YOU send to Risip. Replies from Risip are not counted. The allowance restarts every month, even on a yearly subscription. For your own figure, Risip reads it from your account.' },
+  { id: 'billing-over-allowance', topic: 'billing', keywords: ['nimezidi', 'over', 'zaidi', 'overage', 'imefungwa', 'suspended', 'kufungiwa'], sw: 'Ukizidi kikomo hakuna kinachokatika ghafla: unaambiwa kwanza. Akaunti hufungwa tu kwa bili ambayo haijalipwa baada ya muda wa neema, na rekodi zako zote hubaki pale pale.', en: 'Going over the allowance cuts nothing off suddenly: you are told first. An account is suspended only for a bill left unpaid past its grace period, and every record you have stays where it is.' },
+  { id: 'billing-cycle', topic: 'billing', keywords: ['mwezi', 'mwaka', 'monthly', 'yearly', 'cycle', 'kulipa', 'bili', 'bill', 'malipo ya risip'], sw: 'Unaweza kulipa kwa mwezi au kwa mwaka. Kwa mwaka unalipa mara moja na kuokoa, lakini kikomo cha jumbe kinabaki cha mwezi. Bili hufika WhatsApp, na kujibu *1* kunaanzisha malipo kwenye simu yako.', en: 'You can pay monthly or yearly. Yearly is one payment and saves money, but the message allowance stays monthly. A bill arrives on WhatsApp, and replying *1* starts the payment on your phone.' },
+  { id: 'billing-trial', topic: 'billing', keywords: ['bure', 'free', 'trial', 'jaribu', 'wiki ya bure'], sw: 'Kuna wiki moja ya bure mwanzoni, bila kadi. Kila kitu hufanya kazi ndani ya wiki hiyo.', en: 'There is one free week at the start, with no card. Everything works during that week.' },
+  { id: 'billing-change-plan', topic: 'billing', keywords: ['badilisha plan', 'kupandisha', 'upgrade', 'downgrade', 'plan gani', 'which plan'], sw: 'Plan hutofautiana kwa jumbe kwa mwezi, idadi ya watumiaji, maduka, na ripoti. Risip inaweza kukuonyesha plan zote na bei zake za sasa ukiuliza.', en: 'Plans differ by messages a month, how many users, how many shops, and which reports. Risip can show you every plan and its current price if you ask.' },
   { id: 'product-overview', topic: 'product', keywords: ['risip', 'help', 'msaada', 'feature', 'what'], sw: 'Risip inasaidia kurekodi mauzo, matumizi, madeni na malipo ya wateja.', en: 'Risip helps you record sales, expenses, debts, and customer payments.' },
   { id: 'receipts', topic: 'receipts', keywords: ['receipt', 'risiti', 'photo', 'scan', 'ai', 'resiti', 'picha'], sw: 'Tuma picha ya rekodi. Risip itaisoma na kuiweka kwenye project inayoruhusiwa.', en: 'Send a photo of a record. Risip reads it and files it to an authorised project.' },
   { id: 'daily-records', topic: 'daily_records', keywords: ['daily', 'record', 'rekodi', 'sale', 'mauzo', 'expense', 'matumizi'], sw: 'Kwa rekodi za siku, tuma mauzo au matumizi. Risip itaonyesha draft; jibu *1* Ndiyo · *2* Hapana', en: 'For daily records, send a sale or expense. Risip shows a draft; reply YES to confirm or NO to cancel.' },
