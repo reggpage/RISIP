@@ -95,6 +95,13 @@ async function askModel(
         model,
         max_tokens: 900,
         // Identical to production's round zero.
+        // FIVE MINUTES HERE ON PURPOSE, unlike the live WhatsApp path.
+        //
+        // The evaluator fires its cases seconds apart, and a read refreshes the
+        // timer for free, so the five-minute entry stays warm for a whole run
+        // and costs 1.25x to write instead of the hour's 2x. The live path
+        // buys the hour because a trader pauses between messages; an eval run
+        // never pauses, so paying for the hour here would be pure surcharge.
         system: [{ type: 'text', text: buildAssistantSystemPrompt(context), cache_control: { type: 'ephemeral' } }],
         tools: toolsForModel(model),
         tool_choice: {

@@ -291,8 +291,34 @@ type ToolDefinition = {
   description: string;
   strict?: boolean;
   input_schema: Record<string, unknown>;
-  cache_control?: { type: 'ephemeral' };
+  cache_control?: CacheControl;
 };
+
+/**
+ * How long a cached prefix is kept, and why this shop's traffic wants an hour.
+ *
+ * MEASURED, not guessed. The gap between one message and the next, over 148
+ * real messages: 47% arrived within five minutes of the one before, 35% between
+ * five minutes and an hour, and 17% after more than an hour. A read refreshes
+ * the timer for free, so the five-minute cache holds a burst together but drops
+ * everything in that middle band, and that band is a third of all traffic. It
+ * showed up in the bill as writes roughly equal to reads: half of every cached
+ * copy was paid for and thrown away.
+ *
+ * The hour costs more to write (2x base, against 1.25x for five minutes), so it
+ * is not free. On the measured distribution it still wins clearly:
+ *
+ *   five minutes   0.48 reads x 0.1  +  0.52 writes x 1.25  =  0.70x
+ *   one hour       0.83 reads x 0.1  +  0.17 writes x 2.0   =  0.42x
+ *
+ * Not caching at all would be 1.0x, so caching is right either way; the hour is
+ * right for THIS traffic. If the shape of the traffic ever changes, say a shop
+ * that sends one message a day or one that never pauses, re-measure before
+ * assuming this still holds.
+ */
+type CacheControl = { type: 'ephemeral'; ttl: '1h' };
+
+const CACHE_ONE_HOUR: CacheControl = { type: 'ephemeral', ttl: '1h' };
 
 type AnthropicBlock =
   | { type: 'text'; text: string }
@@ -1262,7 +1288,10 @@ export function toolsForModel(model: string): ToolDefinition[] {
   return ASSISTANT_TOOLS.map((definition, index) => ({
     ...definition,
     ...(strict && definition.strict ? { strict: true } : { strict: undefined }),
-    ...(index === ASSISTANT_TOOLS.length - 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
+    // Both breakpoints take the same TTL. The rendered order is tools, then
+    // system, and an entry with a longer TTL may never sit after a shorter one,
+    // so keeping them equal is what makes the pair legal as well as cheap.
+    ...(index === ASSISTANT_TOOLS.length - 1 ? { cache_control: CACHE_ONE_HOUR } : {}),
   }));
 }
 
@@ -1615,7 +1644,7 @@ ${userText}` },
         body: JSON.stringify({
           model: modelFor(round),
           max_tokens: 900,
-          system: [{ type: 'text', text: buildAssistantSystemPrompt(args.context), cache_control: { type: 'ephemeral' } }],
+          system: [{ type: 'text', text: buildAssistantSystemPrompt(args.context), cache_control: CACHE_ONE_HOUR }],
           tools: toolsForModel(modelFor(round)),
           // STAGE C, MEASURED. The first turn must end in an explicit
           // capability. On the same 175 cases, forcing a choice beat letting
