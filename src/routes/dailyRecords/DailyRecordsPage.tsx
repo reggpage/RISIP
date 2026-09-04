@@ -10,6 +10,7 @@ import { friendlyError } from '@/lib/errors';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { formatLongDate } from '@/lib/format';
 import { getLang } from '@/lib/lang';
+import { supabase } from '@/lib/supabase';
 import { useToast } from '@/components/ui/Toast';
 import {
   confirmDailyRecord,
@@ -25,9 +26,9 @@ import type { DailyRecordAudit, DailyRecordKind, DailyRecordStatus } from '@/typ
 
 const lang = getLang();
 const ui = lang === 'sw' ? {
-  title: 'Rekodi za Siku', description: 'Rekodi za shughuli kutoka WhatsApp na app. Zinatenganishwa na matumizi ya risiti.', refresh: 'Onyesha upya', filter: 'Chuja', filterRecords: 'Chuja rekodi', kind: 'Aina', status: 'Hali', source: 'Chanzo', allKinds: 'Aina zote', allStatuses: 'Hali zote', allSources: 'Vyanzo vyote', app: 'App / kwa mkono', other: 'Nyingine', empty: 'Bado hakuna rekodi za siku.', emptyHint: 'Tuma mauzo, matumizi, madeni, au malipo kupitia WhatsApp.', loading: 'Inapakia rekodi za siku…', confirmed: 'Imethibitishwa', pending: 'Inasubiri uthibitisho', voided: 'Imeghairiwa', sale: 'Mauzo', expense: 'Matumizi', stockPurchase: 'Ununuzi wa bidhaa', wholeAnimalProcurement: 'Ununuzi wa ng\'ombe mzima', debt: 'Mkopo uliotolewa', payment: 'Malipo ya mteja', stockLoss: 'Upotevu wa bidhaa', ownerUse: 'Zimechukuliwa nyumbani', supplierPayable: 'Deni la muuzaji', supplierPayment: 'Malipo kwa muuzaji', daily: 'Rekodi ya siku', occurred: 'Ilitokea', created: 'Iliundwa', confirm: 'Thibitisha', saving: 'Inahifadhi…', void: 'Ghairi', details: 'Maelezo ya rekodi ya siku', total: 'Jumla', descriptionLabel: 'Maelezo', party: 'Mhusika', recordedBy: 'Iliyorekodiwa na', calculation: 'Mgawanyo wa hesabu', audit: 'Historia ya ukaguzi', historyLoading: 'Inapakia historia…', auditError: 'Historia ya ukaguzi haikuweza kupakiwa.', close: 'Funga', voidTitle: 'Ghairi rekodi ya siku', voidExplanation: 'Ghairi inaweka rekodi hii kuwa imefutwa kwa matumizi ya hesabu. Haifutwi. Rekodi ya awali na historia ya ukaguzi vinabaki, lakini haijumuishwi kwenye jumla.', reason: 'Sababu', reasonPlaceholder: 'Eleza kwa nini rekodi hii inaghairiwa', cancel: 'Ghairi', voidRecord: 'Ghairi rekodi', voiding: 'Inaghairi…', confirmSuccess: 'Rekodi ya siku imethibitishwa.', voidSuccess: 'Rekodi ya siku imeghairiwa. Historia yake imehifadhiwa.', reasonError: 'Andika sababu yenye maana kabla ya kughairi rekodi hii.', confirmError: 'Imeshindikana kuthibitisha rekodi hii.', voidError: 'Imeshindikana kughairi rekodi hii.', whatsApp: 'WhatsApp', voidReason: 'Sababu ya kughairi', today: 'Leo', yesterday: 'Jana', previousDay: 'Juzi', back: 'Nyuma', dateNavigation: 'Urambazaji wa tarehe', oneEntry: 'kipengele 1', manyEntries: 'vipengele {n}', export: 'Pakua CSV', exportEmpty: 'Hakuna rekodi za kupakua.', hDate: 'Tarehe', hParty: 'Mhusika', hAmount: 'Kiasi', pCash: 'Taslimu', pMobile: 'Simu', pBank: 'Benki', pOther: 'Nyingine',
+  title: 'Rekodi za Siku', description: 'Rekodi za shughuli kutoka WhatsApp na app. Zinatenganishwa na matumizi ya risiti.', refresh: 'Onyesha upya', filter: 'Chuja', filterRecords: 'Chuja rekodi', kind: 'Aina', status: 'Hali', source: 'Chanzo', allKinds: 'Aina zote', allStatuses: 'Hali zote', allSources: 'Vyanzo vyote', app: 'App / kwa mkono', other: 'Nyingine', empty: 'Bado hakuna rekodi za siku.', emptyHint: 'Tuma mauzo, matumizi, madeni, au malipo kupitia WhatsApp.', loading: 'Inapakia rekodi za siku…', confirmed: 'Imethibitishwa', pending: 'Inasubiri uthibitisho', voided: 'Imeghairiwa', sale: 'Mauzo', expense: 'Matumizi', stockPurchase: 'Ununuzi wa bidhaa', wholeAnimalProcurement: 'Ununuzi wa ng\'ombe mzima', debt: 'Mkopo uliotolewa', payment: 'Malipo ya mteja', stockLoss: 'Upotevu wa bidhaa', ownerUse: 'Zimechukuliwa nyumbani', supplierPayable: 'Deni la muuzaji', supplierPayment: 'Malipo kwa muuzaji', daily: 'Rekodi ya siku', occurred: 'Ilitokea', created: 'Iliundwa', confirm: 'Thibitisha', saving: 'Inahifadhi…', void: 'Ghairi', details: 'Maelezo ya rekodi ya siku', total: 'Jumla', descriptionLabel: 'Maelezo', party: 'Mhusika', recordedBy: 'Iliyorekodiwa na', calculation: 'Mgawanyo wa hesabu', audit: 'Historia ya ukaguzi', historyLoading: 'Inapakia historia…', auditError: 'Historia ya ukaguzi haikuweza kupakiwa.', close: 'Funga', voidTitle: 'Ghairi rekodi ya siku', voidExplanation: 'Ghairi inaweka rekodi hii kuwa imefutwa kwa matumizi ya hesabu. Haifutwi. Rekodi ya awali na historia ya ukaguzi vinabaki, lakini haijumuishwi kwenye jumla.', reason: 'Sababu', reasonPlaceholder: 'Eleza kwa nini rekodi hii inaghairiwa', cancel: 'Ghairi', voidRecord: 'Ghairi rekodi', voiding: 'Inaghairi…', confirmSuccess: 'Rekodi ya siku imethibitishwa.', voidSuccess: 'Rekodi ya siku imeghairiwa. Historia yake imehifadhiwa.', reasonError: 'Andika sababu yenye maana kabla ya kughairi rekodi hii.', confirmError: 'Imeshindikana kuthibitisha rekodi hii.', voidError: 'Imeshindikana kughairi rekodi hii.', whatsApp: 'WhatsApp', voidReason: 'Sababu ya kughairi', today: 'Leo', yesterday: 'Jana', previousDay: 'Juzi', back: 'Nyuma', dateNavigation: 'Urambazaji wa tarehe', oneEntry: 'kipengele 1', manyEntries: 'vipengele {n}', export: 'Pakua CSV', exportPdf: 'Pakua PDF', exportEmpty: 'Hakuna rekodi za kupakua.', exportFailed: 'Sijaweza kutengeneza PDF sasa. Jaribu tena.', hDate: 'Tarehe', hParty: 'Mhusika', hAmount: 'Kiasi', pCash: 'Taslimu', pMobile: 'Simu', pBank: 'Benki', pOther: 'Nyingine',
 } : {
-  title: 'Daily Records', description: 'Operational records from WhatsApp and the app. They stay separate from receipt expenses.', refresh: 'Refresh', filter: 'Filter', filterRecords: 'Filter records', kind: 'Kind', status: 'Status', source: 'Source', allKinds: 'All kinds', allStatuses: 'All statuses', allSources: 'All sources', app: 'App / manual', other: 'Other', empty: 'No daily records yet.', emptyHint: 'Send sales, expenses, debts, or payments on WhatsApp.', loading: 'Loading daily records…', confirmed: 'Confirmed', pending: 'Pending confirmation', voided: 'Voided', sale: 'Sale', expense: 'Expense', stockPurchase: 'Product purchase', wholeAnimalProcurement: 'Whole-animal procurement', debt: 'Debt issued', payment: 'Customer payment', stockLoss: 'Stock loss', ownerUse: 'Taken by owner', supplierPayable: 'Owed to supplier', supplierPayment: 'Paid to supplier', daily: 'Daily record', occurred: 'Occurred', created: 'Created', confirm: 'Confirm', saving: 'Saving…', void: 'Void', details: 'Daily record details', total: 'Total', descriptionLabel: 'Description', party: 'Party', recordedBy: 'Recorded by', calculation: 'Calculation breakdown', audit: 'Audit history', historyLoading: 'Loading history…', auditError: 'Audit history could not be loaded.', close: 'Close', voidTitle: 'Void daily record', voidExplanation: 'Void marks this record as cancelled. It is not deleted. The original record and audit history remain, but it is excluded from totals.', reason: 'Reason', reasonPlaceholder: 'Explain why this record is being voided', cancel: 'Cancel', voidRecord: 'Void record', voiding: 'Voiding…', confirmSuccess: 'Daily record confirmed.', voidSuccess: 'Daily record voided. Its history is preserved.', reasonError: 'Enter a meaningful reason before voiding this record.', confirmError: 'Could not confirm this daily record.', voidError: 'Could not void this daily record.', whatsApp: 'WhatsApp', voidReason: 'Void reason', today: 'Today', yesterday: 'Yesterday', previousDay: 'Previous day', back: 'Back', dateNavigation: 'Date navigation', oneEntry: '1 entry', manyEntries: '{n} entries', export: 'Download CSV', exportEmpty: 'No records to download.', hDate: 'Date', hParty: 'Party', hAmount: 'Amount', pCash: 'Cash', pMobile: 'Mobile money', pBank: 'Bank', pOther: 'Other',
+  title: 'Daily Records', description: 'Operational records from WhatsApp and the app. They stay separate from receipt expenses.', refresh: 'Refresh', filter: 'Filter', filterRecords: 'Filter records', kind: 'Kind', status: 'Status', source: 'Source', allKinds: 'All kinds', allStatuses: 'All statuses', allSources: 'All sources', app: 'App / manual', other: 'Other', empty: 'No daily records yet.', emptyHint: 'Send sales, expenses, debts, or payments on WhatsApp.', loading: 'Loading daily records…', confirmed: 'Confirmed', pending: 'Pending confirmation', voided: 'Voided', sale: 'Sale', expense: 'Expense', stockPurchase: 'Product purchase', wholeAnimalProcurement: 'Whole-animal procurement', debt: 'Debt issued', payment: 'Customer payment', stockLoss: 'Stock loss', ownerUse: 'Taken by owner', supplierPayable: 'Owed to supplier', supplierPayment: 'Paid to supplier', daily: 'Daily record', occurred: 'Occurred', created: 'Created', confirm: 'Confirm', saving: 'Saving…', void: 'Void', details: 'Daily record details', total: 'Total', descriptionLabel: 'Description', party: 'Party', recordedBy: 'Recorded by', calculation: 'Calculation breakdown', audit: 'Audit history', historyLoading: 'Loading history…', auditError: 'Audit history could not be loaded.', close: 'Close', voidTitle: 'Void daily record', voidExplanation: 'Void marks this record as cancelled. It is not deleted. The original record and audit history remain, but it is excluded from totals.', reason: 'Reason', reasonPlaceholder: 'Explain why this record is being voided', cancel: 'Cancel', voidRecord: 'Void record', voiding: 'Voiding…', confirmSuccess: 'Daily record confirmed.', voidSuccess: 'Daily record voided. Its history is preserved.', reasonError: 'Enter a meaningful reason before voiding this record.', confirmError: 'Could not confirm this daily record.', voidError: 'Could not void this daily record.', whatsApp: 'WhatsApp', voidReason: 'Void reason', today: 'Today', yesterday: 'Yesterday', previousDay: 'Previous day', back: 'Back', dateNavigation: 'Date navigation', oneEntry: '1 entry', manyEntries: '{n} entries', export: 'Download CSV', exportPdf: 'Download PDF', exportEmpty: 'No records to download.', exportFailed: 'Could not build the PDF just now. Try again.', hDate: 'Date', hParty: 'Party', hAmount: 'Amount', pCash: 'Cash', pMobile: 'Mobile money', pBank: 'Bank', pOther: 'Other',
 };
 const kindLabels: Record<DailyRecordKind, string> = {
   sale: ui.sale, expense: ui.expense, stock_purchase: ui.stockPurchase,
@@ -56,6 +57,7 @@ export default function DailyRecordsPage() {
   const [voidReason, setVoidReason] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => startOfLocalDay());
   // The day-card that is open, if any. A card is a summary; tapping it opens
   // the thing it summarises rather than growing and pushing the day off screen.
@@ -103,6 +105,43 @@ export default function DailyRecordsPage() {
       payment: { cash: ui.pCash, mobile_money: ui.pMobile, bank: ui.pBank, other: ui.pOther },
     });
     downloadCsv(csv, exportFilename());
+  }
+
+  // The PDF is built on the server, where pdf-lib already lives. Putting it in
+  // the bundle would cost roughly 300KB on every load for a button most shops
+  // press rarely, and a shopkeeper on a cheap phone pays that in data.
+  async function exportPdfReport() {
+    if (exportRows.length === 0) { toast.info(ui.exportEmpty); return; }
+    setPdfBusy(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      const token = session.session?.access_token;
+      if (!token) throw new Error('no session');
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/export-records-pdf`,
+        {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          // The same filter the CSV honours, so the two buttons on this
+          // toolbar cannot hand back different documents from one screen.
+          body: JSON.stringify({ lang, kind, status, source }),
+        },
+      );
+      if (!response.ok) throw new Error(String(response.status));
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = exportFilename().replace(/\.csv$/, '.pdf');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error(ui.exportFailed);
+    } finally {
+      setPdfBusy(false);
+    }
   }
 
   async function handleConfirm(record: DailyRecordWithDetails) {
@@ -154,9 +193,14 @@ export default function DailyRecordsPage() {
               so "download what I am looking at" is what happens. Owner and
               accountant only, the same wall the reports live behind. */}
           {canExport && (
-            <Button variant="secondary" onClick={exportRecords} disabled={exportRows.length === 0}>
-              <Download className="h-4 w-4" /> {ui.export}
-            </Button>
+            <>
+              <Button variant="secondary" onClick={exportRecords} disabled={exportRows.length === 0}>
+                <Download className="h-4 w-4" /> {ui.export}
+              </Button>
+              <Button variant="secondary" onClick={() => void exportPdfReport()} disabled={exportRows.length === 0 || pdfBusy}>
+                <Download className="h-4 w-4" /> {pdfBusy ? ui.saving : ui.exportPdf}
+              </Button>
+            </>
           )}
           <Button variant="secondary" onClick={state.reload} disabled={state.status === 'loading'}>
             <RefreshCw className="h-4 w-4" /> {ui.refresh}

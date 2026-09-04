@@ -7,6 +7,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1';
+import { pdfSafe } from '../_shared/pdfText.ts';
 import { json, preflight } from '../_shared/cors.ts';
 
 function bad(msg, status = 400) {
@@ -116,13 +117,16 @@ Deno.serve(async (req) => {
 
   // Render PDF.
   const doc = await PDFDocument.create();
-  const page = doc.addPage([595, 842]); // A4 portrait
+  let page = doc.addPage([595, 842]); // A4 portrait
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   let y = 800;
 
+  // Company names, project names and categories are typed by people. One
+  // emoji or one non-Latin character in any of them makes drawText throw, and
+  // the whole invoice is lost rather than one character.
   const draw = (text, opts = {}) => {
-    page.drawText(String(text), {
+    page.drawText(pdfSafe(String(text)), {
       x: opts.x || 40,
       y: opts.y ?? y,
       size: opts.size || 10,
@@ -158,7 +162,10 @@ Deno.serve(async (req) => {
   y -= 12;
 
   for (const [cat, v] of catRows) {
-    if (y < 80) { y = 800; doc.addPage([595, 842]); }
+    // The new sheet has to become the one being drawn on. Adding a page and
+    // carrying on with the old one puts the overflow rows off the bottom of
+    // the first sheet and leaves the second one blank.
+    if (y < 80) { page = doc.addPage([595, 842]); y = 800; }
     draw(cat, { x: 40, y });
     draw(String(v.count), { x: 260, y });
     draw(fmtMoney(v.total), { x: 340, y });
@@ -174,9 +181,11 @@ Deno.serve(async (req) => {
   draw(fmtMoney(taxAmount), { x: 460, y, bold: true, size: 12 });
 
   // Footer.
-  page.drawText('Risip · scan risiti, tengeneza ankara.', {
-    x: 40, y: 30, size: 8, font, color: rgb(0.58, 0.64, 0.72),
-  });
+  for (const sheet of doc.getPages()) {
+    sheet.drawText(pdfSafe('Risip · scan risiti, tengeneza ankara.'), {
+      x: 40, y: 30, size: 8, font, color: rgb(0.58, 0.64, 0.72),
+    });
+  }
 
   const pdfBytes = await doc.save();
   const pdfPath = `${project_id}/${invoiceId}.pdf`;
