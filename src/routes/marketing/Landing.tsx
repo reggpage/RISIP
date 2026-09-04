@@ -263,8 +263,11 @@ export default function Landing() {
                   key={plan.name}
                   className={`relative flex flex-col rounded-2xl bg-surface p-8 shadow-sm ${plan.popular ? 'border-2 border-role-admin shadow-lg lg:-mt-4 lg:mb-4' : 'border border-surface-border'}`}
                 >
+                  {/* Sentence case, not shouted. "WENGI HUCHAGUA" in capitals
+                      also wrapped onto two lines and pushed the card's heading
+                      down; the badge is a label, not an announcement. */}
                   {plan.popular && (
-                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-role-admin px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white">
+                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-role-admin px-3 py-1 text-xs font-semibold text-white">
                       {c.pricing.popular}
                     </span>
                   )}
