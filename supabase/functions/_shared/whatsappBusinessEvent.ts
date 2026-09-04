@@ -185,6 +185,8 @@ export type EventLine = {
   quantity: Reading;
   quantityWording: string | null;
   unitWording: string | null;
+  /** Price band stated for this product line, not for the whole message. */
+  priceBandWording: string | null;
 };
 
 export type ValidatedBusinessEvent = {
@@ -232,6 +234,7 @@ function linesOf(value: unknown): EventLine[] | null {
       productWording,
       quantityWording,
       unitWording: text(row.unit_wording),
+      priceBandWording: text(row.price_band_wording),
       quantity: readQuantity(quantityWording, row.quantity_candidate),
     });
   }

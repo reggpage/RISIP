@@ -95,6 +95,19 @@ describe('the trader’s own words reach the server', () => {
     expect(webhook).toContain('bandFromWording');
   });
 
+  it('keeps a mixed price band attached to its own product line', () => {
+    const event = validateBusinessEvent({
+      kind: 'sale',
+      lines: [
+        { product_wording: 'nguvu ya sala', quantity_wording: '2', quantity_candidate: 2, price_band_wording: 'rejareja' },
+        { product_wording: 'biblia', quantity_wording: '4', quantity_candidate: 4, price_band_wording: 'jumla' },
+      ],
+      price_band_wording: null,
+    });
+    expect(event?.lines.map((line) => line.priceBandWording)).toEqual(['rejareja', 'jumla']);
+    expect(webhook).toContain('bandFromWording(line.priceBandWording ?? event.priceBandWording)');
+  });
+
   it('keeps credit wording out of the payment channel', () => {
     const event = validateBusinessEvent({
       kind: 'credit_sale',

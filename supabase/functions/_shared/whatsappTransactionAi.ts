@@ -27,7 +27,7 @@ function bandFromWording(value: unknown): 'retail' | 'wholesale' | null {
   return null;
 }
 
-const LINE_KEYS = new Set(['product', 'quantity', 'unit']);
+const LINE_KEYS = new Set(['product', 'quantity', 'unit', 'price_band_wording']);
 const PAYMENT_METHODS = new Set<DailyRecordPaymentMethod>(['cash', 'mobile_money', 'bank', 'other']);
 const MISSING_FIELDS = new Set(['product', 'quantity', 'unit', 'party']);
 
@@ -35,6 +35,7 @@ type AiTransactionLine = {
   product?: unknown;
   quantity?: unknown;
   unit?: unknown;
+  price_band_wording?: unknown;
 };
 
 type AiTransactionCandidate = {
@@ -132,7 +133,9 @@ export function validateAiTransactionCandidate(candidate: unknown): AiTransactio
       spokenUnit: unit,
       productWithoutUnit: unit ? product : null,
       unit: null,
-      band: bandFromWording(raw.price_band_wording),
+      // A band belongs to the line where the trader said it. The event-level
+      // value remains a compatibility fallback for one band stated globally.
+      band: bandFromWording(line.price_band_wording ?? raw.price_band_wording),
     });
   }
 

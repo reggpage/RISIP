@@ -52,11 +52,30 @@ describe('the price the trader named survives the model', () => {
     expect(bandOf('kitu kingine')).toBeNull();
   });
 
+  it('does not copy one line band onto another line', () => {
+    const result = validateAiTransactionCandidate({
+      kind: 'sale',
+      party_name: null,
+      payment_method: null,
+      missing_fields: [],
+      credit_wording: null,
+      occurred_at_wording: null,
+      price_band_wording: null,
+      lines: [
+        { product: 'nguvu ya sala', quantity: 2, unit: null, price_band_wording: 'rejareja' },
+        { product: 'biblia', quantity: 4, unit: null, price_band_wording: 'jumla' },
+      ],
+    });
+    expect(result).not.toBeNull();
+    expect((result as { sale: { items: Array<{ band: string | null }> } }).sale.items.map((item) => item.band))
+      .toEqual(['retail', 'wholesale']);
+  });
+
   it('carries a word, never a number', () => {
     const tool = readFileSync(
       resolve(process.cwd(), 'supabase/functions/_shared/whatsappAssistant.ts'), 'utf8');
     const schema = tool.slice(tool.indexOf('price_band_wording'), tool.indexOf('price_band_wording') + 400);
-    expect(schema).toContain("type: 'string'");
+    expect(schema).toContain("['string', 'null']");
     expect(schema).not.toContain('number');
   });
 });

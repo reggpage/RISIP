@@ -3495,13 +3495,30 @@ function decideDate(
   return { ok: true, occurredAt: resolved.occurredAt };
 }
 
-/** jumla and rejareja, mapped by the server. The model never sends a band. */
+/** jumla and rejareja, mapped by the server from the trader's own wording. */
 function bandFromWording(wording: string | null): Band | null {
   const said = String(wording ?? '').toLowerCase();
   if (!said) return null;
   if (/\b(jumla|wholesale|bulk)\b/u.test(said)) return 'wholesale';
   if (/\b(rejareja|reja|retail|kawaida)\b/u.test(said)) return 'retail';
   return null;
+}
+
+/**
+ * Workers may read and ask questions, but they may not create any business
+ * record. The owner/accountant must enter or approve it. This guard is kept at
+ * the AI executor boundary so a worker cannot write through a future tool, and
+ * the database trigger below is the final backstop for every write path.
+ */
+function workerWriteDenied(
+  identity: ResolvedWhatsAppIdentity,
+  lang: Lang,
+): AssistantToolExecution | null {
+  if (identity.role !== 'worker') return null;
+  const message = lang === 'sw'
+    ? 'Hili ni ombi la kuandika rekodi ya biashara. Kwa sasa mfanyakazi hawezi kurekodi mauzo, manunuzi au kuongeza stoo. Boss au accountant lazima aingize au athibitishe kwanza.'
+    : 'This would create a business record. Workers cannot record sales, purchases, or add stock. The owner or accountant must enter or approve it first.';
+  return { content: message, terminalReply: message, isError: true };
 }
 
 /** Every line must have a quantity the server could read for itself. */
@@ -3561,6 +3578,9 @@ async function priceAndDraftSale(
     said?: string;
   },
 ): Promise<AssistantToolExecution> {
+  const denied = workerWriteDenied(identity, lang);
+  if (denied) return denied;
+
   const notUnderstood = lang === 'sw'
     ? 'Sijaelewa bidhaa, idadi au kipimo kwa uhakika. Niandikie bidhaa na idadi yake.'
     : 'I could not safely understand the product, quantity or unit. State the product and its quantity.';
@@ -4377,6 +4397,9 @@ async function executeBusinessEvent(
   input: Record<string, unknown>,
   said?: string,
 ): Promise<AssistantToolExecution> {
+  const denied = workerWriteDenied(identity, lang);
+  if (denied) return denied;
+
   const notUnderstood = lang === 'sw'
     ? 'Sijaelewa bidhaa, idadi au kipimo kwa uhakika. Niandikie bidhaa na idadi yake.'
     : 'I could not safely understand the product, quantity or unit. State the product and its quantity.';
@@ -4527,7 +4550,11 @@ async function executeBusinessEvent(
         spokenUnit: line.unitWording,
         // The band the SHOP said, mapped by the server. The model sends the
         // word; it never sends a band and never sends a price.
-        band: bandFromWording(event.priceBandWording),
+        // A band belongs to the product line that carried the wording. The
+        // message-level value remains a compatibility fallback for a sentence
+        // such as "nimeuza bidhaa 2 rejareja" where one band explicitly covers
+        // every line. Never let a different line's "jumla" overwrite this one.
+        band: bandFromWording(line.priceBandWording ?? event.priceBandWording),
       })),
       // Money out at the foot of a closing paste. A single business event
       // never carries them; propose_money_event is where an expense lives.
@@ -4873,6 +4900,9 @@ async function executeMoneyEvent(
   input: Record<string, unknown>,
   said?: string,
 ): Promise<AssistantToolExecution> {
+  const denied = workerWriteDenied(identity, lang);
+  if (denied) return denied;
+
   const event = validateMoneyEvent(input);
   if (!event) {
     return askBack(lang === 'sw'
@@ -5056,6 +5086,20 @@ async function runAssistantTool(
   // it, so the model cannot book an arrival as a sale.
   said?: string,
 ): Promise<AssistantToolExecution> {
+  const workerWriteTools = new Set([
+    'propose_product_cost',
+    'propose_catalogue_transaction',
+    'propose_daily_record',
+    'propose_business_event',
+    'propose_money_event',
+    'propose_record_void',
+    'propose_day_close',
+  ]);
+  if (workerWriteTools.has(name)) {
+    const denied = workerWriteDenied(identity, lang);
+    if (denied) return denied;
+  }
+
   const invalidWhen = typeof input.when === 'string'
     && dateWordingStatus(input.when) === 'invalid';
   if (invalidWhen) {
