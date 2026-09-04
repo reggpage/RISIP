@@ -198,6 +198,30 @@ export function providerFailureCode(raw: string | null | undefined): string | nu
 }
 
 /**
+ * Which of the three grounding guards refused a reply, kept in a readable form.
+ *
+ * The assistant declines its own answer for three separate reasons: a figure no
+ * tool returned, unsafe profit wording, or a date caveat the tool result
+ * already disproved. Each is computed with detail, and the row used to keep
+ * only the first. MEASURED over sixty days: of seven refusals, three carried no
+ * recorded cause at all, because they were the other two reasons and fell to
+ * null on the way to the table.
+ *
+ * That is the difference between "the guard is too strict" and "the model is
+ * inventing totals", which is the whole question anybody asks of this column.
+ * The prefix is kept so the three cannot be confused with each other, and so
+ * neither can be confused with a business rule's own rejection code.
+ *
+ * Rows written before this returned the bare shape ("2x1") with no prefix; a
+ * query over both eras should allow for that.
+ */
+export function guardRefusalCode(failure: string | null | undefined): string | null {
+  const raw = String(failure ?? '');
+  const match = /^model_(ungrounded_number|profit_wording|false_date_caveat):(.+)$/.exec(raw);
+  return match ? `${match[1]}:${match[2]}`.slice(0, 200) : null;
+}
+
+/**
  * The row, built from things already known at the call site.
  *
  * Returns a plain object rather than writing: the caller decides when to write,

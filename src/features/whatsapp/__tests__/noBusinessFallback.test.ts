@@ -5,6 +5,7 @@ import {
   assistantFailureMessage,
   classifyAssistantFailure,
 } from '../../../../supabase/functions/_shared/whatsappAssistant';
+import { guardRefusalCode } from '../../../../supabase/functions/_shared/whatsappTelemetry';
 
 // CLAUDE ANSWERS, OR RISIP SAYS IT COULD NOT.
 //
@@ -89,7 +90,14 @@ describe('no business prose can stand in for an answer', () => {
     expect(branch).toContain('widths.filter');
     expect(branch).not.toContain('model_ungrounded_number:${ungrounded}');
     expect(branch).not.toContain('model_ungrounded_number:${ungrounded.join');
-    expect(webhook).toContain("rejectionCode: assistantFailure?.startsWith('model_ungrounded_number:')");
+    // The webhook routes the reason through one named helper now. It used to
+    // recognise only the ungrounded-figure guard inline, so the other two
+    // refusal reasons reached the table as null: MEASURED, three of seven
+    // refusals in sixty days carried no recorded cause at all.
+    expect(webhook).toContain('rejectionCode: guardRefusalCode(assistantFailure)');
+    expect(guardRefusalCode('model_ungrounded_number:1x7')).toBe('ungrounded_number:1x7');
+    expect(guardRefusalCode('model_profit_wording:faida')).toBe('profit_wording:faida');
+    expect(guardRefusalCode('model_false_date_caveat:sina')).toBe('false_date_caveat:sina');
   });
 
   it('tells the shop which honest thing went wrong', () => {
