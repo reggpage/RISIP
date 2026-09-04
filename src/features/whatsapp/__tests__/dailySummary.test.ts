@@ -21,4 +21,18 @@ describe('daily summary presentation', () => {
     expect(text).toContain('Maji* — inakaribia kuisha');
     expect(text).toContain('*🤖 Uchambuzi wa siku*');
   });
+
+  it('labels a historical day with its own date instead of calling it today', () => {
+    const text = formatDailySummary({
+      businessName: 'St. Ritha bookshop', dateLabel: 'Alhamisi, 3 Septemba 2026', isToday: false,
+      sales: 10_000, cogs: 4_000, expenses: 0, profit: 6_000,
+      salesItems: [], expenseItems: [], outOfStock: [], lowStock: [], records: 1,
+    }, 'sw');
+
+    expect(text).toContain('*Muhtasiri wa Alhamisi, 3 Septemba 2026*');
+    expect(text).toContain('Hii ni taarifa ya Alhamisi, 3 Septemba 2026 katika biashara yako.');
+    expect(text).not.toContain('Muhtasiri wa leo');
+    expect(text).not.toContain('taarifa ya leo');
+    expect(text).toContain('*Faida ya siku: TSh 6,000*');
+  });
 });

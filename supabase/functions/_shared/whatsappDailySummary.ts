@@ -12,6 +12,8 @@ export type DailySummaryAlert = { name: string; quantity: number };
 export type DailySummaryInput = {
   businessName: string;
   dateLabel: string;
+  /** Whether the requested business date is the shop's current local date. */
+  isToday?: boolean;
   sales: number;
   cogs: number;
   expenses: number;
@@ -34,6 +36,16 @@ function itemLine(item: DailySummaryItem): string {
 /** The human-readable summary used by the daily report and by its tests. */
 export function formatDailySummary(input: DailySummaryInput, lang: Lang): string {
   const sw = lang === 'sw';
+  const isToday = input.isToday !== false;
+  const title = isToday
+    ? (sw ? '*Muhtasiri wa leo*' : '*Today’s summary*')
+    : (sw ? `*Muhtasiri wa ${input.dateLabel}*` : `*Summary for ${input.dateLabel}*`);
+  const subtitle = isToday
+    ? (sw ? 'Hii ni taarifa ya leo katika biashara yako.' : 'This is today’s report for your business.')
+    : (sw ? `Hii ni taarifa ya ${input.dateLabel} katika biashara yako.` : `This is the report for ${input.dateLabel} in your business.`);
+  const profitLabel = isToday
+    ? (sw ? 'Faida ya leo' : 'Today’s profit')
+    : (sw ? 'Faida ya siku' : 'Day profit');
   const analysis = input.records === 0
     ? (sw ? 'Hakuna rekodi iliyothibitishwa kwa siku hii.' : 'There are no confirmed records for this day.')
     : input.profit > 0
@@ -43,8 +55,8 @@ export function formatDailySummary(input: DailySummaryInput, lang: Lang): string
         : (sw ? 'Mauzo na gharama vimekaribiana; endelea kufuatilia bidhaa zenye margin nzuri.' : 'Sales and costs were close; keep watching products with a stronger margin.');
 
   const lines: string[] = [
-    sw ? '*Muhtasiri wa leo*' : '*Today’s summary*',
-    sw ? 'Hii ni taarifa ya leo katika biashara yako.' : 'This is today’s report for your business.',
+    title,
+    subtitle,
     '',
     '━━━━━━━━━━━━━━━━━━',
     sw ? `🏪 *Biashara:* ${input.businessName}` : `🏪 *Business:* ${input.businessName}`,
@@ -62,7 +74,7 @@ export function formatDailySummary(input: DailySummaryInput, lang: Lang): string
   else lines.push(sw ? '• Hakuna matumizi yaliyorekodiwa.' : '• No expenses were recorded.');
   lines.push(sw ? `*Jumla ya matumizi: ${money(input.expenses)}*` : `*Total expenses: ${money(input.expenses)}*`);
   lines.push('', sw ? `📦 Gharama za bidhaa zilizouzwa: ${money(input.cogs)}` : `📦 Cost of goods sold: ${money(input.cogs)}`);
-  lines.push(sw ? `📈 *Faida ya leo: ${money(input.profit)}*` : `📈 *Today’s profit: ${money(input.profit)}*`);
+  lines.push(sw ? `📈 *${profitLabel}: ${money(input.profit)}*` : `📈 *${profitLabel}: ${money(input.profit)}*`);
 
   if (input.outOfStock.length > 0 || input.lowStock.length > 0) {
     lines.push('', sw ? '*⚠️ Bidhaa za kuangalia*' : '*⚠️ Stock to watch*');

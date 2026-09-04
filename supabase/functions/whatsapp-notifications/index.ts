@@ -42,6 +42,12 @@ function dateLabel(date: string, lang: 'sw' | 'en'): string {
   }).format(new Date(Date.UTC(year, month - 1, day, 12)));
 }
 
+function isCurrentBusinessDate(date: string): boolean {
+  return date === new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Dar_es_Salaam', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+}
+
 /** Add the detailed body without changing the approved template contract. */
 async function enrichDailySummary(db: ReturnType<typeof createClient>, claim: ClaimedNotification): Promise<ClaimedNotification> {
   if (claim.notification_kind !== 'daily_summary') return claim;
@@ -99,6 +105,7 @@ async function enrichDailySummary(db: ReturnType<typeof createClient>, claim: Cl
   const lowStock = alerts.filter((row) => row.quantity > 0 && row.quantity <= 5).map(({ name, quantity }) => ({ name, quantity }));
   const summaryText = formatDailySummary({
     businessName: String(p.business_name ?? 'Risip'), dateLabel: dateLabel(businessDate, claim.lang),
+    isToday: isCurrentBusinessDate(businessDate),
     sales, cogs, expenses, profit: sales - cogs - expenses - losses,
     salesItems, expenseItems, outOfStock, lowStock, records: rows.length,
   }, claim.lang);

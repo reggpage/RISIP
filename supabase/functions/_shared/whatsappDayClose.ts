@@ -38,6 +38,8 @@ export type DayCloseFacts = {
   businessDate: string;
   /** "Ijumaa, 28 Agosti 2026" — already rendered by the caller. */
   dateLabel: string;
+  /** Whether the requested business date is the shop's current local date. */
+  isToday?: boolean;
   sales: number;
   cogs: number;
   /** Sales minus COGS; this is not net profit. */
@@ -189,9 +191,16 @@ export function dayClosedReply(facts: DayCloseFacts, closedAtLabel: string, lang
  */
 export function ownerDayListReply(facts: DayCloseFacts, lang: Lang): string {
   const sw = lang === 'sw';
+  const isToday = facts.isToday !== false;
+  const title = isToday
+    ? (sw ? '*Muhtasiri wa leo*' : '*Today’s summary*')
+    : (sw ? `*Muhtasiri wa ${facts.dateLabel}*` : `*Summary for ${facts.dateLabel}*`);
+  const subtitle = isToday
+    ? (sw ? 'Hii ni taarifa ya leo katika biashara yako.' : 'This is today’s report for your business.')
+    : (sw ? `Hii ni taarifa ya ${facts.dateLabel} katika biashara yako.` : `This is the report for ${facts.dateLabel} in your business.`);
   const out: string[] = [
-    sw ? '*Muhtasiri wa leo*' : '*Today’s summary*',
-    sw ? 'Hii ni taarifa ya leo katika biashara yako.' : 'This is today’s report for your business.',
+    title,
+    subtitle,
     '',
     '━━━━━━━━━━━━━━━━━━',
     sw ? `🏪 *Biashara:* ${facts.businessName}` : `🏪 *Business:* ${facts.businessName}`,

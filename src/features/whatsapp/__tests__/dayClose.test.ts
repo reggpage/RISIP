@@ -153,6 +153,14 @@ describe('the owner’s list', () => {
     expect(list).toContain('Miamala 18 · watu 2');
   });
 
+  it('labels a historical owner list with its own date', () => {
+    const said = ownerDayListReply({ ...facts, isToday: false }, 'sw');
+    expect(said).toContain('*Muhtasiri wa Ijumaa, 28 Agosti 2026*');
+    expect(said).toContain('Hii ni taarifa ya Ijumaa, 28 Agosti 2026 katika biashara yako.');
+    expect(said).not.toContain('Muhtasiri wa leo');
+    expect(said).not.toContain('taarifa ya leo');
+  });
+
   it('keeps recorded expenses distinct from gross profit', () => {
     const said = dayClosedReply({ ...facts, expenses: 5_000, profit: 394_000 }, '20:15', 'sw');
     expect(said).toContain('Faida ghafi: *TSh 399,000*');

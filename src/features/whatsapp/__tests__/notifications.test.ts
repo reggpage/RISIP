@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   isProactiveNotificationStop,
+  isPlainTextNotification,
   notificationStoppedReply,
   notificationTemplateParameters,
   proactiveTemplatePayload,
@@ -52,6 +53,47 @@ describe('proactive WhatsApp notifications', () => {
     expect(payload.template.name).toBe('risip_daily_summary');
     expect(payload.template.language.code).toBe('sw');
     expect(payload.template.components[0].parameters).toHaveLength(5);
+  });
+
+  it('builds billing reminders as the approved bilingual utility template', () => {
+    const claim: ClaimedNotification = {
+      ...daily,
+      notification_kind: 'billing_overdue',
+      template_name: 'risip_bili',
+      parameters: {
+        business_name: 'St. Ritha bookshop',
+        plan_name: 'Kati',
+        amount_tzs: 39999,
+        period_start: '2026-09-01',
+        grace_days_left: 2,
+        channel: 'text',
+      },
+    };
+    expect(isPlainTextNotification(claim)).toBe(false);
+    expect(notificationTemplateParameters(claim)).toEqual([
+      'St. Ritha bookshop', 'Kati', 'TSh 39,999', 'Umebakiwa na siku 2 za kuendelea kuandika.',
+    ]);
+    const payload = proactiveTemplatePayload(claim);
+    expect(payload.template.name).toBe('risip_bili');
+    expect(payload.template.language.code).toBe('sw');
+    expect(payload.template.components[0].parameters).toHaveLength(4);
+  });
+
+  it('uses the English billing translation and keeps the period wording truthful', () => {
+    const claim: ClaimedNotification = {
+      ...daily,
+      lang: 'en',
+      notification_kind: 'billing_due',
+      template_name: 'risip_bili',
+      parameters: {
+        business_name: 'St. Ritha bookshop', plan_name: 'Kati', amount_tzs: 39999,
+        period_start: '2026-09-01', channel: 'text',
+      },
+    };
+    expect(notificationTemplateParameters(claim)).toEqual([
+      'St. Ritha bookshop', 'Kati', 'TSh 39,999', 'New month starts 1 September 2026.',
+    ]);
+    expect(proactiveTemplatePayload(claim).template.language.code).toBe('en');
   });
 
   it('uses the manual close note when a worker closes the day for the boss', () => {

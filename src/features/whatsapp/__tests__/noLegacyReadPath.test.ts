@@ -81,4 +81,8 @@ describe('nothing answers business language except the model', () => {
     expect(webhook).toContain('async function readOnlyToolReply(');
     expect(webhook).toMatch(/await readOnlyToolReply\(db, identity, \{ tool: 'ai_business_summary_facts'/);
   });
+
+  it('does not route natural-language reads through a webhook parser', () => {
+    expect(webhook).not.toContain('parseReadRequest(body)');
+  });
 });

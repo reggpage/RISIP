@@ -1,5 +1,6 @@
 import type { Lang } from './whatsappIntent.ts';
 import {
+  billingDateLabel,
   billingDueSoon,
   billingOverdue,
   billingSuspended,
@@ -8,9 +9,8 @@ import { closeReminderReply } from './whatsappDayClose.ts';
 
 export type ProactiveNotificationKind =
   | 'daily_summary' | 'debt_reminder' | 'close_reminder'
-  // Billing. Plain text, and therefore subject to the same 24-hour rule as the
-  // close reminder: a shop that has not written today has no window, and its
-  // bill has to wait for an approved template.
+  // Billing uses the Meta utility template `risip_bili`, so it can be sent
+  // even when the owner's 24-hour customer-service window is closed.
   | 'billing_due' | 'billing_overdue' | 'billing_suspended';
 
 export type ClaimedNotification = {
@@ -57,6 +57,24 @@ function localDate(value: unknown, lang: Lang, weekday: boolean): string {
 
 export function notificationTemplateParameters(claim: ClaimedNotification): string[] {
   const p = claim.parameters ?? {};
+  if (claim.notification_kind === 'billing_due'
+    || claim.notification_kind === 'billing_overdue'
+    || claim.notification_kind === 'billing_suspended') {
+    const business = String(p.business_name ?? '').trim();
+    const plan = String(p.plan_name ?? '').trim();
+    const periodStart = String(p.period_start ?? '').trim();
+    const days = Math.max(0, Math.round(Number(p.grace_days_left ?? 0)));
+    const status = claim.notification_kind === 'billing_due'
+      ? (claim.lang === 'sw'
+        ? `Mwezi mpya unaanza ${billingDateLabel(periodStart, claim.lang)}.`
+        : `New month starts ${billingDateLabel(periodStart, claim.lang)}.`)
+      : claim.notification_kind === 'billing_overdue'
+        ? (claim.lang === 'sw'
+          ? (days > 0 ? `Umebakiwa na siku ${days} za kuendelea kuandika.` : 'Leo ni siku ya mwisho ya kuandika.')
+          : (days > 0 ? `You have ${days} more day(s) to keep recording.` : 'Today is the last day you can record.'))
+        : (claim.lang === 'sw' ? 'Kuandika rekodi mpya kumesimama kwa sasa.' : 'Adding new records is currently paused.');
+    return [business, plan, amount(p.amount_tzs), status];
+  }
   if (claim.notification_kind === 'daily_summary') {
     const detailed = String(p.summary_text ?? '').trim();
     const note = detailed || (p.note_key === 'expenses_exceed_sales'
@@ -90,15 +108,17 @@ export function notificationTemplateParameters(claim: ClaimedNotification): stri
  * window Risip may write freely, so the reminder can say what it needs to say
  * and costs nothing.
  *
- * The other half of this — the person who sent NOTHING today, and therefore has
- * no window — needs an approved template and is not queued at all yet.
+ * Billing is excluded below because it uses `risip_bili`, even when the owner
+ * sent NOTHING today and therefore has no open window.
  */
 export function isPlainTextNotification(claim: ClaimedNotification): boolean {
-  return String((claim.parameters ?? {}).channel ?? '') === 'text';
+  return !claim.notification_kind.startsWith('billing_')
+    && String((claim.parameters ?? {}).channel ?? '') === 'text';
 }
 
 /**
- * A bill, as plain text.
+ * A bill, as plain text, retained for direct callers inside the service window.
+ * The normal billing notification path uses the `risip_bili` template below.
  *
  * Kept beside the close reminder rather than in its own sender because the
  * queue, the retries and the claim already work; a second delivery path for
@@ -132,7 +152,7 @@ export function proactiveTextPayload(claim: ClaimedNotification) {
   return {
     messaging_product: 'whatsapp' as const,
     recipient_type: 'individual' as const,
-    to: claim.phone_e164.replace(/D/g, ''),
+    to: claim.phone_e164.replace(/\D/g, ''),
     type: 'text' as const,
     text: { body, preview_url: false },
   };

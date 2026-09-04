@@ -532,7 +532,6 @@ import {
   calculateBusinessSummary,
   calculateDebtors,
   calculateProfitEstimate,
-  parseReadRequest,
   type ReadDailyLine,
   type ReadDailyRow,
   type ReadProductCost,
@@ -2642,6 +2641,7 @@ async function buildDayCloseFacts(
     businessName: identity.company_name as string,
     businessDate: day.date,
     dateLabel: shopDateLabel(day.date, lang),
+    isToday: day.date === shopDay().date,
     sales: profit.sales,
     cogs: profit.cogs,
     grossProfit: profit.grossProfit,
@@ -11414,27 +11414,10 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        const readRequest = mixed ? null : parseReadRequest(body);
-        if (readRequest) {
-          try {
-            await reply(phone, await readOnlyToolReply(db, identity, readRequest, lang));
-            await audit(db, identity, waMessageId, 'read_only_tool', readRequest.tool, 'applied');
-          } catch {
-            await reply(phone, lang === 'sw'
-              ? 'Sikuweza kupata taarifa hiyo sasa. Jaribu tena baadaye.'
-              : 'I could not load that information right now. Please try again later.');
-            await audit(db, identity, waMessageId, 'read_only_tool', readRequest.tool, 'failed');
-          }
-          await finish('skipped');
-          continue;
-        }
-
-        // "atlas ziko ngapi", "bidhaa ziko ngapi store". Counting is arithmetic
-        // over the shop's own counts and movements, so it never needed the
-        // model — but parseStockQuestion was written and then never wired in,
-        // so every one of these went to the model to be talked into calling a
-        // tool. This calls that same tool directly: same figures, no budget
-        // spent, and no chance of a number being improvised on the way.
+        // There is deliberately no direct read-request classifier here.
+        // Natural-language questions are owned by Claude and its read tools.
+        // Keeping a second classifier after the AI gate is exactly what made
+        // ordinary questions appear to be answered by a parser in production.
 
         // Unga, sukari, mafuta — a thing the shop WEIGHS, arriving before
         // anybody has said how it is measured. "Nimeuza unga 3" is three of
