@@ -3506,23 +3506,6 @@ function bandFromWording(wording: string | null): Band | null {
   return null;
 }
 
-/**
- * Workers may read and ask questions, but they may not create any business
- * record. The owner/accountant must enter or approve it. This guard is kept at
- * the AI executor boundary so a worker cannot write through a future tool, and
- * the database trigger below is the final backstop for every write path.
- */
-function workerWriteDenied(
-  identity: ResolvedWhatsAppIdentity,
-  lang: Lang,
-): AssistantToolExecution | null {
-  if (identity.role !== 'worker') return null;
-  const message = lang === 'sw'
-    ? 'Hili ni ombi la kuandika rekodi ya biashara. Kwa sasa mfanyakazi hawezi kurekodi mauzo, manunuzi au kuongeza stoo. Boss au accountant lazima aingize au athibitishe kwanza.'
-    : 'This would create a business record. Workers cannot record sales, purchases, or add stock. The owner or accountant must enter or approve it first.';
-  return { content: message, terminalReply: message, isError: true };
-}
-
 /** Every line must have a quantity the server could read for itself. */
 function decideQuantities(
   event: ValidatedBusinessEvent,
@@ -3580,9 +3563,6 @@ async function priceAndDraftSale(
     said?: string;
   },
 ): Promise<AssistantToolExecution> {
-  const denied = workerWriteDenied(identity, lang);
-  if (denied) return denied;
-
   const notUnderstood = lang === 'sw'
     ? 'Sijaelewa bidhaa, idadi au kipimo kwa uhakika. Niandikie bidhaa na idadi yake.'
     : 'I could not safely understand the product, quantity or unit. State the product and its quantity.';
@@ -4399,9 +4379,6 @@ async function executeBusinessEvent(
   input: Record<string, unknown>,
   said?: string,
 ): Promise<AssistantToolExecution> {
-  const denied = workerWriteDenied(identity, lang);
-  if (denied) return denied;
-
   const notUnderstood = lang === 'sw'
     ? 'Sijaelewa bidhaa, idadi au kipimo kwa uhakika. Niandikie bidhaa na idadi yake.'
     : 'I could not safely understand the product, quantity or unit. State the product and its quantity.';
@@ -4902,9 +4879,6 @@ async function executeMoneyEvent(
   input: Record<string, unknown>,
   said?: string,
 ): Promise<AssistantToolExecution> {
-  const denied = workerWriteDenied(identity, lang);
-  if (denied) return denied;
-
   const event = validateMoneyEvent(input);
   if (!event) {
     return askBack(lang === 'sw'
@@ -5088,20 +5062,6 @@ async function runAssistantTool(
   // it, so the model cannot book an arrival as a sale.
   said?: string,
 ): Promise<AssistantToolExecution> {
-  const workerWriteTools = new Set([
-    'propose_product_cost',
-    'propose_catalogue_transaction',
-    'propose_daily_record',
-    'propose_business_event',
-    'propose_money_event',
-    'propose_record_void',
-    'propose_day_close',
-  ]);
-  if (workerWriteTools.has(name)) {
-    const denied = workerWriteDenied(identity, lang);
-    if (denied) return denied;
-  }
-
   const invalidWhen = typeof input.when === 'string'
     && dateWordingStatus(input.when) === 'invalid';
   if (invalidWhen) {
