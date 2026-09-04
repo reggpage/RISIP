@@ -4,6 +4,7 @@ import {
   proactiveSendPayload,
   type ClaimedNotification,
 } from '../_shared/whatsappNotifications.ts';
+import { assertApprovedWhatsAppTemplate } from '../_shared/whatsappTemplateRegistry.ts';
 import { formatDailySummary, type DailySummaryItem } from '../_shared/whatsappDailySummary.ts';
 
 const GRAPH_VERSION = Deno.env.get('WHATSAPP_API_VERSION') || 'v22.0';
@@ -23,6 +24,15 @@ function configured(name: string): string {
 
 function serviceRequest(req: Request, serviceKey: string): boolean {
   return req.headers.get('authorization') === `Bearer ${serviceKey}`;
+}
+
+function safeNotificationError(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  // The registry deliberately emits only these synthetic, non-secret codes.
+  // Preserve them so operations can see why a send was blocked; never persist
+  // arbitrary provider text, URLs, tokens, or stack traces.
+  if (/^whatsapp_template_[a-z0-9_]+$/u.test(message)) return message;
+  return error instanceof Error ? error.name : 'notification_error';
 }
 
 const keyOf = (value: string) => value.toLocaleLowerCase('sw-TZ')
@@ -178,13 +188,21 @@ Deno.serve(async (req) => {
     let providerMessageId: string | null = null;
     let safeError: string | null = null;
     try {
+      const payload = proactiveSendPayload(claim);
+      if (payload.type === 'template') {
+        await assertApprovedWhatsAppTemplate(payload, {
+          accessToken,
+          phoneNumberId,
+          apiVersion: GRAPH_VERSION,
+        });
+      }
       const response = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/messages`, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${accessToken}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify(proactiveSendPayload(claim)),
+        body: JSON.stringify(payload),
       });
       const provider = await response.json().catch(() => ({})) as {
         messages?: Array<{ id?: string }>;
@@ -202,9 +220,11 @@ Deno.serve(async (req) => {
     } catch (error) {
       // A transport error can happen after Meta accepted the request. Never
       // retry automatically: one missing summary is safer than a duplicate.
-      completion = 'unknown';
-      safeError = error instanceof Error ? error.name : 'network_error';
-      result.unknown += 1;
+      safeError = safeNotificationError(error);
+      const blockedByContract = /^whatsapp_template_(invalid_payload|not_found|not_approved|language_mismatch|parameter_count_mismatch|template_contract_invalid)$/u.test(safeError);
+      completion = blockedByContract ? 'failed' : 'unknown';
+      if (blockedByContract) result.failed += 1;
+      else result.unknown += 1;
     }
 
     const { error: completionError } = await db.rpc('complete_whatsapp_notification_delivery', {

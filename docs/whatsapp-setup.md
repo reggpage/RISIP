@@ -50,6 +50,7 @@ the dependency on a later message arriving to trigger a sweep.
 | `WHATSAPP_ACCESS_TOKEN` | Permanent System User token used to send messages and download media. |
 | `WHATSAPP_PHONE_NUMBER_ID` | The Phone Number ID (not the phone number) from WhatsApp Manager. |
 | `WHATSAPP_API_VERSION` | Optional. Defaults to `v22.0`. |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` | Optional WABA ID. If omitted, Risip resolves it from the configured phone number. Used to verify template status before sending. |
 | `RISIP_PUBLIC_APP_URL` | Public app origin, e.g. `https://risip.online`. Used to build review links. |
 
 ```bash
@@ -73,6 +74,17 @@ Set it in `.env.local` and in the Vercel project. Until it is set, the
 
 **Never** put `WHATSAPP_ACCESS_TOKEN` or `WHATSAPP_APP_SECRET` in a `VITE_*`
 variable — those ship to the browser.
+
+### Template safety
+
+Before any proactive template message is sent, `whatsapp-notifications` asks
+Meta for the current message-template inventory and verifies the exact name,
+language, `APPROVED` status, and body-variable count. A missing, pending,
+rejected, language-mismatched, or malformed template is fail-closed: it is not
+sent and the delivery is recorded as failed. Risip does not silently invent a
+new template at send time. An AI-assisted repair may produce a candidate for
+an operator to submit to Meta, but that candidate becomes usable only after
+Meta returns `APPROVED`.
 
 ---
 
