@@ -286,6 +286,13 @@ import {
   wholeAnimalProcurementConfirmation,
 } from '../_shared/whatsappWholeAnimalProcurement.ts';
 import {
+  stockPurchaseCostCancelled,
+  stockPurchaseCostChoice,
+  stockPurchaseCostQuestion,
+  stockPurchaseNewCostQuestion,
+  type StockPurchaseCostPending,
+} from '../_shared/whatsappStockPurchaseCost.ts';
+import {
   parseSupplierCreditPurchase,
   parseSupplierBalanceQuestion,
   parseSupplierPayment,
@@ -3803,6 +3810,17 @@ function pendingClarificationOf(convo: { awaiting?: string | null; options?: unk
         : 'One price_band answer settles this product. The trader may say the price in Kiswahili, English, or a shorthand; decide the canonical meaning and let the server validate it.',
     };
   }
+  if (awaiting === 'product_cost' && (kind === 'stock_purchase_cost_amount' || kind === 'stock_purchase_cost_choice')) {
+    const pending = options as Partial<StockPurchaseCostPending>;
+    return {
+      field: 'amount',
+      intent: 'stock_purchase_cost',
+      product: typeof pending.product === 'string' ? pending.product : null,
+      details: kind === 'stock_purchase_cost_choice'
+        ? 'The shop was shown a closed menu: 1 means reuse the last cost, 2 means enter a new total cost, and 3 means cancel. If the trader sends a number or letter from that menu, handle it as the menu answer; do not invent a cost.'
+        : 'The trader chose a new cost. Return field=amount with numeric_value equal to the total cost they stated. Do not use the previous cost and do not invent a total.',
+    };
+  }
   if (awaiting === 'product_cost' && kind === 'new_product_quantity') {
     const products = Array.isArray(options.products)
       ? options.products as Array<{ product?: string; unit?: string | null }>
@@ -4037,6 +4055,40 @@ async function resumeSaleAfterNewProductRegistration(
   };
 }
 
+async function createStockPurchaseDraftFromCost(
+  db: Admin,
+  identity: ResolvedWhatsAppIdentity,
+  waMessageId: string,
+  pending: StockPurchaseCostPending,
+  total: number,
+  lang: Lang,
+): Promise<AssistantToolExecution> {
+  const record: ParsedDailyRecord = {
+    kind: 'stock_purchase',
+    amount: total,
+    partyName: pending.supplier,
+    description: null,
+    lines: [{
+      description: pending.product,
+      quantity: pending.quantity,
+      unit_amount: Math.round((total / pending.quantity) * 100) / 100,
+      ...(pending.unit ? { unit: pending.unit } : {}),
+    }],
+    confidence: 0.95,
+    ...(pending.paymentMethod ? { paymentMethod: pending.paymentMethod as DailyRecordPaymentMethod } : {}),
+  };
+  const created = await createDailyRecordDraft(db, identity, waMessageId, record, lang);
+  if (created.error || !created.id) {
+    const failed = lang === 'sw'
+      ? 'Sikuweza kuhifadhi draft ya mzigo huu. Hakuna kilichothibitishwa; jaribu tena.'
+      : 'I could not save this stock draft. Nothing was confirmed; please try again.';
+    return { content: failed, terminalReply: failed, isError: true };
+  }
+  await pendingDraftState(db, identity, created.id, waMessageId, record);
+  const confirmation = buildDailyRecordConfirmation(record, lang);
+  return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
+}
+
 async function executeClarification(
   db: Admin,
   identity: ResolvedWhatsAppIdentity,
@@ -4099,6 +4151,22 @@ async function executeClarification(
     return askBack(lang === 'sw'
       ? `Nilikuwa naulizia ${pending.field}. Naomba unijibu hilo kwanza.`
       : `I was asking about ${pending.field}. Answer that one first.`);
+  }
+
+  // A new cost after the stock-arrival menu is still interpreted by the model;
+  // this branch only range-checks its numeric reading and creates the same
+  // pending stock draft as the ordinary purchase path.
+  if (pending.field === 'amount' && options.kind === 'stock_purchase_cost_amount') {
+    const read = checkNumber(main.numericValue, 100_000_000);
+    if (read.kind === 'ask') {
+      return askBack(lang === 'sw'
+        ? 'Sijaelewa gharama mpya. Andika jumla kwa tarakimu, mfano *60000*.'
+        : 'I could not read the new cost. Write the total in digits, for example *60000*.');
+    }
+    const draft = await createStockPurchaseDraftFromCost(
+      db, identity, waMessageId, options as StockPurchaseCostPending, read.value, lang,
+    );
+    return draft;
   }
 
   // ── opening stock for a newly registered product ─────────────────────────
@@ -4593,19 +4661,34 @@ async function executeBusinessEvent(
           const unit = cost == null ? null : Number(cost);
           const qty = quantities.quantities[0];
           if (unit && unit > 0 && qty > 0) {
-            const each = 'TSh ' + Math.round(unit).toLocaleString('en-US');
-            const whole = 'TSh ' + Math.round(unit * qty).toLocaleString('en-US');
-            lastCostHint = lang === 'sw'
-              ? `\n\nMara ya mwisho ilikuwa ${each} kila moja (jumla ${whole}). `
-                + 'Kama ni bei ile ile, niandikie jumla hiyo; kama imebadilika, niandikie uliyolipa sasa.'
-              : `\n\nLast time it was ${each} each (${whole} in total). `
-                + 'If it is the same, send that total; if it changed, send what you paid now.';
+            const pending: StockPurchaseCostPending = {
+              kind: 'stock_purchase_cost_choice',
+              product: resolved.resolution.match.productName,
+              quantity: qty,
+              unit: event.lines[0].unitWording,
+              lastUnitCost: unit,
+              supplier: event.supplierWording ?? event.partyWording ?? null,
+              paymentMethod,
+              occurredAt: date.occurredAt,
+              sourceMessageId: waMessageId,
+            };
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'product_cost',
+              receipt_id: null,
+              options: pending,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            lastCostHint = stockPurchaseCostQuestion(pending, lang);
           }
         }
       }
-      return askBack((lang === 'sw'
+      return askBack(lastCostHint || (lang === 'sw'
         ? 'Umeingiza mzigo — ulilipa kiasi gani? Niandikie kwa tarakimu.'
-        : 'Stock came in — how much did you pay? Write it in digits.') + lastCostHint);
+        : 'Stock came in — how much did you pay? Write it in digits.'));
     }
     const total = event.amount.value;
     const count = event.lines.length;
@@ -7511,6 +7594,14 @@ Deno.serve(async (req) => {
           && (convo.options as Partial<CostPrompt> | null)?.kind === 'cost_prompt'
           ? convo.options as CostPrompt
           : null;
+        const stockPurchaseCostPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<StockPurchaseCostPending> | null)?.kind === 'stock_purchase_cost_choice'
+          ? convo.options as StockPurchaseCostPending
+          : null;
+        const stockPurchaseCostAmountPending = convo?.awaiting === 'product_cost'
+          && (convo.options as Partial<StockPurchaseCostPending> | null)?.kind === 'stock_purchase_cost_amount'
+          ? convo.options as StockPurchaseCostPending
+          : null;
         const stockBatchPending = convo?.awaiting === 'product_cost'
           && (convo.options as Partial<StockCountBatch> | null)?.kind === 'stock_count_batch'
           ? convo.options as StockCountBatch
@@ -7716,7 +7807,7 @@ Deno.serve(async (req) => {
           await replyQuietly(phone, prefix + priceBandQuestion(choices, lang, settled));
         };
         const costConversation = convo?.awaiting === 'product_cost' && convo.options
-          && !costPrompt && !costBatchPending && !stockBatchPending && !sellingBatchPending && !priceAndCostPending
+          && !costPrompt && !costBatchPending && !stockBatchPending && !stockPurchaseCostPending && !stockPurchaseCostAmountPending && !sellingBatchPending && !priceAndCostPending
           && !newProductPending && !newProductQuantityPending && !newProductRegistrationPending && !newProductSaleSetup && !portionSizePending && !portionConfirmPending
           && !quantityMeaningPending && !portionQuantityPending && !productRenamePending
           && !addProductSetupPending && !bandPending && !comboPending && !comboSavePending
@@ -7906,6 +7997,62 @@ Deno.serve(async (req) => {
           }
           await finish('skipped');
           continue;
+        }
+
+        // A stock arrival with a known previous cost opens a real menu. The
+        // numeric/letter response is the advertised protocol exception: it is
+        // not ordinary language and cannot be allowed to fall through to the
+        // model as a fresh, directionless message.
+        if (stockPurchaseCostPending) {
+          const choice = stockPurchaseCostChoice(body);
+          if (choice === 'cancel') {
+            await clearConversation(db, identity.id as string);
+            await clearAssistantMemory(db, identity);
+            await replyQuietly(phone, stockPurchaseCostCancelled(lang));
+            await audit(db, identity, waMessageId, 'stock_purchase_cost', 'cancelled', 'skipped');
+            await finish('skipped');
+            continue;
+          }
+          if (choice === 'reuse') {
+            await clearConversation(db, identity.id as string);
+            await clearAssistantMemory(db, identity);
+            const total = Math.round(stockPurchaseCostPending.lastUnitCost
+              * stockPurchaseCostPending.quantity * 100) / 100;
+            const result = await createStockPurchaseDraftFromCost(
+              db, identity, waMessageId, stockPurchaseCostPending, total, lang,
+            );
+            await replyQuietly(phone, result.content);
+            await audit(db, identity, waMessageId, 'stock_purchase_cost', 'last_cost', result.isError ? 'failed' : 'pending');
+            await finish(result.isError ? 'skipped' : 'applied');
+            continue;
+          }
+          if (choice === 'new') {
+            const nextState: StockPurchaseCostPending = {
+              ...stockPurchaseCostPending,
+              kind: 'stock_purchase_cost_amount',
+            };
+            await db.from('whatsapp_conversations').upsert({
+              identity_id: identity.id,
+              company_id: identity.company_id,
+              profile_id: identity.profile_id,
+              awaiting: 'product_cost',
+              receipt_id: null,
+              options: nextState,
+              expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            }, { onConflict: 'identity_id' });
+            await replyQuietly(phone, stockPurchaseNewCostQuestion(lang));
+            await audit(db, identity, waMessageId, 'stock_purchase_cost', 'new_cost', 'clarification');
+            await finish('skipped');
+            continue;
+          }
+          // A sentence that is not one of the menu answers is ordinary language.
+          // Release this menu and let the AI understand the new sentence rather
+          // than trapping the conversation in a repeated question.
+          await clearConversation(db, identity.id as string);
+          await clearAssistantMemory(db, identity);
+          await audit(db, identity, waMessageId, 'stock_purchase_cost', 'released', 'to_model');
+          convo = null;
         }
 
         // A pending money draft is not allowed to trap the whole chat. If the

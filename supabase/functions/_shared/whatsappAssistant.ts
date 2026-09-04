@@ -767,12 +767,12 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
           properties: {
             field: {
               type: 'string',
-              enum: ['price_band', 'quantity', 'unit', 'product', 'payment_method', 'event_type', 'party'],
+              enum: ['price_band', 'quantity', 'amount', 'unit', 'product', 'payment_method', 'event_type', 'party'],
               description: 'Which pending question this answers.',
             },
             canonical_value: {
               type: ['string', 'null'],
-              description: 'THE MEANING. price_band: retail|wholesale. event_type: sale|stock_purchase|stock_count. payment_method: cash|mobile_money|bank|other. unit: the measure name. product/party: the name as said. Null only when the answer is purely a number.',
+              description: 'THE MEANING. price_band: retail|wholesale. event_type: sale|stock_purchase|stock_count. payment_method: cash|mobile_money|bank|other. unit: the measure name. product/party: the name as said. amount: null when the answer is purely a number.',
             },
             numeric_value: {
               type: ['number', 'null'],

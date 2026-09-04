@@ -38,6 +38,7 @@ import type { Band } from './whatsappPriceBand.ts';
 export const CLARIFICATION_FIELDS = [
   'price_band',
   'quantity',
+  'amount',
   'unit',
   'product',
   'payment_method',
