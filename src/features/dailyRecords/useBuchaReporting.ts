@@ -9,13 +9,18 @@ export type BuchaReportingSnapshot = {
   };
   expenses?: number;
   customer_payments?: number;
+  supplier_payments?: number;
+  cash_movement?: number;
   profit?: { estimated_profit?: number; gross_profit?: number; cogs?: number; coverage?: number; products_missing_cost?: string[]; unvalued_stock_losses?: number; valuation_complete?: boolean };
   customer_receivables?: Array<{ party_name: string; outstanding: number }>;
   supplier_payables?: Array<{ supplier_name: string; outstanding: number }>;
   stock?: Array<{ product_name: string; unit?: string | null; on_hand: number; incomplete_purchases?: boolean }>;
   stock_loss?: { amount?: number; quantity?: number; unvalued_events?: number; valuation_complete?: boolean; details?: ReportDetail[] };
   owner_use?: { amount?: number; quantity?: number; events?: number; details?: ReportDetail[] };
-  whole_animals?: { count?: number; total?: number; pending_breakdown?: number; breakdown_outputs?: number; allocation_incomplete?: number };
+  whole_animals?: {
+    count?: number; total?: number; pending_breakdown?: number; breakdown_outputs?: number; allocation_incomplete?: number;
+    procurements?: Array<{ animal_type: string; animal_count: number; purchase_total: number; breakdown_status: 'confirmed' | 'pending' }>;
+  };
 };
 
 type ReportDetail = { product_name: string; quantity: number; unit?: string | null; value?: number; reason?: string | null };
