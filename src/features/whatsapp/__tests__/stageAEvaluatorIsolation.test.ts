@@ -34,9 +34,11 @@ describe('the Stage A.1 evaluator', () => {
     expect(source).not.toMatch(/graph\.facebook\.com|sendWhatsApp|whatsappApi/i);
   });
 
-  it.runIf(exists)('executes no tool — it asks what the model would call and stops', () => {
-    expect(source).not.toContain('executeTool');
-    expect(source).not.toContain('runConversationalAssistant');
+  it.runIf(exists)('executes no business tool — optional runtime loop uses only a synthetic capture', () => {
+    expect(source).not.toContain('executeAssistantTool');
+    expect(source).not.toContain('whatsapp-webhook/index');
+    expect(source).toContain('runConversationalAssistant');
+    expect(source).toContain("return { content: 'SYNTHETIC_VALIDATED_CALL_ONLY', terminalReply: 'SYNTHETIC_VALIDATED_CALL_ONLY' }");
     expect(source).toContain('tool_use');
   });
 

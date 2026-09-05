@@ -8,6 +8,7 @@ import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 
 const project = 'dsbplcqhlewxnivfwlcx';
+const mode = process.argv.includes('--boundary-loop') ? 'boundary-loop' : 'first-tool';
 const env = Object.fromEntries(readFileSync('.env.local', 'utf8').split(/\r?\n/)
   .filter((line) => /^[A-Z_]+=/.test(line)).map((line) => {
     const at = line.indexOf('=');
@@ -49,8 +50,8 @@ try {
   for (const testCase of cases) {
     const response = await fetch(`https://${project}.supabase.co/functions/v1/stage-a-ai-eval`, {
       method: 'POST', headers: { authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' },
-      signal: AbortSignal.timeout(45000),
-      body: JSON.stringify({ token, force_tool_choice: true, context: { companyName: 'Synthetic AI Test Shop', userName: 'Test', role: 'owner',
+      signal: AbortSignal.timeout(mode === 'boundary-loop' ? 75000 : 45000),
+      body: JSON.stringify({ token, mode, force_tool_choice: true, context: { companyName: 'Synthetic AI Test Shop', userName: 'Test', role: 'owner',
         vocabulary: 'Products: vest, belt, Nguvu ya sala, Printer, Biblia, nyama, ng’ombe, mafuta ya taa, mafuta ya kula, mafuta ya kujipaka. Suppliers: Musa. No prices, stock or balances supplied; backend tools must retrieve those.',
       }, cases: [testCase] }),
     });
@@ -71,8 +72,8 @@ try {
     console.log(`${testCase.id}: ${valid ? 'PASS' : 'FAIL'} (${result?.tools?.join(',') || 'no tool'}; ${result?.error || result?.schemaError || 'schema valid'})`);
   }
 } finally {
-  writeFileSync('tmp/ai-foundation-live-eval.json', JSON.stringify({ scope: 'synthetic first-tool choice only; no tools executed', failed, results }, null, 2));
+  writeFileSync(`tmp/ai-foundation-${mode}-eval.json`, JSON.stringify({ scope: `synthetic ${mode}; no business tools executed`, failed, results }, null, 2));
   if (credentialAttempted) cli(['secrets', 'unset', secretName, '--project-ref', project, '--yes']);
 }
-console.log(`First-tool-choice checks: ${cases.length - failed}/${cases.length}. Not an end-to-end WhatsApp or accounting test.`);
+console.log(`${mode} checks: ${cases.length - failed}/${cases.length}. Not an end-to-end WhatsApp or accounting test.`);
 if (failed) process.exitCode = 1;

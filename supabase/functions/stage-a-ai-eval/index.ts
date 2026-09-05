@@ -10,9 +10,10 @@
  *     so no daily_record, no RPC and no WhatsApp conversation can be touched
  *     even by mistake.
  *   - It sends no WhatsApp message. There is no Meta call here.
- *   - It executes no tool. It asks the model what it WOULD call and stops. That
- *     is the whole measurement: what did the model understand from the
- *     sentence, before any data came back.
+ *   - It executes no BUSINESS tool. Default mode captures the first tool choice.
+ *     Optional boundary-loop mode uses the real assistant with a capture-only
+ *     executor to test schema correction, returning a synthetic terminal marker.
+ *     Neither mode verifies database execution or actual WhatsApp delivery.
  *   - It reads no merchant message. Input is synthetic eval text, posted in.
  *
  * WHAT IT USES, UNCHANGED, so the number means something:
@@ -35,6 +36,7 @@ import {
   type AssistantIdentityContext,
   type AssistantHistoryMessage,
   normalizeAssistantHistory,
+  runConversationalAssistant,
 } from '../_shared/whatsappAssistant.ts';
 import { resolveAnthropicModel } from '../_shared/anthropicModel.ts';
 import { validateToolRound } from '../_shared/whatsappToolBoundary.ts';
@@ -64,6 +66,7 @@ type EvalResult = {
   outputTokens: number | null;
   error: string | null;
   schemaError?: string | null;
+  rejectedAttempts?: string[];
 };
 
 async function askModel(
@@ -169,6 +172,27 @@ async function askModel(
   };
 }
 
+/** Exercise the real schema-correction loop, but NEVER real business executors.
+ * The supplied executor only captures a validated call and returns a synthetic
+ * terminal marker. This tests interpretation/repair, not DB, RAG or delivery.
+ */
+async function checkBoundaryLoop(context: AssistantIdentityContext, say: string, history: AssistantHistoryMessage[]): Promise<Omit<EvalResult, 'id'>> {
+  const started = Date.now();
+  const captured: Array<{ name: string; input: Record<string, unknown> }> = [];
+  const rejectedAttempts: string[] = [];
+  const result = await runConversationalAssistant({ context, userText: say, history,
+    onFailure: (code) => { rejectedAttempts.push(code.split(':')[0]); },
+    executeTool: async (name, input) => {
+      captured.push({ name, input });
+      return { content: 'SYNTHETIC_VALIDATED_CALL_ONLY', terminalReply: 'SYNTHETIC_VALIDATED_CALL_ONLY' };
+    },
+  });
+  return { tools: captured.map((call) => call.name), input: captured[0]?.input ?? null,
+    text: null, stopReason: 'synthetic_boundary', latencyMs: Date.now() - started,
+    inputTokens: null, outputTokens: null, schemaError: null, rejectedAttempts,
+    error: result && captured.length ? null : 'no_validated_tool_call' };
+}
+
 Deno.serve(async (request) => {
   const expectedToken = Deno.env.get('STAGE_A_EVAL_TOKEN') ?? '';
   // Separate temporary release-evaluation credential; never replace another
@@ -187,7 +211,7 @@ Deno.serve(async (request) => {
     });
   }
 
-  let body: { token?: string; context?: Partial<AssistantIdentityContext>; cases?: EvalCase[]; force_tool_choice?: boolean };
+  let body: { token?: string; context?: Partial<AssistantIdentityContext>; cases?: EvalCase[]; force_tool_choice?: boolean; mode?: string };
   try {
     body = await request.json();
   } catch {
@@ -251,14 +275,18 @@ Deno.serve(async (request) => {
     const say = testCase.say.trim();
     if (!say) continue;
     const history = normalizeAssistantHistory(Array.isArray(testCase.history) ? testCase.history : []);
-    const outcome = await askModel(apiKey, model, { ...context, lang: testCase.lang ?? context.lang,
+    const caseContext = { ...context, lang: testCase.lang ?? context.lang,
       pendingClarification: testCase.pendingClarification,
-    }, say, history, forceToolChoice);
+    };
+    const outcome = body.mode === 'boundary-loop'
+      ? await checkBoundaryLoop(caseContext, say, history)
+      : await askModel(apiKey, model, caseContext, say, history, forceToolChoice);
     results.push({ id: String(testCase.id), ...outcome });
   }
 
   return new Response(JSON.stringify({
     model,
+    mode: body.mode === 'boundary-loop' ? 'boundary-loop' : 'first-tool',
     toolsShown: ASSISTANT_TOOLS.length,
     toolNamesShown: ASSISTANT_TOOLS.map((tool) => tool.name),
     results,
