@@ -371,6 +371,9 @@ const whenSchema = {
 
 export const ASSISTANT_TOOL_NAMES = [
   'get_business_summary',
+  'get_stock_loss_report',
+  'get_owner_use_report',
+  'get_whole_animal_report',
   'get_product_performance',
   'get_product_cost',
   'get_selling_price',
@@ -471,6 +474,24 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
     'Reads confirmed sales, expenses, customer payments, debt issued, stock purchases and the cash-movement estimate for a period. '
       + 'Use it for WHAT HAPPENED — an overview, a recap, how the period went. A summary is not a review: it reports, it does not recommend. Only reach for get_business_advice when the trader is asking what they should DO. '
       + 'Never use figures from earlier in the chat.',
+    { period: periodSchema, when: whenSchema },
+    ['period', 'when'],
+  ),
+  tool(
+    'get_stock_loss_report',
+    'Reads confirmed stock-loss events for a period, including the actual products, quantities, units, reasons and known value. Use for spoilage, theft, damage or any question asking what stock was lost. Missing valuation is stated, never guessed.',
+    { period: periodSchema, when: whenSchema },
+    ['period', 'when'],
+  ),
+  tool(
+    'get_owner_use_report',
+    'Reads confirmed stock taken by the owner or household for a period. This is not a sale, expense or stock loss. Use when the question asks what the owner took, ate, carried home or gave to family.',
+    { period: periodSchema, when: whenSchema },
+    ['period', 'when'],
+  ),
+  tool(
+    'get_whole_animal_report',
+    'Reads confirmed whole-animal procurements and their actual confirmed breakdown outputs for a period. Use for how many animals were bought, which still await breakdown, or what a named/dated animal produced. Never infer meat from the purchase; only stored outputs are facts.',
     { period: periodSchema, when: whenSchema },
     ['period', 'when'],
   ),
@@ -1054,9 +1075,9 @@ export function canUseCompanyFinanceReads(role: string): boolean {
   return role === 'owner' || role === 'accountant';
 }
 
-/** Workers may read company reports, but this does not grant finance writes. */
+/** Company financial reporting is restricted to the owner and accountant. */
 export function canReadCompanyReporting(role: string): boolean {
-  return role === 'owner' || role === 'accountant' || role === 'worker';
+  return role === 'owner' || role === 'accountant';
 }
 
 export function requiresCurrentBusinessDataTool(text: string): boolean {

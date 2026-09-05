@@ -5203,6 +5203,18 @@ async function runAssistantTool(
       fallbackReply: await readOnlyToolReply(db, identity, { tool: 'ai_business_summary', ...summaryRequest }, lang),
     };
   }
+  if (name === 'get_stock_loss_report' || name === 'get_owner_use_report' || name === 'get_whole_animal_report') {
+    const tool = name === 'get_stock_loss_report'
+      ? 'ai_stock_loss'
+      : name === 'get_owner_use_report' ? 'ai_owner_use' : 'ai_whole_animals';
+    return {
+      content: await readOnlyToolReply(db, identity, {
+        tool,
+        period: assistantPeriod(input.period),
+        range: assistantRange(input.when),
+      }, lang),
+    };
+  }
   if (name === 'get_product_performance') {
     const metric = input.metric === 'revenue' || input.metric === 'margin' ? input.metric : 'quantity';
     // "Worst" is a separate question, not a smaller number. Asked which

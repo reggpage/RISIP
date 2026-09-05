@@ -20,16 +20,17 @@ import { CategoryBarSkeleton, ListItemSkeleton, MetricCardSkeleton } from '@/com
 import { useDashboardData } from '@/features/dashboard/useDashboardData';
 import { useProjects } from '@/features/projects/useProjects';
 import { getDailyRecordSummary, useDailyRecords } from '@/features/dailyRecords/dailyRecords';
-import { useBuchaReporting } from '@/features/dailyRecords/useBuchaReporting';
+import { useBuchaReporting, type ReportingRange } from '@/features/dailyRecords/useBuchaReporting';
 import { formatMoney } from '@/lib/format';
 
 const copy: Record<LangCode, {
   project: string; daily: string; spend: string; todaySales: string; todayExpenses: string; debt: string; payments: string; cash: string;
   dailyOnly: string; receiptSeparate: string; debtHint: string; paymentHint: string; cashHint: string; recordsLink: string;
   profit: string; receivables: string; supplierPayables: string; stockLoss: string; animalsPending: string; reportingHint: string;
+  reportDetails: string; salesItems: string; stockAttention: string; noData: string; valuationIncomplete: string;
 }> = {
-  en: { project: 'Project Dashboard', daily: 'Daily Records', spend: 'Spend Trend', todaySales: 'Today’s Sales', todayExpenses: 'Today’s Expenses', debt: 'Debt Issued / Open Debts', payments: 'Customer Payments', cash: 'Cash Movement Estimate', dailyOnly: 'Daily records only', receiptSeparate: 'Separate from receipt expenses', debtHint: 'Debt issued is not cash received', paymentHint: 'Does not create sales', cashHint: 'Sales + payments − daily expenses', recordsLink: 'View', profit: 'Estimated Profit', receivables: 'Customers Owe You', supplierPayables: 'You Owe Suppliers', stockLoss: 'Stock Loss', animalsPending: 'Animals Awaiting Breakdown', reportingHint: 'Confirmed ledger snapshot' },
-  sw: { project: 'Dashibodi ya Mradi', daily: 'Rekodi za Siku', spend: 'Mwelekeo wa Matumizi', todaySales: 'Mauzo ya Leo', todayExpenses: 'Matumizi ya Leo', debt: 'Mkopo Uliotolewa / Madeni', payments: 'Malipo ya Wateja', cash: 'Makadirio ya Mtiririko wa Fedha', dailyOnly: 'Rekodi za siku pekee', receiptSeparate: 'Zimetenganishwa na matumizi ya risiti', debtHint: 'Mkopo si fedha iliyopokelewa', paymentHint: 'Haiundi mauzo', cashHint: 'Mauzo + malipo − matumizi ya siku', recordsLink: 'Ona', profit: 'Makisio ya Faida', receivables: 'Wateja Wanakudai', supplierPayables: 'Unawadai Suppliers', stockLoss: 'Potevu wa Stock', animalsPending: 'Ng’ombe Bado Hawajafanyiwa Breakdown', reportingHint: 'Snapshot ya rekodi zilizothibitishwa' },
+  en: { project: 'Project Dashboard', daily: 'Daily Records', spend: 'Spend Trend', todaySales: 'Sales', todayExpenses: 'Expenses', debt: 'Debt Issued / Open Debts', payments: 'Customer Payments', cash: 'Cash Movement Estimate', dailyOnly: 'Daily records only', receiptSeparate: 'Separate from receipt expenses', debtHint: 'Debt issued is not cash received', paymentHint: 'Does not create sales', cashHint: 'Sales + payments − daily expenses', recordsLink: 'View', profit: 'Estimated Profit', receivables: 'Customer Receivables', supplierPayables: 'Supplier Payables', stockLoss: 'Stock Loss', animalsPending: 'Animals Awaiting Breakdown', reportingHint: 'Confirmed records only', reportDetails: 'Reporting details', salesItems: 'Items sold', stockAttention: 'Stock requiring attention', noData: 'Nothing to show for this period.', valuationIncomplete: 'Profit is an estimate because some historical costs are missing.' },
+  sw: { project: 'Dashibodi ya Mradi', daily: 'Rekodi za Siku', spend: 'Mwelekeo wa Matumizi', todaySales: 'Mauzo', todayExpenses: 'Matumizi', debt: 'Mkopo Uliotolewa / Madeni', payments: 'Malipo ya Wateja', cash: 'Makadirio ya Mtiririko wa Fedha', dailyOnly: 'Rekodi za siku pekee', receiptSeparate: 'Zimetenganishwa na matumizi ya risiti', debtHint: 'Mkopo si fedha iliyopokelewa', paymentHint: 'Haiundi mauzo', cashHint: 'Mauzo + malipo − matumizi ya siku', recordsLink: 'Ona', profit: 'Makisio ya Faida', receivables: 'Madeni ya Wateja', supplierPayables: 'Madeni kwa Suppliers', stockLoss: 'Potevu wa Stock', animalsPending: 'Wanyama Bado Hawajafanyiwa Breakdown', reportingHint: 'Rekodi zilizothibitishwa pekee', reportDetails: 'Maelezo ya taarifa', salesItems: 'Bidhaa zilizouzwa', stockAttention: 'Stock ya kuangalia', noData: 'Hakuna cha kuonyesha kwa kipindi hiki.', valuationIncomplete: 'Faida ni makisio kwa sababu baadhi ya gharama za kihistoria hazipo.' },
 };
 
 export default function Dashboard() {
@@ -71,10 +72,11 @@ function CompanyDashboard() {
   // to make somebody choose it from a tab bar.
   const projectsOn = navVisible('projects') || navVisible('receipts');
   const [dashboardTab, setDashboardTab] = useState<'project' | 'daily'>(projectsOn ? 'project' : 'daily');
+  const [reportRange, setReportRange] = useState<ReportingRange>('today');
   const data = useDashboardData(projectId || undefined);
   const dailyRecords = useDailyRecords();
   const dailySummary = getDailyRecordSummary(dailyRecords.records);
-  const reporting = useBuchaReporting();
+  const reporting = useBuchaReporting(reportRange);
   const activeProjects = projectsState.status === 'ready' ? projectsState.projects.filter((project) => project.status === 'active') : [];
   const recentActivity = useMemo(() => {
     const visible = data.recent.slice(0, 3);
@@ -102,7 +104,7 @@ function CompanyDashboard() {
       {projectsOn && dashboardTab === 'project' ? (
         <ProjectDashboardContent data={data} recentActivity={recentActivity} />
       ) : (
-        <DailyDashboardContent dailyRecords={dailyRecords} dailySummary={dailySummary} reporting={reporting} text={text} lang={lang} />
+        <DailyDashboardContent dailyRecords={dailyRecords} dailySummary={dailySummary} reporting={reporting} reportRange={reportRange} setReportRange={setReportRange} text={text} lang={lang} />
       )}
     </div>
   );
@@ -131,15 +133,21 @@ function ProjectDashboardContent({ data, recentActivity }: { data: ReturnType<ty
   </>;
 }
 
-function DailyDashboardContent({ dailyRecords, dailySummary, reporting, text, lang }: { dailyRecords: ReturnType<typeof useDailyRecords>; dailySummary: ReturnType<typeof getDailyRecordSummary>; reporting?: ReturnType<typeof useBuchaReporting>; text: typeof copy.en; lang: LangCode }) {
+function DailyDashboardContent({ dailyRecords, dailySummary, reporting, reportRange, setReportRange, text, lang }: { dailyRecords: ReturnType<typeof useDailyRecords>; dailySummary: ReturnType<typeof getDailyRecordSummary>; reporting?: ReturnType<typeof useBuchaReporting>; reportRange?: ReportingRange; setReportRange?: (range: ReportingRange) => void; text: typeof copy.en; lang: LangCode }) {
   const snapshot = reporting?.snapshot;
   const receivables = (snapshot?.customer_receivables ?? []).reduce((sum, row) => sum + Number(row.outstanding ?? 0), 0);
   const supplierPayables = (snapshot?.supplier_payables ?? []).reduce((sum, row) => sum + Number(row.outstanding ?? 0), 0);
+  const rangeOptions: Array<{ value: ReportingRange; en: string; sw: string }> = [
+    { value: 'today', en: 'Today', sw: 'Leo' }, { value: 'yesterday', en: 'Yesterday', sw: 'Jana' },
+    { value: 'week', en: 'This week', sw: 'Wiki hii' }, { value: 'month', en: 'This month', sw: 'Mwezi huu' },
+  ];
+  const stockAttention = (snapshot?.stock ?? []).filter((row) => Number(row.on_hand) <= 5).slice(0, 8);
   return <section aria-label={text.daily}>
-    <div className="mb-3 flex items-end justify-between gap-3"><div><h2 className="text-base font-semibold text-ink">{text.daily}</h2><p className="text-xs text-ink-muted">{text.receiptSeparate} · {text.dailyOnly}</p></div><Link to="/daily-records" className="text-sm font-medium text-role-admin hover:underline">{text.recordsLink}</Link></div>
+    <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-base font-semibold text-ink">{text.daily}</h2><p className="text-xs text-ink-muted">{text.receiptSeparate} · {text.dailyOnly}</p></div><Link to="/daily-records" className="text-sm font-medium text-role-admin hover:underline">{text.recordsLink}</Link></div>
+    {reporting && reportRange && setReportRange ? <div className="mb-4 flex flex-wrap gap-2" aria-label={lang === 'sw' ? 'Chagua kipindi' : 'Choose reporting period'}>{rangeOptions.map((option) => <button key={option.value} type="button" onClick={() => setReportRange(option.value)} className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${reportRange === option.value ? 'border-role-admin bg-role-admin text-white' : 'border-border bg-surface text-ink hover:bg-surface-muted'}`}>{option[lang]}</button>)}</div> : null}
     {reporting?.status === 'loading' && !snapshot ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">{Array.from({ length: 6 }).map((_, index) => <MetricCardSkeleton key={index} />)}</div> : snapshot ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
       <MetricCard label={text.todaySales} value={formatMoney(Number(snapshot.sales?.total ?? 0))} icon={<TrendingUp className="h-5 w-5" />} hint={text.reportingHint} />
-      <MetricCard label={text.profit} value={formatMoney(Number(snapshot.profit?.estimated_profit ?? 0))} icon={<ArrowLeftRight className="h-5 w-5" />} hint={text.reportingHint} />
+      <MetricCard label={text.profit} value={formatMoney(Number(snapshot.profit?.estimated_profit ?? 0))} icon={<ArrowLeftRight className="h-5 w-5" />} hint={snapshot.profit?.valuation_complete === false ? text.valuationIncomplete : text.reportingHint} />
       <MetricCard label={text.receivables} value={formatMoney(receivables)} icon={<HandCoins className="h-5 w-5" />} hint={text.reportingHint} />
       <MetricCard label={text.supplierPayables} value={formatMoney(supplierPayables)} icon={<CreditCard className="h-5 w-5" />} hint={text.reportingHint} />
       <MetricCard label={text.stockLoss} value={formatMoney(Number(snapshot.stock_loss?.amount ?? 0))} icon={<Wallet className="h-5 w-5" />} hint={text.reportingHint} />
@@ -151,7 +159,17 @@ function DailyDashboardContent({ dailyRecords, dailySummary, reporting, text, la
       <MetricCard label={text.payments} value={formatMoney(dailySummary.customerPayments)} icon={<CreditCard className="h-5 w-5" />} hint={text.paymentHint} />
       <MetricCard label={text.cash} value={formatMoney(dailySummary.cashMovement)} icon={<ArrowLeftRight className="h-5 w-5" />} hint={text.cashHint} />
     </div>}
+    {snapshot ? <div className="mt-6"><h3 className="mb-3 text-base font-semibold text-ink">{text.reportDetails}</h3><div className="grid gap-4 lg:grid-cols-2">
+      <ReportList title={text.salesItems} empty={text.noData} rows={(snapshot.sales?.items ?? []).slice(0, 8).map((row) => ({ label: `${row.product_name} × ${Number(row.quantity).toLocaleString('en-US')}${row.unit ? ` ${row.unit}` : ''}`, value: formatMoney(Number(row.total)) }))} />
+      <ReportList title={text.receivables} empty={text.noData} rows={(snapshot.customer_receivables ?? []).slice(0, 8).map((row) => ({ label: row.party_name, value: formatMoney(Number(row.outstanding)) }))} />
+      <ReportList title={text.supplierPayables} empty={text.noData} rows={(snapshot.supplier_payables ?? []).slice(0, 8).map((row) => ({ label: row.supplier_name, value: formatMoney(Number(row.outstanding)) }))} />
+      <ReportList title={text.stockAttention} empty={text.noData} rows={stockAttention.map((row) => ({ label: row.product_name, value: `${Number(row.on_hand).toLocaleString('en-US')}${row.unit ? ` ${row.unit}` : ''}` }))} />
+    </div></div> : null}
     <Card className="mt-6"><DailyRecordsTrendChart records={dailyRecords.records} lang={lang} /></Card>
     <Card className="mt-6"><DailyRecordCategoryBars records={dailyRecords.records} /></Card>
   </section>;
+}
+
+function ReportList({ title, rows, empty }: { title: string; rows: Array<{ label: string; value: string }>; empty: string }) {
+  return <Card><CardHeader><CardTitle>{title}</CardTitle></CardHeader>{rows.length === 0 ? <p className="text-sm text-ink-muted">{empty}</p> : <ul className="divide-y divide-border">{rows.map((row, index) => <li key={`${row.label}-${index}`} className="flex items-start justify-between gap-3 py-2 text-sm"><span className="min-w-0 text-ink">{row.label}</span><strong className="shrink-0 text-ink">{row.value}</strong></li>)}</ul>}</Card>;
 }

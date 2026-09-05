@@ -106,6 +106,6 @@ describe('the two receipt tools', () => {
     // Twenty-nine since get_my_subscription: the shop could not ask what it was
     // paying for, and the answer must be visible to the model or the question
     // has nowhere to land.
-    expect(shown).toHaveLength(30);
+    expect(shown).toHaveLength(33);
   });
 });

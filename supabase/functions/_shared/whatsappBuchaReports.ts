@@ -4,18 +4,31 @@ import { periodDateLabel, periodDates, periodLabel } from './whatsappReadTools.t
 import type { ResolvedRange } from './whatsappDateRange.ts';
 
 export type BuchaReportingSnapshot = {
-  sales?: { total?: number; cash_sales?: number; credit_sales?: number; by_payment_method?: Record<string, number> };
+  sales?: {
+    total?: number; settled_sales?: number; cash_sales?: number; credit_sales?: number;
+    by_payment_method?: Record<string, number>;
+    items?: Array<{ product_name: string; unit?: string | null; quantity: number; total: number; average_unit_price?: number }>;
+  };
   expenses?: number;
   customer_payments?: number;
   supplier_payments?: number;
-  profit?: { sales?: number; expenses?: number; cogs?: number; gross_profit?: number; estimated_profit?: number; coverage?: number; products_missing_cost?: string[]; unvalued_stock_losses?: number };
+  profit?: { sales?: number; expenses?: number; cogs?: number; gross_profit?: number; estimated_profit?: number; coverage?: number; products_missing_cost?: string[]; unvalued_stock_losses?: number; valuation_complete?: boolean; known_margin_after_expenses?: number };
   customer_receivables?: Array<{ party_name: string; outstanding: number }>;
   supplier_payables?: Array<{ supplier_name: string; outstanding: number }>;
   stock?: Array<{ product_name: string; unit?: string | null; on_hand: number }>;
-  stock_loss?: { amount?: number; quantity?: number; unvalued_events?: number; valuation_complete?: boolean };
-  owner_use?: { amount?: number; quantity?: number; events?: number };
-  whole_animals?: { count?: number; total?: number; pending_breakdown?: number; breakdown_outputs?: number };
+  stock_loss?: { amount?: number; quantity?: number; unvalued_events?: number; valuation_complete?: boolean; details?: ReportDetail[] };
+  owner_use?: { amount?: number; quantity?: number; events?: number; details?: ReportDetail[] };
+  whole_animals?: {
+    count?: number; total?: number; pending_breakdown?: number; breakdown_outputs?: number;
+    allocation_incomplete?: number;
+    procurements?: Array<{
+      animal_type: string; animal_count: number; purchase_total: number; breakdown_status: 'confirmed' | 'pending';
+      breakdowns?: Array<{ cost_allocation_status: 'incomplete' | 'allocated'; outputs?: Array<{ product_name: string; quantity: number; unit: string }> }>;
+    }>;
+  };
 };
+
+type ReportDetail = { product_name: string; quantity: number; unit?: string | null; value?: number; reason?: string | null };
 
 function money(value: unknown): string {
   return `TSh ${Math.round(Number(value ?? 0)).toLocaleString('en-US')}`;
@@ -63,7 +76,7 @@ export function buchaReportFacts(
     `period_dates=${periodDates(period, range)}`,
     `period_date_label=${periodDateLabel(period, lang, range)}`,
     `total_sales=${Number(sales.total ?? 0)}`,
-    `sales_not_on_credit=${Number(sales.cash_sales ?? 0)}`,
+    `settled_sales=${Number(sales.settled_sales ?? 0)}`,
     `credit_sales=${Number(sales.credit_sales ?? 0)}`,
     `expenses=${Number(snapshot.expenses ?? 0)}`,
     `customer_payments=${Number(snapshot.customer_payments ?? 0)}`,
@@ -71,6 +84,12 @@ export function buchaReportFacts(
     `payment_method_mobile_money=${Number(methods.mobile_money ?? 0)}`,
     `payment_method_bank=${Number(methods.bank ?? 0)}`,
     `payment_method_not_stated=${Number(methods.unstated ?? 0)}`,
+    `customer_receivables_total=${(snapshot.customer_receivables ?? []).reduce((sum, row) => sum + Number(row.outstanding ?? 0), 0)}`,
+    `supplier_payables_total=${(snapshot.supplier_payables ?? []).reduce((sum, row) => sum + Number(row.outstanding ?? 0), 0)}`,
+    `stock_loss_value=${Number(snapshot.stock_loss?.amount ?? 0)}`,
+    `owner_use_value=${Number(snapshot.owner_use?.amount ?? 0)}`,
+    `whole_animals_purchased=${Number(snapshot.whole_animals?.count ?? 0)}`,
+    `whole_animals_pending_breakdown=${Number(snapshot.whole_animals?.pending_breakdown ?? 0)}`,
   ];
   if (profit.estimated_profit !== undefined) {
     lines.push(`estimated_profit=${Number(profit.estimated_profit ?? 0)}`);
@@ -79,7 +98,8 @@ export function buchaReportFacts(
     lines.push(`cost_coverage=${Number(profit.coverage ?? 0)}`);
   }
   // Said plainly, because the two were conflated on the owner's own screen.
-  lines.push('note=sales_not_on_credit means settled at the moment of sale. It does NOT mean the payment method was cash. Payment method is a separate field and payment_method_not_stated is usually the largest of them; never report unstated as cash.');
+  lines.push('note=settled_sales means not sold on credit. cash_sales means only records whose stored payment method is cash. Never report unstated as cash.');
+  lines.push(`note=profit valuation is ${profit.valuation_complete === false ? 'incomplete; state the coverage and missing costs' : 'complete for the stored data'}.`);
   lines.push('note=these are confirmed records only.');
   return lines.join('\n');
 }
@@ -94,17 +114,17 @@ export function buildBuchaReportReply(
   const label = periodLabel(period, lang, range);
   if (tool === 'ai_debtors') {
     const rows = (snapshot.customer_receivables ?? []).slice(0, 10);
-    if (rows.length === 0) return lang === 'sw' ? 'Sina rekodi ya wateja wanaokudai kwa sasa.' : 'No confirmed customer receivables are open right now.';
+    if (rows.length === 0) return lang === 'sw' ? 'Hakuna deni la mteja lililo wazi kwenye rekodi zilizothibitishwa.' : 'No confirmed customer receivables are open right now.';
     return lang === 'sw'
-      ? `Wateja wanaokudai:\n${rows.map((row, i) => `${i + 1}. ${row.party_name} — ${money(row.outstanding)}`).join('\n')}\n\nJumla: ${money(rows.reduce((sum, row) => sum + Number(row.outstanding), 0))}`
+      ? `Madeni ya wateja kwa biashara:\n${rows.map((row, i) => `${i + 1}. ${row.party_name} — ${money(row.outstanding)}`).join('\n')}\n\nJumla: ${money(rows.reduce((sum, row) => sum + Number(row.outstanding), 0))}`
       : `Customers who owe you:\n${rows.map((row, i) => `${i + 1}. ${row.party_name} — ${money(row.outstanding)}`).join('\n')}\n\nTotal: ${money(rows.reduce((sum, row) => sum + Number(row.outstanding), 0))}`;
   }
   if (tool === 'ai_business_summary') {
     const sales = snapshot.sales ?? {};
     const methods = sales.by_payment_method ?? {};
     return lang === 'sw'
-      ? `Muhtasari wa ${label}:\nMauzo yote: ${money(sales.total)}\n  Yaliyolipwa: ${money(sales.cash_sales)} · Mkopo: ${money(sales.credit_sales)}\n  Njia iliyorekodiwa: cash ${money(methods.cash)} · mobile ${money(methods.mobile_money)} · bank ${money(methods.bank)} · haijarekodiwa ${money(methods.unstated)}\nMatumizi: ${money(snapshot.expenses)}\nMalipo ya wateja: ${money(snapshot.customer_payments)}\n\nHizi ni namba za rekodi zilizothibitishwa.`
-      : `Summary for ${label}:\nTotal sales: ${money(sales.total)}\n  Paid at the counter: ${money(sales.cash_sales)} · Credit: ${money(sales.credit_sales)}\n  Recorded method: cash ${money(methods.cash)} · mobile ${money(methods.mobile_money)} · bank ${money(methods.bank)} · not stated ${money(methods.unstated)}\nExpenses: ${money(snapshot.expenses)}\nCustomer payments: ${money(snapshot.customer_payments)}\n\nThese figures use confirmed records.`;
+      ? `Muhtasari wa ${label}:\nMauzo yote: ${money(sales.total)}\n  Yaliyolipwa wakati wa mauzo: ${money(sales.settled_sales)} · Mkopo: ${money(sales.credit_sales)}\n  Njia iliyorekodiwa: cash ${money(methods.cash)} · mobile ${money(methods.mobile_money)} · bank ${money(methods.bank)} · haijatajwa ${money(methods.unstated)}\nMatumizi: ${money(snapshot.expenses)}\nMalipo ya wateja: ${money(snapshot.customer_payments)}\nFaida inayokadiriwa: ${money(snapshot.profit?.estimated_profit)} (${Math.round(Number(snapshot.profit?.coverage ?? 0) * 100)}% ya mauzo yana gharama inayojulikana)\n\nHizi ni namba za rekodi zilizothibitishwa.`
+      : `Summary for ${label}:\nTotal sales: ${money(sales.total)}\n  Settled at sale: ${money(sales.settled_sales)} · Credit: ${money(sales.credit_sales)}\n  Recorded method: cash ${money(methods.cash)} · mobile ${money(methods.mobile_money)} · bank ${money(methods.bank)} · not stated ${money(methods.unstated)}\nExpenses: ${money(snapshot.expenses)}\nCustomer payments: ${money(snapshot.customer_payments)}\nEstimated profit: ${money(snapshot.profit?.estimated_profit)} (${Math.round(Number(snapshot.profit?.coverage ?? 0) * 100)}% cost coverage)\n\nThese figures use confirmed records.`;
   }
   if (tool === 'daily_profit_estimate') {
     const profit = snapshot.profit ?? {};
@@ -119,9 +139,10 @@ export function buildBuchaReportReply(
   }
   if (tool === 'ai_stock_loss') {
     const loss = snapshot.stock_loss ?? {};
+    const details = (loss.details ?? []).slice(0, 10).map((row) => `• ${row.product_name}: ${Number(row.quantity).toLocaleString('en-US')}${row.unit ? ` ${row.unit}` : ''}${row.reason ? ` — ${row.reason}` : ''}`).join('\n');
     return lang === 'sw'
-      ? `Potevu wa stock ${label}:\nKiasi: ${Number(loss.quantity ?? 0).toLocaleString('en-US')}\nThamani iliyojulikana: ${money(loss.amount)}\nMatukio yasiyo na valuation: ${loss.unvalued_events ?? 0}${loss.valuation_complete === false ? '\nThamani haijakamilika; sifanyi makisio.' : ''}`
-      : `Stock loss for ${label}:\nQuantity: ${Number(loss.quantity ?? 0).toLocaleString('en-US')}\nKnown value: ${money(loss.amount)}\nUnvalued events: ${loss.unvalued_events ?? 0}${loss.valuation_complete === false ? '\nValuation is incomplete; no guess was made.' : ''}`;
+      ? `Potevu wa stock ${label}:\n${details || '• Hakuna bidhaa iliyorekodiwa'}\nThamani iliyojulikana: ${money(loss.amount)}\nMatukio yasiyo na valuation: ${loss.unvalued_events ?? 0}${loss.valuation_complete === false ? '\nThamani haijakamilika; sijakisia sehemu iliyokosekana.' : ''}`
+      : `Stock loss for ${label}:\n${details || '• No recorded items'}\nKnown value: ${money(loss.amount)}\nUnvalued events: ${loss.unvalued_events ?? 0}${loss.valuation_complete === false ? '\nValuation is incomplete; the missing value was not guessed.' : ''}`;
   }
   if (tool === 'ai_owner_use') {
     const use = snapshot.owner_use ?? {};
@@ -131,9 +152,14 @@ export function buildBuchaReportReply(
   }
   if (tool === 'ai_whole_animals') {
     const animals = snapshot.whole_animals ?? {};
+    const details = (animals.procurements ?? []).slice(0, 10).map((row) => {
+      const outputs = (row.breakdowns ?? []).flatMap((breakdown) => breakdown.outputs ?? [])
+        .map((output) => `${output.product_name} ${Number(output.quantity).toLocaleString('en-US')} ${output.unit}`).join(', ');
+      return `• ${row.animal_type} × ${row.animal_count}: ${outputs || (lang === 'sw' ? 'breakdown bado' : 'breakdown pending')}`;
+    }).join('\n');
     return lang === 'sw'
-      ? `Ng'ombe/animals ${label}:\nWalionunuliwa: ${animals.count ?? 0}\nGharama: ${money(animals.total)}\nBado hawajafanyiwa breakdown: ${animals.pending_breakdown ?? 0}\nOutputs za breakdown: ${Number(animals.breakdown_outputs ?? 0).toLocaleString('en-US')}`
-      : `Whole animals for ${label}:\nPurchased: ${animals.count ?? 0}\nCost: ${money(animals.total)}\nAwaiting breakdown: ${animals.pending_breakdown ?? 0}\nBreakdown outputs: ${Number(animals.breakdown_outputs ?? 0).toLocaleString('en-US')}`;
+      ? `Wanyama wazima ${label}:\nWalionunuliwa: ${animals.count ?? 0}\nGharama: ${money(animals.total)}\nBado hawajafanyiwa breakdown: ${animals.pending_breakdown ?? 0}\n${details}${Number(animals.allocation_incomplete ?? 0) > 0 ? `\n\nBreakdown ${animals.allocation_incomplete} hazijagawa gharama kwenye outputs; faida ya kila output haijakamilika.` : ''}`
+      : `Whole animals for ${label}:\nPurchased: ${animals.count ?? 0}\nCost: ${money(animals.total)}\nAwaiting breakdown: ${animals.pending_breakdown ?? 0}\n${details}${Number(animals.allocation_incomplete ?? 0) > 0 ? `\n\n${animals.allocation_incomplete} breakdown(s) have incomplete output cost allocation.` : ''}`;
   }
   return lang === 'sw' ? 'Sina report ya aina hiyo bado.' : 'That report is not available yet.';
 }

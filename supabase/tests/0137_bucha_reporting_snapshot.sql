@@ -15,6 +15,7 @@ declare
   v_supplier_payment uuid;
   v_animal uuid;
   v_breakdown uuid;
+  v_pending_snapshot jsonb;
   v_snapshot jsonb;
   v_report numeric;
   v_stock numeric;
@@ -54,7 +55,10 @@ begin
     'customer_payment', 10000, 'phase9 customer', 'Phase 9 customer payment', v_when, null, 'other', 'phase9-customer-payment', '[]'::jsonb, 'cash', null);
   v_loss := public.create_daily_record_draft(
     'stock_loss', 2000, null, 'Phase 9 spoiled stock', v_when, null, 'other', 'phase9-loss',
-    jsonb_build_array(jsonb_build_object('description', 'Phase 9 Test Nyama', 'quantity', 2, 'unit_amount', 1000, 'unit', 'kilo')), null, 'spoiled');
+    jsonb_build_array(
+      jsonb_build_object('description', 'Phase 9 Test Nyama', 'quantity', 1, 'unit_amount', 1000, 'unit', 'kilo'),
+      jsonb_build_object('description', 'Phase 9 Test Nyama', 'quantity', 1, 'unit_amount', 1000, 'unit', 'kilo')
+    ), null, 'spoiled');
   v_owner_use := public.create_daily_record_draft(
     'owner_use', 0, null, 'Phase 9 owner use', v_when, null, 'other', 'phase9-owner-use',
     jsonb_build_array(jsonb_build_object('description', 'Phase 9 Test Nyama', 'quantity', 1, 'unit_amount', 0, 'unit', 'kilo')), null, null);
@@ -76,7 +80,7 @@ begin
   perform public.confirm_daily_record(v_purchase);
 
   v_animal := public.wa_create_whole_animal_procurement_draft(
-    v_owner, v_company, 'ng''ombe', 1, 1200000, 'Phase9 Supplier', null, v_when,
+    v_owner, v_company, 'ng''ombe', 2, 1200000, 'Phase9 Supplier', null, v_when,
     'phase9-whole-animal', null, 'Phase 9 reporting proof');
   if (select status from public.daily_records where id = v_animal) <> 'pending_confirmation' then
     raise exception 'whole animal was not pending';
@@ -97,10 +101,18 @@ begin
   if exists (select 1 from public.daily_record_lines where daily_record_id in (v_animal, v_breakdown)) then
     raise exception 'whole animal or breakdown used normal stock lines';
   end if;
+  v_pending_snapshot := public.bucha_reporting_snapshot(v_when - interval '1 hour', v_when + interval '1 day');
+  if (v_pending_snapshot->'whole_animals'->>'pending_breakdown')::numeric <> 2 then
+    raise exception 'a pending breakdown was incorrectly reported as confirmed';
+  end if;
   perform public.confirm_daily_record(v_breakdown);
 
   v_snapshot := public.bucha_reporting_snapshot(v_when - interval '1 hour', v_when + interval '1 day');
   if (v_snapshot->'sales'->>'total')::numeric <> 120000 then raise exception 'sales total double-counted or missed credit sale'; end if;
+  if (v_snapshot->'sales'->>'settled_sales')::numeric <> 70000
+     or (v_snapshot->'sales'->>'cash_sales')::numeric <> 40000 then
+    raise exception 'settled sales and actual cash sales were conflated';
+  end if;
   if (v_snapshot->'sales'->'by_payment_method'->>'cash')::numeric <> 40000
      or (v_snapshot->'sales'->'by_payment_method'->>'mobile_money')::numeric <> 30000
      or (v_snapshot->'sales'->'by_payment_method'->>'credit')::numeric <> 50000 then
@@ -119,10 +131,15 @@ begin
     raise exception 'stock loss report is wrong';
   end if;
   if (v_snapshot->'owner_use'->>'quantity')::numeric <> 1 then raise exception 'owner-use report is wrong'; end if;
-  if (v_snapshot->'whole_animals'->>'count')::numeric <> 1
+  if (v_snapshot->'whole_animals'->>'count')::numeric <> 2
      or (v_snapshot->'whole_animals'->>'pending_breakdown')::numeric <> 0
-     or (v_snapshot->'whole_animals'->>'breakdown_outputs')::numeric <> 6 then
+     or (v_snapshot->'whole_animals'->>'breakdown_outputs')::numeric <> 6
+     or (v_snapshot->'whole_animals'->>'allocation_incomplete')::numeric <> 1 then
     raise exception 'whole-animal/breakdown report is wrong';
+  end if;
+  if v_snapshot->'whole_animals'->'procurements'->0->'breakdowns'->0->'outputs'->0->>'product_name'
+     <> 'Phase 9 Test Maini' then
+    raise exception 'actual breakdown output detail is missing';
   end if;
   select on_hand into v_stock from public.wa_stock_on_hand(v_company, v_product);
   if v_stock <> 9 then raise exception 'stock did not include purchase and exclude loss/owner-use/sales correctly'; end if;

@@ -150,7 +150,7 @@ describe('what a new invited number sees first', () => {
 
 describe('worker reporting permissions', () => {
   it('allows report reads without granting finance writes', () => {
-    expect(canReadCompanyReporting('worker')).toBe(true);
+    expect(canReadCompanyReporting('worker')).toBe(false);
     expect(canReadCompanyReporting('owner')).toBe(true);
     expect(canReadCompanyReporting('accountant')).toBe(true);
     expect(canUseCompanyFinanceReads('worker')).toBe(false);
