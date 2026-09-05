@@ -45,15 +45,14 @@ describe('an expired question does not cost the shopkeeper their message', () =>
     expect(webhook).not.toContain("'I am not waiting on an answer right now. Tell me what you would like to do.'");
   });
 
-  it('tells the model to answer the message that is actually there', () => {
-    expect(branch).toContain('Read their message again as a NEW');
+  it('does not reinterpret a stale choice as a new financial instruction', () => {
+    expect(branch).toContain('a bare number or letter as a new transaction');
   });
 
-  it('tells the model not to apologise for a state the trader never saw', () => {
-    // He sent a list. Explaining our expiry window to him is noise about our
-    // internals, and it is what made the original reply useless.
-    expect(branch).toContain('Do NOT tell the trader that');
-    expect(branch).toContain('do not apologise for it');
+  it('explains expired context honestly and asks to review the operation', () => {
+    expect(branch).toContain('Explain briefly that the previous question is no longer active');
+    expect(branch).toContain('Ask the trader to restate or review the intended operation');
+    expect(branch).not.toContain('Do NOT tell the trader that');
   });
 
   it('records the measurement, including the one-minute margin', () => {

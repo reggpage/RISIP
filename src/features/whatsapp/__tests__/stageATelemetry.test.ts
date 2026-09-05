@@ -159,8 +159,8 @@ describe('telemetry never costs a shop its answer', () => {
   });
 
   it('records a version so a later regression can be attributed', () => {
-    expect(PROMPT_VERSION).toBe('risip-agent-v2-tool-discipline');
-    expect(TOOL_SCHEMA_VERSION).toBe('tools-stage-c');
+    expect(PROMPT_VERSION).toBe('risip-agent-v3-active-question');
+    expect(TOOL_SCHEMA_VERSION).toBe('tools-foundation-v1-runtime-checked');
     expect(webhook).toContain('p_prompt_version: PROMPT_VERSION');
     expect(webhook).toContain('p_tool_schema_version: TOOL_SCHEMA_VERSION');
   });
@@ -227,7 +227,7 @@ describe('Stage A changed no behaviour', () => {
     // messages were left, so "nimebakiza ngapi" had nowhere to land. It takes
     // no arguments, reads only billing_plans and a count of the shop's own
     // messages, and can change nothing.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(37);
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(38);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('propose_business_event');
     expect(shown).toContain('propose_money_event');

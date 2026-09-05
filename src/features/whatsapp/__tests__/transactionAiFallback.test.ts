@@ -56,8 +56,8 @@ describe('Phase 5 Part 8 structured transaction boundary', () => {
         content: [{
           type: 'tool_use', id: 'event-1', name: 'propose_business_event',
           input: {
-            kind: 'sale', lines: [{ product_wording: 'daftari', quantity_wording: 'tatu', quantity_candidate: 3, unit_wording: null }],
-            party_wording: null, supplier_wording: null, credit_wording: null,
+            direction: 'sale', kind: 'sale', lines: [{ product_wording: 'daftari', quantity_wording: 'tatu', quantity_candidate: 3, unit_wording: null, price_band_wording: null }],
+            party_wording: null, credit_wording: null,
             payment_wording: null, price_band_wording: null, occurred_at_wording: null,
             loss_reason_wording: null, amount_wording: null, amount_candidate: null, missing_fields: [],
           },
@@ -150,7 +150,7 @@ describe('Phase 5 Part 8 structured transaction boundary', () => {
 });
 
 describe('mocked Claude tool call and deterministic revalidation wiring', () => {
-  it('accepts only structured language and terminates on the server preview', async () => {
+  it('rejects a legacy tool hidden from the model instead of executing it', async () => {
     (globalThis as { Deno?: unknown }).Deno = {
       env: { get: (name: string) => name === 'ANTHROPIC_API_KEY' ? 'test-key' : undefined },
     };
@@ -174,11 +174,8 @@ describe('mocked Claude tool call and deterministic revalidation wiring', () => 
     const result = await runConversationalAssistant({
       context, history: [], userText: 'nimeuza nyama ya ngmbe kilo mbili na nusu cash', executeTool,
     });
-    expect(executeTool).toHaveBeenCalledOnce();
-    expect(result).toMatchObject({
-      reply: 'Nimeelewa. Thibitisha mauzo.',
-      toolNames: ['propose_catalogue_transaction'], usedSafeFallback: false,
-    });
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(result?.toolNames ?? []).not.toContain('propose_catalogue_transaction');
   });
 
   it('routes validated language through the existing catalogue resolver and pricing function', () => {

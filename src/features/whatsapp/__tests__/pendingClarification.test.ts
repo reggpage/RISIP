@@ -64,7 +64,8 @@ describe('no code reads the trader’s wording, at any point', () => {
     ]) {
       expect(gate, `${parser} still reads human language before the model`).not.toContain(parser);
     }
-    expect(gate).toContain('isDailyRecordConfirmation(text) || isDailyRecordRejection(text)');
+    expect(gate).toContain('CONFIRMATION_KINDS.has(kind)');
+    expect(gate).not.toContain('isDailyRecordConfirmation(text)');
   });
 
   it('runs the payment phrase list only when the model was never consulted', () => {
@@ -102,11 +103,12 @@ describe('§17 acceptance matrix: none of these is a protocol answer', () => {
     }
   });
 
-  it('still keeps the exact protocol words out of the model', () => {
+  it('keeps confirmations out only when a confirmation was actually asked', () => {
     for (const convo of PARKED) {
       for (const said of ['NDIYO', 'ndiyo', 'HAPANA', 'hapana', 'ghairi']) {
-        expect(answersPendingQuestion(convo, said), said).toBe(true);
-        expect(messageGoesToModel(convo, said, false), said).toBe(false);
+        const isControl = said === 'ghairi' || convo.awaiting === 'payment_source';
+        expect(answersPendingQuestion(convo, said), said).toBe(isControl);
+        expect(messageGoesToModel(convo, said, false), said).toBe(!isControl);
       }
     }
   });
@@ -150,7 +152,7 @@ describe('the tool carries meaning, not wording to be parsed', () => {
   }).properties.answers.items;
 
   it('asks for a canonical value the model decided', () => {
-    expect(Object.keys(item.properties)).toEqual(['field', 'canonical_value', 'numeric_value', 'raw_wording']);
+    expect(Object.keys(item.properties)).toEqual(['field', 'product', 'canonical_value', 'numeric_value', 'raw_wording']);
     expect(item.properties.field.enum).toEqual([...CLARIFICATION_FIELDS]);
   });
 

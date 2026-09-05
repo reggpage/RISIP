@@ -99,13 +99,15 @@ export function describePending(pending: PendingClarification | null): string | 
       + " one of the allowed values above — YOU decide which of them the trader's words mean, because the"
       + ' server no longer reads their words at all. Send raw_wording as what they actually typed, so the'
       + ' shop can be shown its own words back. If the message changes the subject instead, treat it as a'
-      + ' new message and answer that; the server releases the parked question.');
+      + ' new message and answer that. A new topic does not cancel the parked question; do not claim cancellation or confirmation.');
   return parts.join('\n');
 }
 
 // ── what the model sends back ───────────────────────────────────────────────
 
 export type ClarificationAnswer = {
+  /** Exact product name from the active question, for multi-product answers. */
+  product?: string | null;
   field: ClarificationField;
   /** What the trader typed. Evidence and audit trail, never parsed. */
   rawWording: string | null;
@@ -138,6 +140,7 @@ export function validateClarificationAnswers(input: unknown): ClarificationAnswe
     const canonical = text(one.canonical_value, 60);
     if (canonical === null && numeric === null) continue;
     answers.push({
+      product: text(one.product),
       field,
       rawWording: text(one.raw_wording),
       canonicalValue: canonical,

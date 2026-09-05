@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { messageStatesDirection } from '../../../../supabase/functions/_shared/whatsappDirection';
+import { validateAiEventDirection } from '../../../../supabase/functions/_shared/whatsappAiDirection';
 
 // THE SERVER ASKS. IT DOES NOT WAIT FOR THE MODEL TO ADMIT IT DOES NOT KNOW.
 //
@@ -77,33 +78,33 @@ describe('messages that do NOT say, and must be asked about', () => {
   });
 });
 
-describe('the gate in the webhook', () => {
+describe('the AI meaning boundary in the webhook', () => {
   const branch = webhook.slice(
-    webhook.indexOf('const ambiguousKind = event.kind'),
-    webhook.indexOf('const ambiguousKind = event.kind') + 2400,
+    webhook.indexOf('const direction = validateAiEventDirection(input)'),
+    webhook.indexOf('const direction = validateAiEventDirection(input)') + 2400,
   );
 
-  it('no longer waits for the model to volunteer it', () => {
-    expect(branch).toContain('const directionUnstated = ambiguousKind');
-    expect(branch).toContain('!messageStatesDirection(said)');
-    // The model's own signal still works when it does send it.
-    expect(branch).toContain("event.missingFields.includes('direction') || directionUnstated");
+  it('requires an explicit AI interpretation and asks when ambiguous', () => {
+    expect(branch).toContain('validateAiEventDirection(input)');
+    expect(validateAiEventDirection({ kind: 'sale' })).toBe('invalid');
+    expect(validateAiEventDirection({ kind: 'sale', direction: 'unclear' })).toBe('clarify');
+    expect(validateAiEventDirection({ kind: 'sale', direction: null })).toBe('invalid');
   });
 
-  it('gates only the three readings that actually collide', () => {
-    expect(branch).toContain("event.kind === 'sale'");
-    expect(branch).toContain("event.kind === 'stock_purchase'");
-    expect(branch).toContain("event.kind === 'stock_count'");
+  it('rejects contradictory direction and ledger kind', () => {
+    expect(validateAiEventDirection({ kind: 'stock_purchase', direction: 'sale' })).toBe('invalid');
+    expect(validateAiEventDirection({ kind: 'sale', direction: 'purchase' })).toBe('invalid');
+    expect(validateAiEventDirection({ kind: 'stock_count', direction: 'purchase' })).toBe('invalid');
   });
 
-  it('does not ask when a named customer or credit already settles it', () => {
-    // "Juma daftari 3 kwa deni" needs no question: goods left the shop.
-    expect(branch).toContain('Boolean(event.partyWording) || Boolean(event.creditWording)');
+  it('keeps customer credit and supplier liability in opposite directions', () => {
+    expect(validateAiEventDirection({ kind: 'credit_sale', direction: 'sale' })).toBe('known');
+    expect(validateAiEventDirection({ kind: 'supplier_credit_purchase', direction: 'purchase' })).toBe('known');
+    expect(validateAiEventDirection({ kind: 'supplier_credit_purchase', direction: 'sale' })).toBe('invalid');
   });
 
-  it('records why the model-dependent version could not work', () => {
-    const at = webhook.indexOf('const ambiguousKind = event.kind');
-    expect(webhook.slice(Math.max(0, at - 900), at))
-      .toContain('never fires, because the model does');
+  it('does not let a legacy word list overrule the model in the executor', () => {
+    expect(webhook).not.toContain('messageStatesDirection(said)');
+    expect(validateAiEventDirection({ kind: 'sale', direction: 'sale', missing_fields: ['direction'] })).toBe('clarify');
   });
 });

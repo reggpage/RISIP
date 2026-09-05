@@ -71,7 +71,16 @@ describe('the Stage A.1 evaluator', () => {
   it.runIf(exists)('bounds what one call can cost', () => {
     expect(source).toContain('MAX_CASES_PER_BATCH');
     expect(source).toMatch(/slice\(0, MAX_CASES_PER_BATCH\)/);
-    expect(source).toMatch(/slice\(0, 2000\)/);
+    expect(source).toContain('item.say.length > 2000');
+    expect(source).toContain("error: 'invalid_cases'");
+    expect(source).toContain('AbortSignal.timeout(30000)');
+  });
+
+  it.runIf(exists)('never authenticates an empty temporary token and validates the real tool schema', () => {
+    expect(source).toContain('if (!given || !expected) return false');
+    expect(source).toContain("Deno.env.get('RISIP_FOUNDATION_EVAL_TOKEN')");
+    expect(source).toContain('validateToolRound');
+    expect(source).toContain('pendingClarification: testCase.pendingClarification');
   });
 
   it.runIf(exists)('uses a synthetic shop, never a real company id', () => {

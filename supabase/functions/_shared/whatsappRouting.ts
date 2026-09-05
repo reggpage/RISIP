@@ -1,158 +1,101 @@
-/**
- * WHO SEES A MESSAGE FIRST.
- *
- * The architecture is AI-first, and for four stages it has not quite been true.
- * Two deterministic parsers still stood in front of the model and took ordinary
- * business language away from it before it could look:
- *
- *   !parseBareQuantityList(body)
- *   !(deterministicBatch.kind === 'parsed' && deterministicBatch.records.length > 1)
- *
- * So a shop that sent
- *
- *   Feni 7
- *   Nguvu 6
- *   Antoni 4
- *
- * never reached Haiku at all. A parser counted the quantities, asked MAUZO or
- * MANUNUZI, and when "Antoni" did not match "Anton wa Padua" letter for letter
- * the shop was offered a new-product registration for a product it already
- * sells. That is two different personalities in one product: some sentences met
- * a language model, others met a regular expression, and the shop could not
- * tell which it was going to get.
- *
- * This module draws the line in one place so it can be tested and watched.
- *
- *   Before Claude:  security, transport, and the ANSWER to a question Risip
- *                   itself just asked.
- *   Claude:         every other message that carries language.
- *   After Claude:   the backend, which owns every figure.
- *   No free-text fallback: if Claude cannot answer, the user gets a truthful
- *                     clarification/unavailable response. Business parsers
- *                     never get to answer that same free-text turn.
- *
- * The narrow exception matters as much as the rule. When Risip has drafted a
- * record and asked "Jibu *1* Ndiyo · *2* Hapana", the word "ndiyo" is not a sentence
- * to be understood — it is a state-machine answer, and sending it to a model
- * risks semantic drift on the one step where drift writes to a ledger.
- */
-
-import { isDailyRecordConfirmation, isDailyRecordRejection } from './whatsappDailyRecords.ts';
-
-/** How a message was routed, for telemetry and for tests. */
-export type MessageRoute =
-  /** Claude interpreted it. The expected route for ordinary business language. */
-  | 'ai_primary'
-  /** It answered a bounded question Risip had already asked. */
-  | 'pending_protocol'
-  /** Claude could not answer; no business parser was allowed to take over. */
-  | 'ai_outage_fallback';
-
-/**
- * States where Risip has asked a question with a small, known set of answers.
- *
- * Everything else parked in whatsapp_conversations is context, not a question,
- * and must not hold a new sentence away from the model.
- */
-const BOUNDED_QUESTION_STATES = new Set([
-  'payment_source',           // a drafted record awaiting *1* Ndiyo · *2* Hapana
-  'product_cost',             // a price band, a stock count, a cost batch
-  'daily_record_quantity',    // "ngapi?"
-  'logout_confirm',
-  'account_delete_confirm',
-  'language',
-  'business',
-  'project',
-]);
-
+/** AI owns language; exact controls are scoped to a known active question. */
+export type MessageRoute = 'ai_primary' | 'pending_protocol' | 'ai_outage_fallback';
 export type PendingConversation = {
   awaiting?: string | null;
   options?: unknown;
+  expires_at?: string | null;
 } | null | undefined;
 
-/**
- * Does this message answer the question Risip is actually waiting for?
- *
- * True only when the text parses as the specific bounded answer for the parked
- * state. A shop that was asked "Rejareja au jumla?" and instead types "leo
- * nimeuza shingapi" has changed the subject, and changing the subject is
- * ordinary language — it goes to Claude, which is what §15 of the correction
- * asks for and what a person would expect.
+const CONFIRMATION_KINDS = new Set([
+  'daily_record_confirmation', 'daily_record_batch_confirmation',
+  'whole_animal_breakdown_confirmation', 'stock_count_batch',
+  'product_cost_batch', 'selling_price_batch', 'price_and_cost_pending',
+  'record_queue', 'void_record', 'new_product_registration_confirmation',
+  'new_product_pricing', 'portion_setup_confirmation', 'product_rename_confirmation',
+  'combo_save', 'vocabulary_teaching', 'product_setup_pending',
+]);
+
+/** Exact commands, never prefixes like "login and show yesterday's sales".
+ * Credential/bootstrap commands remain protected; ordinary account requests
+ * are interpreted through the AI account-action tool.
  */
-export function answersPendingQuestion(convo: PendingConversation, said: string | null | undefined): boolean {
-  const awaiting = String(convo?.awaiting ?? '').trim();
-  const text = String(said ?? '').trim();
-  if (!awaiting || !text) return false;
-  if (!BOUNDED_QUESTION_STATES.has(awaiting)) return false;
-
-  // Letter choices are protocol answers only while one of these menus is
-  // actually open. Outside them, a lone "a" is ordinary language and must
-  // still reach the model. Keeping this here prevents the AI-first route from
-  // swallowing (a)/(b)/(c) before the matching validator sees it.
-  const kind = String((convo?.options as { kind?: unknown } | null)?.kind ?? '');
-  if (awaiting === 'product_cost'
-    && ['price_band_choice', 'quantity_meaning_clarification'].includes(kind)
-    && /^\(?[abc]\)?$/i.test(text)) return true;
-
-  // This is the ONLY conversational bypass left: exact control answers to a
-  // confirmation. A name, explanation, correction, amount, price, payment
-  // method or any other sentence is language and must reach the model—even
-  // when onboarding or a protected confirmation is parked.
-  //
-  // What used to be here as well:
-  //
-  //   parseQuantityAnswer(text)          "tano", "thelathini", "mbili na nusu"
-  //   parsePriceBandAnswer(text, ...)    "reja", "rejarej", "jumla"
-  //   parseQuantityMeaningAnswer(text)   "mauzo", "manunuzi", "hesabu"
-  //
-  // Those are human business language, and code was reading them. It meant a
-  // shop met a language model when it opened a subject and a regular expression
-  // when it answered the follow-up — two brains, switching on nothing the
-  // shopkeeper could see. They are gone from the normal path. The model reads
-  // the answer now and returns it through resolve_pending_clarification, and
-  // the same word lists survive as validators of a value the model has already
-  // identified, which is a bounds check rather than a language router.
-  return isDailyRecordConfirmation(text) || isDailyRecordRejection(text);
+export function isProtectedSystemCommand(said: string | null | undefined): boolean {
+  return /^(?:login|scan|sitisha|stop)$/i.test(String(said ?? '').trim());
 }
 
-/**
- * Will the model see this message?
- *
- * The eligibility test used to live inline in the message loop, hundreds of
- * lines below branches that were quietly consuming messages before it ever ran.
- * parsePaymentMethodAnswer was one: "mpesa" beside a pending draft was read by
- * a phrase list of Tanzanian mobile-money brands, eight hundred lines above the
- * gate that was supposed to decide who reads what.
- *
- * Naming it once means every branch can ask the same question and get the same
- * answer, and a test can prove they do.
- */
+export function answersPendingQuestion(convo: PendingConversation, said: string | null | undefined): boolean {
+  const text = String(said ?? '').trim();
+  if (!convo?.awaiting || !text) return false;
+  if (convo.expires_at && !(Date.parse(convo.expires_at) > Date.now())) return false;
+  // Cancel always refers to this active question; longer sentences remain AI.
+  if (/^(?:ghairi|cancel)$/i.test(text)) return true;
+  const options = (convo.options ?? {}) as Record<string, unknown>;
+  const kind = String(options.kind ?? '');
+  const confirm = /^(?:1|2|ndiyo|ndio|yes|no|hapana|confirm|thibitisha)$/i.test(text);
+  if (convo.awaiting === 'account_delete_confirm') {
+    return /^(?:FUTA KABISA|DELETE PERMANENTLY|2|hapana|no)$/i.test(text);
+  }
+  if (convo.awaiting === 'logout_confirm') {
+    return options.step === 'disambiguate' ? /^[12]$/.test(text) : confirm;
+  }
+  // A unit/product clarification nested in a price preview is NOT a save prompt.
+  if (kind === 'price_and_cost_pending' && options.clarification) return false;
+  if (CONFIRMATION_KINDS.has(kind)) return confirm;
+  if (convo.awaiting === 'day_close') return confirm;
+  // Older single-cost confirmations carry no kind, but do carry the proposal.
+  if (convo.awaiting === 'product_cost' && !kind && typeof options.product === 'string'
+    && typeof options.unitCost === 'number') return confirm;
+
+  if (['price_band_choice', 'quantity_meaning_clarification'].includes(kind)) {
+    return /^\(?[abc]\)?$/i.test(text);
+  }
+  if (kind === 'stock_purchase_cost_choice') return /^[123]$/.test(text);
+  if (kind === 'help_menu') return /^[123]$/.test(text);
+  if (kind === 'invite_role') return /^[12]$/.test(text);
+  const candidates = kind === 'product_read_choice' || kind === 'whole_animal_breakdown_source_selection'
+    ? options.candidates : convo.awaiting === 'business' ? convo.options : null;
+  if (Array.isArray(candidates)) {
+    return /^[1-9]\d*$/.test(text) && Number(text) <= candidates.length;
+  }
+  if (convo.awaiting === 'language') return /^[12]$/.test(text);
+  // In particular quantity "1" and amount "2" are values, not menu answers.
+  return false;
+}
+
 export function messageGoesToModel(
   convo: PendingConversation,
   said: string | null | undefined,
-  systemCommand: boolean,
+  systemCommand = false,
 ): boolean {
   return Boolean(String(said ?? '').trim())
     && !answersPendingQuestion(convo, said)
     && !systemCommand;
 }
 
-/**
- * The parsers that must never stand in front of Claude again.
- *
- * Named here so a test can assert their absence from the eligibility gate
- * rather than trusting a comment. Each one used to consume ordinary business
- * language: a bare catalogue list, a mixed sale-and-purchase message, an
- * expense batch whose second line was silently dropped.
- */
 export const PARSERS_BEHIND_CLAUDE = [
-  'parseBareQuantityList',
-  'parseDailyRecordBatch',
-  'parseQuantityOnlySale',
-  'parseDailyRecord',
-  'parseStockLoss',
-  'parseSupplierCreditPurchase',
-  'parseSupplierPayment',
-  'parseWholeAnimalProcurement',
-  'parseWholeAnimalBreakdown',
+  'parseBareQuantityList', 'parseDailyRecordBatch', 'parseQuantityOnlySale',
+  'parseDailyRecord', 'parseStockLoss', 'parseSupplierCreditPurchase',
+  'parseSupplierPayment', 'parseWholeAnimalProcurement', 'parseWholeAnimalBreakdown',
 ] as const;
+
+/** The advertised a/b menu already supplies meaning; no language is inferred. */
+export function protectedPriceBandAnswer(convo: PendingConversation, said: string | null | undefined): 'retail' | 'wholesale' | null {
+  if (!answersPendingQuestion(convo, said)) return null;
+  const options = (convo?.options ?? {}) as Record<string, unknown>;
+  if (options.kind !== 'price_band_choice' || !Array.isArray(options.choices) || !options.choices.length) return null;
+  const choice = String(said ?? '').trim().toLowerCase();
+  if (choice === 'a' || choice === '(a)') return 'retail';
+  if (choice === 'b' || choice === '(b)') return 'wholesale';
+  return null;
+}
+
+/** A numbered product choice resumes its typed sale; never re-parse the list. */
+export function protectedSaleProductAnswer(convo: PendingConversation, said: string | null | undefined): string | null {
+  if (!answersPendingQuestion(convo, said)) return null;
+  const options = (convo?.options ?? {}) as Record<string, unknown>;
+  if (options.kind !== 'product_read_choice' || !options.recovery || !Array.isArray(options.candidates)) return null;
+  const text = String(said ?? '').trim();
+  if (!/^[1-9]\d*$/.test(text)) return null;
+  const candidate = options.candidates[Number(text) - 1];
+  return typeof candidate === 'string' && candidate.trim() ? candidate : null;
+}

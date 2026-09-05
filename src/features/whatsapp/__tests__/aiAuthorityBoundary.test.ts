@@ -101,7 +101,9 @@ describe('the model cannot confirm anything', () => {
       // Neither a read nor a write: it carries the model's reading of an answer
       // to a question the server itself asked, and the server decides whether
       // those words name a legal value before anything moves.
-      .filter((name) => name !== 'resolve_pending_clarification');
+      .filter((name) => name !== 'resolve_pending_clarification')
+      // Account actions cannot carry an actor or confirm a ledger operation.
+      .filter((name) => name !== 'request_account_action');
     expect(writers.length).toBeGreaterThan(0);
     for (const name of writers) expect(name).toMatch(/^propose_/);
   });
@@ -117,7 +119,15 @@ describe('the model cannot confirm anything', () => {
     // no longer reads wording at any point. raw_wording is kept so the shop can
     // be shown its own words back, and is never parsed.
     expect(TOOL_FIELDS.get('resolve_pending_clarification'))
-      .toEqual(['answers', 'field', 'canonical_value', 'numeric_value', 'raw_wording']);
+      .toEqual(['answers', 'field', 'product', 'canonical_value', 'numeric_value', 'raw_wording']);
+  });
+
+  it('bounds account requests without exposing another actor or a confirmation action', () => {
+    expect(TOOL_FIELDS.get('request_account_action')).toEqual(['action', 'language']);
+    const schema = ASSISTANT_TOOLS.find((tool) => tool.name === 'request_account_action')!.input_schema;
+    const actions = (schema.properties as Record<string, { enum: string[] }>).action.enum;
+    expect(actions).toEqual(['login', 'scan', 'sell_scan', 'invite_worker', 'switch_business', 'change_language', 'stop_notifications', 'logout', 'delete_account']);
+    expect(actions).not.toContain('confirm');
   });
 });
 

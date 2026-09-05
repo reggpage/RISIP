@@ -216,7 +216,7 @@ describe('Risip conversational AI core', () => {
         stop_reason: 'tool_use',
         content: [{
           type: 'tool_use', id: 'tool-1', name: 'get_product_performance',
-          input: { metric: 'revenue', period: 'today', product_names: ['nguvu ya sala'] },
+          input: { metric: 'revenue', direction: 'best', when: null, period: 'today', product_names: ['nguvu ya sala'] },
         }],
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
@@ -239,7 +239,7 @@ describe('Risip conversational AI core', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(executeTool).toHaveBeenCalledWith('get_product_performance', {
-      metric: 'revenue', period: 'today', product_names: ['nguvu ya sala'],
+      metric: 'revenue', direction: 'best', when: null, period: 'today', product_names: ['nguvu ya sala'],
     });
     expect(result).toMatchObject({
       reply: 'Nguvu ya sala imeingiza TSh 63,000 leo.',
@@ -272,7 +272,7 @@ describe('Risip conversational AI core', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'claude-sonnet-5' }] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         stop_reason: 'tool_use',
-        content: [{ type: 'tool_use', id: 'tool-1', name: 'get_product_performance', input: { metric: 'quantity', period: 'today', product_names: [] } }],
+        content: [{ type: 'tool_use', id: 'tool-1', name: 'get_product_performance', input: { metric: 'quantity', direction: 'best', when: null, period: 'today', product_names: [] } }],
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         stop_reason: 'end_turn',
@@ -314,7 +314,7 @@ describe('Risip conversational AI core', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'claude-sonnet-5' }] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         stop_reason: 'tool_use',
-        content: [{ type: 'tool_use', id: 'tool-1', name: 'get_product_performance', input: { metric: 'quantity', period: 'today', product_names: [] } }],
+        content: [{ type: 'tool_use', id: 'tool-1', name: 'get_product_performance', input: { metric: 'quantity', direction: 'best', when: null, period: 'today', product_names: [] } }],
       }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         stop_reason: 'end_turn',
@@ -355,7 +355,7 @@ describe('Risip conversational AI core', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: 'claude-sonnet-5' }] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({
         stop_reason: 'tool_use',
-        content: [{ type: 'tool_use', id: 'tool-1', name: 'get_product_performance', input: { metric: 'quantity', period: 'today', product_names: [] } }],
+        content: [{ type: 'tool_use', id: 'tool-1', name: 'get_product_performance', input: { metric: 'quantity', direction: 'best', when: null, period: 'today', product_names: [] } }],
       }), { status: 200 }))
       .mockImplementation(async () => invented());
 

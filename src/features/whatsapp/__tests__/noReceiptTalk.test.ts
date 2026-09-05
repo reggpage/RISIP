@@ -100,12 +100,12 @@ describe('the two receipt tools', () => {
     expect(shown).not.toContain('get_receipt_details');
   });
 
-  it('leaves the visible surface at twenty-nine', () => {
+  it('includes account requests in the bounded non-contractor surface', () => {
     // The number the model actually sees. Thirty-seven is the full list, eight
     // of which are hidden — a distinction that was got wrong once already.
     // Twenty-nine since get_my_subscription: the shop could not ask what it was
     // paying for, and the answer must be visible to the model or the question
     // has nowhere to land.
-    expect(shown).toHaveLength(29);
+    expect(shown).toHaveLength(30);
   });
 });

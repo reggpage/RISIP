@@ -139,7 +139,7 @@ describe('the distinctions that were being confused', () => {
 });
 
 describe('nothing about financial authority moved', () => {
-  it('added exactly one tool, and it is the powerless one', () => {
+  it('keeps conversation powerless alongside the bounded account-action tool', () => {
     // Plus resolve_pending_clarification, which is how a parked question gets
     // answered now that no parser stands in front of one.
     // 31, and every one of the four added this week exists because a real
@@ -165,7 +165,7 @@ describe('nothing about financial authority moved', () => {
     // messages were left, so "nimebakiza ngapi" had nowhere to land. It takes
     // no arguments, reads only billing_plans and a count of the shop's own
     // messages, and can change nothing.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(37);
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(38);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('respond_conversationally');
     expect(shown).not.toContain('propose_catalogue_transaction');
@@ -217,8 +217,8 @@ describe('nothing about financial authority moved', () => {
   });
 
   it('marks the change in telemetry so before and after stay separable', () => {
-    expect(PROMPT_VERSION).toBe('risip-agent-v2-tool-discipline');
-    expect(TOOL_SCHEMA_VERSION).toBe('tools-stage-c');
+    expect(PROMPT_VERSION).toBe('risip-agent-v3-active-question');
+    expect(TOOL_SCHEMA_VERSION).toBe('tools-foundation-v1-runtime-checked');
   });
 });
 

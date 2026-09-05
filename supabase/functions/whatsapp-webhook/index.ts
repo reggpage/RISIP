@@ -249,9 +249,13 @@ import {
   paymentWordingQuestion,
 } from '../_shared/whatsappPaymentMethod.ts';
 // Who sees a message first: the line between a sentence and a protocol answer.
-import { answersPendingQuestion, messageGoesToModel } from '../_shared/whatsappRouting.ts';
+import { answersPendingQuestion, isProtectedSystemCommand, messageGoesToModel, protectedPriceBandAnswer, protectedSaleProductAnswer } from '../_shared/whatsappRouting.ts';
+import { catalogueProposalBlocked, retrievalHealthContext, type RetrievalHealth } from '../_shared/whatsappRetrievalHealth.ts';
+import { aiFailureLayer } from '../_shared/whatsappAiFailure.ts';
+import { mergeStockAnswers, pendingConversationContext, type StockAnswer } from '../_shared/whatsappPendingContext.ts';
 import {
   classifyAssistantFailure,
+  MAX_ASSISTANT_USER_CHARS,
   type AssistantFailureClass,
 } from '../_shared/whatsappAssistant.ts';
 import {
@@ -416,7 +420,7 @@ import {
   stockCountBatchConfirmation,
   stockCountBatchSaved,
 } from '../_shared/whatsappStockBatch.ts';
-import { messageStatesDirection } from '../_shared/whatsappDirection.ts';
+import { validateAiEventDirection } from '../_shared/whatsappAiDirection.ts';
 import { shopMayAlreadyStock } from '../_shared/whatsappKnownProduct.ts';
 import {
   parseSellingPrice,
@@ -720,6 +724,7 @@ type ProductChoicePending = {
   /** His sentence, replayed once the ambiguity is settled. */
   originalText: string;
   sourceMessageId: string;
+  recovery?: { sale: QuantitySale; credit: { party: string } | null; paymentMethod: DailyRecordPaymentMethod | null; occurredAt: string | null };
 };
 
 type PriceBandPending = {
@@ -1483,7 +1488,7 @@ async function resolveWhatsAppContext(
  * catalogue dump would grow every request for every company for ever. Words
  * only — the financial values stay behind tools.
  */
-async function loadVocabularyContext(db: Admin, identity: ResolvedWhatsAppIdentity): Promise<{ vocabulary: string; catalogue: string }> {
+async function loadVocabularyContext(db: Admin, identity: ResolvedWhatsAppIdentity): Promise<{ vocabulary: string; catalogue: string; health: RetrievalHealth }> {
   const [vocabularyRows, productRows, unitRows] = await Promise.all([
     db.rpc('wa_company_vocabulary', { p_company_id: identity.company_id }),
     db.rpc('company_product_names', { p_company_id: identity.company_id }),
@@ -1547,9 +1552,16 @@ async function loadVocabularyContext(db: Admin, identity: ResolvedWhatsAppIdenti
   const catalogueRag = formatCatalogueContext([...unitProducts.values()], {
     includeCosts: canUseCompanyFinanceReads(identity.role),
   });
+  const health: RetrievalHealth = {
+    vocabulary: vocabularyRows.error ? 'unavailable' : 'partial',
+    products: productRows.error ? 'unavailable' : productRowsData.length > products.length ? 'partial' : 'available',
+    units: unitRows.error ? 'unavailable' : (unitRows.data?.length ?? 0) >= 500 ? 'partial' : 'available',
+    prices: pricingError ? 'unavailable' : 'partial',
+  };
   return {
     vocabulary: [vocabulary, catalogue].filter(Boolean).join('\n\n').slice(0, 6000),
-    catalogue: catalogueRag,
+    catalogue: [retrievalHealthContext(health), catalogueRag].filter(Boolean).join('\n\n'),
+    health,
   };
 }
 
@@ -1707,14 +1719,19 @@ function isStopCommand(text: string | null | undefined): boolean {
 
 /** Live conversation state, or null when nothing is pending or it has expired. */
 async function loadConversation(db: Admin, identityId: string) {
-  const { data } = await db
+  const { data, error } = await db
     .from('whatsapp_conversations')
-    .select('awaiting, receipt_id, options, expires_at')
+    .select('awaiting, receipt_id, options, expires_at, updated_at')
     .eq('identity_id', identityId)
     .maybeSingle();
+  // A failed read is not evidence of an empty conversation. Fail closed so
+  // a follow-up cannot be reinterpreted as a new transaction after a DB outage.
+  if (error) throw new Error('conversation_read_failed');
   if (!data) return null;
   if (new Date(data.expires_at as string).getTime() < Date.now()) {
-    await db.from('whatsapp_conversations').delete().eq('identity_id', identityId);
+    // Do not erase a newer question created while this expired row was read.
+    await db.from('whatsapp_conversations').delete().eq('identity_id', identityId)
+      .eq('updated_at', data.updated_at);
     return null;
   }
   return data;
@@ -3609,6 +3626,7 @@ async function priceAndDraftSale(
         priced.choice.asked,
         priced.choice.candidates,
         args.said,
+        args,
       );
     }
     return { content: priced.message, terminalReply: priced.message, fallbackReply: priced.message };
@@ -3779,6 +3797,13 @@ function pendingClarificationOf(convo: { awaiting?: string | null; options?: unk
   const options = (convo?.options ?? {}) as Record<string, unknown>;
   const kind = String(options.kind ?? '');
 
+  if (awaiting === 'product_cost' && kind === 'product_read_choice') {
+    const choice = options as unknown as ProductChoicePending;
+    return { field: 'product', intent: choice.recovery ? 'sale' : 'product_lookup',
+      product: choice.asked, choices: choice.candidates,
+      details: `Original message: ${choice.originalText}. Select exactly one of the offered names; do not invent a product. A number refers only to the displayed candidate order.` };
+  }
+
   if (awaiting === 'daily_record_quantity') {
     return {
       field: 'quantity',
@@ -3841,7 +3866,7 @@ function pendingClarificationOf(convo: { awaiting?: string | null; options?: unk
     // was paid is a sentence, and sentences belong to the model.
     return { field: 'payment_method', intent: 'sale' };
   }
-  if (awaiting === 'product_cost' && kind === 'quantity_meaning') {
+  if (awaiting === 'product_cost' && kind === 'quantity_meaning_clarification') {
     return { field: 'event_type', intent: 'unknown' };
   }
   if (awaiting === 'product_cost' && kind === 'sale_missing_prices') {
@@ -4131,14 +4156,25 @@ async function executeClarification(
     return {
       content: 'no_pending_question=true\n'
         + 'The question you were answering has expired or was already settled. '
-        + 'Do NOT tell the trader that, and do not apologise for it — from where they '
-        + 'are standing they simply sent a message. Read their message again as a NEW '
-        + 'message and answer it with the right tool.',
+        + 'Explain briefly that the previous question is no longer active. Do not reinterpret '
+        + 'a bare number or letter as a new transaction, and do not claim anything was saved. '
+        + 'Ask the trader to restate or review the intended operation with its products and quantities.',
       isError: true,
     };
   }
 
   const options = (convo?.options ?? {}) as Record<string, unknown>;
+  if (options.kind === 'product_read_choice') {
+    const choice = options as unknown as ProductChoicePending;
+    const requested = answers.find((answer) => answer.field === 'product')?.canonicalValue;
+    const selected = choice.candidates.find((candidate) => normalizedChoice(candidate) === normalizedChoice(requested ?? ''));
+    if (!selected) return { content: 'Select exactly one of the offered product candidates; ask if uncertain.', isError: true };
+    if (!choice.recovery) return { content: `Selected product: ${selected}. Original question: ${choice.originalText}. Call the appropriate live read tool with this product.`, isError: true };
+    const recovery = choice.recovery;
+    const sale = { ...recovery.sale, items: recovery.sale.items.map((item) =>
+      normalizedChoice(item.product) === normalizedChoice(choice.asked) ? { ...item, product: selected } : item) };
+    return await priceAndDraftSale(db, identity, waMessageId, lang, { ...recovery, sale, said: choice.originalText });
+  }
   if (options.kind === 'sale_missing_prices') {
     return {
       content: 'This is a sale recovery state, not a closed-choice question. Re-read the original sale and call propose_business_event with the corrected product names and original quantities. Do not set prices from history.',
@@ -4179,7 +4215,15 @@ async function executeClarification(
   // the parked list, and checks the unit against the product's own measure.
   if (pending.field === 'quantity' && options.kind === 'new_product_quantity') {
     const products = Array.isArray(options.products) ? options.products as NewProductPricing[] : [];
-    const resolved = resolveNewProductStock(products, answers);
+    const previous = Array.isArray(options.stockAnswers) ? options.stockAnswers as StockAnswer[] : [];
+    const merged = mergeStockAnswers(previous, answers, products.map((product) => product.product));
+    const resolved = resolveNewProductStock(products, merged);
+    if (resolved.kind === 'missing' || resolved.kind === 'invalid') {
+      const { error } = await db.from('whatsapp_conversations').update({
+        options: { ...options, stockAnswers: merged }, updated_at: new Date().toISOString(),
+      }).eq('identity_id', identity.id).eq('company_id', identity.company_id);
+      if (error) return { content: 'Could not retain the quantity answers. Ask to retry; do not claim they were saved.', isError: true };
+    }
     if (resolved.kind === 'missing') {
       const question = newProductQuantityIncomplete(products, resolved.completed, lang);
       return { content: question, terminalReply: question };
@@ -4192,7 +4236,7 @@ async function executeClarification(
       kind: 'new_product_registration_confirmation',
       stock: resolved.stock,
     };
-    await db.from('whatsapp_conversations').upsert({
+    const { error: stateError } = await db.from('whatsapp_conversations').upsert({
       identity_id: identity.id,
       company_id: identity.company_id,
       profile_id: identity.profile_id,
@@ -4202,6 +4246,7 @@ async function executeClarification(
       expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
       updated_at: new Date().toISOString(),
     }, { onConflict: 'identity_id' });
+    if (stateError) return { content: 'Could not retain the registration preview. Nothing was confirmed; ask to retry.', isError: true };
     const question = newProductRegistrationConfirmation(products, resolved.stock, lang);
     return { content: question, terminalReply: question };
   }
@@ -4402,25 +4447,9 @@ async function executeBusinessEvent(
   // directions. Guessing "count" on a message that meant "sales" erases a
   // day's takings and overwrites the shelf at the same time.
   //
-  // The question already existed and is exactly the right one; nothing ever
-  // reached it, because the model answered first. Now the MODEL decides there
-  // is no direction — a judgement about language, which is its job — and the
-  // server asks. The parser below only normalises the quantities it was
-  // already given; it is not deciding what the message meant.
-  // The model saying so is no longer required, and MEASURED is why: handed
-  // nine products with no verb anywhere, it chose stock_count and drafted it
-  // without ever setting missing_fields. Telemetry 14:35:49. A guard that waits
-  // for the model to admit it does not know never fires, because the model does
-  // not think it does not know.
-  //
-  // So the server asks the one narrow question itself: does the raw message
-  // contain a word that states a direction? Only the three ambiguous kinds are
-  // gated, and only when nothing else settles it — a named customer or credit
-  // wording already says "sale" without any verb at all.
-  const ambiguousKind = event.kind === 'sale'
-    || event.kind === 'stock_purchase'
-    || event.kind === 'stock_count';
-  const settledByContext = Boolean(event.partyWording) || Boolean(event.creditWording);
+  // The required AI direction field distinguishes an interpreted operation
+  // from an ambiguous list. The backend rejects kind/direction contradictions.
+  // No word list may decide the operation after the model has interpreted it.
   // A BARE NUMBER IS NEVER AN AMBIGUOUS PRODUCT LIST.
   //
   // MEASURED, telemetry 14:03: "Ongeza Nguvu ya Sala 10 stoo" was drafted by
@@ -4432,18 +4461,21 @@ async function executeBusinessEvent(
   // model carried it; the amount answer cannot un-state it. The MAUZO/ONGEZA/
   // SAJILI question exists to disambiguate a fresh product-quantity list, and a
   // message that is only a number is never one, so it must not re-trigger it.
-  const messageIsOnlyANumber = /^[s]*[d][d.,s]*$/.test(String(said ?? ''));
-  const directionUnstated = ambiguousKind
-    && !settledByContext
-    && !messageIsOnlyANumber
-    && !messageStatesDirection(said);
-
-  if ((event.missingFields.includes('direction') || directionUnstated) && event.lines.length > 0) {
+  // Direction is interpreted by AI from the complete message and active state.
+  // This guard checks consistency, never verbs or spelling in the user's text.
+  const direction = validateAiEventDirection(input);
+  if (direction === 'invalid') return { content: 'invalid_event_direction: supply the contextual direction consistent with kind, or unclear when it needs clarification. No proposal was executed.', isError: true };
+  if (direction === 'clarify' && event.lines.length > 0) {
     const asList = event.lines
       .map((line) => `${line.productWording} ${line.quantityWording ?? ''}`.trim())
       .join('\n');
-    const sale = parseBareQuantityList(asList);
-    if (sale) {
+    const quantities = decideQuantities(event, lang);
+    if (!quantities.ok) return askBack(quantities.question);
+    const sale: QuantitySale = { kind: 'quantity_sale', expenses: [], items: event.lines.map((line, index) => ({
+      product: line.productWording, quantity: quantities.quantities[index], spokenUnit: line.unitWording,
+      band: bandFromWording(line.priceBandWording ?? event.priceBandWording),
+    })) };
+    {
       // WHICH OF THESE DOES THE SHOP ALREADY SELL?
       //
       // The owner's improvement: "kama ai imenotice bidhaa ambazo hazipo ndio
@@ -4987,6 +5019,7 @@ async function parkProductChoice(
   asked: string,
   candidates: string[],
   originalText: string | null | undefined,
+  recovery?: ProductChoicePending['recovery'],
 ): Promise<void> {
   if (!asked || candidates.length === 0 || !originalText) return;
   const state: ProductChoicePending = {
@@ -4995,6 +5028,7 @@ async function parkProductChoice(
     candidates,
     originalText,
     sourceMessageId: waMessageId,
+    ...(recovery ? { recovery } : {}),
   };
   try {
     await db.from('whatsapp_conversations').upsert({
@@ -5069,6 +5103,67 @@ async function runAssistantTool(
       ? 'Sijaweza kutambua tarehe hiyo kwa usalama. Tafadhali andika tarehe kamili, kwa mfano *tarehe 23 Agosti 2026*.'
       : 'I could not resolve that date safely. Please write the full date, for example *23 August 2026*.';
     return { content: message, terminalReply: message, isError: true };
+  }
+  if (name === 'request_account_action') {
+    // The model selects a capability, never its actor or credentials.
+    const { data: linked, error: linkError } = await db.from('whatsapp_identities')
+      .select('phone_e164').eq('id', identity.id).eq('company_id', identity.company_id)
+      .eq('profile_id', identity.profile_id).is('revoked_at', null).maybeSingle();
+    if (linkError || !linked?.phone_e164) return { content: 'identity_unavailable', isError: true };
+    const actorPhone = String(linked.phone_e164);
+    if (input.action === 'login' || input.action === 'sell_scan' || input.action === 'scan') {
+      if (input.action === 'scan' && !canUseCompanyFinanceReads(identity.role)) {
+        return { content: 'product_registration_permission_denied', isError: true };
+      }
+      const result = input.action === 'login'
+        ? await handleLoginLink(db, actorPhone, lang)
+        : await handleScanLink(db, actorPhone, lang, input.action === 'sell_scan' ? '/sell' : undefined);
+      // Credentials never enter model history or model-visible evidence.
+      return { content: 'account_link_response', terminalReply: result.reply, sensitiveReply: true };
+    }
+    if (input.action === 'invite_worker') {
+      if (identity.role !== 'owner') return askBack(inviteNotAllowed(lang));
+      const { data: made, error } = await db.rpc('wa_create_invite_code', {
+        p_phone: actorPhone, p_role: 'worker', p_days: 3,
+      });
+      const invite = made as { code?: string; company_name?: string } | null;
+      if (error || !invite?.code) return { content: 'invite_creation_failed', isError: true };
+      return { content: 'worker_invite_created', sensitiveReply: true, terminalReply: inviteReady(invite.code, 'worker', lang)
+        + '\n\n' + inviteForwardMessage(invite.code, invite.company_name ?? identity.company_name, await whatsAppDisplayNumber(), lang) };
+    }
+    if (input.action === 'change_language') {
+      if (input.language !== 'sw' && input.language !== 'en') return { content: 'language_required: sw|en', isError: true };
+      const { error } = await db.rpc('wa_set_language', { p_phone: actorPhone, p_lang: input.language });
+      return { content: error ? 'language_update_failed' : `language_updated=${input.language}`, isError: Boolean(error) };
+    }
+    if (input.action === 'stop_notifications') {
+      const { error } = await db.rpc('wa_stop_proactive_notifications', { p_phone: actorPhone });
+      return { content: error ? 'notification_update_failed' : 'proactive_notifications_stopped', isError: Boolean(error) };
+    }
+    if (input.action === 'logout') {
+      await parkLogout(db, identity, 'confirm');
+      return { content: 'logout_confirmation_required', terminalReply: logoutConfirmation(identity.company_name, lang) };
+    }
+    if (input.action === 'delete_account') {
+      const owned = await loadOwnedBusinesses(db, identity.profile_id);
+      await parkAccountDeletion(db, identity, owned);
+      return { content: 'account_deletion_confirmation_required', terminalReply: accountDeletionWarning(owned, lang) };
+    }
+    if (input.action === 'switch_business') {
+      const { data, error } = await db.rpc('wa_memberships', { p_phone: actorPhone });
+      if (error) return { content: 'memberships_unavailable', isError: true };
+      const memberships = (data ?? []) as Array<{ company_id: string; company_name: string; role: string; is_active: boolean }>;
+      if (memberships.length > 1) {
+        const { error: stateError } = await db.from('whatsapp_conversations').upsert({
+          identity_id: identity.id, company_id: identity.company_id, profile_id: identity.profile_id,
+          awaiting: 'business', options: memberships.map((row) => ({ id: row.company_id, name: row.company_name })),
+          expires_at: new Date(Date.now() + 30 * 60_000).toISOString(), updated_at: new Date().toISOString(),
+        }, { onConflict: 'identity_id' });
+        if (stateError) return { content: 'question_not_saved', isError: true };
+      }
+      return { content: JSON.stringify(memberships), terminalReply: businessList(memberships, lang) };
+    }
+    return { content: 'unsupported_account_action', isError: true };
   }
   // A QUESTION EMPTIES THE QUEUE FIRST.
   //
@@ -7355,6 +7450,285 @@ Deno.serve(async (req) => {
           }).eq('wa_message_id', waMessageId);
         }
 
+        // This is the ONLY natural-language dispatch. It is invoked before
+        // any legacy text handler, and again only for a protected choice that
+        // reconstructed an earlier sentence. Its failures are terminal too.
+        const handleAiText = async (
+          convo: Awaited<ReturnType<typeof loadConversation>>,
+          body: string | null,
+          systemCommand: boolean,
+          identity: ResolvedWhatsAppIdentity,
+          evidenceText: string | null = body,
+        ): Promise<boolean> => {
+        let conversationalAiBudgetBlock: AiBudgetDecision | null = null;
+        let assistantCameBackEmpty = false;
+        let aiFailureClass: AssistantFailureClass | null = null;
+        const aiEligible = messageGoesToModel(convo, body, systemCommand);
+        // Watched in production: ai_primary is what an ordinary business
+        // message must be. If parsers ever start eating them again, this is
+        // where it shows first.
+        let messageRoute: MessageRoute = aiEligible ? 'ai_primary' : 'pending_protocol';
+        if (aiEligible) {
+          if ((body?.trim().length ?? 0) > MAX_ASSISTANT_USER_CHARS) {
+            await replyQuietly(phone, lang === 'sw'
+              ? 'Ujumbe huu ni mrefu sana kuuchakata wote kwa usalama. Ugawanye katika ujumbe mfupi. Sijarekodi chochote kutoka kwenye ujumbe huu.'
+              : 'This message is too long to process safely in full. Split it into shorter messages. I have not recorded anything from this message.', false);
+            await audit(db, identity, waMessageId, 'conversational_ai', 'input_too_long', 'rejected');
+            await finish('skipped');
+            return true;
+          }
+          const history = await loadAssistantHistory(db, identity);
+          const contextChars = body!.length + history.reduce((sum, message) => sum + message.content.length, 0);
+          const budget = await consumeAiBudget(db, identity, contextChars);
+          if (budget.allowed) {
+            let assistantFailure = 'unknown_failure';
+            const retrieval = await loadVocabularyContext(db, identity);
+            console.info('risip_ai_retrieval', JSON.stringify({ waMessageId, health: retrieval.health, promptVersion: PROMPT_VERSION }));
+            // STAGE A: how long the model and its tool loop actually took.
+            // Measured here rather than around the whole message so latency is
+            // attributable to the interpreter, not to the ledger writes after it.
+            const aiStartedAt = Date.now();
+            // The model and its tool loop are the slowest thing here, and the
+            // indicator raised at the top of the request has long expired by the
+            // time it answers. Raised again so the wait is visible.
+            await pulseTyping();
+            const assistant = await runConversationalAssistant({
+              context: { ...assistantIdentityContext(
+                identity,
+                retrieval.vocabulary,
+                pendingClarificationOf(convo),
+                retrieval.catalogue,
+              ), pendingClarification: [describePending(pendingClarificationOf(convo)), pendingConversationContext(convo)].filter(Boolean).join('\n\n') },
+              history,
+              userText: body!,
+              executeTool: (name, input) => catalogueProposalBlocked(name, retrieval.health)
+                ? Promise.resolve({ content: 'catalogue_retrieval_unavailable: the catalogue could not be verified. No proposal was executed. Explain the temporary lookup problem; do not say the product is missing and do not substitute a money-event tool.', isError: true })
+                : executeAssistantTool(db, identity, waMessageId, lang, name, input, evidenceText ?? body!),
+              onFailure: (code) => {
+                assistantFailure = code;
+                console.info('risip_ai_failure', JSON.stringify({ waMessageId, layer: aiFailureLayer(code), promptVersion: PROMPT_VERSION, schemaVersion: TOOL_SCHEMA_VERSION }));
+              },
+            });
+            // A record-looking sentence may never be acknowledged as saved by
+            // prose alone. Unsafe replies stop here; they never enter legacy
+            // language handlers. This guard is not an alternative intent router.
+            // The model's own words are passed in now: a CLAIM of saving is
+            // still refused, but a clarifying QUESTION gets through. Deferring
+            // both is what put "Sijaelewa vizuri" in front of somebody who had
+            // just rephrased their message for us.
+            const unsafeRecordProse = assistant
+              && shouldDeferRecordLikeReply(
+                isDailyRecordCandidate(body), assistant.toolNames, assistant.reply,
+              );
+            // An unusable model response is an explicit failed AI turn, not a
+            // reason to silently hand the sentence to a deterministic parser.
+            // ── STAGE A telemetry ────────────────────────────────────────────
+            //
+            // What the assistant DID, never what the trader wrote. Codes only:
+            // no message text, no product wording, no names, no prices. It is
+            // written after the reply has gone out, and it cannot fail loudly —
+            // a telemetry row must never cost a shop its answer.
+            const aiLatencyMs = Date.now() - aiStartedAt;
+            const recordInterpretation = async (
+              outcome: BackendOutcome, reason: FallbackReason | null,
+            ) => {
+              try {
+                const row = buildInterpretation({
+                  waMessageId,
+                  toolNames: assistant ? assistant.toolNames : null,
+                  lastToolInput: assistant ? assistant.lastToolInput ?? null : null,
+                  latencyMs: aiLatencyMs,
+                  backendOutcome: outcome,
+                  fallbackReason: reason,
+                  // WHICH grounding guard refused the answer, and what it saw.
+                  // providerFailure is null on this path — the model DID reply
+                  // and we declined it — so without this the one detail that
+                  // separates an over-strict guard from a model inventing a
+                  // total never reaches the table, and refusals say only
+                  // "deferred for safety". All three guards are kept now: only
+                  // the ungrounded-figure one was, and the other two were the
+                  // majority of the refusals actually seen.
+                  rejectionCode: guardRefusalCode(assistantFailure),
+                  providerFailure: assistant ? null : assistantFailure,
+                });
+                await db.rpc('wa_record_ai_interpretation', {
+                  p_company_id: identity.company_id,
+                  p_wa_message_id: row.waMessageId,
+                  p_model: assistant ? assistant.model : null,
+                  p_prompt_version: PROMPT_VERSION,
+                  p_tool_schema_version: TOOL_SCHEMA_VERSION,
+                  p_chosen_tool: row.chosenTool,
+                  p_semantic_intent: row.semanticIntent,
+                  p_tool_rounds: row.toolRounds,
+                  p_latency_ms: row.latencyMs,
+                  p_backend_outcome: row.backendOutcome,
+                  p_rejection_code: row.rejectionCode,
+                  p_clarification_field: row.clarificationField,
+                  p_fallback_used: row.fallbackUsed,
+                  p_fallback_reason: row.fallbackReason,
+                  p_provider_failure_code: row.providerFailureCode,
+                  p_route: messageRoute,
+                  // Proof, rather than belief, that the cached prefix is being
+                  // reused. Reads with no writes is a warm cache; writes with
+                  // no reads means something upstream changed between calls and
+                  // the cache was paid for and thrown away.
+                  p_cache_read_tokens: assistant?.cache?.read ?? null,
+                  p_cache_write_tokens: assistant?.cache?.written ?? null,
+                });
+              } catch { /* telemetry is never allowed to break a message */ }
+            };
+
+            if (assistant && assistant.unavailable) {
+              assistantCameBackEmpty = true;
+              aiFailureClass = classifyAssistantFailure(assistantFailure);
+              messageRoute = 'ai_outage_fallback';
+              // MEASURED: an adviser answer refused for quoting a figure no
+              // tool returned was logged as 'model_empty' — a different fault
+              // with a different fix. The class decides the row now, so a guard
+              // that is too strict cannot hide as a quiet model.
+              await recordInterpretation('fallback',
+                aiFailureClass === 'model_invalid_tool'
+                  ? 'model_reply_deferred_for_safety'
+                  : 'model_empty');
+              await audit(db, identity, waMessageId, 'conversational_ai', 'empty', 'fallback');
+            } else if (assistant && !unsafeRecordProse) {
+              await replyQuietly(phone, assistant.reply, !assistant.sensitiveReply);
+              const remembered = assistant.sensitiveReply ? true : await storeAssistantExchange(
+                db, identity, waMessageId, body!, assistant.reply, assistant.memory,
+              );
+              await audit(
+                db,
+                identity,
+                waMessageId,
+                'conversational_ai',
+                assistant.toolNames.join(',') || 'answer',
+                remembered ? (assistant.usedSafeFallback ? 'safe_fallback' : 'applied') : 'memory_failed',
+              );
+              // A proposing tool leaves a pending draft; everything else answered
+              // a question. The difference is the whole point of measuring outcome
+              // separately from tool choice.
+              await recordInterpretation(
+                assistant.toolNames.some((tool) => tool.startsWith('propose_')) ? 'drafted' : 'answered',
+                'model_success',
+              );
+              await finish('skipped');
+              return true;
+            }
+            if (!assistant) {
+              aiFailureClass = classifyAssistantFailure(assistantFailure);
+              messageRoute = 'ai_outage_fallback';
+              await recordInterpretation('provider_failed',
+                /timeout/i.test(assistantFailure) ? 'provider_timeout'
+                  : /schema|tools./i.test(assistantFailure) ? 'invalid_tool_schema'
+                  : 'provider_error');
+              await audit(db, identity, waMessageId, 'conversational_ai', 'provider', assistantFailure);
+            }
+          } else {
+            messageRoute = 'ai_outage_fallback';
+            conversationalAiBudgetBlock = budget;
+            // The cap is a business decision, not a model failure. Recorded
+            // separately so a quiet month of budget blocks can never be read as
+            // the assistant getting worse.
+            try {
+              await db.rpc('wa_record_ai_interpretation', {
+                p_company_id: identity.company_id,
+                p_wa_message_id: waMessageId,
+                p_model: null,
+                p_prompt_version: PROMPT_VERSION,
+                p_tool_schema_version: TOOL_SCHEMA_VERSION,
+                p_chosen_tool: null,
+                p_semantic_intent: 'unknown',
+                p_tool_rounds: null,
+                p_latency_ms: null,
+                p_backend_outcome: 'budget_blocked',
+                p_rejection_code: budget.reason ?? null,
+                p_clarification_field: null,
+                p_fallback_used: true,
+                p_fallback_reason: 'budget_block',
+                p_provider_failure_code: null,
+              });
+            } catch { /* telemetry is never allowed to break a message */ }
+            await audit(db, identity, waMessageId, 'conversational_ai', 'budget', 'fallback');
+          }
+        }
+
+        // THE MODEL WAS TRIED AND COULD NOT FINISH. STOP HERE.
+        //
+        // MEASURED, from the owner's own screen at 20:48. He asked "Naomba
+        // ushauri wa biashara yangu"; telemetry recorded route=ai_outage_fallback,
+        // fallback_reason=model_empty, chosen_tool=get_business_advice, one tool
+        // round, 10.7 seconds. The model called the adviser, received the
+        // figures, and then produced no text. Execution fell through to the
+        // branches below, parseAdvisorRequest matched, and the deterministic MD
+        // brief went out under the assistant's name — headings, emoji and all.
+        //
+        // Removing humanFallback() from inside the assistant was not enough,
+        // and claiming otherwise was wrong. The loop itself was the bigger
+        // fallback: forty-odd deterministic handlers, any of which will happily
+        // answer a message the model has just failed on. The old comment beside
+        // this said "let the deterministic branches below have their turn — one
+        // of them almost always knows", which is exactly the behaviour the
+        // owner rejected. One of them knowing is not the same as Risip having
+        // thought about the question, and a shopkeeper cannot tell them apart.
+        //
+        // The same fall-through is why "Compare today's price and yesterday"
+        // came back as a SALES trend: parseSalesTrendRequest matched the word
+        // "compare" and answered a different question confidently.
+        //
+        // System commands and protocol answers never set aiEligible, so they
+        // still reach their own handlers untouched.
+        if (aiEligible && (conversationalAiBudgetBlock || assistantCameBackEmpty || aiFailureClass !== null)) {
+          const failureReply = conversationalAiBudgetBlock
+            ? aiBudgetMessage(lang, conversationalAiBudgetBlock.resetAt, conversationalAiBudgetBlock.reason)
+            : assistantClarificationQuestion(lang, body, pendingClarificationOf(convo));
+          // A provider failure is telemetry, not a business answer. Do not put
+          // the apology/error into conversation history as if it were context.
+          await replyQuietly(phone, failureReply, false);
+          await audit(
+            db, identity, waMessageId, 'conversational_ai',
+            conversationalAiBudgetBlock ? 'budget_block' : (aiFailureClass ?? 'model_empty'),
+            'failed',
+          );
+          await finish('skipped');
+          return true;
+        }
+
+        // AI is the sole owner of ordinary business language. Do not allow a
+        // deterministic business parser to answer after the model returned a
+        // safety-deferred reply (for example, a record-shaped sentence with
+        // no proposal tool call). Falling through here used to produce the
+        // MAUZO / ONGEZA / SAJILI menu and made free text appear parser-owned.
+        // Protocol answers and system commands are excluded by aiEligible and
+        // continue through their bounded handlers below.
+        if (aiEligible) {
+          await replyQuietly(phone, assistantClarificationQuestion(
+            lang, body, pendingClarificationOf(convo),
+          ), false);
+          await audit(db, identity, waMessageId, 'conversational_ai', 'no_usable_response', 'failed');
+          await finish('skipped');
+          return true;
+        }
+        return false;
+        };
+
+        if (identity && message?.type === 'text' && !isLinkMessage(body)) {
+          const activeQuestion = await loadConversation(db, identity.id);
+          const selectedBand = protectedPriceBandAnswer(activeQuestion, body);
+          const selectedProduct = protectedSaleProductAnswer(activeQuestion, body);
+          if (selectedBand || selectedProduct) {
+            const result = await executeClarification(db, identity, waMessageId, lang, {
+              answers: [{ field: selectedProduct ? 'product' : 'price_band', canonical_value: selectedProduct ?? selectedBand, numeric_value: null, raw_wording: body }],
+            }, body ?? undefined);
+            await replyQuietly(phone, result.terminalReply ?? result.fallbackReply ?? (lang === 'sw'
+              ? 'Sikuweza kuandaa uthibitisho wa bei hiyo. Hakuna mauzo yaliyothibitishwa; jaribu tena.'
+              : 'I could not prepare that price confirmation. No sale was confirmed; please retry.'));
+            await audit(db, identity, waMessageId, selectedProduct ? 'product_choice' : 'price_band', 'protected_option', result.isError ? 'failed' : 'pending');
+            await finish('skipped');
+            continue;
+          }
+          if (await handleAiText(activeQuestion, body, isProtectedSystemCommand(body), identity)) continue;
+        }
+
         // Login is a protected control-plane command. Resolve it before any
         // conversational/record parser so natural requests such as “nipe link
         // ya login nichek dashboard” cannot be answered (or refused) by AI.
@@ -8786,7 +9160,8 @@ Deno.serve(async (req) => {
         // again, and not one price was saved. A person who has plainly moved on
         // gets the new thing done, and is told the old question was let go.
         if (breakdownSourcePending) {
-          if (isDailyRecordRejection(body)) {
+          // "2" selects the second source here; it does not mean HAPANA.
+          if (/^(?:ghairi|cancel)$/i.test(String(body ?? '').trim())) {
             await clearConversation(db, identity.id as string);
             await replyQuietly(phone, lang === 'sw'
               ? 'Sawa. Uchaguzi wa chanzo umeghairiwa; hakuna breakdown iliyohifadhiwa.'
@@ -10257,240 +10632,9 @@ Deno.serve(async (req) => {
           }
         }
 
-        const aiEligible = messageGoesToModel(convo, body, systemCommand);
-        // Watched in production: ai_primary is what an ordinary business
-        // message must be. If parsers ever start eating them again, this is
-        // where it shows first.
-        let messageRoute: MessageRoute = aiEligible ? 'ai_primary' : 'pending_protocol';
-        if (aiEligible) {
-          const history = await loadAssistantHistory(db, identity);
-          const contextChars = body!.length + history.reduce((sum, message) => sum + message.content.length, 0);
-          const budget = await consumeAiBudget(db, identity, contextChars);
-          if (budget.allowed) {
-            let assistantFailure = 'unknown_failure';
-            const retrieval = await loadVocabularyContext(db, identity);
-            // STAGE A: how long the model and its tool loop actually took.
-            // Measured here rather than around the whole message so latency is
-            // attributable to the interpreter, not to the ledger writes after it.
-            const aiStartedAt = Date.now();
-            // The model and its tool loop are the slowest thing here, and the
-            // indicator raised at the top of the request has long expired by the
-            // time it answers. Raised again so the wait is visible.
-            await pulseTyping();
-            const assistant = await runConversationalAssistant({
-              context: assistantIdentityContext(
-                identity,
-                retrieval.vocabulary,
-                pendingClarificationOf(convo),
-                retrieval.catalogue,
-              ),
-              history,
-              userText: body!,
-              executeTool: (name, input) => executeAssistantTool(
-                db, identity, waMessageId, lang, name, input, assistantEvidenceBody ?? body!,
-              ),
-              onFailure: (code) => { assistantFailure = code; },
-            });
-            // A record-looking sentence may never be acknowledged as saved by
-            // prose alone. If the model did not call the proposal tool, let the
-            // existing deterministic validator/clarifier below take over.
-            // The model's own words are passed in now: a CLAIM of saving is
-            // still refused, but a clarifying QUESTION gets through. Deferring
-            // both is what put "Sijaelewa vizuri" in front of somebody who had
-            // just rephrased their message for us.
-            const unsafeRecordProse = assistant
-              && shouldDeferRecordLikeReply(
-                isDailyRecordCandidate(body), assistant.toolNames, assistant.reply,
-              );
-            // An apology is not an answer. When the model comes back with
-            // nothing, say nothing here and let the deterministic branches
-            // below have their turn — one of them almost always knows.
-            // ── STAGE A telemetry ────────────────────────────────────────────
-            //
-            // What the assistant DID, never what the trader wrote. Codes only:
-            // no message text, no product wording, no names, no prices. It is
-            // written after the reply has gone out, and it cannot fail loudly —
-            // a telemetry row must never cost a shop its answer.
-            const aiLatencyMs = Date.now() - aiStartedAt;
-            const recordInterpretation = async (
-              outcome: BackendOutcome, reason: FallbackReason | null,
-            ) => {
-              try {
-                const row = buildInterpretation({
-                  waMessageId,
-                  toolNames: assistant ? assistant.toolNames : null,
-                  lastToolInput: assistant ? assistant.lastToolInput ?? null : null,
-                  latencyMs: aiLatencyMs,
-                  backendOutcome: outcome,
-                  fallbackReason: reason,
-                  // WHICH grounding guard refused the answer, and what it saw.
-                  // providerFailure is null on this path — the model DID reply
-                  // and we declined it — so without this the one detail that
-                  // separates an over-strict guard from a model inventing a
-                  // total never reaches the table, and refusals say only
-                  // "deferred for safety". All three guards are kept now: only
-                  // the ungrounded-figure one was, and the other two were the
-                  // majority of the refusals actually seen.
-                  rejectionCode: guardRefusalCode(assistantFailure),
-                  providerFailure: assistant ? null : assistantFailure,
-                });
-                await db.rpc('wa_record_ai_interpretation', {
-                  p_company_id: identity.company_id,
-                  p_wa_message_id: row.waMessageId,
-                  p_model: assistant ? assistant.model : null,
-                  p_prompt_version: PROMPT_VERSION,
-                  p_tool_schema_version: TOOL_SCHEMA_VERSION,
-                  p_chosen_tool: row.chosenTool,
-                  p_semantic_intent: row.semanticIntent,
-                  p_tool_rounds: row.toolRounds,
-                  p_latency_ms: row.latencyMs,
-                  p_backend_outcome: row.backendOutcome,
-                  p_rejection_code: row.rejectionCode,
-                  p_clarification_field: row.clarificationField,
-                  p_fallback_used: row.fallbackUsed,
-                  p_fallback_reason: row.fallbackReason,
-                  p_provider_failure_code: row.providerFailureCode,
-                  p_route: messageRoute,
-                  // Proof, rather than belief, that the cached prefix is being
-                  // reused. Reads with no writes is a warm cache; writes with
-                  // no reads means something upstream changed between calls and
-                  // the cache was paid for and thrown away.
-                  p_cache_read_tokens: assistant?.cache?.read ?? null,
-                  p_cache_write_tokens: assistant?.cache?.written ?? null,
-                });
-              } catch { /* telemetry is never allowed to break a message */ }
-            };
-
-            if (assistant && assistant.unavailable) {
-              assistantCameBackEmpty = true;
-              aiFailureClass = classifyAssistantFailure(assistantFailure);
-              messageRoute = 'ai_outage_fallback';
-              // MEASURED: an adviser answer refused for quoting a figure no
-              // tool returned was logged as 'model_empty' — a different fault
-              // with a different fix. The class decides the row now, so a guard
-              // that is too strict cannot hide as a quiet model.
-              await recordInterpretation('fallback',
-                aiFailureClass === 'model_invalid_tool'
-                  ? 'model_reply_deferred_for_safety'
-                  : 'model_empty');
-              await audit(db, identity, waMessageId, 'conversational_ai', 'empty', 'fallback');
-            } else if (assistant && !unsafeRecordProse) {
-              await reply(phone, assistant.reply);
-              const remembered = await storeAssistantExchange(
-                db, identity, waMessageId, body!, assistant.reply, assistant.memory,
-              );
-              await audit(
-                db,
-                identity,
-                waMessageId,
-                'conversational_ai',
-                assistant.toolNames.join(',') || 'answer',
-                remembered ? (assistant.usedSafeFallback ? 'safe_fallback' : 'applied') : 'memory_failed',
-              );
-              // A proposing tool leaves a pending draft; everything else answered
-              // a question. The difference is the whole point of measuring outcome
-              // separately from tool choice.
-              await recordInterpretation(
-                assistant.toolNames.some((tool) => tool.startsWith('propose_')) ? 'drafted' : 'answered',
-                'model_success',
-              );
-              await finish('skipped');
-              continue;
-            }
-            if (!assistant) {
-              aiFailureClass = classifyAssistantFailure(assistantFailure);
-              messageRoute = 'ai_outage_fallback';
-              await recordInterpretation('provider_failed',
-                /timeout/i.test(assistantFailure) ? 'provider_timeout'
-                  : /schema|tools./i.test(assistantFailure) ? 'invalid_tool_schema'
-                  : 'provider_error');
-              await audit(db, identity, waMessageId, 'conversational_ai', 'provider', assistantFailure);
-            }
-          } else {
-            messageRoute = 'ai_outage_fallback';
-            conversationalAiBudgetBlock = budget;
-            // The cap is a business decision, not a model failure. Recorded
-            // separately so a quiet month of budget blocks can never be read as
-            // the assistant getting worse.
-            try {
-              await db.rpc('wa_record_ai_interpretation', {
-                p_company_id: identity.company_id,
-                p_wa_message_id: waMessageId,
-                p_model: null,
-                p_prompt_version: PROMPT_VERSION,
-                p_tool_schema_version: TOOL_SCHEMA_VERSION,
-                p_chosen_tool: null,
-                p_semantic_intent: 'unknown',
-                p_tool_rounds: null,
-                p_latency_ms: null,
-                p_backend_outcome: 'budget_blocked',
-                p_rejection_code: budget.reason ?? null,
-                p_clarification_field: null,
-                p_fallback_used: true,
-                p_fallback_reason: 'budget_block',
-                p_provider_failure_code: null,
-              });
-            } catch { /* telemetry is never allowed to break a message */ }
-            await audit(db, identity, waMessageId, 'conversational_ai', 'budget', 'fallback');
-          }
-        }
-
-        // THE MODEL WAS TRIED AND COULD NOT FINISH. STOP HERE.
-        //
-        // MEASURED, from the owner's own screen at 20:48. He asked "Naomba
-        // ushauri wa biashara yangu"; telemetry recorded route=ai_outage_fallback,
-        // fallback_reason=model_empty, chosen_tool=get_business_advice, one tool
-        // round, 10.7 seconds. The model called the adviser, received the
-        // figures, and then produced no text. Execution fell through to the
-        // branches below, parseAdvisorRequest matched, and the deterministic MD
-        // brief went out under the assistant's name — headings, emoji and all.
-        //
-        // Removing humanFallback() from inside the assistant was not enough,
-        // and claiming otherwise was wrong. The loop itself was the bigger
-        // fallback: forty-odd deterministic handlers, any of which will happily
-        // answer a message the model has just failed on. The old comment beside
-        // this said "let the deterministic branches below have their turn — one
-        // of them almost always knows", which is exactly the behaviour the
-        // owner rejected. One of them knowing is not the same as Risip having
-        // thought about the question, and a shopkeeper cannot tell them apart.
-        //
-        // The same fall-through is why "Compare today's price and yesterday"
-        // came back as a SALES trend: parseSalesTrendRequest matched the word
-        // "compare" and answered a different question confidently.
-        //
-        // System commands and protocol answers never set aiEligible, so they
-        // still reach their own handlers untouched.
-        if (aiEligible && (conversationalAiBudgetBlock || assistantCameBackEmpty || aiFailureClass !== null)) {
-          const failureReply = conversationalAiBudgetBlock
-            ? aiBudgetMessage(lang, conversationalAiBudgetBlock.resetAt, conversationalAiBudgetBlock.reason)
-            : assistantClarificationQuestion(lang, body, pendingClarificationOf(convo));
-          // A provider failure is telemetry, not a business answer. Do not put
-          // the apology/error into conversation history as if it were context.
-          await replyQuietly(phone, failureReply, false);
-          await audit(
-            db, identity, waMessageId, 'conversational_ai',
-            conversationalAiBudgetBlock ? 'budget_block' : (aiFailureClass ?? 'model_empty'),
-            'failed',
-          );
-          await finish('skipped');
-          continue;
-        }
-
-        // AI is the sole owner of ordinary business language. Do not allow a
-        // deterministic business parser to answer after the model returned a
-        // safety-deferred reply (for example, a record-shaped sentence with
-        // no proposal tool call). Falling through here used to produce the
-        // MAUZO / ONGEZA / SAJILI menu and made free text appear parser-owned.
-        // Protocol answers and system commands are excluded by aiEligible and
-        // continue through their bounded handlers below.
-        if (aiEligible) {
-          await replyQuietly(phone, assistantClarificationQuestion(
-            lang, body, pendingClarificationOf(convo),
-          ), false);
-          await audit(db, identity, waMessageId, 'conversational_ai', 'no_usable_response', 'failed');
-          await finish('skipped');
-          continue;
-        }
+        // A protected product selection may have reconstructed the original
+        // sentence; that sentence still goes through the same AI dispatcher.
+        if (await handleAiText(convo, body, isProtectedSystemCommand(body), identity, assistantEvidenceBody)) continue;
 
         // Adding a product is checked before anything records money, because
         // the whole value of it is refusing to create the near-duplicate.
@@ -12608,7 +12752,7 @@ Deno.serve(async (req) => {
         // shop is told the AI could not — never an old template sent under the
         // assistant's name, which is what "Biashara inaendaje so far" received
         // after a two-minute wait.
-        const aiWasTried = aiEligible && (assistantCameBackEmpty || aiFailureClass !== null);
+        const aiWasTried = assistantCameBackEmpty || aiFailureClass !== null;
         const fallbackIsOperational = Boolean(conversationalAiBudgetBlock || aiWasTried);
         await replyQuietly(phone, conversationalAiBudgetBlock
           ? aiBudgetMessage(lang, conversationalAiBudgetBlock.resetAt, conversationalAiBudgetBlock.reason)

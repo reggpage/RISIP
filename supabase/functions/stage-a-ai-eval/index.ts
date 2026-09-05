@@ -28,6 +28,7 @@
 
 import {
   ASSISTANT_TOOLS,
+  assistantClockLine,
   buildAssistantSystemPrompt,
   requiresCurrentBusinessDataTool,
   toolsForModel,
@@ -36,19 +37,21 @@ import {
   normalizeAssistantHistory,
 } from '../_shared/whatsappAssistant.ts';
 import { resolveAnthropicModel } from '../_shared/anthropicModel.ts';
+import { validateToolRound } from '../_shared/whatsappToolBoundary.ts';
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const MAX_CASES_PER_BATCH = 40;
 
 /** Constant-time compare, so the token cannot be discovered a byte at a time. */
 function tokenMatches(given: string, expected: string): boolean {
+  if (!given || !expected) return false;
   if (given.length !== expected.length) return false;
   let diff = 0;
   for (let i = 0; i < given.length; i += 1) diff |= given.charCodeAt(i) ^ expected.charCodeAt(i);
   return diff === 0;
 }
 
-type EvalCase = { id: string; say: string; lang?: 'sw' | 'en'; history?: AssistantHistoryMessage[] };
+type EvalCase = { id: string; say: string; lang?: 'sw' | 'en'; history?: AssistantHistoryMessage[]; pendingClarification?: string };
 
 type EvalResult = {
   id: string;
@@ -60,6 +63,7 @@ type EvalResult = {
   inputTokens: number | null;
   outputTokens: number | null;
   error: string | null;
+  schemaError?: string | null;
 };
 
 async function askModel(
@@ -85,6 +89,7 @@ async function askModel(
   let response: Response;
   try {
     response = await fetch(ANTHROPIC_URL, {
+      signal: AbortSignal.timeout(30000),
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -108,11 +113,13 @@ async function askModel(
           type: force || requiresCurrentBusinessDataTool(say) ? 'any' : 'auto',
           disable_parallel_tool_use: false,
         },
-        messages: [...normalizeAssistantHistory(history), { role: 'user', content: say }],
+        messages: [...normalizeAssistantHistory(history), { role: 'user', content: `${assistantClockLine()}\n\n${say}` }],
       }),
     });
-  } catch {
-    return { ...base, latencyMs: Date.now() - startedAt, error: 'provider_network_error' };
+  } catch (error) {
+    return { ...base, latencyMs: Date.now() - startedAt,
+      error: error instanceof Error && ['TimeoutError', 'AbortError'].includes(error.name)
+        ? 'provider_timeout' : 'provider_network_error' };
   }
 
   const latencyMs = Date.now() - startedAt;
@@ -131,7 +138,7 @@ async function askModel(
   }
 
   let payload: {
-    content?: Array<{ type: string; name?: string; input?: Record<string, unknown>; text?: string }>;
+    content?: Array<{ id?: string; type: string; name?: string; input?: Record<string, unknown>; text?: string }>;
     stop_reason?: string;
     usage?: { input_tokens?: number; output_tokens?: number };
   };
@@ -144,7 +151,11 @@ async function askModel(
   const blocks = payload.content ?? [];
   const toolBlocks = blocks.filter((block) => block.type === 'tool_use');
   const textBlocks = blocks.filter((block) => block.type === 'text');
+  const schemaError = validateToolRound(toolBlocks.map((block) => ({
+    id: block.id ?? '', name: block.name ?? '', input: block.input ?? {},
+  })), toolsForModel(model));
   return {
+    schemaError: schemaError ? `${schemaError.code}:${schemaError.path}` : null,
     tools: toolBlocks.map((block) => String(block.name ?? '')),
     // The FIRST tool call is the interpretation. Later ones in the same reply
     // are parallel calls, kept in `tools` so parallel use is visible.
@@ -160,8 +171,11 @@ async function askModel(
 
 Deno.serve(async (request) => {
   const expectedToken = Deno.env.get('STAGE_A_EVAL_TOKEN') ?? '';
+  // Separate temporary release-evaluation credential; never replace another
+  // operator's existing token. Both paths retain the gateway JWT requirement.
+  const foundationToken = Deno.env.get('RISIP_FOUNDATION_EVAL_TOKEN') ?? '';
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
-  if (!expectedToken) {
+  if (!expectedToken && !foundationToken) {
     // Refuse to run un-gated rather than falling open.
     return new Response(JSON.stringify({ error: 'evaluator_disabled' }), {
       status: 503, headers: { 'content-type': 'application/json' },
@@ -182,7 +196,8 @@ Deno.serve(async (request) => {
     });
   }
 
-  if (!tokenMatches(String(body.token ?? ''), expectedToken)) {
+  if (!tokenMatches(String(body.token ?? ''), expectedToken)
+    && !tokenMatches(String(body.token ?? ''), foundationToken)) {
     return new Response(JSON.stringify({ error: 'forbidden' }), {
       status: 403, headers: { 'content-type': 'application/json' },
     });
@@ -194,6 +209,12 @@ Deno.serve(async (request) => {
   }
 
   const forceToolChoice = body.force_tool_choice === true;
+  if (!Array.isArray(body.cases) || body.cases.length > MAX_CASES_PER_BATCH
+    || body.cases.some((item) => !item || typeof item.say !== 'string' || !item.say.trim() || item.say.length > 2000)) {
+    return new Response(JSON.stringify({ error: 'invalid_cases' }), {
+      status: 400, headers: { 'content-type': 'application/json' },
+    });
+  }
   const cases = (body.cases ?? []).slice(0, MAX_CASES_PER_BATCH);
   if (cases.length === 0) {
     return new Response(JSON.stringify({ error: 'no_cases' }), {
@@ -216,6 +237,7 @@ Deno.serve(async (request) => {
     reversalEnabled: supplied.reversalEnabled ?? true,
     payoutsEnabled: supplied.payoutsEnabled ?? false,
     vocabulary: supplied.vocabulary,
+    catalogueContext: supplied.catalogueContext,
   };
 
   const model = await resolveAnthropicModel(
@@ -226,10 +248,12 @@ Deno.serve(async (request) => {
 
   const results: EvalResult[] = [];
   for (const testCase of cases) {
-    const say = String(testCase.say ?? '').trim().slice(0, 2000);
+    const say = testCase.say.trim();
     if (!say) continue;
     const history = normalizeAssistantHistory(Array.isArray(testCase.history) ? testCase.history : []);
-    const outcome = await askModel(apiKey, model, { ...context, lang: testCase.lang ?? context.lang }, say, history, forceToolChoice);
+    const outcome = await askModel(apiKey, model, { ...context, lang: testCase.lang ?? context.lang,
+      pendingClarification: testCase.pendingClarification,
+    }, say, history, forceToolChoice);
     results.push({ id: String(testCase.id), ...outcome });
   }
 

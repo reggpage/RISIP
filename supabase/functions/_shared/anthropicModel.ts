@@ -51,9 +51,12 @@ export async function resolveAnthropicModel(
   ].filter(isHaiku) as string[];
   const preferred = [...asked, ...HAIKU_MODELS];
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3000);
   try {
     const response = await fetch(MODELS_URL, {
       headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      signal: controller.signal,
     });
     if (response.ok) {
       const payload = await response.json() as { data?: Array<{ id?: string }> };
@@ -71,6 +74,8 @@ export async function resolveAnthropicModel(
     }
   } catch {
     // Catalogue unavailable: fall through to the pinned model below.
+  } finally {
+    clearTimeout(timer);
   }
 
   return preferred[0] ?? PINNED;

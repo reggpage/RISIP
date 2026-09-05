@@ -66,7 +66,7 @@ export type MoneyEventKind = typeof MONEY_EVENT_KINDS[number];
  * not an instruction about what to ask.
  */
 export const MISSING_FIELDS = [
-  'product', 'quantity', 'unit', 'party', 'supplier', 'amount',
+  'direction', 'product', 'quantity', 'unit', 'party', 'supplier', 'amount',
   'payment_method', 'price_band', 'animal_source', 'animal_count', 'loss_reason',
 ] as const;
 export type MissingField = typeof MISSING_FIELDS[number];

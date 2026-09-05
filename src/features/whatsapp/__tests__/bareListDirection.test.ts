@@ -50,35 +50,33 @@ describe('the model can now say it does not know', () => {
     expect(described).toMatch(/opposite directions/);
   });
 
-  it('is told which words DO settle it, so it does not ask needlessly', () => {
+  it('uses headings and the active operation rather than requiring a fixed verb list', () => {
     const described = (business?.input_schema as {
       properties: { missing_fields: { description: string } };
     }).properties.missing_fields.description;
-    for (const verb of ['nimeuza', 'nimenunua', 'nimehesabu', 'ziwe']) {
-      expect(described).toContain(verb);
+    for (const meaning of ['Mauzo', 'nimeuza', 'original operation', 'active context', 'direction=unclear']) {
+      expect(described).toContain(meaning);
     }
   });
 });
 
 describe('the server asks instead of writing', () => {
   const branch = webhook.slice(
-    webhook.indexOf("if ((event.missingFields.includes('direction') || directionUnstated)"),
-    webhook.indexOf("if ((event.missingFields.includes('direction') || directionUnstated)") + 6000,
+    webhook.indexOf("if (direction === 'clarify'"),
+    webhook.indexOf("if (direction === 'clarify'") + 6000,
   );
 
   it('raises the question before any draft is built', () => {
-    const guard = webhook.indexOf("if ((event.missingFields.includes('direction') || directionUnstated)");
+    const guard = webhook.indexOf("if (direction === 'clarify'");
     const dateStep = webhook.indexOf('const date = decideDate(', guard);
     expect(guard).toBeGreaterThan(-1);
     expect(dateStep).toBeGreaterThan(guard);
   });
 
-  it('fires on the server’s own check, not only on the model volunteering it', () => {
-    // MEASURED: handed nine products with no verb, the model chose stock_count
-    // and set no missing field. Waiting for it to admit uncertainty was the
-    // flaw in the first version of this fix.
-    expect(webhook).toContain('|| directionUnstated');
-    expect(webhook).toContain('!messageStatesDirection(said)');
+  it('checks the required AI meaning instead of reparsing the original sentence', () => {
+    expect(webhook).toContain('validateAiEventDirection(input)');
+    expect(webhook).not.toContain('messageStatesDirection(said)');
+    expect(branch).not.toContain('parseBareQuantityList(asList)');
   });
 
   it('asks the question that already existed rather than inventing a second one', () => {
@@ -98,9 +96,9 @@ describe('the server asks instead of writing', () => {
     // The owner's standing rule. The model makes the semantic call; the parser
     // below only normalises quantities it was already handed. The reasoning
     // sits in the comment block ABOVE the guard, not inside it.
-    const guard = webhook.indexOf("if ((event.missingFields.includes('direction') || directionUnstated)");
+    const guard = webhook.indexOf("if (direction === 'clarify'");
     expect(webhook.slice(Math.max(0, guard - 2200), guard))
-      .toContain('it is not deciding what the message meant');
+      .toContain('never verbs or spelling');
   });
 });
 

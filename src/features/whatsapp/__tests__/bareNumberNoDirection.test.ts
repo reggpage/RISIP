@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { validateAiEventDirection } from '../../../../supabase/functions/_shared/whatsappAiDirection';
 
 // A BARE NUMBER MUST NOT RE-TRIGGER THE DIRECTION QUESTION.
 //
@@ -42,8 +43,9 @@ describe('what counts as "only a number"', () => {
 
 describe('the guard is wired into the direction gate', () => {
   it('excludes a bare number from re-triggering the question', () => {
-    expect(webhook).toContain('const messageIsOnlyANumber = /^[\s]*[\d][\d.,\s]*$/.test(String(said ?? \'\'));');
-    expect(webhook).toContain('&& !messageIsOnlyANumber');
+    expect(webhook).not.toContain('const messageIsOnlyANumber =');
+    expect(webhook).toContain('const direction = validateAiEventDirection(input)');
+    expect(validateAiEventDirection({ kind: 'stock_purchase', direction: 'purchase', amount_wording: '80000' })).toBe('known');
   });
 
   it('records why, so nobody removes it and reopens the loop', () => {

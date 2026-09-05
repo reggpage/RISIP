@@ -93,7 +93,7 @@ describe('an answer to a question Risip asked stays deterministic', () => {
   it('owns yes, no and cancel on a drafted record', () => {
     // Semantic drift on the one step that writes to a ledger is not worth the
     // intelligence it would buy.
-    const drafted = { awaiting: 'payment_source', options: {} };
+    const drafted = { awaiting: 'payment_source', options: { kind: 'daily_record_confirmation', dailyRecordId: 'fixture-draft' } };
     for (const said of ['ndiyo', 'NDIYO', 'hapana', 'yes', 'no']) {
       expect(answersPendingQuestion(drafted, said), said).toBe(true);
     }
@@ -117,12 +117,10 @@ describe('an answer to a question Risip asked stays deterministic', () => {
     }
   });
 
-  it('still owns yes and no on top of a parked question', () => {
-    // The one bypass that survives, in every parked state that can carry a
-    // draft: drift on the step that writes to a ledger is not worth it.
+  it('does not mistake an unspecified parked question for a confirmation', () => {
     const band = { awaiting: 'product_cost', options: { choices: [] } };
-    expect(answersPendingQuestion(band, 'ndiyo')).toBe(true);
-    expect(answersPendingQuestion(band, 'hapana')).toBe(true);
+    expect(answersPendingQuestion(band, 'ndiyo')).toBe(false);
+    expect(answersPendingQuestion(band, 'hapana')).toBe(false);
   });
 
   it('owns the destructive confirmations outright', () => {
@@ -130,8 +128,9 @@ describe('an answer to a question Risip asked stays deterministic', () => {
     // remain language, even while a destructive confirmation is parked.
     for (const awaiting of ['logout_confirm', 'account_delete_confirm']) {
       expect(answersPendingQuestion({ awaiting, options: {} }, 'chochote'), awaiting).toBe(false);
-      expect(answersPendingQuestion({ awaiting, options: {} }, 'ndiyo'), awaiting).toBe(true);
+      expect(answersPendingQuestion({ awaiting, options: {} }, 'ndiyo'), awaiting).toBe(awaiting === 'logout_confirm');
     }
+    expect(answersPendingQuestion({ awaiting: 'account_delete_confirm' }, 'FUTA KABISA')).toBe(true);
   });
 });
 
@@ -154,9 +153,9 @@ describe('changing the subject escapes the pending question', () => {
     for (const said of ['namaanisha anton', 'sio hiyo, ile ya hisense', 'nilimaanisha nguvu ya sala']) {
       expect(answersPendingQuestion(quantity, said), said).toBe(false);
     }
-    // "Acha" is not a topic switch — it is a cancel, and it belongs to the
-    // deterministic path for the same reason NDIYO does.
-    expect(answersPendingQuestion(quantity, 'acha kabisa')).toBe(true);
+    // A natural cancellation sentence is still interpreted by AI.
+    expect(answersPendingQuestion(quantity, 'acha kabisa')).toBe(false);
+    expect(answersPendingQuestion(quantity, 'GHAIRI')).toBe(true);
     // And the answers themselves now go to the model.
     expect(answersPendingQuestion(quantity, 'thelathini')).toBe(false);
   });
