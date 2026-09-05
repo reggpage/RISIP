@@ -105,4 +105,16 @@ Phase 9 UI/reporting integration remains on hold.
 
 ## Release record
 
-Foundation code committed and pushed to main as `f3ec5491f825ca2662d5ed3ec61509f739ddac9c` (31 intended files; unrelated settings/output/build cache excluded). The isolated evaluator was deployed during testing. Main webhook release and source comparison will be appended only after they succeed. No frontend deployment is needed for this backend-only checkpoint.
+Foundation code committed and pushed to main as `f3ec5491f825ca2662d5ed3ec61509f739ddac9c` (31 intended files; unrelated settings/output/build cache excluded). Evaluator repair-loop verification followed in `c477d8b5a12170d1621b3af890585736426059f4`, also pushed to main.
+
+Deployed only `whatsapp-webhook` and `stage-a-ai-eval` to project `dsbplcqhlewxnivfwlcx`:
+
+- Webhook **v310 ACTIVE**, bundle SHA256 `eed03abe9a1063c8e3910ef8f0cd9e8f8a335182cad48df710796760ae86fc4a`.
+- Isolated evaluator **v17 ACTIVE**, bundle SHA256 `be84b2e370a155b5a80ab8c00e3c65f54f8ffb812d2ea26555264a1e972f1382`.
+- Downloaded both deployments into a new isolated directory. **88/88 unique source assets matched commit c477d8b**, zero mismatches, using normalized Git blob hashes.
+- Unsigned empty webhook POST returned **401 invalid signature**; unauthenticated evaluator POST returned **401**. These prove endpoint initialization/auth rejection, not a successful merchant conversation.
+- Temporary `RISIP_FOUNDATION_EVAL_TOKEN` metadata count is **0** after cleanup. Existing evaluator/operator credentials were not replaced.
+- Final full suite **175/175 files, 2,584/2,584 tests passed**; typecheck and 20-function Edge checks passed again after evaluator changes. Production build passed with the previously noted warnings.
+- No frontend or receipt-worker deployment; no migration applied. Shared-source changes in this release are deployed only in the two named function bundles. Other function bundles were not certified against this commit.
+
+This completes deployment of the **foundation checkpoint only**. The incomplete modernization and live-WhatsApp gates above remain open; no launch-readiness or full parser-free claim is made.
