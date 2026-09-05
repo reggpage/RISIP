@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { ASSISTANT_TOOLS } from '../../../../supabase/functions/_shared/whatsappAssistant';
+import { validateToolValue } from '../../../../supabase/functions/_shared/whatsappToolBoundary';
 import {
   buildHypotheticalProfitReply,
   buildPortionHypotheticalProfitReply,
@@ -10,6 +12,43 @@ import {
 } from '../../../../supabase/functions/_shared/whatsappHypotheticalProfit';
 
 describe('deterministic hypothetical product profit', () => {
+  it('requires AI quantity and band fields and forwards them into server arithmetic', () => {
+    const contract = ASSISTANT_TOOLS.find(t => t.name === 'get_hypothetical_product_profit')!;
+    expect(validateToolValue({ product_name: 'Nguvu ya sala' }, contract.input_schema)).not.toBeNull();
+    expect(validateToolValue({ product_name: 'Nguvu ya sala', quantity: 2, price_band: 'retail' }, contract.input_schema)).toBeNull();
+    expect(validateToolValue({ product_name: 'Nguvu ya sala', quantity: 2, price_band: 'invented' }, contract.input_schema)).not.toBeNull();
+    const source = readFileSync(resolve(process.cwd(), 'supabase/functions/whatsapp-webhook/index.ts'), 'utf8');
+    expect(source).toContain('hypotheticalProfitToolReply(db, identity, productName, lang, quantity, band)');
+  });
+  it('answers the exact viwili retail follow-up with revenue and gross profit, not all stock', () => {
+    const reply = buildHypotheticalProfitReply({ productName: 'Nguvu ya sala', askedQuantity: 2,
+      priceBand: 'retail', onHand: 3, hasCount: true, unit: null, unitCost: 8000,
+      retailPrice: 10600, wholesalePrice: 9500 }, 'sw');
+    expect(reply).toContain('Mapato ya mauzo: 2 × TSh 10,600 = *TSh 21,200*');
+    expect(reply).toContain('*TSh 5,200*');
+    expect(reply).not.toContain('7,800');
+    expect(reply).not.toContain('9,500');
+    expect(reply).toContain('hayajaandika mauzo mapya');
+  });
+
+  it('does not cap a hypothetical request to stock or require cost to report revenue', () => {
+    const reply = buildHypotheticalProfitReply({ productName: 'Nguvu ya sala', askedQuantity: 4,
+      priceBand: 'retail', onHand: 3, hasCount: true, unit: null, unitCost: null,
+      retailPrice: 10600, wholesalePrice: 9500 }, 'sw');
+    expect(reply).toContain('*TSh 42,400*');
+    expect(reply).toContain('stock ni 3');
+    expect(reply).toContain('Faida ghafi haijulikani');
+  });
+
+  it('rejects invalid quantities and never substitutes retail for missing wholesale', () => {
+    const base: HypotheticalProfitInput = { productName: 'vest', askedQuantity: 2,
+      priceBand: 'wholesale', onHand: 3, hasCount: true, unit: null, unitCost: 8000,
+      retailPrice: 10600, wholesalePrice: null };
+    expect(buildHypotheticalProfitReply(base, 'sw')).toContain('haijawekwa');
+    for (const askedQuantity of [0, -1, NaN, Infinity, 1000001]) {
+      expect(buildHypotheticalProfitReply({ ...base, askedQuantity }, 'sw')).toContain('si sahihi');
+    }
+  });
   it('claims the exact failed live question without claiming ordinary period profit', () => {
     expect(parseHypotheticalProfitRequest('zikiuza atlasi zote nitakuwa na faida ya shingapi')).toBe('atlasi');
     expect(parseHypotheticalProfitRequest('If I sell all the atlases, what profit will I make?')).toBe('atlases');

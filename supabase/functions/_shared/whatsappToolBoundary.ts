@@ -26,6 +26,11 @@ export function validateToolValue(value: unknown, schema: Record<string, unknown
     if (typeof schema.maximum === 'number' && value > schema.maximum) return bad('tool_input_maximum');
   }
   if (typeof value === 'string') {
+    // Validate a structured unit field, never route or interpret the sentence.
+    if (/\.(?:unit_wording|purchase_unit|cost_unit_wording)$/.test(path)
+      && ['stoo', 'store', 'stock', 'dukani', 'warehouse'].includes(value.trim().toLowerCase())) {
+      return bad('location_is_not_measurement_unit');
+    }
     const max = typeof schema.maxLength === 'number' ? schema.maxLength : 4000;
     if (value.length > max) return bad('tool_input_too_long');
     if (typeof schema.minLength === 'number' && value.length < schema.minLength) return bad('tool_input_too_short');

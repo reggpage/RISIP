@@ -534,9 +534,13 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
   ),
   tool(
     'get_hypothetical_product_profit',
-    'Estimates profit that has NOT happened yet: what every unit currently on the shelf would make if it were all sold. A question about profit a product has ALREADY made is history and belongs to get_product_performance with metric "margin". Deterministically estimate profit if every currently-on-hand unit of one named product were sold. The server reads physical stock, buying cost and current retail/wholesale prices and performs the arithmetic. Use for “zikiuza zote nitapata faida gani?” or “if I sell all of them?”. Never improvise this calculation with chat numbers.',
-    { product_name: { type: 'string', description: 'One explicit or conversation-resolved product name. The server resolves it against the active company catalogue.' } },
-    ['product_name'],
+    'Read-only hypothetical sales revenue and gross profit, never a sale proposal. Resolve the product from conversation context, interpret quantities such as viwili as 2, and preserve the requested retail/wholesale band. Use for “na nikiuza viwili rejareja nitapata kiasi gani?” as well as sell-all questions. Pass quantity=null only for all-stock questions; ask if the scope is unclear. Revenue is not profit. The backend retrieves facts and performs arithmetic; do not calculate or substitute all stock yourself.',
+    {
+      product_name: { type: 'string', description: 'Explicit or conversation-resolved product name, validated against the company catalogue.' },
+      quantity: { type: ['number', 'null'], description: 'AI-interpreted requested quantity, positive and at most 1000000; backend validates the bounds. Null means all stock.' },
+      price_band: { type: 'string', enum: ['retail', 'wholesale', 'unspecified'], description: 'Requested band; unspecified if not stated.' },
+    },
+    ['product_name', 'quantity', 'price_band'],
   ),
   tool(
     'get_open_debts',
@@ -732,7 +736,7 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
             product_wording: { type: 'string', description: 'The product as the trader said it. Never a product id or a corrected name.' },
             quantity_wording: { type: ['string', 'null'], description: 'The quantity phrase exactly as said, or null if not stated.' },
             quantity_candidate: { type: ['number', 'null'], description: 'Your reading of that phrase as a number, or null. The server verifies it against the wording.' },
-            unit_wording: { type: ['string', 'null'], description: 'The measure word as said — kilo, trei, gunia, kifuko — or null.' },
+            unit_wording: { type: ['string', 'null'], description: 'The measurement word as said — kilo, trei, gunia, kifuko — or null. Stoo, dukani, store and warehouse describe a location, NEVER a measurement unit. Leave unit null when none is specified; do not invent one.' },
             price_band_wording: { type: ['string', 'null'], description: 'The price band stated for THIS product line — "rejareja" or "jumla" — copied exactly, or null. Never move a band from another line.' },
           },
           required: ['product_wording', 'quantity_wording', 'quantity_candidate', 'unit_wording', 'price_band_wording'],
@@ -1203,7 +1207,7 @@ GROUNDING AND TOOLS
 - Never invent money, quantities, statuses, people, products, dates or balances. Every figure must come from a tool result. Quote it exactly as the ledger has it — "TSh 3,121,150", never "about 3.1M"; a rounded figure is a different number the shop cannot check. Round only a percentage. If a tool fails, say you could not retrieve the information.
 - After a proposing tool returns a verified pending draft, answer naturally in ${language}: state only its facts and ask for NDIYO/YES. Do not copy a template, add advice, claim it was saved, or change facts. Questions/refusals stay concise.
 - You MAY add up figures a tool returned when the user asks for a total, and you should — answering “what is my total?” with a list the user has to add up themselves is not an answer. Say what you added.
-- Do not subtract your way to profit. Historical margin comes from product performance; a sell-all-stock estimate comes from get_hypothetical_product_profit. Both use server data. Sales minus expenses is a different number and must never be presented as profit.
+- Do not subtract your way to profit. Historical margin: product performance. Hypothetical revenue/gross profit: get_hypothetical_product_profit with requested quantity and band. Resolve products from context; never substitute all stock. Sales minus expenses is not profit.
 - daily_profit_estimate wording: Kiswahili labels are "Gharama za bidhaa
   zilizouzwa (COGS)", "Faida ghafi", and "Faida baada ya matumizi
   yaliyorekodiwa"; never "gharama za bidhaa" or bare "Faida ya leo".

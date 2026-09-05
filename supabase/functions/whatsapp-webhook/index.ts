@@ -3140,6 +3140,7 @@ async function hypotheticalProfitToolReply(
   lang: Lang,
   /** How many the question named, when it named one. Null means the shelf. */
   askedQuantity: number | null = null,
+  priceBand: 'retail' | 'wholesale' | null = null,
 ): Promise<{ text: string; pending: HypotheticalPortionChoice | null }> {
   if (!canReadCompanyReporting(identity.role)) {
     return { text: lang === 'sw'
@@ -3204,6 +3205,9 @@ async function hypotheticalProfitToolReply(
   const price = ((priceResult.data ?? []) as Array<Record<string, unknown>>)[0] ?? null;
   const notice = productReadMatchNotice(resolved.resolution, lang);
   if (portion.kind === 'matched') {
+    if (askedQuantity !== null) {
+      return { text: lang === 'sw' ? 'Makisio ya kiasi maalum kwa kipimo hiki bado hayajawezeshwa. Sijahesabu stock yote badala yake, wala kurekodi mauzo.' : 'A specific-quantity estimate for this portion is not supported yet. I have not substituted all stock or recorded a sale.', pending: null };
+    }
     return { text: notice + buildPortionHypotheticalProfitReply({
       productName: match.productName,
       onHandBase: stock ? Number(stock.on_hand) : null,
@@ -3220,6 +3224,8 @@ async function hypotheticalProfitToolReply(
   }
   return { text: notice + buildHypotheticalProfitReply({
     askedQuantity,
+    priceBand,
+    wholesaleMinQty: price?.wholesale_min_qty == null ? null : Number(price.wholesale_min_qty),
     productName: match.productName,
     onHand: stock ? Number(stock.on_hand) : null,
     hasCount: Boolean(stock?.has_count),
@@ -5381,7 +5387,12 @@ async function runAssistantTool(
   }
   if (name === 'get_hypothetical_product_profit') {
     const productName = typeof input.product_name === 'string' ? input.product_name : '';
-    const result = await hypotheticalProfitToolReply(db, identity, productName, lang);
+    const quantity = input.quantity == null ? null : Number(input.quantity);
+    if (quantity !== null && (!Number.isFinite(quantity) || quantity <= 0 || quantity > 1_000_000)) {
+      return { content: 'Invalid hypothetical quantity; ask for a positive quantity.', isError: true };
+    }
+    const band = input.price_band === 'retail' || input.price_band === 'wholesale' ? input.price_band : null;
+    const result = await hypotheticalProfitToolReply(db, identity, productName, lang, quantity, band);
     return { content: result.text, fallbackReply: result.text };
   }
   if (name === 'get_open_debts') {

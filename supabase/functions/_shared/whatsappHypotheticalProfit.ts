@@ -11,6 +11,8 @@ export type HypotheticalProfitInput = {
    * behaviour — the estimate covers everything in stock.
    */
   askedQuantity?: number | null;
+  priceBand?: 'retail' | 'wholesale' | null;
+  wholesaleMinQty?: number | null;
   hasCount: boolean;
   unit: string | null;
   unitCost: number | null;
@@ -93,6 +95,22 @@ export function parseHypotheticalProfitRequest(text: string | null | undefined):
 }
 
 export function buildHypotheticalProfitReply(input: HypotheticalProfitInput, lang: Lang): string {
+  if (input.askedQuantity != null && input.priceBand != null) {
+    const q = input.askedQuantity;
+    if (!Number.isFinite(q) || q <= 0 || q > 1_000_000) return lang === 'sw' ? 'Kiasi cha makisio si sahihi.' : 'Invalid estimate quantity.';
+    const price = input.priceBand === 'retail' ? input.retailPrice : input.wholesalePrice;
+    if (price == null || !Number.isFinite(price) || price <= 0) return lang === 'sw' ? 'Bei ya aina uliyochagua haijawekwa. Sijatumia bei nyingine.' : 'The requested price is not configured. No other price was substituted.';
+    const band = input.priceBand === 'retail' ? (lang === 'sw' ? 'rejareja' : 'retail') : (lang === 'sw' ? 'jumla' : 'wholesale');
+    const lines = [lang === 'sw' ? `${input.productName}: ukiuza ${q} ${band}` : `${input.productName}: selling ${q} ${band}`,
+      `${lang === 'sw' ? 'Mapato ya mauzo' : 'Sales revenue'}: ${q} × ${money(price)} = *${money(q * price)}*`];
+    if (input.unitCost != null && Number.isFinite(input.unitCost) && input.unitCost >= 0) {
+      lines.push(`${lang === 'sw' ? 'Faida ghafi (kabla ya matumizi mengine)' : 'Gross profit (before other expenses)'}: ${q} × (${money(price)} − ${money(input.unitCost)}) = *${money(q * (price - input.unitCost))}*`);
+    } else lines.push(lang === 'sw' ? 'Faida ghafi haijulikani: gharama ya kununua haijathibitishwa.' : 'Gross profit unknown: buying cost is not confirmed.');
+    if (input.onHand != null && input.hasCount && q > input.onHand) lines.push(lang === 'sw' ? `Tahadhari: stock ni ${input.onHand}; makisio haya ni ya ${q} ulizoomba.` : `Warning: stock is ${input.onHand}; this estimate still covers the requested ${q}.`);
+    if (input.priceBand === 'wholesale' && input.wholesaleMinQty != null && q < input.wholesaleMinQty) lines.push(lang === 'sw' ? `Tahadhari: bei ya jumla inaanzia ${input.wholesaleMinQty}; haya ni makisio tu.` : `Warning: wholesale starts at ${input.wholesaleMinQty}; this is hypothetical only.`);
+    lines.push(lang === 'sw' ? 'Haya ni makisio; hayajaandika mauzo mapya.' : 'This is an estimate; no sale has been recorded.');
+    return lines.join('\n');
+  }
   const average = input.avgUnitPrice ?? null;
   // The shop's own price wins. Where it never set one, what it has actually been
   // charging is a better answer than a refusal — as long as the reply says so.
