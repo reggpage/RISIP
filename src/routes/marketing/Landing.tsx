@@ -1,7 +1,12 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { ArrowRight, Check, ChevronDown, Mail, MapPin, Phone } from 'lucide-react';
+import { ArrowRight, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Mail, MapPin, Package, Phone, ShieldCheck, WalletCards } from 'lucide-react';
+import landingCashFlow from '@/assets/landing-cash-flow.jpg';
+import landingChat from '@/assets/landing-chat.jpeg';
+import landingProductsBarcode from '@/assets/landing-products-barcode.jpg';
+import landingRisipAi from '@/assets/landing-risip-ai.jpg';
 import landingShop from '@/assets/landing-shop.jpg';
+import landingWhatsApp from '@/assets/landing-whatsapp.jpg';
 import Button from '@/components/ui/Button';
 import LanguageToggle from '@/components/ui/LanguageToggle';
 import RisipLogo from '@/components/ui/RisipLogo';
@@ -85,6 +90,14 @@ const COPY = {
     },
     ctaTitle: 'Anza kuweka biashara yako sawa leo.',
     ctaBody: 'Hakuna password ya kukumbuka. Fungua WhatsApp, sajili biashara na uanze kurekodi.',
+    featureEyebrow: 'UWEZO WA RISIP',
+    carouselLabel: 'Uwezo wa Risip', prevCards: 'Kadi zilizotangulia', nextCards: 'Kadi zinazofuata', cardWord: 'Kadi',
+    proofEyebrow: 'MAZUNGUMZO HALISI',
+    proofTitle: 'Hii si picha ya mfano.',
+    proofBody: 'Ni mazungumzo halisi ya Risip na duka linalotumia mfumo: orodha ya bidhaa zilizouzwa jana, idadi iliyobaki ya kitabu kimoja, na bidhaa inayouza zaidi mwezi huu. Maswali yaliulizwa kwa Kiswahili cha kawaida, bila menyu wala fomu.',
+    proofAlt: 'Picha ya WhatsApp: mfanyabiashara anauliza orodha ya bidhaa zilizouzwa jana, idadi ya vitabu vilivyobaki na bidhaa inayouza zaidi, na Risip inajibu kwa Kiswahili.',
+    proofCaption: 'WHATSAPP · MAZUNGUMZO YA MTEJA WA RISIP',
+    trustTitle: 'UNABAKI NA UDHIBITI',
     skip: 'Nenda kwenye maudhui', navMain: 'Urambazaji mkuu', navSections: 'Sehemu za ukurasa',
     howNav: 'Inavyofanya kazi', stepsEyebrow: 'ANZA KWA URAHISI', yes: 'Ndiyo', no: 'Hapana',
     chat: 'Ongea na Risip', footerAbout: 'Kuhusu Risip', footerAboutText: 'Risip ni mfumo wa mauzo, bidhaa na rekodi rahisi za biashara kwa wajasiriamali wa Tanzania.',
@@ -163,6 +176,14 @@ const COPY = {
     },
     ctaTitle: 'Put your business records in order today.',
     ctaBody: 'There is no password to remember. Open WhatsApp, register your business and start recording.',
+    featureEyebrow: 'WHAT RISIP DOES',
+    carouselLabel: 'What Risip does', prevCards: 'Previous cards', nextCards: 'Next cards', cardWord: 'Card',
+    proofEyebrow: 'A REAL CONVERSATION',
+    proofTitle: 'This one is not a mock-up.',
+    proofBody: 'A real Risip conversation with a shop that uses it: what sold yesterday, how many copies of one title are left, and what sells most this month. The questions were asked in everyday Kiswahili, with no menu and no form.',
+    proofAlt: 'WhatsApp screenshot: a shopkeeper asks what sold yesterday, how many copies of a book are left and what sells most, and Risip answers in Kiswahili.',
+    proofCaption: 'WHATSAPP · A RISIP CUSTOMER CONVERSATION',
+    trustTitle: 'YOU STAY IN CONTROL',
     skip: 'Skip to content', navMain: 'Main navigation', navSections: 'Page sections',
     howNav: 'How it works', stepsEyebrow: 'A SIMPLE START', yes: 'Yes', no: 'No',
     chat: 'Chat with Risip', footerAbout: 'About Risip', footerAboutText: 'Risip is a simple sales, product and bookkeeping system made for Tanzanian entrepreneurs.',
@@ -171,6 +192,134 @@ const COPY = {
   },
 } as const;
 
+
+type Copy = (typeof COPY)['sw'] | (typeof COPY)['en'];
+
+const CARD_ICONS = [Package, WhatsAppIcon, WalletCards, Bot] as const;
+const CARD_IMAGES = [landingProductsBarcode, landingWhatsApp, landingCashFlow, landingRisipAi] as const;
+
+/**
+ * The four capability cards, as a carousel. The owner asked for this by name.
+ *
+ * It is a scroll-snap track, not a translated flexbox like the version it
+ * replaces: a shopkeeper on a phone swipes a row of cards, and a transform
+ * cannot be swiped. The arrows and dots move the same scrollLeft, so touch,
+ * pointer and keyboard all drive one mechanism and the dots stay honest when
+ * somebody scrolls the track by hand.
+ *
+ * It advances itself every four seconds and stops while a pointer or the
+ * keyboard focus is inside it, so it never slides the card being read. Under
+ * prefers-reduced-motion it does not advance at all, and it jumps rather than
+ * glides when a control is used.
+ */
+function FeatureCarousel({ c }: { c: Copy }) {
+  const track = useRef<HTMLDivElement>(null);
+  const [index, setIndex] = useState(0);
+  const [perView, setPerView] = useState(1);
+  const [paused, setPaused] = useState(false);
+  const cards = c.cards;
+  // The last page is reached when the final card sits at the right edge, so a
+  // short final page is never padded out with empty slots.
+  const pages = Math.max(1, cards.length - perView + 1);
+  const current = Math.min(index, pages - 1);
+
+  const goTo = useCallback((next: number) => {
+    const el = track.current;
+    if (!el) return;
+    const card = el.children[Math.max(0, Math.min(next, cards.length - 1))] as HTMLElement | undefined;
+    if (!card) return;
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollTo({ left: card.offsetLeft - el.offsetLeft, behavior: still ? 'auto' : 'smooth' });
+  }, [cards.length]);
+
+  // One source of truth for which card is showing: where the track is actually
+  // scrolled to. A swipe then updates the dots for free.
+  useEffect(() => {
+    const el = track.current;
+    if (!el) return;
+    let frame = 0;
+    const read = () => {
+      frame = 0;
+      const first = el.children[0] as HTMLElement | undefined;
+      if (first) setPerView(Math.max(1, Math.round(el.clientWidth / first.offsetWidth)));
+      let best = 0;
+      let closest = Infinity;
+      for (let i = 0; i < el.children.length; i += 1) {
+        const child = el.children[i] as HTMLElement;
+        const distance = Math.abs(child.offsetLeft - el.offsetLeft - el.scrollLeft);
+        if (distance < closest) { closest = distance; best = i; }
+      }
+      setIndex(best);
+    };
+    const queue = () => { if (!frame) frame = requestAnimationFrame(read); };
+    read();
+    el.addEventListener('scroll', queue, { passive: true });
+    window.addEventListener('resize', queue);
+    return () => { cancelAnimationFrame(frame); el.removeEventListener('scroll', queue); window.removeEventListener('resize', queue); };
+  }, []);
+
+  useEffect(() => {
+    if (paused || pages < 2) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const timer = window.setTimeout(() => goTo((current + 1) % pages), 4000);
+    return () => window.clearTimeout(timer);
+  }, [paused, pages, current, goTo]);
+
+  return (
+    <div
+      className="rp-carousel"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocusCapture={() => setPaused(true)}
+      onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPaused(false); }}
+    >
+      <div
+        ref={track}
+        className="rp-carousel-track"
+        tabIndex={0}
+        role="group"
+        aria-roledescription="carousel"
+        aria-label={c.carouselLabel}
+      >
+        {cards.map(([title, body], i) => {
+          const Icon = CARD_ICONS[i];
+          return (
+            <article key={title} className="rp-card">
+              <img src={CARD_IMAGES[i]} alt="" loading="lazy" decoding="async" width="1200" height="800" />
+              <div className="rp-card-body">
+                <Icon className="h-6 w-6" />
+                <h3>{title}</h3>
+                <p>{body}</p>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      {pages > 1 && (
+        <div className="rp-carousel-controls">
+          <button type="button" className="rp-carousel-arrow" onClick={() => goTo(current - 1)} disabled={current === 0} aria-label={c.prevCards}>
+            <ChevronLeft size={16} />
+          </button>
+          <div className="rp-carousel-dots">
+            {Array.from({ length: pages }, (_, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => goTo(i)}
+                aria-current={i === current}
+                aria-label={[c.cardWord, i + 1].join(' ')}
+              />
+            ))}
+          </div>
+          <button type="button" className="rp-carousel-arrow" onClick={() => goTo(current + 1)} disabled={current === pages - 1} aria-label={c.nextCards}>
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Landing() {
   const auth = useAuth();
@@ -202,12 +351,47 @@ export default function Landing() {
       <main id="main-content">
         <ProductHero lang={lang} />
         <ProductStory lang={lang} />
-        <div id="features"><UnderstandingSection lang={lang} /></div>
+        <UnderstandingSection lang={lang} />
+        <section id="features" className="rp-features">
+          <div className="rp-wrap">
+            <div className="rp-section-head">
+              <div><p className="rp-eyebrow">{c.featureEyebrow}</p><h2>{c.featureTitle}</h2></div>
+              <p>{c.featureLead}</p>
+            </div>
+            <FeatureCarousel c={c} />
+          </div>
+        </section>
         <section className="rp-steps">
           <div className="rp-wrap">
             <p className="rp-eyebrow">{c.stepsEyebrow}</p>
             <h2 className="mt-5">{c.howTitle}</h2>
             <ol>{c.steps.map(([title, body], index) => <li key={title}><span>0{index + 1}</span><h3>{title}</h3><p>{body}</p></li>)}</ol>
+          </div>
+        </section>
+        <section className="rp-proof">
+          <div className="rp-wrap rp-proof-grid">
+            <div>
+              <p className="rp-eyebrow"><span className="rp-status-dot" />{c.proofEyebrow}</p>
+              <h2>{c.proofTitle}</h2>
+              <p className="rp-proof-lead">{c.proofBody}</p>
+              <ul className="rp-trust">
+                <p>{c.trustTitle}</p>
+                {c.trust.map((item) => <li key={item}><ShieldCheck size={16} />{item}</li>)}
+              </ul>
+            </div>
+            {/* The screenshot carries its own status bar and keyboard, so the
+                frame draws neither. Its height follows the aspect ratio; a fixed
+                height inside a fixed-width bezel is what pushed the picture out
+                of the frame the last time this section existed. */}
+            <div>
+              <div className="rp-phone">
+                <div aria-hidden="true" className="rp-phone-glow" />
+                <div className="rp-phone-frame">
+                  <img src={landingChat} alt={c.proofAlt} loading="lazy" decoding="async" width="500" height="1082" />
+                </div>
+              </div>
+              <p className="rp-phone-caption">{c.proofCaption}</p>
+            </div>
           </div>
         </section>
         <OperationsPreview lang={lang} />

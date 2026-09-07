@@ -168,6 +168,45 @@
 .rp-steps li > span { font-size: 12px; color: #a07a64; }
 .rp-steps h3 { font-size: 20px; letter-spacing: -.5px; margin-top: 18px; }
 .rp-steps li p { font-size: 14px; line-height: 1.8; color: var(--rp-muted); margin-top: 12px; }
+/* --- Capability carousel -------------------------------------------------
+   A scroll-snap track rather than a translated flexbox: a shopkeeper on a
+   phone swipes it, which is how a card row is expected to behave, and the
+   arrows and dots drive the same scrollLeft for everybody else. */
+.rp-features { background: #fff; border-block: 1px solid #e7e9e1; padding: 95px 0; }
+.rp-carousel { margin-top: 45px; }
+.rp-carousel-track { display: flex; gap: 20px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth; scrollbar-width: none; -ms-overflow-style: none; }
+.rp-carousel-track::-webkit-scrollbar { display: none; }
+.rp-carousel-track:focus-visible { outline: 3px solid var(--rp-red); outline-offset: 5px; }
+.rp-card { scroll-snap-align: start; flex: 0 0 calc((100% - 40px) / 3); min-width: 0; display: flex; flex-direction: column; border: 1px solid #e4e7dd; border-radius: 10px; overflow: hidden; background: #fff; }
+.rp-card > img { display: block; width: 100%; height: 186px; object-fit: cover; background: #eef0e8; }
+.rp-card-body { display: flex; flex-direction: column; flex: 1; padding: 24px; }
+.rp-card-body > svg { color: var(--rp-red); flex-shrink: 0; }
+.rp-card h3 { font-size: 19px; font-weight: 500; letter-spacing: -.4px; margin-top: 16px; }
+.rp-card p { font-size: 14px; line-height: 1.75; color: var(--rp-muted); margin-top: 10px; }
+.rp-carousel-controls { display: flex; align-items: center; justify-content: center; gap: 18px; margin-top: 30px; }
+.rp-carousel-arrow { display: grid; place-content: center; width: 38px; height: 38px; border: 1px solid #d7dccf; border-radius: 50%; color: #5c6659; transition: border-color 180ms, color 180ms, opacity 180ms; }
+.rp-carousel-arrow:hover:not(:disabled) { border-color: var(--rp-red); color: var(--rp-red); }
+.rp-carousel-arrow:disabled { opacity: .3; }
+.rp-carousel-dots { display: flex; align-items: center; gap: 8px; }
+.rp-carousel-dots button { height: 8px; width: 8px; border-radius: 99px; background: #cdd4c6; transition: width 300ms, background 300ms; }
+.rp-carousel-dots button:hover { background: #a9b3a2; }
+.rp-carousel-dots button[aria-current='true'] { width: 26px; background: var(--rp-red); }
+
+/* --- Real conversation, and what the shopkeeper keeps control of ---------- */
+.rp-proof { background: var(--rp-dark); color: #fff; padding: 92px 0; }
+.rp-proof-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 80px; align-items: center; }
+.rp-proof .rp-eyebrow { color: #c9d3c9; margin-bottom: 22px; }
+.rp-proof h2 { font-size: 42px; }
+.rp-proof-lead { color: #bac4b6; font-size: 16px; line-height: 1.8; margin-top: 22px; max-width: 470px; }
+.rp-trust { margin-top: 34px; display: grid; gap: 15px; border-top: 1px solid #ffffff1f; padding-top: 28px; }
+.rp-trust > p { font-size: 10px; letter-spacing: 2px; font-weight: 600; color: #99a596; }
+.rp-trust li { display: flex; gap: 12px; align-items: flex-start; font-size: 14px; line-height: 1.65; color: #d5dbd2; }
+.rp-trust li > svg { color: #85bb94; flex-shrink: 0; margin-top: 3px; }
+.rp-phone { position: relative; width: min(300px, 100%); margin-inline: auto; }
+.rp-phone-glow { position: absolute; inset: -30px; border-radius: 52px; background: var(--rp-red); opacity: .13; filter: blur(40px); }
+.rp-phone-frame { position: relative; border: 6px solid #2c2a28; border-radius: 40px; background: #2c2a28; box-shadow: 0 30px 70px #0006; }
+.rp-phone-frame > img { display: block; width: 100%; border-radius: 32px; }
+.rp-phone-caption { position: relative; margin-top: 17px; text-align: center; font-size: 9px; letter-spacing: 1.6px; color: #93a08f; }
 .rp-pricing { background: #fff; padding: 100px 0 80px; }
 .rp-pricing h2 { text-align: center; }
 .rp-pricing .rp-plan-grid { align-items: stretch; gap: 14px; }
@@ -217,6 +256,7 @@
   .rp-receipt-profit { font-size: 10px; }
   .rp-understanding-grid article { padding: 25px; }
   .rp-understanding-result > strong { font-size: 27px; }
+  .rp-proof-grid { gap: 45px; }
 }
 @media (max-width: 959px), (max-height: 899px) {
   .rp-story-layout { display: block; }
@@ -247,6 +287,11 @@
   .rp-raw-message { font-size: 17px; }
   .rp-understanding-result > strong { font-size: 23px; }
   .rp-faq-grid { gap: 40px; }
+  .rp-card { flex: 0 0 calc((100% - 20px) / 2); }
+  .rp-card > img { height: 160px; }
+  .rp-proof-grid { grid-template-columns: 1fr; gap: 45px; }
+  .rp-proof h2 { font-size: 36px; }
+  .rp-phone { margin-inline: 0; }
 }
 @media (max-width: 699px) {
   .rp-wrap { width: calc(100% - 40px); }
@@ -316,6 +361,15 @@
   .rp-pricing .rp-plan-grid { gap: 25px; }
   .rp-faq { padding: 65px 0; }
   .rp-faq-grid { grid-template-columns: 1fr; gap: 28px; }
+  .rp-features { padding: 62px 0; }
+  .rp-carousel { margin-top: 32px; }
+  .rp-carousel-track { gap: 14px; }
+  .rp-card { flex: 0 0 100%; }
+  .rp-card-body { padding: 22px; }
+  .rp-proof { padding: 62px 0; }
+  .rp-proof h2 { font-size: 34px; }
+  .rp-proof-lead { font-size: 15px; margin-top: 18px; }
+  .rp-phone { margin-inline: auto; }
   .rp-final-cta { padding: 65px 0; }
   .rp-final-art { width: 100%; opacity: .12; }
 }
