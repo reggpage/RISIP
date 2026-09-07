@@ -1,8 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
 import AuthShell from '@/components/layout/AuthShell';
-import Button from '@/components/ui/Button';
 import WhatsAppIcon from '@/components/ui/WhatsappIcon';
 import { buildSignupConfirmUrl } from '@/features/whatsapp/publicWhatsApp';
 import { supabase } from '@/lib/supabase';
@@ -212,102 +211,98 @@ export default function BusinessSignup() {
   if (done) {
     return (
       <AuthShell>
-        <div className="px-2 py-6 text-center sm:px-6">
-          <WhatsAppIcon className="mx-auto h-12 w-12 text-[#25D366]" />
-          <h1 className="mt-4 font-display text-2xl font-semibold text-white text-balance">{c.doneTitle}</h1>
-          <p className="mt-3 text-sm leading-relaxed text-white/60">{c.doneBody}</p>
+        <div className="rp-auth-centre">
+          <span className="rp-auth-mark"><WhatsAppIcon /></span>
+          <h1 className="rp-auth-title">{c.doneTitle}</h1>
+          <p className="rp-auth-lead">{c.doneBody}</p>
 
-          <dl className="mt-6 space-y-2 border border-white/10 bg-white/5 p-4 text-left text-sm">
-            {([[c.summary.business, answers.business_name], [c.summary.owner, answers.full_name], [c.summary.place, answers.location]] as const).map(([label, text]) => (
-              <div key={label} className="flex gap-2">
-                <dt className="shrink-0 text-white/40">{label}:</dt>
-                <dd className="min-w-0 break-words text-white">{text}</dd>
+          <dl className="rp-auth-summary">
+            {([[c.summary.business, answers.business_name], [c.summary.owner, answers.full_name], [c.summary.place, answers.location]] as const).map(([label, said]) => (
+              <div key={label}>
+                <dt>{label}:</dt>
+                <dd>{said}</dd>
               </div>
             ))}
           </dl>
 
-          <a
-            href={done.waUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-5 flex h-12 items-center justify-center gap-2 rounded-sm bg-[#25D366] px-4 text-sm font-semibold text-white transition hover:bg-[#25D366]/90"
-          >
-            <WhatsAppIcon className="h-5 w-5" /> {c.open}
+          <a href={done.waUrl} target="_blank" rel="noopener noreferrer" className="rp-auth-wa">
+            <WhatsAppIcon />{c.open}
           </a>
 
-          <p className="mt-4 text-xs text-white/40">
-            {c.codeLabel}: <span className="font-mono text-sm tracking-widest text-white/80">{done.code}</span> · {c.expires}
+          <p className="rp-auth-code">
+            <span>{c.codeLabel}:</span>
+            <b>{done.code}</b>
+            <span>{c.expires}</span>
           </p>
-          <p className="mt-4 text-xs leading-relaxed text-white/35">{c.doneWhy}</p>
+          <p className="rp-auth-why">{c.doneWhy}</p>
         </div>
       </AuthShell>
     );
   }
-
   return (
     <AuthShell>
-      <div className="px-2 py-6 sm:px-6">
-        <div className="flex gap-1.5" aria-hidden="true">
-          {FIELDS.map((name, index) => (
-            <span key={name} className={`h-1 flex-1 ${index <= step ? 'bg-role-admin' : 'bg-white/12'}`} />
-          ))}
-        </div>
+      <div className="rp-auth-progress" aria-hidden="true">
+        {FIELDS.map((name, index) => (
+          <span key={name} className={index <= step ? 'is-done' : undefined} />
+        ))}
+      </div>
 
-        <form onSubmit={submit} className="mt-8">
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-role-admin">
-            {c.of.replace('{n}', String(step + 1))}
-          </p>
-          <h1 className="mt-3 font-display text-2xl font-semibold text-white text-balance">{c.steps[step].q}</h1>
-          <p className="mt-2 text-sm leading-relaxed text-white/55">{c.steps[step].hint}</p>
+      <form onSubmit={submit}>
+        <p className="rp-auth-step">{c.of.replace('{n}', String(step + 1))}</p>
+        <h1 className="rp-auth-question">{c.steps[step].q}</h1>
+        <p className="rp-auth-hint">{c.steps[step].hint}</p>
 
-          <div className="mt-7">
-            {step === 1 ? (
-              <textarea
-                key={field}
-                autoFocus
-                rows={3}
-                value={value}
-                onChange={(event) => setAnswers({ ...answers, [field]: event.target.value })}
-                placeholder={c.steps[step].placeholder}
-                className="w-full resize-none rounded-sm border border-white/15 bg-book-soft px-4 py-3 text-[15px] leading-relaxed text-white placeholder:text-white/30 focus:border-role-admin focus:outline-none focus:ring-2 focus:ring-role-admin/40"
-              />
-            ) : (
-              <input
-                key={field}
-                autoFocus
-                type={isTime ? 'time' : 'text'}
-                value={value}
-                onChange={(event) => setAnswers({ ...answers, [field]: event.target.value })}
-                placeholder={c.steps[step].placeholder}
-                className="h-12 w-full rounded-sm border border-white/15 bg-book-soft px-4 text-[15px] text-white placeholder:text-white/30 focus:border-role-admin focus:outline-none focus:ring-2 focus:ring-role-admin/40 [color-scheme:dark]"
-              />
-            )}
-          </div>
+        <div className="rp-auth-form">
+          {step === 1 ? (
+            <textarea
+              key={field}
+              autoFocus
+              rows={3}
+              value={value}
+              onChange={(event) => setAnswers({ ...answers, [field]: event.target.value })}
+              placeholder={c.steps[step].placeholder}
+              className="rp-auth-input"
+            />
+          ) : (
+            <input
+              key={field}
+              autoFocus
+              type={isTime ? 'time' : 'text'}
+              value={value}
+              onChange={(event) => setAnswers({ ...answers, [field]: event.target.value })}
+              placeholder={c.steps[step].placeholder}
+              className="rp-auth-input"
+            />
+          )}
 
-          {error && <p role="alert" className="mt-3 text-sm text-[#F2A9B4]">{error}</p>}
+          {error && (
+            <p role="alert" className="rp-auth-error">
+              <AlertCircle size={15} aria-hidden="true" />{error}
+            </p>
+          )}
 
-          <div className="mt-7 flex gap-3">
+          <div className="rp-auth-actions">
             {step > 0 && (
               <button
                 type="button"
                 onClick={() => { setError(null); setStep(step - 1); }}
-                className="flex h-12 items-center justify-center gap-2 rounded-sm border border-white/20 px-5 text-sm font-semibold text-white/80 transition hover:bg-white/10"
+                className="rp-auth-button rp-auth-ghost"
               >
-                <ArrowLeft className="h-4 w-4" /> {c.back}
+                <ArrowLeft size={16} />{c.back}
               </button>
             )}
-            <Button type="submit" tint="admin" fullWidth disabled={saving} className="h-12 justify-center gap-2 !rounded-sm">
-              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            <button type="submit" className="rp-auth-button rp-auth-submit" disabled={saving}>
+              {saving && <Loader2 className="rp-auth-spinner" />}
               {step === FIELDS.length - 1 ? c.finish : c.next}
-            </Button>
+            </button>
           </div>
-        </form>
+        </div>
+      </form>
 
-        <p className="mt-7 text-center text-sm text-white/50">
-          {c.haveAccount}{' '}
-          <Link to="/login" className="font-semibold text-role-admin hover:underline">{c.login}</Link>
-        </p>
-      </div>
+      <p className="rp-auth-alt">
+        {c.haveAccount}{' '}
+        <Link to="/login" className="rp-auth-link">{c.login}</Link>
+      </p>
     </AuthShell>
   );
 }

@@ -374,10 +374,10 @@ export default function Landing() {
               <p className="rp-eyebrow"><span className="rp-status-dot" />{c.proofEyebrow}</p>
               <h2>{c.proofTitle}</h2>
               <p className="rp-proof-lead">{c.proofBody}</p>
-              <ul className="rp-trust">
+              <div className="rp-trust">
                 <p>{c.trustTitle}</p>
-                {c.trust.map((item) => <li key={item}><ShieldCheck size={16} />{item}</li>)}
-              </ul>
+                <ul>{c.trust.map((item) => <li key={item}><ShieldCheck size={16} />{item}</li>)}</ul>
+              </div>
             </div>
             {/* The screenshot carries its own status bar and keyboard, so the
                 frame draws neither. Its height follows the aspect ratio; a fixed

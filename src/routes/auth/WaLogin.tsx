@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Loader2, ShieldAlert } from 'lucide-react';
-import Button from '@/components/ui/Button';
+import AuthShell from '@/components/layout/AuthShell';
+import WhatsAppIcon from '@/components/ui/WhatsappIcon';
 import { supabase } from '@/lib/supabase';
 import { getLang } from '@/lib/lang';
 
@@ -22,21 +23,27 @@ type Phase = 'working' | 'failed';
 const COPY = {
   sw: {
     working: 'Tunakuingiza…',
+    workingNote: 'Tunathibitisha link yako ya WhatsApp. Usifunge ukurasa huu.',
     failedTitle: 'Link haifanyi kazi',
     expired: 'Link imeisha muda. Rudi WhatsApp uandike "ingia" upate mpya.',
     used: 'Link hii ilishatumika. Andika "ingia" WhatsApp upate mpya.',
     invalid: 'Link hii si sahihi. Andika "ingia" WhatsApp upate mpya.',
     missing: 'Hakuna link hapa. Fungua ile uliyotumiwa WhatsApp.',
     toLogin: 'Omba link mpya WhatsApp',
+    why: 'Kila link ya kuingia inatumika mara moja tu na inaisha baada ya dakika 5. Hii inalinda akaunti yako kama ujumbe ukisambazwa kwa mtu mwingine.',
+    eyebrow: 'KUINGIA KWA WHATSAPP',
   },
   en: {
     working: 'Signing you in…',
+    workingNote: 'We are checking your WhatsApp link. Please keep this page open.',
     failedTitle: 'That link did not work',
     expired: 'The link has expired. Send "login" on WhatsApp for a fresh one.',
     used: 'That link has already been used. Send "login" on WhatsApp for a fresh one.',
     invalid: 'That link is not valid. Send "login" on WhatsApp for a fresh one.',
     missing: 'There is no link here. Open the one sent to you on WhatsApp.',
     toLogin: 'Request a new WhatsApp link',
+    why: 'Every sign-in link works once and expires after five minutes. That is what protects your account if the message is ever forwarded to somebody else.',
+    eyebrow: 'WHATSAPP SIGN IN',
   },
 } as const;
 
@@ -116,27 +123,30 @@ export default function WaLogin() {
     })();
   }, [c, navigate]);
 
+  // Mostly a spinner, but a real customer lands here straight from WhatsApp, so
+  // it wears the same paper, bar and brand red as every other public page.
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface-muted p-6">
-      <div className="w-full max-w-sm rounded-2xl bg-surface p-6 text-center shadow-sm">
-        {phase === 'working' ? (
-          <>
-            <Loader2 className="mx-auto h-8 w-8 animate-spin text-role-admin" />
-            <p className="mt-4 text-sm text-ink-muted">{c.working}</p>
-          </>
-        ) : (
-          <>
-            <ShieldAlert className="mx-auto h-8 w-8 text-amber-600" />
-            <h1 className="mt-4 text-lg font-semibold text-ink">{c.failedTitle}</h1>
-            <p className="mt-2 text-sm text-ink-muted">{message}</p>
-            <Link to="/login" className="mt-5 block">
-              <Button variant="secondary" tint="admin" className="w-full justify-center">
-                {c.toLogin}
-              </Button>
-            </Link>
-          </>
-        )}
-      </div>
-    </div>
+    <AuthShell>
+      {phase === 'working' ? (
+        <div className="rp-auth-status" role="status">
+          <Loader2 className="rp-auth-spinner" aria-hidden="true" />
+          <h1 className="rp-auth-title">{c.working}</h1>
+          <p className="rp-auth-lead">{c.workingNote}</p>
+        </div>
+      ) : (
+        <div className="rp-auth-centre">
+          <span className="rp-auth-mark rp-auth-mark-warn"><ShieldAlert /></span>
+          <p className="rp-auth-eyebrow">{c.eyebrow}</p>
+          <h1 className="rp-auth-title">{c.failedTitle}</h1>
+          <p className="rp-auth-lead" role="alert">{message}</p>
+
+          <Link to="/login" className="rp-auth-button rp-auth-submit rp-auth-full">
+            <WhatsAppIcon />{c.toLogin}
+          </Link>
+
+          <p className="rp-auth-why">{c.why}</p>
+        </div>
+      )}
+    </AuthShell>
   );
 }

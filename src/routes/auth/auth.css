@@ -1,0 +1,135 @@
+/* The public auth pages, in the same visual language as the landing page.
+   Paper ground, one dark bar across the top, a single card of business.
+
+   The --rp-* tokens come from :root in index.css and are shared with
+   landing.css, so signing in cannot drift away from the page that sent you
+   here. Class names are rp-auth- prefixed for the same reason landing.css is
+   rp- prefixed: these pages are hand-written CSS, not Tailwind utilities. */
+
+.rp-auth {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  background: var(--rp-paper);
+  color: #242824;
+}
+.rp-auth *, .rp-auth *::before, .rp-auth *::after { box-sizing: border-box; }
+.rp-auth :is(a, button, summary, input, textarea):focus-visible { outline: 3px solid var(--rp-red); outline-offset: 3px; }
+.rp-auth h1 { font-family: Outfit, system-ui, sans-serif; }
+
+/* --- the bar across the top, matching the landing header ------------------- */
+.rp-auth-header { position: sticky; top: 0; z-index: 40; background: #191b19f5; border-bottom: 1px solid #ffffff13; color: #fff; backdrop-filter: blur(16px); }
+.rp-auth-header-inner { width: min(1280px, calc(100% - 112px)); margin-inline: auto; height: 80px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.rp-auth-logo { color: var(--rp-red); flex-shrink: 0; display: inline-flex; }
+.rp-auth-logo svg { height: 40px; width: 92px; }
+.rp-auth-header-side { display: flex; align-items: center; gap: 18px; }
+.rp-auth-home { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #d9dcd8; white-space: nowrap; }
+.rp-auth-home:hover { color: #fff; }
+
+/* --- the card -------------------------------------------------------------- */
+.rp-auth-main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 52px 20px 76px; }
+.rp-auth-card { width: min(472px, 100%); background: #fff; border: 1px solid #e4e7dd; border-radius: 12px; padding: 38px 36px 32px; box-shadow: 0 22px 55px #1c302010; }
+.rp-auth-centre { text-align: center; }
+.rp-auth-mark { display: grid; place-content: center; width: 54px; height: 54px; border-radius: 50%; background: #eef2e9; margin: 0 auto 20px; }
+.rp-auth-mark > svg { width: 26px; height: 26px; color: var(--rp-green); }
+.rp-auth-mark-red { background: #fbeaed; }
+.rp-auth-mark-red > svg { color: var(--rp-red); }
+.rp-auth-mark-warn { background: #f4ebdc; }
+.rp-auth-mark-warn > svg { color: #8c5b24; }
+.rp-auth-eyebrow { font-size: 10px; line-height: 1.6; letter-spacing: 2px; font-weight: 600; color: var(--rp-red); }
+.rp-auth-title { font-size: 29px; line-height: 1.15; font-weight: 500; letter-spacing: -1.1px; margin-top: 12px; }
+.rp-auth-lead { margin-top: 12px; font-size: 14px; line-height: 1.75; color: var(--rp-muted); }
+
+/* --- segmented Ingia / Sajili --------------------------------------------- */
+.rp-auth-tabs { display: flex; gap: 4px; padding: 4px; background: #eef0e8; border-radius: 8px; margin-bottom: 30px; }
+.rp-auth-tab { flex: 1; border-radius: 6px; padding: 11px 8px; text-align: center; font-size: 14px; font-weight: 500; color: #667061; transition: background 180ms, color 180ms; }
+.rp-auth-tab:hover { color: #242824; }
+.rp-auth-tab[aria-current] { background: var(--rp-red); color: #fff; }
+
+/* --- fields ---------------------------------------------------------------- */
+.rp-auth-form { margin-top: 26px; display: flex; flex-direction: column; gap: 18px; }
+.rp-auth-label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 9px; }
+.rp-auth-input { width: 100%; min-width: 0; height: 52px; padding: 0 16px; font-size: 15px; font-family: inherit; color: #242824; background: #fbfbf7; border: 1px solid #d7dccf; border-radius: 6px; transition: border-color 160ms; }
+textarea.rp-auth-input { height: auto; padding: 14px 16px; line-height: 1.7; resize: none; }
+.rp-auth-input::placeholder { color: #a2ab9d; }
+.rp-auth-input:hover { border-color: #bcc5b4; }
+.rp-auth-input:focus { border-color: var(--rp-red); outline: none; box-shadow: 0 0 0 3px rgb(var(--role-admin) / .16); }
+.rp-auth-phone { display: flex; gap: 10px; }
+.rp-auth-prefix { display: grid; place-content: center; width: 74px; height: 52px; flex-shrink: 0; font-size: 15px; font-weight: 500; color: #4d5749; background: #eef0e8; border: 1px solid #d7dccf; border-radius: 6px; }
+.rp-auth-error { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; line-height: 1.6; color: #a51833; }
+.rp-auth-error > svg { flex-shrink: 0; margin-top: 2px; }
+
+/* --- buttons --------------------------------------------------------------- */
+.rp-auth-actions { display: flex; gap: 12px; }
+.rp-auth-button { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 52px; padding: 15px 22px; border-radius: 6px; font-size: 14px; font-weight: 500; font-family: inherit; transition: background 180ms, border-color 180ms, opacity 180ms; }
+.rp-auth-button:disabled { opacity: .55; pointer-events: none; }
+.rp-auth-submit { flex: 1; background: var(--rp-red); color: #fff; }
+.rp-auth-submit:hover { background: var(--rp-red-deep); }
+.rp-auth-ghost { border: 1px solid #d7dccf; color: #4d5749; background: transparent; }
+.rp-auth-ghost:hover { border-color: #a9b3a2; }
+.rp-auth-wa { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 52px; border-radius: 6px; background: var(--rp-whatsapp); color: #fff; font-size: 14px; font-weight: 500; margin-top: 24px; transition: filter 180ms; }
+.rp-auth-wa:hover { filter: brightness(.94); }
+/* A link styled as the primary button, where there is no button row to
+   stretch inside. */
+.rp-auth-full { display: flex; width: 100%; margin-top: 26px; }
+.rp-auth-link { color: var(--rp-red); font-weight: 500; }
+/* Icons are sized by the control they sit in, so no utility class has to
+   fight the stylesheet over a width. */
+.rp-auth-button > svg, .rp-auth-wa > svg { width: 18px; height: 18px; flex-shrink: 0; }
+.rp-auth-button .rp-auth-spinner { width: 18px; height: 18px; margin: 0; }
+.rp-auth-link:hover { text-decoration: underline; }
+
+/* --- the small print ------------------------------------------------------- */
+.rp-auth-note { display: flex; align-items: flex-start; justify-content: center; gap: 9px; margin-top: 22px; font-size: 12px; line-height: 1.7; color: #7d8779; }
+.rp-auth-note > svg { flex-shrink: 0; margin-top: 2px; color: #8d9888; }
+.rp-auth-alt { margin-top: 26px; padding-top: 22px; border-top: 1px solid #ebeee5; text-align: center; font-size: 13px; color: var(--rp-muted); }
+.rp-auth-foot { width: min(472px, 100%); margin: 18px auto 0; text-align: center; font-size: 11px; line-height: 1.7; color: #8b9486; }
+
+/* --- the six-step wizard --------------------------------------------------- */
+.rp-auth-progress { display: flex; gap: 6px; }
+.rp-auth-progress > span { height: 4px; flex: 1; border-radius: 99px; background: #e2e6da; transition: background 260ms; }
+.rp-auth-progress > span.is-done { background: var(--rp-red); }
+.rp-auth-step { margin-top: 26px; font-size: 10px; letter-spacing: 2px; font-weight: 600; color: var(--rp-red); }
+.rp-auth-question { font-size: 26px; line-height: 1.2; font-weight: 500; letter-spacing: -.9px; margin-top: 12px; }
+.rp-auth-hint { margin-top: 12px; font-size: 13px; line-height: 1.75; color: var(--rp-muted); }
+
+/* --- the confirm-on-WhatsApp hand-off ------------------------------------- */
+.rp-auth-summary { margin-top: 24px; text-align: left; border: 1px solid #e4e7dd; border-radius: 8px; background: #fbfbf7; padding: 18px 20px; display: grid; gap: 11px; }
+.rp-auth-summary > div { display: flex; gap: 10px; font-size: 13px; }
+.rp-auth-summary dt { flex-shrink: 0; color: #8b9486; }
+.rp-auth-summary dd { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.rp-auth-code { margin-top: 20px; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 4px 10px; font-size: 12px; color: var(--rp-muted); }
+.rp-auth-code > b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 17px; font-weight: 600; letter-spacing: 3px; color: #242824; }
+.rp-auth-why { margin-top: 20px; font-size: 12px; line-height: 1.75; color: #8b948e; }
+
+/* --- spending a WhatsApp login link --------------------------------------- */
+.rp-auth-status { text-align: center; }
+.rp-auth-spinner { width: 30px; height: 30px; margin: 0 auto; color: var(--rp-red); animation: rp-auth-spin 900ms linear infinite; }
+.rp-auth-status .rp-auth-spinner { margin-bottom: 24px; }
+@keyframes rp-auth-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 699px) {
+  .rp-auth-header-inner { width: calc(100% - 40px); height: 68px; gap: 12px; }
+  .rp-auth-logo svg { height: 34px; width: 77px; }
+  .rp-auth-header-side { gap: 12px; }
+  .rp-auth-home > span { display: none; }
+  .rp-auth-main { padding: 30px 16px 52px; }
+  .rp-auth-card { padding: 28px 22px 26px; border-radius: 10px; }
+  .rp-auth-title { font-size: 25px; letter-spacing: -.8px; }
+  .rp-auth-question { font-size: 23px; letter-spacing: -.7px; }
+  .rp-auth-mark { width: 48px; height: 48px; margin-bottom: 16px; }
+  .rp-auth-actions { flex-wrap: wrap; }
+}
+
+@media (max-width: 359px) {
+  .rp-auth-prefix { width: 64px; }
+  .rp-auth-title { font-size: 23px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rp-auth *, .rp-auth *::before, .rp-auth *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; scroll-behavior: auto !important; }
+  /* The sign-in spinner is the only thing on screen saying work is happening,
+     so it keeps turning, slowly, rather than freezing into a static arc. */
+  .rp-auth-spinner { animation: rp-auth-spin 2400ms linear infinite !important; }
+}

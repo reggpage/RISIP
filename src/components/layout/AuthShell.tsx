@@ -1,8 +1,26 @@
 import { Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import LanguageToggle from '@/components/ui/LanguageToggle';
 import RisipLogo from '@/components/ui/RisipLogo';
+import { getLang } from '@/lib/lang';
+import '@/routes/auth/auth.css';
 
-// Shared frame for WhatsApp passwordless login and registration.
+const COPY = {
+  sw: { home: 'Rudi mwanzo', nav: 'Urambazaji mkuu' },
+  en: { home: 'Back to home', nav: 'Main navigation' },
+} as const;
+
+/**
+ * Shared frame for WhatsApp passwordless sign-in and business registration.
+ *
+ * Same paper, same dark bar and same brand red as the landing page, so
+ * arriving here does not read as a different site. The tokens are the ones in
+ * :root that landing.css uses; nothing is redefined locally.
+ *
+ * The logo goes home and so does the link beside it. Somebody who opened
+ * /signup from a search result and wants to read about Risip first should not
+ * have to reach for the back button.
+ */
 export default function AuthShell({
   children,
   footer,
@@ -10,22 +28,29 @@ export default function AuthShell({
   children: React.ReactNode;
   footer?: React.ReactNode;
 }) {
+  const lang = getLang();
+  const c = COPY[lang];
+
   return (
-    <div className="relative min-h-screen overflow-hidden bg-book">
-      {/* Same cover stock as the landing hero, so signing in feels like the
-          same book rather than a different site. */}
-      <div aria-hidden="true" className="pointer-events-none absolute -top-64 left-1/2 h-[38rem] w-[38rem] -translate-x-1/2 rounded-full bg-role-admin/15 blur-3xl" />
-      <header className="fixed top-0 left-0 right-0 z-40 border-b border-white/10 bg-book/95 backdrop-blur-sm">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <Link to="/" className="flex items-center text-role-admin" aria-label="Risip">
-            <RisipLogo className="h-10 w-auto" />
+    <div className="rp-auth" lang={lang}>
+      <header className="rp-auth-header">
+        <div className="rp-auth-header-inner">
+          <Link to="/" className="rp-auth-logo" aria-label="Risip">
+            <RisipLogo />
           </Link>
-          <div className="flex items-center gap-3"><LanguageToggle />{footer}</div>
+          <nav className="rp-auth-header-side" aria-label={c.nav}>
+            <Link to="/" className="rp-auth-home">
+              <ArrowLeft size={15} aria-hidden="true" />
+              <span>{c.home}</span>
+            </Link>
+            <LanguageToggle />
+            {footer}
+          </nav>
         </div>
       </header>
 
-      <main className="relative mx-auto flex min-h-screen max-w-md items-center px-4 pt-24 pb-10">
-        <div className="w-full">{children}</div>
+      <main className="rp-auth-main">
+        <div className="rp-auth-card">{children}</div>
       </main>
     </div>
   );
