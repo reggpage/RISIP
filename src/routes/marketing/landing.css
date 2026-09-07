@@ -1,15 +1,11 @@
 .rp-landing {
-  --rp-dark: #191b19;
-  --rp-paper: #f6f5f0;
-  --rp-muted: #687069;
-  --rp-green: #236344;
-  --rp-red: #dd2d4a;
+  /* --rp-* tokens come from :root in index.css, shared with the auth pages. */
   background: var(--rp-paper);
   color: #242824;
 }
 .rp-landing *, .rp-landing *::before, .rp-landing *::after { box-sizing: border-box; }
-.rp-landing :is(a, button, summary):focus-visible { outline: 3px solid #dd2d4a; outline-offset: 5px; }
-.rp-landing section[id], .rp-landing article[id] { scroll-margin-top: 100px; }
+.rp-landing :is(a, button, summary):focus-visible { outline: 3px solid var(--rp-red); outline-offset: 5px; }
+.rp-landing [id] { scroll-margin-top: 100px; }
 .rp-landing h1, .rp-landing h2, .rp-landing h3 { font-family: Outfit, system-ui, sans-serif; }
 .rp-landing h2 { font-size: 44px; line-height: 1.1; font-weight: 500; letter-spacing: -1.8px; white-space: pre-line; }
 .rp-wrap { width: min(1280px, calc(100% - 112px)); margin-inline: auto; }
@@ -25,7 +21,7 @@
 .rp-header nav .rp-button { color: white; font-size: 12px; min-height: 40px; padding: 10px 18px; }
 .rp-button { display: inline-flex; align-items: center; justify-content: center; gap: 12px; border-radius: 6px; padding: 17px 23px; min-height: 52px; font-size: 14px; font-weight: 500; transition: background 180ms, transform 180ms; }
 .rp-button-red { background: var(--rp-red); color: #fff; }
-.rp-button-red:hover { background: #c2233e; transform: translateY(-2px); }
+.rp-button-red:hover { background: var(--rp-red-deep); transform: translateY(-2px); }
 .rp-hero { position: relative; background: var(--rp-dark); color: white; isolation: isolate; overflow: clip; }
 .rp-hero-image { position: absolute; z-index: -3; right: 0; top: 0; width: 65%; height: 100%; object-fit: cover; object-position: 52% center; opacity: .66; }
 .rp-hero-shade { position: absolute; z-index: -2; inset: 0; background: linear-gradient(90deg, #191b19 0%, #191b19 22%, #191b19eb 38%, #191b1950 72%, #191b1930), linear-gradient(0deg, #191b19 0%, #191b1900 35%, #191b1930); }
@@ -111,7 +107,7 @@
 .rp-bars span { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px; }
 .rp-bars i { display: block; height: 6px; border-radius: 1px; background: #e5e9df; position: relative; }
 .rp-bars i::after { content: ''; position: absolute; inset: 0; width: var(--bar-width); background: #63876a; border-radius: 1px; }
-.rp-bars > div:first-child i::after { background: #dd2d4a; }
+.rp-bars > div:first-child i::after { background: var(--rp-red); }
 .rp-low { margin-left: auto; font-size: 9px; color: #8c5b24; background: #f4ebdc; padding: 3px 7px; border-radius: 4px; }
 .rp-stock-name { font-size: 13px; font-weight: 500; }
 .rp-stock-flow { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
@@ -134,7 +130,7 @@
 .rp-story-nav > a { flex: 1; padding: 6px 0; color: #687463; font-size: 10px; }
 .rp-story-nav i { display: block; height: 2px; background: #cdd4c6; margin-top: 6px; position: relative; }
 .rp-story-nav > a[aria-current] { color: #b9213c; }
-.rp-story-nav > a[aria-current] i::after { content: ''; position: absolute; inset: 0; background: #dd2d4a; transform: scaleX(var(--chapter-progress)); transform-origin: left; }
+.rp-story-nav > a[aria-current] i::after { content: ''; position: absolute; inset: 0; background: var(--rp-red); transform: scaleX(var(--chapter-progress)); transform-origin: left; }
 .rp-understanding { background: white; border-block: 1px solid #e7e9e1; padding: 100px 0; }
 .rp-understanding-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0; margin-top: 45px; border: 1px solid #e4e7dd; border-radius: 10px; overflow: hidden; }
 .rp-understanding-grid article { padding: 30px; display: flex; flex-direction: column; min-height: 280px; border-right: 1px solid #e4e7dd; }
@@ -259,7 +255,7 @@
   .rp-header nav { gap: 13px; font-size: 12px; }
   .rp-header .rp-nav-cta { display: none; }
   .rp-header .rp-mobile-nav { display: flex; justify-content: space-between; padding-block: 0 13px; font-size: 11px; color: #bdc5b9; }
-  .rp-landing section[id], .rp-landing article[id], .rp-landing #features { scroll-margin-top: 128px; }
+  .rp-landing [id] { scroll-margin-top: 128px; }
   .rp-hero-grid { display: block; min-height: auto; padding-top: 49px; padding-bottom: 40px; }
   .rp-hero-image { width: 100%; height: 520px; top: 220px; opacity: .38; object-position: center; }
   .rp-hero-shade { background: linear-gradient(180deg, #191b19 0%, #191b19f2 29%, #191b1970 60%, #191b19 95%); }
