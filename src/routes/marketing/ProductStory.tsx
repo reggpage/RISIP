@@ -43,6 +43,8 @@ const text = {
     opsLabel: 'BEHIND THE CONVERSATION', opsTitle: 'Care goes into every answer.',
     opsLead: 'The Risip team’s internal console brings conversation issues into view, so they can be investigated and reviewed.',
     internal: 'Internal team console · illustrative preview', issue: 'A price needs clarification', detected: 'Flagged for review', context: 'Conversation context', contextValue: 'Retail / wholesale choice', review: 'Review before release', reviewValue: 'Correction → regression check',
+    retail: 'Retail', wholesale: 'Wholesale', yesShort: 'Yes', unit: 'copies', chapterCount: '05',
+    exampleDay: 'Your shop · Example day', dayShort: 'Your day, understood.', productTypes: 'product types', stockAlert: 'stock alert',
   },
   sw: {
     eyebrow: 'BIASHARA YAKO. MAZUNGUMZO MOJA.', hero: 'Wewe endesha duka.', accent: 'Risip ifuatilie.',
@@ -79,6 +81,8 @@ const text = {
     opsLabel: 'NYUMA YA MAZUNGUMZO', opsTitle: 'Kila jibu linahitaji umakini.',
     opsLead: 'Console ya ndani ya timu ya Risip inaonyesha changamoto za mazungumzo ili zichunguzwe na kukaguliwa.',
     internal: 'Console ya timu ya ndani · mfano', issue: 'Bei inahitaji ufafanuzi', detected: 'Imewekwa kwa ukaguzi', context: 'Muktadha wa mazungumzo', contextValue: 'Chaguo la rejareja / jumla', review: 'Ukaguzi kabla ya kutolewa', reviewValue: 'Marekebisho → jaribio la kurudia',
+    retail: 'Rejareja', wholesale: 'Jumla', yesShort: 'Ndiyo', unit: 'nakala', chapterCount: '05',
+    exampleDay: 'Duka lako · Siku ya mfano', dayShort: 'Siku yako, kwa ufupi.', productTypes: 'aina za bidhaa', stockAlert: 'tahadhari ya stoo',
   },
 } as const;
 
@@ -93,7 +97,7 @@ function ChatHeader({ lang }: { lang: LangCode }) {
 export function ProductHero({ lang }: { lang: LangCode }) {
   const c = text[lang];
   return <section className="rp-hero">
-    <img className="rp-hero-image" src={landingShop} alt="" fetchPriority="high" width="1408" height="768" />
+    <img className="rp-hero-image" src={landingShop} alt="" {...highFetchPriority} width="1408" height="768" />
     <div className="rp-hero-shade" />
     <div className="rp-wrap rp-hero-grid">
       <div className="rp-hero-copy">
@@ -112,9 +116,17 @@ export function ProductHero({ lang }: { lang: LangCode }) {
         <div className="rp-hero-receipt"><span className="rp-check-circle"><Check size={18} /></span><div><small>{c.confirmed} · {c.example}</small><strong>{tsh(DEMO.revenue)}</strong></div><span className="rp-receipt-profit"><TrendingUp size={16} /><b>{tsh(demoProfit)}</b><small>{c.profit}</small></span></div>
       </div>
     </div>
-    <div className="rp-wrap rp-hero-bottom"><span>{c.built}</span><a href="#product-story">{c.scroll}<ArrowDown size={14} /></a><span>01 — 05</span></div>
+    <div className="rp-wrap rp-hero-bottom"><span>{c.built}</span><a href="#product-story">{c.scroll}<ArrowDown size={14} /></a><span>01 / {c.chapterCount}</span></div>
   </section>;
 }
+
+/**
+ * The hero photograph is the largest paint on the page, so it asks the browser
+ * to fetch it early. React 18 does not recognise the camelCase fetchPriority
+ * prop and warns about it on every page load. The lowercase HTML attribute is
+ * passed straight through to the DOM, which is what the browser reads anyway.
+ */
+const highFetchPriority = { fetchpriority: 'high' } as Record<string, string>;
 
 const clamp = (n: number) => Math.max(0, Math.min(1, n));
 const STACKED_QUERY = '(max-width: 959px), (max-height: 899px), (prefers-reduced-motion: reduce)';
@@ -171,21 +183,21 @@ export function ProductStory({ lang }: { lang: LangCode }) {
 
 function Scene({ index, lang }: { index: number; lang: LangCode }) {
   const c = text[lang];
-  const unit = lang === 'sw' ? 'nakala' : 'copies';
+  const unit = c.unit;
   return <div className={`rp-scene rp-scene-${index}`}>
     <div className="rp-scene-chat"><ChatHeader lang={lang} /><div className="rp-chat-body">
-      {index === 0 && <><Bubble outgoing>{c.raw}</Bubble><Bubble><strong>{c.received}</strong><div className="rp-sale-lines">{DEMO_PRODUCTS.map(p => <div key={p.name}><span>{p.name} × {p.quantity}<small>{p.tier === 'retail' ? (lang === 'sw' ? 'Rejareja' : 'Retail') : p.tier === 'wholesale' ? (lang === 'sw' ? 'Jumla' : 'Wholesale') : ''} · {tsh(p.price)}</small></span><b>{tsh(p.price * p.quantity)}</b></div>)}</div><div className="rp-chat-total"><span>{c.total}</span><b>{tsh(DEMO.revenue)}</b></div><p>{c.saleQuestion}</p><div className="rp-demo-options"><span>{c.yes}</span><span>{c.no}</span></div></Bubble><Bubble outgoing>1 <span className="rp-muted">— {lang === 'sw' ? 'Ndiyo' : 'Yes'}</span></Bubble></>}
+      {index === 0 && <><Bubble outgoing>{c.raw}</Bubble><Bubble><strong>{c.received}</strong><div className="rp-sale-lines">{DEMO_PRODUCTS.map(p => <div key={p.name}><span>{p.name} × {p.quantity}<small>{p.tier === 'retail' ? c.retail : p.tier === 'wholesale' ? c.wholesale : ''} · {tsh(p.price)}</small></span><b>{tsh(p.price * p.quantity)}</b></div>)}</div><div className="rp-chat-total"><span>{c.total}</span><b>{tsh(DEMO.revenue)}</b></div><p>{c.saleQuestion}</p><div className="rp-demo-options"><span>{c.yes}</span><span>{c.no}</span></div></Bubble><Bubble outgoing>1 <span className="rp-muted">· {c.yesShort}</span></Bubble></>}
       {index === 1 && <><Bubble outgoing>{c.topQuestion}</Bubble><Bubble>{c.topAnswer}</Bubble></>}
       {index === 2 && <><Bubble outgoing>{c.stockQuestion}</Bubble><Bubble>{c.stockAnswer}</Bubble><Bubble outgoing>{c.followup}</Bubble><Bubble>{c.estimate}</Bubble></>}
       {index === 3 && <><Bubble outgoing>{c.debtQuestion}</Bubble><Bubble>{c.debtAnswer}<div className="rp-demo-options"><span>{c.yes}</span><span>{c.no}</span></div></Bubble><Bubble outgoing>1</Bubble></>}
-      {index === 4 && <Bubble><strong className="rp-daily-title">{c.daily}</strong><span className="rp-muted">{lang === 'sw' ? 'Duka lako · Siku ya mfano' : 'Your shop · Example day'}</span><div className="rp-daily-lines"><div><span>{c.revenue}</span><b>{tsh(DEMO.revenue)}</b></div><div><span>{c.costs}</span><b>{tsh(DEMO.cost)}</b></div><div><span>{c.profit}</span><b>{tsh(demoProfit)}</b></div><div><span>{c.expenses}</span><b>{tsh(DEMO.expenses)}</b></div></div><div className="rp-net"><span>{c.net}</span><strong>{tsh(demoProfit - DEMO.expenses)}</strong></div><p>{c.dailyAnswer}</p><small>{c.dailyNote}</small></Bubble>}
+      {index === 4 && <Bubble><strong className="rp-daily-title">{c.daily}</strong><span className="rp-muted">{c.exampleDay}</span><div className="rp-daily-lines"><div><span>{c.revenue}</span><b>{tsh(DEMO.revenue)}</b></div><div><span>{c.costs}</span><b>{tsh(DEMO.cost)}</b></div><div><span>{c.profit}</span><b>{tsh(demoProfit)}</b></div><div><span>{c.expenses}</span><b>{tsh(DEMO.expenses)}</b></div></div><div className="rp-net"><span>{c.net}</span><strong>{tsh(demoProfit - DEMO.expenses)}</strong></div><p>{c.dailyAnswer}</p><small>{c.dailyNote}</small></Bubble>}
     </div></div>
     <div className="rp-insight">
       {index === 0 && <><div className="rp-insight-label"><Check size={16} />{c.saved}</div><div className="rp-inline-metrics"><div><small>{c.revenue}</small><strong>{tsh(DEMO.revenue)}</strong></div><div><small>{c.units}</small><strong>{DEMO.quantity}</strong></div></div></>}
       {index === 1 && <><div className="rp-insight-label"><TrendingUp size={16} />{c.top}</div><div className="rp-bars">{[...DEMO_PRODUCTS].sort((a, b) => b.quantity - a.quantity).map(p => <div key={p.name}><span>{p.name}<b>{p.quantity}</b></span><i style={{ '--bar-width': `${p.quantity / 4 * 100}%` } as CSSProperties} /></div>)}</div><div className="rp-insight-footer"><span>{c.profit}</span><strong>{tsh(demoProfit)}</strong></div></>}
       {index === 2 && <><div className="rp-insight-label"><Package size={16} />{c.stock} <span className="rp-low">{c.low}</span></div><strong className="rp-stock-name">Nguvu ya sala</strong><div className="rp-stock-flow"><div><strong>5</strong><small>{c.before}</small></div><ArrowRight size={20} /><div><strong>−2</strong><small>{c.sold}</small></div><ArrowRight size={20} /><div><strong>3</strong><small>{unit} · {c.left}</small></div></div></>}
       {index === 3 && <><div className="rp-insight-label"><Wallet size={16} />Musa</div><small>{c.balance}</small><strong className="rp-big-value">{tsh(DEMO.priorDebt - DEMO.debtPayment)}</strong><div className="rp-debt-equation">{tsh(DEMO.priorDebt)} − {tsh(DEMO.debtPayment)}</div><p className="rp-muted">{c.debtNote}</p></>}
-      {index === 4 && <><div className="rp-insight-label"><MessageCircle size={16} />{lang === 'sw' ? 'Siku yako, kwa ufupi.' : 'Your day, understood.'}</div><div className="rp-summary-tags"><span>{DEMO.quantity} {c.units}</span><span>3 {lang === 'sw' ? 'aina za bidhaa' : 'product types'}</span><span>1 {lang === 'sw' ? 'tahadhari ya stoo' : 'stock alert'}</span></div></>}
+      {index === 4 && <><div className="rp-insight-label"><MessageCircle size={16} />{c.dayShort}</div><div className="rp-summary-tags"><span>{DEMO.quantity} {c.units}</span><span>3 {c.productTypes}</span><span>1 {c.stockAlert}</span></div></>}
     </div>
   </div>;
 }

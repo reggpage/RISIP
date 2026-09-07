@@ -52,7 +52,7 @@ const COPY = {
       monthly: 'Kila mwezi', yearly: 'Kwa mwaka', save: 'okoa miezi 2',
       perMonth: 'kwa mwezi', perYear: 'kwa mwaka', msgs: 'ujumbe unaotuma, kwa mwezi',
       popular: 'Wengi huchagua', soon: 'hivi karibuni', cta: 'Anza wiki ya bure',
-      note: 'Bei zote ni za Shilingi ya Tanzania. Malipo yanashughulikiwa na Snippe. Ukizidi ujumbe, unapata taarifa kwanza — hakuna kinachokatika ghafla.',
+      note: 'Bei zote ni za Shilingi ya Tanzania. Malipo yanashughulikiwa na Snippe. Ukizidi ujumbe, unapata taarifa kwanza, na hakuna kinachokatika ghafla.',
       plans: [
         { name: 'Kianzio', tagline: 'Kuanza, kwa rekodi chache kila siku', m: '15,000', y: '150,000', cap: '100', popular: false,
           feats: ['Mauzo, manunuzi, matumizi na stoo', 'Bei mbili: rejareja na jumla', 'Ukumbusho wa kila jioni', 'Dashboard ya web kwa simu na kompyuta', 'Mtumiaji 1'] },
@@ -85,6 +85,8 @@ const COPY = {
     },
     ctaTitle: 'Anza kuweka biashara yako sawa leo.',
     ctaBody: 'Hakuna password ya kukumbuka. Fungua WhatsApp, sajili biashara na uanze kurekodi.',
+    skip: 'Nenda kwenye maudhui', navMain: 'Urambazaji mkuu', navSections: 'Sehemu za ukurasa',
+    howNav: 'Inavyofanya kazi', stepsEyebrow: 'ANZA KWA URAHISI', yes: 'Ndiyo', no: 'Hapana',
     chat: 'Ongea na Risip', footerAbout: 'Kuhusu Risip', footerAboutText: 'Risip ni mfumo wa mauzo, bidhaa na rekodi rahisi za biashara kwa wajasiriamali wa Tanzania.',
     footerContact: 'Mawasiliano', footerFaq: 'Maswali', footerFaqLink: 'Soma maswali ya kawaida',
     footerRights: 'Haki zote zimehifadhiwa.',
@@ -128,7 +130,7 @@ const COPY = {
       monthly: 'Monthly', yearly: 'Yearly', save: 'save 2 months',
       perMonth: 'per month', perYear: 'per year', msgs: 'messages you send, per month',
       popular: 'Most popular', soon: 'coming soon', cta: 'Start the free week',
-      note: 'All prices are in Tanzanian Shillings. Payments are handled by Snippe. If you go over, you are told first — nothing is cut off suddenly.',
+      note: 'All prices are in Tanzanian Shillings. Payments are handled by Snippe. If you go over, you are told first, and nothing is cut off suddenly.',
       plans: [
         { name: 'Kianzio', tagline: 'Starting out, a few records a day', m: '15,000', y: '150,000', cap: '100', popular: false,
           feats: ['Sales, purchases, expenses and stock', 'Two prices: retail and wholesale', 'An evening reminder', 'Web dashboard on phone and computer', '1 user'] },
@@ -161,6 +163,8 @@ const COPY = {
     },
     ctaTitle: 'Put your business records in order today.',
     ctaBody: 'There is no password to remember. Open WhatsApp, register your business and start recording.',
+    skip: 'Skip to content', navMain: 'Main navigation', navSections: 'Page sections',
+    howNav: 'How it works', stepsEyebrow: 'A SIMPLE START', yes: 'Yes', no: 'No',
     chat: 'Chat with Risip', footerAbout: 'About Risip', footerAboutText: 'Risip is a simple sales, product and bookkeeping system made for Tanzanian entrepreneurs.',
     footerContact: 'Contact', footerFaq: 'FAQ', footerFaqLink: 'Read common questions',
     footerRights: 'All rights reserved.',
@@ -178,12 +182,12 @@ export default function Landing() {
 
   return (
     <div className="rp-landing" lang={lang}>
-      <a href="#main-content" className="rp-skip">{lang === 'sw' ? 'Nenda kwenye maudhui' : 'Skip to content'}</a>
+      <a href="#main-content" className="rp-skip">{c.skip}</a>
       <header className="rp-header">
         <div className="rp-wrap rp-header-inner">
           <Link to="/" aria-label="Risip" className="rp-header-logo"><RisipLogo /></Link>
-          <nav aria-label={lang === 'sw' ? 'Urambazaji mkuu' : 'Main navigation'}>
-            <a href="#product-story" className="rp-nav-link">{lang === 'sw' ? 'Inavyofanya kazi' : 'How it works'}</a>
+          <nav aria-label={c.navMain}>
+            <a href="#product-story" className="rp-nav-link">{c.howNav}</a>
             <a href="#features" className="rp-nav-link">{c.features}</a>
             <a href="#pricing" className="rp-nav-link">{c.pricingNav}</a>
             <LanguageToggle />
@@ -191,8 +195,8 @@ export default function Landing() {
             <Link to="/signup" className="rp-nav-cta rp-button rp-button-red">{c.start}<ArrowRight size={14} /></Link>
           </nav>
         </div>
-        <nav className="rp-mobile-nav rp-wrap" aria-label={lang === 'sw' ? 'Sehemu za ukurasa' : 'Page sections'}>
-          <a href="#product-story">{lang === 'sw' ? 'Inavyofanya kazi' : 'How it works'}</a><a href="#pricing">{c.pricingNav}</a><a href="#faq">{c.faqNav}</a>
+        <nav className="rp-mobile-nav rp-wrap" aria-label={c.navSections}>
+          <a href="#product-story">{c.howNav}</a><a href="#pricing">{c.pricingNav}</a><a href="#faq">{c.faqNav}</a>
         </nav>
       </header>
       <main id="main-content">
@@ -201,7 +205,7 @@ export default function Landing() {
         <div id="features"><UnderstandingSection lang={lang} /></div>
         <section className="rp-steps">
           <div className="rp-wrap">
-            <p className="rp-eyebrow">{lang === 'sw' ? 'ANZA KWA URAHISI' : 'A SIMPLE START'}</p>
+            <p className="rp-eyebrow">{c.stepsEyebrow}</p>
             <h2 className="mt-5">{c.howTitle}</h2>
             <ol>{c.steps.map(([title, body], index) => <li key={title}><span>0{index + 1}</span><h3>{title}</h3><p>{body}</p></li>)}</ol>
           </div>
@@ -311,9 +315,9 @@ export default function Landing() {
                         {cells.map((cell, i) => (
                           <td key={i} className="px-5 py-4 text-center tabular-nums">
                             {cell === true ? (
-                              <Check className="mx-auto h-5 w-5 text-role-admin" aria-label={lang === 'sw' ? 'Ndiyo' : 'Yes'} />
+                              <Check className="mx-auto h-5 w-5 text-role-admin" aria-label={c.yes} />
                             ) : cell === false ? (
-                              <span aria-label={lang === 'sw' ? 'Hapana' : 'No'} className="text-lg text-ink-muted/40">×</span>
+                              <span aria-label={c.no} className="text-lg text-ink-muted/40">×</span>
                             ) : cell === 'soon' ? (
                               <span className="text-xs font-medium text-ink-muted">{c.pricing.soonLabel}</span>
                             ) : (
