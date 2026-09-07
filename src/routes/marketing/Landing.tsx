@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Mail, MapPin, Package, Phone, ShieldCheck, WalletCards } from 'lucide-react';
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Mail, MapPin, Phone, ShieldCheck } from 'lucide-react';
+import landingBucha from '@/assets/landing-bucha.jpg';
 import landingCashFlow from '@/assets/landing-cash-flow.jpg';
 import landingChat from '@/assets/landing-chat.jpeg';
 import landingProductsBarcode from '@/assets/landing-products-barcode.jpg';
@@ -14,7 +15,8 @@ import WhatsAppIcon from '@/components/ui/WhatsappIcon';
 import { buildRisipWhatsAppUrl } from '@/features/whatsapp/publicWhatsApp';
 import { useAuth } from '@/lib/auth';
 import { getLang } from '@/lib/lang';
-import { OperationsPreview, ProductHero, ProductStory, UnderstandingSection } from './ProductStory';
+import { BUCHA } from './landingDemo';
+import { Bubble, ChatHeader, OperationsPreview, ProductHero, ProductStory, UnderstandingSection } from './ProductStory';
 import './landing.css';
 
 const COPY = {
@@ -90,16 +92,45 @@ const COPY = {
     },
     ctaTitle: 'Anza kuweka biashara yako sawa leo.',
     ctaBody: 'Hakuna password ya kukumbuka. Fungua WhatsApp, sajili biashara na uanze kurekodi.',
-    featureEyebrow: 'UWEZO WA RISIP',
+    bucha: {
+      eyebrow: 'Bucha',
+      title: 'Bucha unalo, Bossi?',
+      lead: 'Usipate shida tena ya kugombana na wafanyakazi wako buchani. Risip itakusaidia kujua rekodi za mauzo ya nyama yoyote unayouza.',
+      photoAlt: 'Bucha ya kisasa nchini Tanzania: mfanyabiashara akitumia simu yake kando ya friji zenye nyama.',
+      photoCaption: 'Bucha \u00b7 kuuza kwa kilo, nusu na robo',
+      steps: [
+        ['Sajili kiasi ulichonunua', 'Mfano: nyama kilo 100. Unaandika mara moja tu, Risip inashika.'],
+        ['Mfanyakazi anarekodi kila mauzo', 'Kila anachouza anaandika: kilo, nusu au robo. Hakuna kinachopotea.'],
+        ['Uliza popote ulipo', 'Nenda kwenye mishe zako. Uliza nyama imebaki kiasi gani, Risip inakujibu kutokana na rekodi za mfanyakazi wako.'],
+      ],
+      chatLabel: 'Mfano wa mazungumzo',
+      bought: 'nimenunua nyama ya ng\u2019ombe kilo 100',
+      boughtReply: 'Sawa. Nyama ya ng\u2019ombe: kilo 100 zimeingia.',
+      staffLabel: 'Mfanyakazi buchani',
+      sold: 'nimeuza kilo 2 na nusu',
+      soldReply: 'Nimeandika. Nyama ya ng\u2019ombe: kilo 2.5.',
+      ownerLabel: 'Wewe, ukiwa nje',
+      ask: 'nyama imebaki kiasi gani?',
+      askReply: 'Imebaki kilo 63. Leo zimeuzwa kilo 37.',
+      remaining: 'Zimebaki', sold_: 'Zimeuzwa leo', unit: 'kilo',
+      lossTitle: 'Hakuna kinachopotea',
+      loss: [
+        'Kila kilo iliyotoka ina rekodi yake na muda wake',
+        'Upotevu na uharibifu vinarekodiwa peke yake, si kama mauzo',
+        'Nyama uliyochukua wewe mwenyewe inahesabiwa peke yake',
+      ],
+    },
+    featureEyebrow: 'Uwezo wa Risip',
     carouselLabel: 'Uwezo wa Risip', prevCards: 'Kadi zilizotangulia', nextCards: 'Kadi zinazofuata', cardWord: 'Kadi',
-    proofEyebrow: 'MAZUNGUMZO HALISI',
+    proofEyebrow: 'Mazungumzo halisi',
     proofTitle: 'Hii si picha ya mfano.',
     proofBody: 'Ni mazungumzo halisi ya Risip na duka linalotumia mfumo: orodha ya bidhaa zilizouzwa jana, idadi iliyobaki ya kitabu kimoja, na bidhaa inayouza zaidi mwezi huu. Maswali yaliulizwa kwa Kiswahili cha kawaida, bila menyu wala fomu.',
     proofAlt: 'Picha ya WhatsApp: mfanyabiashara anauliza orodha ya bidhaa zilizouzwa jana, idadi ya vitabu vilivyobaki na bidhaa inayouza zaidi, na Risip inajibu kwa Kiswahili.',
-    proofCaption: 'WHATSAPP · MAZUNGUMZO YA MTEJA WA RISIP',
-    trustTitle: 'UNABAKI NA UDHIBITI',
+    proofCaption: 'WhatsApp · mazungumzo ya mteja wa Risip',
+    trustTitle: 'Unabaki na udhibiti',
+    ctaEyebrow: 'WhatsApp × Risip',
     skip: 'Nenda kwenye maudhui', navMain: 'Urambazaji mkuu', navSections: 'Sehemu za ukurasa',
-    howNav: 'Inavyofanya kazi', stepsEyebrow: 'ANZA KWA URAHISI', yes: 'Ndiyo', no: 'Hapana',
+    howNav: 'Inavyofanya kazi', stepsEyebrow: 'Anza kwa urahisi', yes: 'Ndiyo', no: 'Hapana',
     openMenu: 'Fungua menyu', closeMenu: 'Funga menyu',
     chat: 'Ongea na Risip', footerAbout: 'Kuhusu Risip', footerAboutText: 'Risip ni mfumo wa mauzo, bidhaa na rekodi rahisi za biashara kwa wajasiriamali wa Tanzania.',
     footerContact: 'Mawasiliano', footerFaq: 'Maswali', footerFaqLink: 'Soma maswali ya kawaida',
@@ -177,16 +208,45 @@ const COPY = {
     },
     ctaTitle: 'Put your business records in order today.',
     ctaBody: 'There is no password to remember. Open WhatsApp, register your business and start recording.',
-    featureEyebrow: 'WHAT RISIP DOES',
+    bucha: {
+      eyebrow: 'Butchery',
+      title: 'You run a butchery, boss?',
+      lead: 'No more arguing with your staff about what went out today. Risip keeps the record of every kilo of meat you sell.',
+      photoAlt: 'A modern butchery in Tanzania: the owner using his phone beside the meat counters.',
+      photoCaption: 'Butchery \u00b7 selling by kilo, half and quarter',
+      steps: [
+        ['Register what you bought', 'For example, 100 kilos of beef. You enter it once and Risip holds it.'],
+        ['Your worker records every sale', 'Whatever leaves the counter he writes down: a kilo, a half, a quarter. Nothing goes missing.'],
+        ['Ask from wherever you are', 'Go and do your rounds. Ask how much meat is left and Risip answers from what your worker recorded.'],
+      ],
+      chatLabel: 'Example conversation',
+      bought: 'nimenunua nyama ya ng\u2019ombe kilo 100',
+      boughtReply: 'Got it. Beef: 100 kilos in.',
+      staffLabel: 'Your worker at the counter',
+      sold: 'nimeuza kilo 2 na nusu',
+      soldReply: 'Recorded. Beef: 2.5 kilos.',
+      ownerLabel: 'You, out of the shop',
+      ask: 'nyama imebaki kiasi gani?',
+      askReply: '63 kilos left. 37 kilos sold today.',
+      remaining: 'Left', sold_: 'Sold today', unit: 'kilo',
+      lossTitle: 'Nothing goes missing',
+      loss: [
+        'Every kilo that left has its own record and its own time',
+        'Spoilage and loss are recorded on their own, never as sales',
+        'Meat you took yourself is counted separately',
+      ],
+    },
+    featureEyebrow: 'What Risip does',
     carouselLabel: 'What Risip does', prevCards: 'Previous cards', nextCards: 'Next cards', cardWord: 'Card',
-    proofEyebrow: 'A REAL CONVERSATION',
+    proofEyebrow: 'A real conversation',
     proofTitle: 'This one is not a mock-up.',
     proofBody: 'A real Risip conversation with a shop that uses it: what sold yesterday, how many copies of one title are left, and what sells most this month. The questions were asked in everyday Kiswahili, with no menu and no form.',
     proofAlt: 'WhatsApp screenshot: a shopkeeper asks what sold yesterday, how many copies of a book are left and what sells most, and Risip answers in Kiswahili.',
-    proofCaption: 'WHATSAPP · A RISIP CUSTOMER CONVERSATION',
-    trustTitle: 'YOU STAY IN CONTROL',
+    proofCaption: 'WhatsApp · a Risip customer conversation',
+    trustTitle: 'You stay in control',
+    ctaEyebrow: 'WhatsApp × Risip',
     skip: 'Skip to content', navMain: 'Main navigation', navSections: 'Page sections',
-    howNav: 'How it works', stepsEyebrow: 'A SIMPLE START', yes: 'Yes', no: 'No',
+    howNav: 'How it works', stepsEyebrow: 'A simple start', yes: 'Yes', no: 'No',
     openMenu: 'Open menu', closeMenu: 'Close menu',
     chat: 'Chat with Risip', footerAbout: 'About Risip', footerAboutText: 'Risip is a simple sales, product and bookkeeping system made for Tanzanian entrepreneurs.',
     footerContact: 'Contact', footerFaq: 'FAQ', footerFaqLink: 'Read common questions',
@@ -197,7 +257,6 @@ const COPY = {
 
 type Copy = (typeof COPY)['sw'] | (typeof COPY)['en'];
 
-const CARD_ICONS = [Package, WhatsAppIcon, WalletCards, Bot] as const;
 const CARD_IMAGES = [landingProductsBarcode, landingWhatsApp, landingCashFlow, landingRisipAi] as const;
 
 /**
@@ -284,14 +343,17 @@ function FeatureCarousel({ c }: { c: Copy }) {
         aria-label={c.carouselLabel}
       >
         {cards.map(([title, body], i) => {
-          const Icon = CARD_ICONS[i];
           return (
             <article key={title} className="rp-card">
-              <img src={CARD_IMAGES[i]} alt="" loading="lazy" decoding="async" width="1200" height="800" />
-              <span className="rp-card-chip" aria-hidden="true"><Icon /></span>
-              <h3>{title}</h3>
-              <p>{body}</p>
-              <span className="rp-card-rule" aria-hidden="true" />
+              <div className="rp-card-visual">
+                <img src={CARD_IMAGES[i]} alt="" loading="lazy" decoding="async" width="1200" height="800" />
+                <span className="rp-card-index" aria-hidden="true">0{i + 1}</span>
+              </div>
+              <div className="rp-card-body">
+                <h3>{title}</h3>
+                <span className="rp-card-rule" aria-hidden="true" />
+                <p>{body}</p>
+              </div>
             </article>
           );
         })}
@@ -435,6 +497,66 @@ export default function Landing() {
               <p>{c.featureLead}</p>
             </div>
             <FeatureCarousel c={c} />
+          </div>
+        </section>
+        <section className="rp-bucha">
+          <div className="rp-wrap">
+            <div className="rp-section-head">
+              <div><p className="rp-eyebrow"><span className="rp-status-dot" />{c.bucha.eyebrow}</p><h2>{c.bucha.title}</h2></div>
+              <p>{c.bucha.lead}</p>
+            </div>
+
+            <div className="rp-bucha-grid">
+              <div className="rp-bucha-side">
+                <ol className="rp-bucha-flow">
+                  {c.bucha.steps.map(([title, body], i) => (
+                    <li key={title}>
+                      <span className="rp-bucha-step" aria-hidden="true">0{i + 1}</span>
+                      <h3>{title}</h3>
+                      <p>{body}</p>
+                    </li>
+                  ))}
+                </ol>
+
+                <figure className="rp-bucha-shot">
+                  <img src={landingBucha} alt={c.bucha.photoAlt} loading="lazy" decoding="async" width="1408" height="768" />
+                  <figcaption>{c.bucha.photoCaption}</figcaption>
+                </figure>
+              </div>
+
+              {/* The same conversation UI as the rest of the page, because it is
+                  the same conversation. Three beats: the meat arrives, the man at
+                  the counter sells some, the owner asks from somewhere else. */}
+              <div className="rp-bucha-chat">
+                <div className="rp-demo-label"><span className="rp-status-dot" />{c.bucha.chatLabel}</div>
+                <div className="rp-scene-chat">
+                  <ChatHeader lang={lang} />
+                  <div className="rp-chat-body">
+                    <Bubble outgoing>{c.bucha.bought}</Bubble>
+                    <Bubble>{c.bucha.boughtReply}</Bubble>
+
+                    <p className="rp-bucha-who">{c.bucha.staffLabel}</p>
+                    <Bubble outgoing>{c.bucha.sold}</Bubble>
+                    <Bubble>{c.bucha.soldReply}</Bubble>
+
+                    <p className="rp-bucha-who">{c.bucha.ownerLabel}</p>
+                    <Bubble outgoing>{c.bucha.ask}</Bubble>
+                    <Bubble>
+                      <strong>{c.bucha.askReply}</strong>
+                      <div className="rp-bucha-tally">
+                        <div><small>{c.bucha.remaining}</small><b>{BUCHA.remaining} {c.bucha.unit}</b></div>
+                        <div><small>{c.bucha.sold_}</small><b>{BUCHA.soldToday} {c.bucha.unit}</b></div>
+                      </div>
+                    </Bubble>
+                  </div>
+                </div>
+
+                <div className="rp-bucha-loss">
+                  <p>{c.bucha.lossTitle}</p>
+                  <ul>{c.bucha.loss.map((item) => <li key={item}><Check size={15} aria-hidden="true" />{item}</li>)}</ul>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
         <section className="rp-steps">
@@ -593,7 +715,7 @@ export default function Landing() {
         <section className="rp-final-cta">
           <img src={landingShop} alt="" className="rp-final-art" loading="lazy" width="1408" height="768" />
           <div className="rp-wrap">
-            <p className="rp-eyebrow">WHATSAPP × RISIP</p>
+            <p className="rp-eyebrow">{c.ctaEyebrow}</p>
             <h2 className="mt-5">{c.ctaTitle}</h2>
             <p>{c.ctaBody}</p>
             <div className="rp-hero-actions"><Link to="/signup" className="rp-button rp-button-red">{c.primary}</Link>{chatUrl && <a href={chatUrl} target="_blank" rel="noopener noreferrer" className="rp-watch"><WhatsAppIcon className="h-5 w-5" />{c.chat}</a>}</div>

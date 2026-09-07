@@ -31,7 +31,7 @@ const COPY = {
     missing: 'Hakuna link hapa. Fungua ile uliyotumiwa WhatsApp.',
     toLogin: 'Omba link mpya WhatsApp',
     why: 'Kila link ya kuingia inatumika mara moja tu na inaisha baada ya dakika 5. Hii inalinda akaunti yako kama ujumbe ukisambazwa kwa mtu mwingine.',
-    eyebrow: 'KUINGIA KWA WHATSAPP',
+    eyebrow: 'Kuingia kwa WhatsApp',
   },
   en: {
     working: 'Signing you in…',
@@ -43,7 +43,7 @@ const COPY = {
     missing: 'There is no link here. Open the one sent to you on WhatsApp.',
     toLogin: 'Request a new WhatsApp link',
     why: 'Every sign-in link works once and expires after five minutes. That is what protects your account if the message is ever forwarded to somebody else.',
-    eyebrow: 'WHATSAPP SIGN IN',
+    eyebrow: 'WhatsApp sign in',
   },
 } as const;
 

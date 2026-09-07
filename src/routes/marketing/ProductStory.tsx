@@ -9,13 +9,13 @@ import { DEMO, DEMO_PRODUCTS, demoProfit, tsh } from './landingDemo';
 
 const text = {
   en: {
-    eyebrow: 'YOUR BUSINESS. ONE CONVERSATION.', hero: 'You run the shop.', accent: 'Risip keeps up.',
+    eyebrow: 'Your business. One conversation.', hero: 'You run the shop.', accent: 'Risip keeps up.',
     lead: 'A sale. A delivery. A customer who pays later. Just tell Risip on WhatsApp. Keep your stock, money and daily decisions in view.',
     start: 'Start on WhatsApp', watch: 'See it in action', trial: '7 days free', noCard: 'No card needed', languages: 'Kiswahili & English',
     example: 'Illustrative demo', conversation: 'Business assistant', confirmed: 'Sale confirmed', revenue: 'Sales', profit: 'Gross profit',
     raw: 'nimeuza nguvu ya sala 2 rejareja, printer 3, biblia 4 jumla',
     received: 'Got it. Retail for Nguvu ya sala, wholesale for Biblia.', total: 'Total sale', confirm: 'You confirm. Risip records.',
-    storyLabel: 'FROM A MESSAGE TO A CLEARER BUSINESS', storyTitle: 'A little conversation.\nA lot more clarity.',
+    storyLabel: 'From a message to a clearer business', storyTitle: 'A little conversation.\nA lot more clarity.',
     storyLead: 'Follow one example business day. Every message connects to the records behind it.',
     chapters: [
       ['Just say what sold.', 'Write the way you speak. Risip brings the products, quantities and prices together for you to confirm.'],
@@ -34,25 +34,25 @@ const text = {
     balance: 'Customer balance after confirmation', debtNote: 'A collection against an earlier sale.',
     daily: 'Today’s summary', expenses: 'Expenses', net: 'Profit after recorded expenses', dailyAnswer: 'Printer brought in the most revenue. Nguvu ya sala is running low with 3 copies left. Plan your next restock.',
     dailyNote: 'Based on this example day’s confirmed records.',
-    messyLabel: 'ORDINARY WORDS. USEFUL RECORDS.', messyTitle: 'Less form filling.\nMore getting on with it.',
+    messyLabel: 'Ordinary words. Useful records.', messyTitle: 'Less form filling.\nMore getting on with it.',
     messyLead: 'Mixed languages, follow-ups and retail or wholesale prices. Risip works with your message, checks your records and asks when something is unclear.',
-    rawLabel: '01 / YOU WRITE', understanding: '02 / RISIP UNDERSTANDS', validated: '03 / YOU REVIEW',
+    rawLabel: '01 / You write', understanding: '02 / Risip understands', validated: '03 / You review',
     interpretation: ['Sale · 3 products', 'Retail and wholesale kept separate', 'Prices checked against your product records'],
     validatedNote: 'Review the quantities and total before confirming.',
-    opsLabel: 'BEHIND THE CONVERSATION', opsTitle: 'Care goes into every answer.',
+    opsLabel: 'Behind the conversation', opsTitle: 'Care goes into every answer.',
     opsLead: 'The Risip team’s internal console brings conversation issues into view, so they can be investigated and reviewed.',
     internal: 'Internal team console · illustrative preview', issue: 'A price needs clarification', detected: 'Flagged for review', context: 'Conversation context', contextValue: 'Retail / wholesale choice', review: 'Review before release', reviewValue: 'Correction → regression check',
     retail: 'Retail', wholesale: 'Wholesale', yesShort: 'Yes', unit: 'copies',
     exampleDay: 'Your shop · Example day', dayShort: 'Your day, understood.', productTypes: 'product types', stockAlert: 'stock alert',
   },
   sw: {
-    eyebrow: 'BIASHARA YAKO. MAZUNGUMZO MOJA.', hero: 'Wewe endesha duka.', accent: 'Risip ifuatilie.',
+    eyebrow: 'Biashara yako. Mazungumzo moja.', hero: 'Wewe endesha duka.', accent: 'Risip ifuatilie.',
     lead: 'Mauzo. Mzigo mpya. Mteja anayelipa baadaye. Iambie Risip kwenye WhatsApp. Jua bidhaa zilizobaki, pesa yako na hatua ya kuchukua.',
     start: 'Anza WhatsApp', watch: 'Ona inavyofanya kazi', trial: 'Siku 7 bure', noCard: 'Bila kadi', languages: 'Kiswahili na English',
     example: 'Mfano wa matumizi', conversation: 'Msaidizi wa biashara', confirmed: 'Mauzo yamethibitishwa', revenue: 'Mauzo', profit: 'Faida ghafi',
     raw: 'nimeuza nguvu ya sala 2 rejareja, printer 3, biblia 4 jumla',
     received: 'Nimeelewa. Nguvu ya sala kwa rejareja, Biblia kwa jumla.', total: 'Jumla ya mauzo', confirm: 'Unathibitisha. Risip inarekodi.',
-    storyLabel: 'KUTOKA UJUMBE HADI BIASHARA INAYOELEWEKA', storyTitle: 'Mazungumzo machache.\nUelewa zaidi.',
+    storyLabel: 'Kutoka ujumbe hadi biashara inayoeleweka', storyTitle: 'Mazungumzo machache.\nUelewa zaidi.',
     storyLead: 'Fuata mfano wa siku moja ya biashara. Kila ujumbe unaunganishwa na rekodi zake.',
     chapters: [
       ['Sema tu kilichouzwa.', 'Andika unavyozungumza. Risip inaunganisha bidhaa, idadi na bei, kisha inakuonyesha uthibitishe.'],
@@ -71,12 +71,12 @@ const text = {
     balance: 'Salio la mteja baada ya kuthibitisha', debtNote: 'Malipo ya deni la mauzo yaliyopita.',
     daily: 'Muhtasiri wa leo', expenses: 'Matumizi', net: 'Faida baada ya matumizi yaliyorekodiwa', dailyAnswer: 'Printer imeleta mapato mengi zaidi. Nguvu ya sala zinakaribia kuisha: zimebaki 3. Panga kuongeza stoo.',
     dailyNote: 'Kutokana na rekodi zilizothibitishwa za siku hii ya mfano.',
-    messyLabel: 'MANENO YA KAWAIDA. REKODI ZINAZOFAA.', messyTitle: 'Fomu chache.\nNafasi zaidi ya biashara.',
+    messyLabel: 'Maneno ya kawaida. Rekodi zinazofaa.', messyTitle: 'Fomu chache.\nNafasi zaidi ya biashara.',
     messyLead: 'Lugha mchanganyiko, maswali ya kufuatilia, bei za rejareja au jumla. Risip inasoma ujumbe wako, inakagua rekodi na kuuliza kama kuna utata.',
-    rawLabel: '01 / UNAANDIKA', understanding: '02 / RISIP INAELEWA', validated: '03 / UNAKAGUA',
+    rawLabel: '01 / Unaandika', understanding: '02 / Risip inaelewa', validated: '03 / Unakagua',
     interpretation: ['Mauzo · bidhaa 3', 'Rejareja na jumla zimetofautishwa', 'Bei zimeangaliwa kwenye rekodi za bidhaa'],
     validatedNote: 'Kagua idadi na jumla kabla ya kuthibitisha.',
-    opsLabel: 'NYUMA YA MAZUNGUMZO', opsTitle: 'Kila jibu linahitaji umakini.',
+    opsLabel: 'Nyuma ya mazungumzo', opsTitle: 'Kila jibu linahitaji umakini.',
     opsLead: 'Console ya ndani ya timu ya Risip inaonyesha changamoto za mazungumzo ili zichunguzwe na kukaguliwa.',
     internal: 'Console ya timu ya ndani · mfano', issue: 'Bei inahitaji ufafanuzi', detected: 'Imewekwa kwa ukaguzi', context: 'Muktadha wa mazungumzo', contextValue: 'Chaguo la rejareja / jumla', review: 'Ukaguzi kabla ya kutolewa', reviewValue: 'Marekebisho → jaribio la kurudia',
     retail: 'Rejareja', wholesale: 'Jumla', yesShort: 'Ndiyo', unit: 'nakala',
@@ -111,11 +111,11 @@ function StepArrow() {
   return <ChevronDown ref={arrow} size={18} aria-hidden="true" className={`rp-understanding-arrow${seen ? ' is-visible' : ''}`} />;
 }
 
-function Bubble({ children, outgoing = false }: { children: ReactNode; outgoing?: boolean }) {
+export function Bubble({ children, outgoing = false }: { children: ReactNode; outgoing?: boolean }) {
   return <div className={`rp-bubble ${outgoing ? 'rp-bubble-out' : 'rp-bubble-in'}`}>{children}<span className="rp-bubble-meta" aria-hidden="true">{outgoing ? <CheckCheck size={14} /> : <span>Risip</span>}</span></div>;
 }
 
-function ChatHeader({ lang }: { lang: LangCode }) {
+export function ChatHeader({ lang }: { lang: LangCode }) {
   return <div className="rp-chat-header"><span className="rp-avatar">r<span>.</span></span><div><strong>Risip</strong><small>{text[lang].conversation}</small></div><WhatsAppIcon className="rp-chat-icon" /></div>;
 }
 

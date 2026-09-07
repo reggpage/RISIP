@@ -31,7 +31,6 @@ const COPY = {
     invalid: 'Weka namba sahihi ya WhatsApp.',
     error: 'Hatukuweza kutuma ujumbe sasa. Fungua WhatsApp moja kwa moja au jaribu tena.',
     another: 'Tumia namba nyingine',
-    eyebrow: 'BILA PASSWORD',
   },
   en: {
     loginTitle: 'Sign in with WhatsApp',
@@ -52,7 +51,6 @@ const COPY = {
     invalid: 'Enter a valid WhatsApp number.',
     error: 'We could not send the message right now. Open WhatsApp directly or try again.',
     another: 'Use another number',
-    eyebrow: 'NO PASSWORD',
   },
 } as const;
 
@@ -134,7 +132,6 @@ export default function WhatsAppAuth({ mode }: { mode: Mode }) {
 
           <div className="rp-auth-centre">
             <span className="rp-auth-mark"><WhatsAppIcon /></span>
-            <p className="rp-auth-eyebrow">{c.eyebrow}</p>
             <h1 className="rp-auth-title">{mode === 'login' ? c.loginTitle : c.registerTitle}</h1>
             <p className="rp-auth-lead">{mode === 'login' ? c.loginLead : c.registerLead}</p>
           </div>
