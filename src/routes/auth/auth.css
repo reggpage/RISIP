@@ -15,7 +15,11 @@
   color: #242824;
 }
 .rp-auth *, .rp-auth *::before, .rp-auth *::after { box-sizing: border-box; }
-.rp-auth :is(a, button, summary, input, textarea):focus-visible { outline: 3px solid var(--rp-red); outline-offset: 3px; }
+/* Links and buttons take the outline. Fields do not: they already show focus
+   through their own border and a soft ring, and having both was a heavy
+   double stroke around every input. */
+.rp-auth :is(a, button, summary):focus-visible { outline: 2px solid var(--rp-red); outline-offset: 3px; }
+.rp-auth-input:focus-visible { outline: none; }
 .rp-auth h1 { font-family: Outfit, system-ui, sans-serif; }
 
 /* --- the bar across the top, matching the landing header ------------------- */
@@ -54,7 +58,7 @@
 textarea.rp-auth-input { height: auto; padding: 14px 16px; line-height: 1.7; resize: none; }
 .rp-auth-input::placeholder { color: #a2ab9d; }
 .rp-auth-input:hover { border-color: #bcc5b4; }
-.rp-auth-input:focus { border-color: var(--rp-red); outline: none; box-shadow: 0 0 0 3px rgb(var(--role-admin) / .16); }
+.rp-auth-input:focus { border-color: var(--rp-red); outline: none; box-shadow: 0 0 0 3px rgb(var(--role-admin) / .10); }
 .rp-auth-phone { display: flex; gap: 10px; }
 .rp-auth-prefix { display: grid; place-content: center; width: 74px; height: 52px; flex-shrink: 0; font-size: 15px; font-weight: 500; color: #4d5749; background: #eef0e8; border: 1px solid #d7dccf; border-radius: 6px; }
 .rp-auth-error { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; line-height: 1.6; color: #a51833; }

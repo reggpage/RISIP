@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { ArrowRight, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Mail, MapPin, Package, Phone, ShieldCheck, WalletCards } from 'lucide-react';
+import { Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Mail, MapPin, Package, Phone, ShieldCheck, WalletCards } from 'lucide-react';
 import landingCashFlow from '@/assets/landing-cash-flow.jpg';
 import landingChat from '@/assets/landing-chat.jpeg';
 import landingProductsBarcode from '@/assets/landing-products-barcode.jpg';
@@ -100,6 +100,7 @@ const COPY = {
     trustTitle: 'UNABAKI NA UDHIBITI',
     skip: 'Nenda kwenye maudhui', navMain: 'Urambazaji mkuu', navSections: 'Sehemu za ukurasa',
     howNav: 'Inavyofanya kazi', stepsEyebrow: 'ANZA KWA URAHISI', yes: 'Ndiyo', no: 'Hapana',
+    openMenu: 'Fungua menyu', closeMenu: 'Funga menyu',
     chat: 'Ongea na Risip', footerAbout: 'Kuhusu Risip', footerAboutText: 'Risip ni mfumo wa mauzo, bidhaa na rekodi rahisi za biashara kwa wajasiriamali wa Tanzania.',
     footerContact: 'Mawasiliano', footerFaq: 'Maswali', footerFaqLink: 'Soma maswali ya kawaida',
     footerRights: 'Haki zote zimehifadhiwa.',
@@ -186,6 +187,7 @@ const COPY = {
     trustTitle: 'YOU STAY IN CONTROL',
     skip: 'Skip to content', navMain: 'Main navigation', navSections: 'Page sections',
     howNav: 'How it works', stepsEyebrow: 'A SIMPLE START', yes: 'Yes', no: 'No',
+    openMenu: 'Open menu', closeMenu: 'Close menu',
     chat: 'Chat with Risip', footerAbout: 'About Risip', footerAboutText: 'Risip is a simple sales, product and bookkeeping system made for Tanzanian entrepreneurs.',
     footerContact: 'Contact', footerFaq: 'FAQ', footerFaqLink: 'Read common questions',
     footerRights: 'All rights reserved.',
@@ -286,11 +288,10 @@ function FeatureCarousel({ c }: { c: Copy }) {
           return (
             <article key={title} className="rp-card">
               <img src={CARD_IMAGES[i]} alt="" loading="lazy" decoding="async" width="1200" height="800" />
-              <div className="rp-card-body">
-                <Icon className="h-6 w-6" />
-                <h3>{title}</h3>
-                <p>{body}</p>
-              </div>
+              <span className="rp-card-chip" aria-hidden="true"><Icon /></span>
+              <h3>{title}</h3>
+              <p>{body}</p>
+              <span className="rp-card-rule" aria-hidden="true" />
             </article>
           );
         })}
@@ -321,32 +322,107 @@ function FeatureCarousel({ c }: { c: Copy }) {
   );
 }
 
+/**
+ * The device, rendered rather than photographed.
+ *
+ * A drawn hand was tried here first and thrown away: flat vector skin beside
+ * a glass screen reads as clipart, and the two available photographs of a real
+ * hand do not work either. In one the phone faces away from the camera, and in
+ * the other it is a 175 by 260 pixel region that would have to be doubled in
+ * size to fill this slot. So the hand in this section is the one in the
+ * photograph behind it, and the screen is shown on a device sharp enough to
+ * actually read the conversation on.
+ */
+function PhoneShowcase({ src, alt, caption }: { src: string; alt: string; caption: string }) {
+  return (
+    <figure className="rp-showcase">
+      <div aria-hidden="true" className="rp-showcase-glow" />
+      <div className="rp-phone">
+        <div className="rp-phone-frame">
+          <span aria-hidden="true" className="rp-phone-button is-up" />
+          <span aria-hidden="true" className="rp-phone-button is-down" />
+          <span aria-hidden="true" className="rp-phone-button is-power" />
+          <div className="rp-phone-screen">
+            <img src={src} alt={alt} loading="lazy" decoding="async" width="500" height="1082" />
+            <span aria-hidden="true" className="rp-phone-island" />
+            <span aria-hidden="true" className="rp-phone-gloss" />
+          </div>
+        </div>
+      </div>
+      <figcaption className="rp-phone-caption">{caption}</figcaption>
+    </figure>
+  );
+}
+
 export default function Landing() {
   const auth = useAuth();
   const lang = getLang();
   const c = COPY[lang];
   const [yearly, setYearly] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const chatUrl = buildRisipWhatsAppUrl('support', lang);
+
+  // Escape closes it, and so does growing past the width that hides the
+  // button: an open panel left behind on a resize is a panel nothing can
+  // close. The body is locked while it is open so the page behind stays put.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const wide = window.matchMedia('(min-width: 960px)');
+    const shut = () => setMenuOpen(false);
+    const key = (event: KeyboardEvent) => { if (event.key === 'Escape') shut(); };
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    wide.addEventListener('change', shut);
+    window.addEventListener('keydown', key);
+    return () => {
+      document.body.style.overflow = previous;
+      wide.removeEventListener('change', shut);
+      window.removeEventListener('keydown', key);
+    };
+  }, [menuOpen]);
   if (auth.status === 'signed-in' && auth.profile) return <Navigate to="/dashboard" replace />;
 
   return (
     <div className="rp-landing" lang={lang}>
       <a href="#main-content" className="rp-skip">{c.skip}</a>
-      <header className="rp-header">
+      <header className="rp-header" data-menu={menuOpen}>
         <div className="rp-wrap rp-header-inner">
           <Link to="/" aria-label="Risip" className="rp-header-logo"><RisipLogo /></Link>
-          <nav aria-label={c.navMain}>
+          <nav className="rp-nav" aria-label={c.navMain}>
             <a href="#product-story" className="rp-nav-link">{c.howNav}</a>
             <a href="#features" className="rp-nav-link">{c.features}</a>
             <a href="#pricing" className="rp-nav-link">{c.pricingNav}</a>
+            <a href="#faq" className="rp-nav-link">{c.faqNav}</a>
             <LanguageToggle />
-            <Link to="/login">{c.login}</Link>
-            <Link to="/signup" className="rp-nav-cta rp-button rp-button-red">{c.start}<ArrowRight size={14} /></Link>
+            <Link to="/login" className="rp-nav-link">{c.login}</Link>
+            <Link to="/signup" className="rp-nav-cta rp-button rp-button-red">{c.start}</Link>
+          </nav>
+          {/* One control on a phone instead of a row of links plus a second
+              row underneath it. The bars are spans so they can be animated
+              into the cross rather than swapped for a different icon. */}
+          <button
+            type="button"
+            className="rp-burger"
+            aria-label={menuOpen ? c.closeMenu : c.openMenu}
+            aria-expanded={menuOpen}
+            aria-controls="rp-menu"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <span /><span /><span />
+          </button>
+        </div>
+        <div id="rp-menu" className="rp-menu" data-open={menuOpen} hidden={!menuOpen}>
+          <nav className="rp-wrap" aria-label={c.navSections}>
+            {([['#product-story', c.howNav], ['#features', c.features], ['#pricing', c.pricingNav], ['#faq', c.faqNav]] as const).map(([href, label]) => (
+              <a key={href} href={href} onClick={() => setMenuOpen(false)}>{label}</a>
+            ))}
+            <div className="rp-menu-foot">
+              <LanguageToggle />
+              <Link to="/login" onClick={() => setMenuOpen(false)}>{c.login}</Link>
+            </div>
+            <Link to="/signup" className="rp-button rp-button-red" onClick={() => setMenuOpen(false)}>{c.start}</Link>
           </nav>
         </div>
-        <nav className="rp-mobile-nav rp-wrap" aria-label={c.navSections}>
-          <a href="#product-story">{c.howNav}</a><a href="#pricing">{c.pricingNav}</a><a href="#faq">{c.faqNav}</a>
-        </nav>
       </header>
       <main id="main-content">
         <ProductHero lang={lang} />
@@ -369,6 +445,7 @@ export default function Landing() {
           </div>
         </section>
         <section className="rp-proof">
+          <img src={landingShop} alt="" className="rp-proof-photo" loading="lazy" decoding="async" width="1408" height="768" />
           <div className="rp-wrap rp-proof-grid">
             <div>
               <p className="rp-eyebrow"><span className="rp-status-dot" />{c.proofEyebrow}</p>
@@ -379,19 +456,7 @@ export default function Landing() {
                 <ul>{c.trust.map((item) => <li key={item}><ShieldCheck size={16} />{item}</li>)}</ul>
               </div>
             </div>
-            {/* The screenshot carries its own status bar and keyboard, so the
-                frame draws neither. Its height follows the aspect ratio; a fixed
-                height inside a fixed-width bezel is what pushed the picture out
-                of the frame the last time this section existed. */}
-            <div>
-              <div className="rp-phone">
-                <div aria-hidden="true" className="rp-phone-glow" />
-                <div className="rp-phone-frame">
-                  <img src={landingChat} alt={c.proofAlt} loading="lazy" decoding="async" width="500" height="1082" />
-                </div>
-              </div>
-              <p className="rp-phone-caption">{c.proofCaption}</p>
-            </div>
+            <PhoneShowcase src={landingChat} alt={c.proofAlt} caption={c.proofCaption} />
           </div>
         </section>
         <OperationsPreview lang={lang} />
@@ -531,7 +596,7 @@ export default function Landing() {
             <p className="rp-eyebrow">WHATSAPP × RISIP</p>
             <h2 className="mt-5">{c.ctaTitle}</h2>
             <p>{c.ctaBody}</p>
-            <div className="rp-hero-actions"><Link to="/signup" className="rp-button rp-button-red">{c.primary}<ArrowRight size={17} /></Link>{chatUrl && <a href={chatUrl} target="_blank" rel="noopener noreferrer" className="rp-watch"><WhatsAppIcon className="h-5 w-5" />{c.chat}</a>}</div>
+            <div className="rp-hero-actions"><Link to="/signup" className="rp-button rp-button-red">{c.primary}</Link>{chatUrl && <a href={chatUrl} target="_blank" rel="noopener noreferrer" className="rp-watch"><WhatsAppIcon className="h-5 w-5" />{c.chat}</a>}</div>
           </div>
         </section>
       </main>

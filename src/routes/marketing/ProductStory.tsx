@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowDown, ArrowRight, Check, CheckCheck, ChevronRight, MessageCircle, Package, ShieldCheck, TrendingUp, Wallet } from 'lucide-react';
+import { ArrowDown, ArrowRight, Check, CheckCheck, ChevronDown, MessageCircle, Package, ShieldCheck, TrendingUp, Wallet } from 'lucide-react';
 import landingShop from '@/assets/landing-shop.jpg';
 import RisipLogo from '@/components/ui/RisipLogo';
 import WhatsAppIcon from '@/components/ui/WhatsappIcon';
@@ -15,7 +15,6 @@ const text = {
     example: 'Illustrative demo', conversation: 'Business assistant', confirmed: 'Sale confirmed', revenue: 'Sales', profit: 'Gross profit',
     raw: 'nimeuza nguvu ya sala 2 rejareja, printer 3, biblia 4 jumla',
     received: 'Got it. Retail for Nguvu ya sala, wholesale for Biblia.', total: 'Total sale', confirm: 'You confirm. Risip records.',
-    scroll: 'SCROLL TO FOLLOW THE STORY', built: 'Built for the way you work.', business: 'From the shop counter to the bigger picture.',
     storyLabel: 'FROM A MESSAGE TO A CLEARER BUSINESS', storyTitle: 'A little conversation.\nA lot more clarity.',
     storyLead: 'Follow one example business day. Every message connects to the records behind it.',
     chapters: [
@@ -43,7 +42,7 @@ const text = {
     opsLabel: 'BEHIND THE CONVERSATION', opsTitle: 'Care goes into every answer.',
     opsLead: 'The Risip team’s internal console brings conversation issues into view, so they can be investigated and reviewed.',
     internal: 'Internal team console · illustrative preview', issue: 'A price needs clarification', detected: 'Flagged for review', context: 'Conversation context', contextValue: 'Retail / wholesale choice', review: 'Review before release', reviewValue: 'Correction → regression check',
-    retail: 'Retail', wholesale: 'Wholesale', yesShort: 'Yes', unit: 'copies', chapterCount: '05',
+    retail: 'Retail', wholesale: 'Wholesale', yesShort: 'Yes', unit: 'copies',
     exampleDay: 'Your shop · Example day', dayShort: 'Your day, understood.', productTypes: 'product types', stockAlert: 'stock alert',
   },
   sw: {
@@ -53,7 +52,6 @@ const text = {
     example: 'Mfano wa matumizi', conversation: 'Msaidizi wa biashara', confirmed: 'Mauzo yamethibitishwa', revenue: 'Mauzo', profit: 'Faida ghafi',
     raw: 'nimeuza nguvu ya sala 2 rejareja, printer 3, biblia 4 jumla',
     received: 'Nimeelewa. Nguvu ya sala kwa rejareja, Biblia kwa jumla.', total: 'Jumla ya mauzo', confirm: 'Unathibitisha. Risip inarekodi.',
-    scroll: 'SHUKA UONE MTIRIRIKO', built: 'Imejengwa kwa kazi zako za kila siku.', business: 'Kutoka kaunta ya duka hadi picha nzima ya biashara.',
     storyLabel: 'KUTOKA UJUMBE HADI BIASHARA INAYOELEWEKA', storyTitle: 'Mazungumzo machache.\nUelewa zaidi.',
     storyLead: 'Fuata mfano wa siku moja ya biashara. Kila ujumbe unaunganishwa na rekodi zake.',
     chapters: [
@@ -81,10 +79,37 @@ const text = {
     opsLabel: 'NYUMA YA MAZUNGUMZO', opsTitle: 'Kila jibu linahitaji umakini.',
     opsLead: 'Console ya ndani ya timu ya Risip inaonyesha changamoto za mazungumzo ili zichunguzwe na kukaguliwa.',
     internal: 'Console ya timu ya ndani · mfano', issue: 'Bei inahitaji ufafanuzi', detected: 'Imewekwa kwa ukaguzi', context: 'Muktadha wa mazungumzo', contextValue: 'Chaguo la rejareja / jumla', review: 'Ukaguzi kabla ya kutolewa', reviewValue: 'Marekebisho → jaribio la kurudia',
-    retail: 'Rejareja', wholesale: 'Jumla', yesShort: 'Ndiyo', unit: 'nakala', chapterCount: '05',
+    retail: 'Rejareja', wholesale: 'Jumla', yesShort: 'Ndiyo', unit: 'nakala',
     exampleDay: 'Duka lako · Siku ya mfano', dayShort: 'Siku yako, kwa ufupi.', productTypes: 'aina za bidhaa', stockAlert: 'tahadhari ya stoo',
   },
 } as const;
+
+/**
+ * The marker that carries the eye from one understanding panel to the next.
+ *
+ * It starts still and only begins moving once it is actually on screen, so
+ * the movement is a reaction to the scroll rather than something that was
+ * already happening before anybody looked. It points down the page on a
+ * phone, where the panels are stacked, and across on a wide screen, where
+ * they are in a row; the rotation lives in the stylesheet with the layout
+ * that decides which it is.
+ */
+function StepArrow() {
+  const arrow = useRef<SVGSVGElement>(null);
+  const [seen, setSeen] = useState(false);
+
+  useEffect(() => {
+    const el = arrow.current;
+    if (!el || typeof IntersectionObserver === 'undefined') { setSeen(true); return; }
+    const watcher = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) { setSeen(true); watcher.disconnect(); }
+    }, { threshold: 0.9 });
+    watcher.observe(el);
+    return () => watcher.disconnect();
+  }, []);
+
+  return <ChevronDown ref={arrow} size={18} aria-hidden="true" className={`rp-understanding-arrow${seen ? ' is-visible' : ''}`} />;
+}
 
 function Bubble({ children, outgoing = false }: { children: ReactNode; outgoing?: boolean }) {
   return <div className={`rp-bubble ${outgoing ? 'rp-bubble-out' : 'rp-bubble-in'}`}>{children}<span className="rp-bubble-meta" aria-hidden="true">{outgoing ? <CheckCheck size={14} /> : <span>Risip</span>}</span></div>;
@@ -104,7 +129,7 @@ export function ProductHero({ lang }: { lang: LangCode }) {
         <p className="rp-eyebrow"><span className="rp-status-dot" />{c.eyebrow}</p>
         <h1>{c.hero}<br /><span>{c.accent}</span></h1>
         <p className="rp-lead">{c.lead}</p>
-        <div className="rp-hero-actions"><Link to="/signup" className="rp-button rp-button-red"><WhatsAppIcon className="h-5 w-5" />{c.start}<ArrowRight size={17} /></Link><a href="#product-story" className="rp-watch">{c.watch}<ArrowDown size={17} /></a></div>
+        <div className="rp-hero-actions"><Link to="/signup" className="rp-button rp-button-red"><WhatsAppIcon className="h-5 w-5" />{c.start}</Link><a href="#product-story" className="rp-watch">{c.watch}<ArrowDown size={17} /></a></div>
         <div className="rp-hero-assurances"><span><Check size={14} />{c.trial}</span><span>{c.noCard}</span><span>{c.languages}</span></div>
       </div>
       <div className="rp-hero-product">
@@ -116,7 +141,6 @@ export function ProductHero({ lang }: { lang: LangCode }) {
         <div className="rp-hero-receipt"><span className="rp-check-circle"><Check size={18} /></span><div><small>{c.confirmed} · {c.example}</small><strong>{tsh(DEMO.revenue)}</strong></div><span className="rp-receipt-profit"><TrendingUp size={16} /><b>{tsh(demoProfit)}</b><small>{c.profit}</small></span></div>
       </div>
     </div>
-    <div className="rp-wrap rp-hero-bottom"><span>{c.built}</span><a href="#product-story">{c.scroll}<ArrowDown size={14} /></a><span>01 / {c.chapterCount}</span></div>
   </section>;
 }
 
@@ -207,8 +231,8 @@ export function UnderstandingSection({ lang }: { lang: LangCode }) {
   return <section id="understanding" className="rp-understanding"><div className="rp-wrap">
     <div className="rp-section-head"><div><p className="rp-eyebrow">{c.messyLabel}</p><h2>{c.messyTitle}</h2></div><p>{c.messyLead}</p></div>
     <div className="rp-understanding-grid">
-      <article><span className="rp-mini-label">{c.rawLabel}</span><div className="rp-raw-message">“{c.raw}”</div><span className="rp-understanding-bottom"><WhatsAppIcon className="h-4 w-4" />WhatsApp<ChevronRight size={16} /></span></article>
-      <article><span className="rp-mini-label">{c.understanding}</span><ul>{c.interpretation.map(item => <li key={item}><Check size={16} />{item}</li>)}</ul><span className="rp-understanding-bottom"><RisipLogo className="h-6 w-auto" /><ChevronRight size={16} /></span></article>
+      <article><span className="rp-mini-label">{c.rawLabel}</span><div className="rp-raw-message">“{c.raw}”</div><span className="rp-understanding-bottom"><WhatsAppIcon className="h-4 w-4" />WhatsApp<StepArrow /></span></article>
+      <article><span className="rp-mini-label">{c.understanding}</span><ul>{c.interpretation.map(item => <li key={item}><Check size={16} />{item}</li>)}</ul><span className="rp-understanding-bottom"><RisipLogo className="h-6 w-auto" /><StepArrow /></span></article>
       <article className="rp-understanding-result"><span className="rp-mini-label">{c.validated}</span><small>{c.total}</small><strong>{tsh(DEMO.revenue)}</strong><p>{c.validatedNote}</p><span className="rp-understanding-bottom"><ShieldCheck size={18} />{c.example}</span></article>
     </div>
   </div></section>;
