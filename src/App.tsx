@@ -1,37 +1,41 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import AppShell from '@/components/layout/AppShell';
 import RequireAuth from '@/guards/RequireAuth';
 import RequireRole from '@/guards/RequireRole';
-import WaLogin from '@/routes/auth/WaLogin';
-import BusinessSignup from '@/routes/auth/BusinessSignup';
-import WhatsAppAuth from '@/routes/auth/WhatsAppAuth';
-import ClaimsInbox from '@/routes/claims/ClaimsInbox';
 import Landing from '@/routes/marketing/Landing';
-import ProjectsList from '@/routes/projects/ProjectsList';
-import NewProject from '@/routes/projects/NewProject';
-import EditProject from '@/routes/projects/EditProject';
-import ProjectDetail from '@/routes/projects/ProjectDetail';
-import ReceiptsPage from '@/routes/receipts/ReceiptsPage';
-import ManualReceipt from '@/routes/receipts/ManualReceipt';
-import Dashboard from '@/routes/dashboard/Dashboard';
-import InvoicesPage from '@/routes/invoices/InvoicesPage';
-import InvoiceEditor from '@/routes/invoices/InvoiceEditor';
-import PublicInvoice from '@/routes/invoices/PublicInvoice';
-import PettyCashPage from '@/routes/pettyCash/PettyCashPage';
-import SettingsPage from '@/routes/settings/SettingsPage';
-import BillingPage from '@/routes/billing/BillingPage';
-import NotificationsPage from '@/routes/notifications/NotificationsPage';
-import RetirementsPage from '@/routes/retirements/RetirementsPage';
-import ReimbursementsPage from '@/routes/reimbursements/ReimbursementsPage';
-import DailyRecordsPage from '@/routes/dailyRecords/DailyRecordsPage';
-import ProductsPage from '@/routes/products/ProductsPage';
-import ScanPage from '@/routes/products/ScanPage';
-import SellPage from '@/routes/products/SellPage';
 import InstallPromptBanner from '@/components/pwa/InstallPromptBanner';
+
+// Load business screens when opened, keeping the public landing page lightweight.
+const AppShell = lazy(() => import('@/components/layout/AppShell'));
+const WaLogin = lazy(() => import('@/routes/auth/WaLogin'));
+const BusinessSignup = lazy(() => import('@/routes/auth/BusinessSignup'));
+const WhatsAppAuth = lazy(() => import('@/routes/auth/WhatsAppAuth'));
+const ClaimsInbox = lazy(() => import('@/routes/claims/ClaimsInbox'));
+const ProjectsList = lazy(() => import('@/routes/projects/ProjectsList'));
+const NewProject = lazy(() => import('@/routes/projects/NewProject'));
+const EditProject = lazy(() => import('@/routes/projects/EditProject'));
+const ProjectDetail = lazy(() => import('@/routes/projects/ProjectDetail'));
+const ReceiptsPage = lazy(() => import('@/routes/receipts/ReceiptsPage'));
+const ManualReceipt = lazy(() => import('@/routes/receipts/ManualReceipt'));
+const Dashboard = lazy(() => import('@/routes/dashboard/Dashboard'));
+const InvoicesPage = lazy(() => import('@/routes/invoices/InvoicesPage'));
+const InvoiceEditor = lazy(() => import('@/routes/invoices/InvoiceEditor'));
+const PublicInvoice = lazy(() => import('@/routes/invoices/PublicInvoice'));
+const PettyCashPage = lazy(() => import('@/routes/pettyCash/PettyCashPage'));
+const SettingsPage = lazy(() => import('@/routes/settings/SettingsPage'));
+const BillingPage = lazy(() => import('@/routes/billing/BillingPage'));
+const NotificationsPage = lazy(() => import('@/routes/notifications/NotificationsPage'));
+const RetirementsPage = lazy(() => import('@/routes/retirements/RetirementsPage'));
+const ReimbursementsPage = lazy(() => import('@/routes/reimbursements/ReimbursementsPage'));
+const DailyRecordsPage = lazy(() => import('@/routes/dailyRecords/DailyRecordsPage'));
+const ProductsPage = lazy(() => import('@/routes/products/ProductsPage'));
+const ScanPage = lazy(() => import('@/routes/products/ScanPage'));
+const SellPage = lazy(() => import('@/routes/products/SellPage'));
 
 export default function App() {
   return (
     <>
+      <Suspense fallback={<div className="grid min-h-screen place-items-center bg-white" role="status" aria-label="Loading Risip"><span className="text-xl font-semibold text-role-admin">Risip</span></div>}>
       <Routes>
       {/* Public routes */}
       <Route path="/" element={<Landing />} />
@@ -136,6 +140,7 @@ export default function App() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      </Suspense>
       <InstallPromptBanner />
     </>
   );

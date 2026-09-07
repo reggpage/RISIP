@@ -2,6 +2,8 @@ import type { Config } from 'tailwindcss';
 
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
+  // A receipt date regex resembles an arbitrary utility, but is not CSS.
+  blocklist: ['[-:T]'],
   theme: {
     extend: {
       colors: {

@@ -1,20 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { ArrowRight, BarChart3, Bot, Check, ChevronDown, ChevronLeft, ChevronRight, Mail, MapPin, Package, Phone, ScanLine, ShieldCheck, Smartphone, WalletCards } from 'lucide-react';
-import landingProductsBarcode from '@/assets/landing-products-barcode.jpg';
-import landingCashFlow from '@/assets/landing-cash-flow.jpg';
-import landingWhatsApp from '@/assets/landing-whatsapp.jpg';
-import landingRisipAi from '@/assets/landing-risip-ai.jpg';
+import { ArrowRight, Check, ChevronDown, Mail, MapPin, Phone } from 'lucide-react';
 import landingShop from '@/assets/landing-shop.jpg';
-import landingChat from '@/assets/landing-chat.jpeg';
 import Button from '@/components/ui/Button';
 import LanguageToggle from '@/components/ui/LanguageToggle';
 import RisipLogo from '@/components/ui/RisipLogo';
-import WhatsAppFloatingButton from '@/components/whatsapp/WhatsAppFloatingButton';
 import WhatsAppIcon from '@/components/ui/WhatsappIcon';
 import { buildRisipWhatsAppUrl } from '@/features/whatsapp/publicWhatsApp';
 import { useAuth } from '@/lib/auth';
 import { getLang } from '@/lib/lang';
+import { OperationsPreview, ProductHero, ProductStory, UnderstandingSection } from './ProductStory';
+import './landing.css';
 
 const COPY = {
   sw: {
@@ -171,9 +167,6 @@ const COPY = {
   },
 } as const;
 
-const STEP_ICONS = [Smartphone, ScanLine, BarChart3] as const;
-const FEATURE_ICONS = [Package, WhatsAppIcon, WalletCards, Bot] as const;
-const FEATURE_IMAGES = [landingProductsBarcode, landingWhatsApp, landingCashFlow, landingRisipAi] as const;
 
 export default function Landing() {
   const auth = useAuth();
@@ -184,72 +177,38 @@ export default function Landing() {
   if (auth.status === 'signed-in' && auth.profile) return <Navigate to="/dashboard" replace />;
 
   return (
-    <div className="min-h-screen bg-white text-ink">
-      <header className="fixed inset-x-0 top-0 z-40 border-b border-white/10 bg-book/95 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <Link to="/" aria-label="Risip" className="text-role-admin"><RisipLogo className="h-10 w-auto" /></Link>
-          <nav className="flex items-center gap-1 sm:gap-3">
-            <a href="#features" className="hidden px-3 py-2 text-sm font-medium text-white/65 hover:text-white sm:block">{c.features}</a>
-            <a href="#pricing" className="hidden px-3 py-2 text-sm font-medium text-white/65 hover:text-white sm:block">{c.pricingNav}</a>
-            <a href="#faq" className="hidden px-3 py-2 text-sm font-medium text-white/65 hover:text-white sm:block">{c.faqNav}</a>
+    <div className="rp-landing" lang={lang}>
+      <a href="#main-content" className="rp-skip">{lang === 'sw' ? 'Nenda kwenye maudhui' : 'Skip to content'}</a>
+      <header className="rp-header">
+        <div className="rp-wrap rp-header-inner">
+          <Link to="/" aria-label="Risip" className="rp-header-logo"><RisipLogo /></Link>
+          <nav aria-label={lang === 'sw' ? 'Urambazaji mkuu' : 'Main navigation'}>
+            <a href="#product-story" className="rp-nav-link">{lang === 'sw' ? 'Inavyofanya kazi' : 'How it works'}</a>
+            <a href="#features" className="rp-nav-link">{c.features}</a>
+            <a href="#pricing" className="rp-nav-link">{c.pricingNav}</a>
             <LanguageToggle />
-            <Link to="/login" className="px-3 py-2 text-sm font-semibold text-white/80 hover:text-white">{c.login}</Link>
-            <Link to="/signup" className="hidden sm:block"><Button tint="admin">{c.start}</Button></Link>
+            <Link to="/login">{c.login}</Link>
+            <Link to="/signup" className="rp-nav-cta rp-button rp-button-red">{c.start}<ArrowRight size={14} /></Link>
           </nav>
         </div>
+        <nav className="rp-mobile-nav rp-wrap" aria-label={lang === 'sw' ? 'Sehemu za ukurasa' : 'Page sections'}>
+          <a href="#product-story">{lang === 'sw' ? 'Inavyofanya kazi' : 'How it works'}</a><a href="#pricing">{c.pricingNav}</a><a href="#faq">{c.faqNav}</a>
+        </nav>
       </header>
-
-      <main>
-        {/* The cover of the book: dark card stock, the title stamped on it. */}
-        <section className="relative overflow-hidden bg-book pb-20 pt-28 sm:pb-24 sm:pt-36">
-          <div aria-hidden="true" className="pointer-events-none absolute -top-56 left-1/2 h-[40rem] w-[40rem] -translate-x-1/2 rounded-full bg-role-admin/15 blur-3xl" />
-          <div className="relative mx-auto grid max-w-7xl items-center gap-14 px-4 sm:px-6 lg:grid-cols-[1.05fr_.95fr] lg:px-8">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white/75"><ShieldCheck className="h-3.5 w-3.5 text-role-admin" /> {c.eyebrow}</div>
-              <h1 className="mt-7 max-w-2xl font-display text-4xl font-semibold leading-[1.1] tracking-tight text-white text-balance sm:text-6xl">{c.hero} <span className="text-role-admin">{c.accent}</span></h1>
-              <p className="mt-6 max-w-xl text-lg leading-relaxed text-white/65">{c.lead}</p>
-              <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-                <Link to="/signup"><Button tint="admin" className="w-full justify-center px-6 py-3 text-base sm:w-auto">{c.primary}<ArrowRight className="h-4 w-4" /></Button></Link>
-                <Link to="/login" className="inline-flex w-full items-center justify-center rounded-sm border border-white/25 px-6 py-3 text-base font-semibold text-white transition hover:bg-white/10 sm:w-auto">{c.secondary}</Link>
-              </div>
-              <ul className="mt-9 grid gap-3 text-sm text-white/60 sm:grid-cols-3">
-                {c.trust.map((item) => <li key={item} className="flex items-start gap-2"><Check className="mt-0.5 h-4 w-4 shrink-0 text-[#25D366]" />{item}</li>)}
-              </ul>
-            </div>
-
-            <PhoneMockup />
+      <main id="main-content">
+        <ProductHero lang={lang} />
+        <ProductStory lang={lang} />
+        <div id="features"><UnderstandingSection lang={lang} /></div>
+        <section className="rp-steps">
+          <div className="rp-wrap">
+            <p className="rp-eyebrow">{lang === 'sw' ? 'ANZA KWA URAHISI' : 'A SIMPLE START'}</p>
+            <h2 className="mt-5">{c.howTitle}</h2>
+            <ol>{c.steps.map(([title, body], index) => <li key={title}><span>0{index + 1}</span><h3>{title}</h3><p>{body}</p></li>)}</ol>
           </div>
         </section>
-
-        {/* A real shop, not a stock photo. */}
-        <section aria-hidden="true" className="relative h-64 overflow-hidden sm:h-80 lg:h-96">
-          <img src={landingShop} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover object-center" />
-          <div className="absolute inset-0 bg-gradient-to-t from-book/70 via-book/10 to-transparent" />
-        </section>
-
-        <Section>
-          <div className="mx-auto max-w-2xl text-center"><h2 className="font-display text-3xl font-semibold text-balance">{c.howTitle}</h2><p className="mt-3 text-ink-muted">{c.howLead}</p></div>
-          <ol className="mt-14 grid gap-10 md:grid-cols-3 md:gap-8">
-            {c.steps.map(([title, body], index) => { const Icon = STEP_ICONS[index]; return (
-              <li key={title} className="relative">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-book text-white"><Icon className="h-5 w-5" /></span>
-                  <span className="font-display text-3xl font-semibold text-role-admin/25 tabular-nums">{index + 1}</span>
-                </div>
-                <h3 className="mt-5 text-lg font-semibold">{title}</h3>
-                <p className="mt-2.5 max-w-sm text-sm leading-7 text-ink-muted">{body}</p>
-              </li>
-            ); })}
-          </ol>
-        </Section>
-
-        <Section id="features" tinted>
-          <div className="mx-auto max-w-2xl text-center"><h2 className="font-display text-3xl font-semibold text-balance">{c.featureTitle}</h2><p className="mt-3 text-ink-muted">{c.featureLead}</p></div>
-          <FeatureCarousel cards={c.cards} lang={lang} />
-        </Section>
-
-        <section id="pricing" className="relative overflow-hidden bg-white py-16 sm:py-20">
-          <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+        <OperationsPreview lang={lang} />
+        <section id="pricing" className="rp-pricing">
+          <div className="rp-wrap">
             <div className="mx-auto max-w-2xl text-center">
               <h2 className="font-display text-3xl font-semibold text-balance">{c.pricing.title}</h2>
               <p className="mt-3 text-ink-muted">{c.pricing.lead}</p>
@@ -272,14 +231,14 @@ export default function Landing() {
               </div>
             </div>
 
-            <div className="mt-12 grid items-start gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rp-plan-grid mt-12 grid sm:grid-cols-2 lg:grid-cols-4">
               {c.pricing.plans.map((plan) => {
                 // The recommended plan is the one printed on the cover stock.
                 const dark = plan.popular;
                 return (
                 <article
                   key={plan.name}
-                  className={`relative flex flex-col rounded-sm p-8 shadow-sm ${dark ? 'bg-book text-white shadow-xl lg:-mt-4 lg:mb-4' : 'border border-ink/10 bg-white'}`}
+                  className={`rp-plan relative flex flex-col ${dark ? 'rp-plan-popular text-white' : 'border border-ink/10 bg-white'}`}
                 >
                   {/* Sentence case, not shouted. "WENGI HUCHAGUA" in capitals
                       also wrapped onto two lines and pushed the card's heading
@@ -293,7 +252,7 @@ export default function Landing() {
                   <p className={`mt-1 min-h-[2.5rem] text-sm ${dark ? 'text-white/55' : 'text-ink-muted'}`}>{plan.tagline}</p>
                   <div className="mt-5 flex items-baseline gap-1">
                     <span className={`text-sm font-semibold ${dark ? 'text-white/55' : 'text-ink-muted'}`}>TSh</span>
-                    <span className="font-display text-4xl font-semibold tabular-nums tracking-tight">{yearly ? plan.y : plan.m}</span>
+                    <span className="rp-plan-price font-semibold tabular-nums tracking-tight">{yearly ? plan.y : plan.m}</span>
                   </div>
                   <p className={`mt-1 text-sm ${dark ? 'text-white/55' : 'text-ink-muted'}`}>{yearly ? c.pricing.perYear : c.pricing.perMonth}</p>
                   <div className={`mt-5 rounded-sm px-4 py-3 text-sm ${dark ? 'bg-white/10' : 'bg-white'}`}>
@@ -333,8 +292,8 @@ export default function Landing() {
 
             <p className="mx-auto mt-10 max-w-3xl text-center text-sm leading-7 text-ink-muted">{c.pricing.note}</p>
 
-            <div className="mt-16">
-              <h3 className="text-center font-display text-xl font-semibold">{c.pricing.compareTitle}</h3>
+            <details className="rp-comparison">
+              <summary>{c.pricing.compareTitle}<ChevronDown size={16} /></summary>
               <div className="mt-6 overflow-x-auto rounded-sm border border-ink/10 bg-white shadow-sm">
                 <table className="w-full min-w-[44rem] text-sm">
                   <thead>
@@ -352,9 +311,9 @@ export default function Landing() {
                         {cells.map((cell, i) => (
                           <td key={i} className="px-5 py-4 text-center tabular-nums">
                             {cell === true ? (
-                              <Check className="mx-auto h-5 w-5 text-role-admin" aria-label="ndiyo" />
+                              <Check className="mx-auto h-5 w-5 text-role-admin" aria-label={lang === 'sw' ? 'Ndiyo' : 'Yes'} />
                             ) : cell === false ? (
-                              <span aria-label="hapana" className="text-lg text-ink-muted/40">×</span>
+                              <span aria-label={lang === 'sw' ? 'Hapana' : 'No'} className="text-lg text-ink-muted/40">×</span>
                             ) : cell === 'soon' ? (
                               <span className="text-xs font-medium text-ink-muted">{c.pricing.soonLabel}</span>
                             ) : (
@@ -367,30 +326,27 @@ export default function Landing() {
                   </tbody>
                 </table>
               </div>
-            </div>
+            </details>
           </div>
         </section>
 
-        <Section id="faq" narrow>
-          <div className="text-center"><h2 className="font-display text-3xl font-semibold text-balance">{c.faqTitle}</h2><p className="mt-3 text-ink-muted">{c.faqLead}</p></div>
-          <div className="mt-12 divide-y divide-ink/10 border-y border-ink/10">
-            {c.faqs.map(([question, answer]) => (
-              <details key={question} className="group py-5">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-6 text-base font-semibold sm:text-lg">
-                  <span>{question}</span>
-                  <ChevronDown aria-hidden="true" className="h-5 w-5 shrink-0 text-role-admin transition group-open:rotate-180" />
-                </summary>
-                <p className="mt-4 max-w-3xl pr-10 text-sm leading-7 text-ink-muted sm:text-base">{answer}</p>
-              </details>
-            ))}
-          </div>
-        </Section>
 
-        <section className="bg-book py-16 text-white sm:py-20">
-          <div className="mx-auto max-w-3xl px-4 text-center sm:px-6"><h2 className="font-display text-3xl font-semibold text-balance">{c.ctaTitle}</h2><p className="mx-auto mt-4 max-w-2xl text-white/70">{c.ctaBody}</p><div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row"><Link to="/signup"><Button tint="admin" className="w-full justify-center px-6 py-3 text-base sm:w-auto">{c.primary}</Button></Link>{chatUrl && <a href={chatUrl} target="_blank" rel="noopener noreferrer" className="inline-flex w-full items-center justify-center gap-2 rounded-sm border border-white/25 px-6 py-3 text-base font-semibold text-white transition hover:bg-white/10 sm:w-auto"><WhatsAppIcon className="h-5 w-5" />{c.chat}</a>}</div></div>
+        <section id="faq" className="rp-faq">
+          <div className="rp-wrap rp-faq-grid">
+            <div><h2>{c.faqTitle}</h2><p className="rp-faq-lead">{c.faqLead}</p></div>
+            <div>{c.faqs.map(([question, answer]) => <details key={question}><summary><span>{question}</span><ChevronDown size={17} /></summary><p>{answer}</p></details>)}</div>
+          </div>
+        </section>
+        <section className="rp-final-cta">
+          <img src={landingShop} alt="" className="rp-final-art" loading="lazy" width="1408" height="768" />
+          <div className="rp-wrap">
+            <p className="rp-eyebrow">WHATSAPP × RISIP</p>
+            <h2 className="mt-5">{c.ctaTitle}</h2>
+            <p>{c.ctaBody}</p>
+            <div className="rp-hero-actions"><Link to="/signup" className="rp-button rp-button-red">{c.primary}<ArrowRight size={17} /></Link>{chatUrl && <a href={chatUrl} target="_blank" rel="noopener noreferrer" className="rp-watch"><WhatsAppIcon className="h-5 w-5" />{c.chat}</a>}</div>
+          </div>
         </section>
       </main>
-
       <footer className="border-t border-white/10 bg-book py-14 text-white sm:py-16">
         <div className="mx-auto grid max-w-7xl gap-12 px-4 sm:px-6 md:grid-cols-2 lg:grid-cols-[1.35fr_.7fr_1fr_.8fr] lg:gap-16 lg:px-8">
           <section><RisipLogo className="h-10 w-auto text-role-admin" /><h2 className="mt-6 text-base font-semibold text-white/90">{c.footerAbout}</h2><p className="mt-4 max-w-sm text-sm leading-7 text-white/70">{c.footerAboutText}</p></section>
@@ -400,156 +356,7 @@ export default function Landing() {
         </div>
         <div className="mx-auto mt-12 flex max-w-7xl flex-col items-start gap-4 border-t border-white/10 px-4 pt-7 text-xs text-white/45 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8"><span>© 2026 Risip. {c.footerRights}</span><LanguageToggle /></div>
       </footer>
-      <WhatsAppFloatingButton />
-    </div>
-  );
-}
 
-/** A white band. `tinted` only draws the hairlines that separate one from the next. */
-function Section({
-  id, children, tinted = false, narrow = false,
-}: { id?: string; children: React.ReactNode; tinted?: boolean; narrow?: boolean }) {
-  return (
-    <section id={id} className={`relative overflow-hidden bg-white py-16 sm:py-20 ${tinted ? 'border-y border-ink/10' : ''}`}>
-      <div className={`relative mx-auto px-4 sm:px-6 lg:px-8 ${narrow ? 'max-w-4xl' : 'max-w-7xl'}`}>{children}</div>
-    </section>
-  );
-}
-
-/**
- * The four capability cards, as a carousel.
- *
- * One card at a time on a phone, two on a tablet, three on a desktop, and the
- * track slides by whole pages. It advances itself every 4 seconds and stops
- * while the pointer or the keyboard is inside it, so it never moves the card
- * somebody is reading. The manual controls also restart the clock, so a click
- * is never immediately undone by a scheduled advance.
- */
-function FeatureCarousel({ cards, lang }: { cards: readonly (readonly [string, string])[]; lang: 'sw' | 'en' }) {
-  const [page, setPage] = useState(0);
-  const [perPage, setPerPage] = useState(1);
-  const [paused, setPaused] = useState(false);
-  const [tick, setTick] = useState(0);
-
-  useEffect(() => {
-    const read = () => setPerPage(window.innerWidth >= 1024 ? 3 : window.innerWidth >= 640 ? 2 : 1);
-    read();
-    window.addEventListener('resize', read);
-    return () => window.removeEventListener('resize', read);
-  }, []);
-
-  // The track slides by ONE card and stops when the last card reaches the
-  // right edge. Sliding a whole page at a time left the final page padded with
-  // empty slots whenever the cards did not divide evenly into it.
-  const pages = Math.max(1, cards.length - perPage + 1);
-  const current = Math.min(page, pages - 1);
-
-  useEffect(() => {
-    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-    if (paused || reduceMotion || pages < 2) return;
-    const timer = window.setTimeout(() => setPage((p) => (Math.min(p, pages - 1) + 1) % pages), 4000);
-    return () => window.clearTimeout(timer);
-  }, [paused, pages, current, tick]);
-
-  const go = (next: number) => { setPage((next + pages) % pages); setTick((t) => t + 1); };
-
-  return (
-    <div
-      aria-roledescription="carousel"
-      aria-label={lang === 'sw' ? 'Uwezo wa Risip' : 'What Risip does'}
-      className="relative mt-12"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocusCapture={() => setPaused(true)}
-      onBlurCapture={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPaused(false); }}
-    >
-      <div className="overflow-hidden">
-        <div
-          className="flex transition-transform duration-500 ease-out motion-reduce:transition-none"
-          style={{ transform: `translateX(-${(current * 100) / perPage}%)` }}
-        >
-          {cards.map(([title, body], index) => {
-            const Icon = FEATURE_ICONS[index];
-            const onScreen = index >= current && index < current + perPage;
-            return (
-              <article
-                key={title}
-                aria-hidden={!onScreen}
-                className="min-w-0 shrink-0 px-2 first:pl-0 last:pr-0"
-                style={{ width: `${100 / perPage}%` }}
-              >
-                <div className="h-full overflow-hidden border border-ink/10 bg-white shadow-sm">
-                  <img src={FEATURE_IMAGES[index]} alt="" loading="lazy" decoding="async" className="h-48 w-full object-cover" />
-                  <div className="p-6">
-                    <Icon className="h-6 w-6 text-role-admin" />
-                    <h3 className="mt-4 text-lg font-semibold">{title}</h3>
-                    <p className="mt-2 text-sm leading-relaxed text-ink-muted">{body}</p>
-                  </div>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </div>
-
-      {pages > 1 && (
-        <div className="mt-7 flex items-center justify-center gap-4">
-          <button
-            type="button"
-            onClick={() => go(current - 1)}
-            aria-label={lang === 'sw' ? 'Kadi zilizotangulia' : 'Previous cards'}
-            className="flex h-9 w-9 items-center justify-center border border-ink/15 text-ink-muted transition hover:border-role-admin hover:text-role-admin"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <div className="flex gap-2" role="tablist">
-            {Array.from({ length: pages }, (_, index) => (
-              <button
-                key={index}
-                type="button"
-                role="tab"
-                aria-selected={index === current}
-                aria-label={`${lang === 'sw' ? 'Kadi' : 'Card'} ${index + 1}`}
-                onClick={() => go(index)}
-                className={`h-2 transition-all duration-300 ${index === current ? 'w-7 bg-role-admin' : 'w-2 bg-ink/20 hover:bg-ink/40'}`}
-              />
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() => go(current + 1)}
-            aria-label={lang === 'sw' ? 'Kadi zinazofuata' : 'Next cards'}
-            className="flex h-9 w-9 items-center justify-center border border-ink/15 text-ink-muted transition hover:border-role-admin hover:text-role-admin"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * The hero phone. The screenshot is a real Risip conversation, so the frame
- * draws no status bar or keyboard of its own — the picture already has them.
- * Height is left to the aspect ratio rather than fixed: a fixed height with a
- * fixed-width frame is what pushed the image out of the bezel last time.
- */
-function PhoneMockup() {
-  return (
-    <div className="relative mx-auto w-full max-w-[19rem]">
-      <div aria-hidden="true" className="absolute -inset-6 rounded-[3rem] bg-role-admin/10 blur-2xl" />
-      <div className="relative rounded-[2.5rem] border-[6px] border-[#2C2A28] bg-[#2C2A28] shadow-2xl">
-        <div className="overflow-hidden rounded-[2rem] bg-white">
-          <img
-            src={landingChat}
-            alt="Mazungumzo halisi ya Risip kwenye WhatsApp: mfanyabiashara akiandika mauzo na Risip akijibu"
-            loading="lazy"
-            decoding="async"
-            className="block w-full"
-          />
-        </div>
-      </div>
     </div>
   );
 }
