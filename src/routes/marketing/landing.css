@@ -265,7 +265,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border-radius: 14px;
+  border-radius: 8px;
   overflow: hidden;
   background: #fff;
   border: 1px solid #e4e7dd;
@@ -273,14 +273,15 @@
   transition: transform 460ms cubic-bezier(.22, 1, .36, 1), box-shadow 460ms, border-color 460ms;
 }
 .rp-card:hover { transform: translateY(-4px); border-color: #d3d9c9; box-shadow: 0 1px 2px #1c30200d, 0 26px 50px -28px #1c302066; }
-/* The picture sits on our dark rather than on white, which is what lets four
-   photographs from four different sources read as one set. */
+/* The photograph, undimmed. It carried a red corner glow and a dark wash to
+   pull four unrelated stock shots together; both were taken off because they
+   were reading as a filter over the picture rather than as a treatment of it.
+   The step number keeps its own shadow instead, so it stays legible over a
+   light photograph now that there is no scrim under it. */
 .rp-card-visual { position: relative; isolation: isolate; aspect-ratio: 4 / 3; background: var(--rp-dark); overflow: hidden; }
-.rp-card-visual > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .82; filter: grayscale(.34) contrast(1.05) brightness(.9); transition: transform 700ms cubic-bezier(.22, 1, .36, 1), opacity 700ms; }
-.rp-card:hover .rp-card-visual > img { transform: scale(1.05); opacity: .92; }
-/* One brand glow in the corner, so the dark panel is Risip's and not just dark. */
-.rp-card-visual::after { content: ''; position: absolute; z-index: 1; inset: 0; pointer-events: none; background: radial-gradient(circle at 88% 8%, rgb(var(--role-admin) / .5), transparent 46%), linear-gradient(200deg, #19191700 40%, #191b1966); }
-.rp-card-index { position: absolute; z-index: 2; top: 16px; left: 20px; font-size: 14px; font-weight: 500; color: #ffffffab; }
+.rp-card-visual > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: transform 700ms cubic-bezier(.22, 1, .36, 1); }
+.rp-card:hover .rp-card-visual > img { transform: scale(1.05); }
+.rp-card-index { position: absolute; z-index: 2; top: 16px; left: 20px; font-size: 14px; font-weight: 500; color: #fff; text-shadow: 0 1px 10px #0b0f0ce6, 0 1px 3px #0b0f0cb3; }
 .rp-card-body { display: flex; flex-direction: column; flex: 1; padding: 24px 24px 26px; }
 .rp-card h3 { font-size: 19px; font-weight: 600; letter-spacing: -.35px; color: #242824; }
 .rp-card-rule { display: block; height: 1px; background: #e4e7dd; margin: 17px 0; transition: background 460ms; }
