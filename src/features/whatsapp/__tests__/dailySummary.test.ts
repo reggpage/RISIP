@@ -19,7 +19,7 @@ describe('daily summary presentation', () => {
     expect(text).toContain('*Faida ya leo: TSh 3,000*');
     expect(text).toContain('Kalamu* — imeisha');
     expect(text).toContain('Maji* — inakaribia kuisha');
-    expect(text).toContain('*🤖 Uchambuzi wa siku*');
+    expect(text).toContain('*Uchambuzi wa siku*');
   });
 
   it('labels a historical day with its own date instead of calling it today', () => {

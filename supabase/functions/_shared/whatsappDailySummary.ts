@@ -59,8 +59,8 @@ export function formatDailySummary(input: DailySummaryInput, lang: Lang): string
     subtitle,
     '',
     '━━━━━━━━━━━━━━━━━━',
-    sw ? `🏪 *Biashara:* ${input.businessName}` : `🏪 *Business:* ${input.businessName}`,
-    sw ? `📅 *Tarehe:* ${input.dateLabel}` : `📅 *Date:* ${input.dateLabel}`,
+    sw ? `*Biashara:* ${input.businessName}` : `*Business:* ${input.businessName}`,
+    sw ? `*Tarehe:* ${input.dateLabel}` : `*Date:* ${input.dateLabel}`,
     '━━━━━━━━━━━━━━━━━━',
     '',
     sw ? '*🛒 Mauzo yaliyorekodiwa*' : '*🛒 Recorded sales*',
@@ -86,7 +86,7 @@ export function formatDailySummary(input: DailySummaryInput, lang: Lang): string
     }
   }
 
-  lines.push('', sw ? '*🤖 Uchambuzi wa siku*' : '*🤖 Day analysis*', `• ${analysis}`);
+  lines.push('', sw ? '*Uchambuzi wa siku*' : '*Day analysis*', `• ${analysis}`);
   lines.push(sw ? `• Rekodi zilizothibitishwa: ${input.records}` : `• Confirmed records: ${input.records}`);
   return lines.join('\n');
 }

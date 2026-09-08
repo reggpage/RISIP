@@ -150,7 +150,7 @@ describe('the owner’s list', () => {
     expect(list).toContain('*Faida ghafi: TSh 399,000*');
     expect(list).toContain('Madeni mapya: TSh 45,000');
     expect(list).toContain('• *Mama Anna* — TSh 45,000');
-    expect(list).toContain('Miamala 18 · watu 2');
+    expect(list).toContain('Miamala 18 · Mfanyakazi 2');
   });
 
   it('labels a historical owner list with its own date', () => {

@@ -72,7 +72,7 @@ describe('A1 deterministic read-only WhatsApp tools', () => {
   it('calculates profit from historical product costs and names missing costs', () => {
     const profit = calculateProfitEstimate(
       [{ kind: 'sale', status: 'confirmed', amount: 100000 }, { kind: 'expense', status: 'confirmed', amount: 5000 }],
-      [{ description: 'unga', quantity: 10, lineTotal: 100000, occurredAt: '2026-01-01T00:00:00.000Z' }],
+      [{ kind: 'sale', description: 'unga', quantity: 10, lineTotal: 100000, occurredAt: '2026-01-01T00:00:00.000Z' }],
       [{ productKey: 'unga', unitCost: 7000, effectiveFrom: '2025-01-01T00:00:00.000Z' }],
     );
     expect(profit).toMatchObject({ cogs: 70000, grossProfit: 30000, costedSales: 100000, coverage: 1, estimatedProfit: 25000 });
@@ -83,7 +83,7 @@ describe('A1 deterministic read-only WhatsApp tools', () => {
 
     const incomplete = calculateProfitEstimate(
       [{ kind: 'sale', status: 'confirmed', amount: 100000 }],
-      [{ description: 'sukari', quantity: 10, lineTotal: 100000, occurredAt: '2026-01-01T00:00:00.000Z' }],
+      [{ kind: 'sale', description: 'sukari', quantity: 10, lineTotal: 100000, occurredAt: '2026-01-01T00:00:00.000Z' }],
       [],
     );
     expect(incomplete.productsMissingCost).toEqual(['sukari']);

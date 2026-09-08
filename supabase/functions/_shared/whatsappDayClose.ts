@@ -201,16 +201,13 @@ export function ownerDayListReply(facts: DayCloseFacts, lang: Lang): string {
   const out: string[] = [
     title,
     subtitle,
-    '',
-    '━━━━━━━━━━━━━━━━━━',
-    sw ? `🏪 *Biashara:* ${facts.businessName}` : `🏪 *Business:* ${facts.businessName}`,
-    sw ? `📅 *Tarehe:* ${facts.dateLabel}` : `📅 *Date:* ${facts.dateLabel}`,
-    '━━━━━━━━━━━━━━━━━━',
   ];
 
   for (const worker of facts.workers) {
     out.push('');
-    out.push(`*${worker.name}* · ${worker.firstAt}`);
+    out.push(sw
+      ? `Aliyerekodi: *${worker.name}* · ${worker.firstAt}`
+      : `Recorded by: *${worker.name}* · ${worker.firstAt}`);
     for (const line of worker.lines) {
       const tail = line.partyName ? ` — *${line.partyName}*` : '';
       const label = kindSuffix(line.kind, lang);
@@ -249,7 +246,7 @@ export function ownerDayListReply(facts: DayCloseFacts, lang: Lang): string {
     }
   }
 
-  out.push('', sw ? '*🤖 Uchambuzi wa siku*' : '*🤖 Day analysis*');
+  out.push('', sw ? '*Uchambuzi wa siku*' : '*Day analysis*');
   out.push(facts.profit > 0
     ? (sw ? '• Biashara imefanya faida baada ya gharama na matumizi yaliyorekodiwa.' : '• The business made a profit after recorded costs and expenses.')
     : facts.profit < 0
@@ -257,9 +254,10 @@ export function ownerDayListReply(facts: DayCloseFacts, lang: Lang): string {
       : (sw ? '• Mauzo na gharama vimekaribiana; endelea kufuatilia margin.' : '• Sales and costs were close; keep watching margins.'));
 
   out.push('');
+  const staff = facts.workers.length;
   out.push(sw
-    ? `Miamala ${facts.recordCount} · watu ${facts.workers.length}`
-    : `${facts.recordCount} records · ${facts.workers.length} people`);
+    ? `Miamala ${facts.recordCount} · Mfanyakazi ${staff}`
+    : `${facts.recordCount} records · ${staff} ${staff === 1 ? 'person' : 'people'} recorded`);
   return out.join('\n');
 }
 

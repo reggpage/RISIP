@@ -56,6 +56,15 @@ export type ReadDailyLine = {
   quantity: number;
   lineTotal: number;
   occurredAt: string;
+  /**
+   * The kind of the daily_record this line belongs to.
+   *
+   * Required, not optional, on purpose: cost of goods SOLD must only ever be
+   * priced from lines that were sold. A line carrying no kind used to be
+   * costed anyway, which put stock purchases into COGS. Making the field
+   * mandatory means the compiler names every caller that has to supply it.
+   */
+  kind: string;
 };
 
 export type ReadProductCost = {
@@ -409,6 +418,12 @@ export function calculateProfitEstimate(
   let costedSales = 0;
   const missing = new Set<string>();
   for (const line of lines) {
+    // Only what was SOLD. A stock purchase has lines too, and pricing those
+    // put the whole purchase into cost of goods sold: buying 100 units for
+    // 800,000 and selling 3 of them reported the day as a 782,860 loss. The
+    // kinds here are the same two the `sales` total above is built from, so
+    // the numerator and the denominator of the margin can never disagree.
+    if (line.kind !== 'sale' && line.kind !== 'debt_issued') continue;
     if (line.quantity <= 0 || line.lineTotal <= 0) continue;
     const unitCost = findCost(line);
     if (unitCost === null) {

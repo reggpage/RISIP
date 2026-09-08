@@ -2568,11 +2568,14 @@ async function buildDayCloseFacts(
     partyName: row.party_name, occurredAt: row.occurred_at,
   }));
   const occurredById = new Map(today.map((row) => [row.id, row.occurred_at]));
+  // The parent record's kind rides along so COGS can price sold lines only.
+  const kindById = new Map(today.map((row) => [row.id, row.kind]));
   const lines: ReadDailyLine[] = ((rawLines ?? []) as Array<Record<string, unknown>>).map((line) => ({
     description: String(line.description ?? ''),
     quantity: Number(line.quantity ?? 0),
     lineTotal: Number(line.line_total ?? 0),
     occurredAt: occurredById.get(String(line.daily_record_id)) ?? day.from.toISOString(),
+    kind: kindById.get(String(line.daily_record_id)) ?? '',
   }));
   const costs: ReadProductCost[] = ((rawCosts ?? []) as Array<Record<string, unknown>>).map((cost) => ({
     productKey: String(cost.product_key ?? ''),
@@ -2824,6 +2827,7 @@ async function buildDailyBreakdown(
   }).format(new Date(iso));
   const occurredById = new Map(rows.map((row) => [row.id, row.occurred_at]));
   const dayById = new Map(rows.map((row) => [row.id, dayOf(row.occurred_at)]));
+  const kindById = new Map(rows.map((row) => [row.id, row.kind]));
 
   const rowsByDay = new Map<string, ReadDailyRow[]>();
   const linesByDay = new Map<string, ReadDailyLine[]>();
@@ -2845,6 +2849,7 @@ async function buildDailyBreakdown(
       quantity: Number(line.quantity ?? 0),
       lineTotal: Number(line.line_total ?? 0),
       occurredAt: occurredById.get(String(line.daily_record_id)) ?? from.toISOString(),
+      kind: kindById.get(String(line.daily_record_id)) ?? '',
     });
     linesByDay.set(day, bucket);
   }
@@ -3377,9 +3382,14 @@ async function readOnlyToolReply(db: Admin, identity: any, request: ReadRequest,
     ? await db.from('daily_record_lines').select('daily_record_id, description, quantity, line_total').in('daily_record_id', ids).limit(20000)
     : { data: [] };
   const occurredById = new Map((dailyRows ?? []).map((row: { id: string; occurred_at: string }) => [row.id, row.occurred_at]));
-  const lines = (rawLines ?? []).map((line: { daily_record_id: string; description: string; quantity: number; line_total: number }) => ({
-    description: line.description, quantity: Number(line.quantity), lineTotal: Number(line.line_total), occurredAt: occurredById.get(line.daily_record_id) ?? from,
-  })) as ReadDailyLine[];
+  const kindById = new Map((dailyRows ?? []).map((row: { id: string; kind: string }) => [row.id, row.kind]));
+  const lines: ReadDailyLine[] = (rawLines ?? []).map((line: { daily_record_id: string; description: string; quantity: number; line_total: number }) => ({
+    description: line.description,
+    quantity: Number(line.quantity),
+    lineTotal: Number(line.line_total),
+    occurredAt: occurredById.get(line.daily_record_id) ?? from,
+    kind: kindById.get(line.daily_record_id) ?? '',
+  }));
   const { data: rawCosts } = await db.from('product_costs').select('product_key, unit_cost, effective_from')
     .eq('company_id', companyId).order('effective_from', { ascending: true }).limit(10000);
   const costs = (rawCosts ?? []).map((cost: { product_key: string; unit_cost: number; effective_from: string }) => ({
