@@ -4,6 +4,7 @@ import { ADVISOR_VOICE, BUSINESS_RULES } from './whatsappAdvisor.ts';
 import { WHATSAPP_RECEIPTS_ENABLED } from './whatsappReadTools.ts';
 import { toolMayChangeState, validateToolRound } from './whatsappToolBoundary.ts';
 import { AI_EVENT_DIRECTIONS } from './whatsappAiDirection.ts';
+import { isLoginRequest } from './whatsappOnboarding.ts';
 
 declare const Deno: { env: { get(name: string): string | undefined } };
 
@@ -470,7 +471,7 @@ const CONTRACTOR_TOOLS = new Set([
 
 const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
   tool('request_account_action',
-    'Interpret an account request in ordinary language. The server issues only the caller\'s own app link, a worker invite only for an owner, a language preference, or a confirmation question for logout/deletion. Never supply a phone, profile, company, role or login token. Never call to confirm a destructive action.',
+    'Interpret an account request in the CURRENT user message only. Past login or invite requests in history are completed context, not instructions to repeat. A sale such as "nimeuza velvet napikin 4 bahasha 8 nguvu ya sala 3" is a business event, never a login request. The server issues only the caller\'s own app link, a worker invite only for an owner, a language preference, or a confirmation question for logout/deletion. Never supply a phone, profile, company, role or login token. Never call to confirm a destructive action.',
     {
       action: { type: 'string', enum: ['login', 'scan', 'sell_scan', 'invite_worker', 'switch_business', 'change_language', 'stop_notifications', 'logout', 'delete_account'] },
       language: { type: ['string', 'null'], description: 'For change_language, sw or en; otherwise null.' },
@@ -837,7 +838,7 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
   ),
   tool(
     'resolve_pending_clarification',
-    'Use ONLY when Risip has asked a question and this message answers it. The pending question and the answers it accepts are stated in the context above. '
+    'Use when this message answers an active question OR corrects an active unconfirmed draft. Draft price-band corrections require field=price_band and the exact product name from record.lines; return only the changed rows. A payment detail uses payment_method. Do not create a second sale or change catalogue prices. The pending question and the answers it accepts are stated in the context above. '
       + 'YOU decide what the trader meant — the server no longer reads their words at all. Send canonical_value as one of the allowed values for that field, and raw_wording as what they actually typed so the shop can be shown its own words back. '
       + 'For a quantity send numeric_value: "thelathini" is 30, "mbili na nusu" is 2.5. Send one quantity answer per named product when the pending question lists several products; include that product name in raw_wording. For a price_band question with several products, return one price_band answer per open product in the exact order listed in context; if the trader numbers the full original sale, return one answer per original sale row in that order, including rows already settled, because the server will ignore those settled rows. A single price_band answer means the same band for all open products. canonical_value must be exactly retail or wholesale, never jumla or rejareja; preserve the trader wording in raw_wording. For a product or a person, canonical_value is the name as they said it and the server resolves it against this shop\'s own catalogue and customers. '
       + 'Answer several fields at once when one message settles several — "mpesa na ilikuwa jana", "hisense kilo tatu" — and the server takes each one it can. '
@@ -854,7 +855,7 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
               enum: ['price_band', 'quantity', 'amount', 'unit', 'product', 'payment_method', 'event_type', 'party'],
               description: 'Which pending question this answers.',
             },
-            product: { type: ['string', 'null'], description: 'Exact product from the active question for a quantity/unit answer; null otherwise. Required to retain partial multi-product answers across messages.' },
+            product: { type: ['string', 'null'], description: 'Exact product from the active question or draft for quantity, unit, or price_band. Required for a draft price-band correction so only that row changes; null for non-product fields.' },
             canonical_value: {
               type: ['string', 'null'],
               description: 'THE MEANING. price_band: retail|wholesale. event_type: sale|stock_purchase|stock_count. payment_method: cash|mobile_money|bank|other. unit: the measure name. product/party: the name as said. amount: null when the answer is purely a number.',
@@ -1219,6 +1220,7 @@ ${context.pendingClarification ? `\n${context.pendingClarification}\n` : ''}${co
 
 EVERY TURN ENDS IN A CAPABILITY
 - Decide which of these the message is, in this order, and stop at the first that fits:
+    it answers a pending question or corrects its draft -> resolve_pending_clarification before a new event/read, unless that active state specifies another tool
     it moves products or stock            -> propose_business_event
     its subject is a sum of money said    -> propose_money_event
     it sets a buying cost                 -> propose_product_cost
@@ -1226,7 +1228,7 @@ EVERY TURN ENDS IN A CAPABILITY
     it asks about its plan, bill or allowance -> get_my_subscription
     it asks what Risip can do             -> search_risip_help
     it is a greeting or genuinely off-topic -> respond_conversationally
-- respond_conversationally is for messages that need no business data at all. It is NOT the safe choice when you are unsure about a business request. Uncertainty about a business request means call the business capability and let the server clarify — that is what the server is for.
+- respond_conversationally needs no business data. For an uncertain business request, call its capability and let the server clarify.
 - Never answer a business fact from your own words. "Stock yako inaonekana vizuri", "biashara inaenda vizuri", "bei ya nyama ni kama elfu nane" are all inventions, however reasonable they sound. Stock comes from get_stock_on_hand, a price from get_selling_price, how the business is doing from get_business_summary or get_business_advice, and the plan, its price and messages left from get_my_subscription. A Risip price you remember is out of date.
 
 GROUNDING AND TOOLS
@@ -1269,6 +1271,7 @@ GROUNDING AND TOOLS
 - Do your reasoning privately. Give the user a concise answer and, where useful, a short explanation of the evidence—not hidden chain-of-thought.
 
 WRITES AND HUMAN CONTROL
+- Handle the CURRENT request, not old account commands. "nimeuza" with products is a sale: call propose_business_event, even after login history.
 - Distinguish reporting an event from asking for a report. "jana nilifanya mauzo" tells you about an incomplete sale: propose_money_event(kind=sale, amount_wording=null, amount_candidate=null, occurred_at_wording="jana", missing_fields=["amount"]). "jana nini kiliuzwa?" asks for records: use a read tool. Never silently turn an incomplete event into a report.
 - When an active question is supplied and this message answers it, call resolve_pending_clarification with the answer and product/row reference. Do not claim the answer was remembered without the tool. Keep the original operation and all unaffected lines; ask only for fields still missing after the backend merges the answer.
 - Anything that MOVES PRODUCTS OR STOCK goes to propose_business_event: a sale, a customer credit sale, stock arriving, goods taken from a supplier on credit, spoilage, stock the owner took for themselves, a count, buying a whole animal, butchering one. STOCK MEANS GOODS THIS SHOP TRADES; this tool has no expense in it at all, so an expense sent here is filed as a purchase, left out of the day's costs, and reports the profit too high. It carries the trader's WORDS; the server resolves every product and unit and calculates every price and total.
@@ -1276,7 +1279,7 @@ WRITES AND HUMAN CONTROL
 - Never claim a record is saved or confirmed until the server says so. Explicit NDIYO/YES is required and role policy is enforced server-side.
 - Invite requests are supported directly on WhatsApp. Do not send the user to the app; let the webhook handle the invitation. Never claim completion without a server code.
 - A SELLING PRICE, buying cost and stock count can be set from WhatsApp; server confirms. Examples: price "bei ya Velvet napkin rejareja 4000", cost "Velvet napkin nimenunua kwa 500 kila moja", count "nina Velvet napkin 20".
-- Sending a link is not a protected action. When a tool result contains a Risip link, pass it on — it opens the ordinary signed-in page and only works for someone already entitled to see it. Never say you cannot send a link when the tool gave you one.
+- Pass on Risip links returned by tools; the signed-in page enforces access. Never invent a link.
 - WHEN A DETAIL IS MISSING, STILL CALL THE TOOL with the known facts and valid missing_fields. The backend checks the live catalogue, units and balances before asking. Do not invent facts, guess missing prices, or claim a clarification was saved without a tool result.
 - Never guess a value to fill a gap. Naming a gap in missing_fields is not guessing; inventing a quantity is.
 
@@ -1733,7 +1736,7 @@ ${userText}` },
           // Later rounds go back to auto, because after a tool has returned
           // its data the right move is usually to answer in words.
           tool_choice: {
-            type: round === 0 ? 'any' : 'auto',
+            type: executed.length === 0 ? 'any' : 'auto',
             disable_parallel_tool_use: false,
           },
           messages,
@@ -1775,6 +1778,13 @@ ${userText}` },
 
     if (calls.length === 0) {
       if (mustGroundWithTool && executed.length === 0) {
+        // Nothing executed: one corrective model call cannot duplicate a write.
+        if (corrections === 0) {
+          corrections += 1;
+          messages.push({ role: 'assistant', content: payload.content?.length ? payload.content : [{ type: 'text', text: 'No tool selected.' }] });
+          messages.push({ role: 'user', content: 'No tool was called. Handle the latest trader request using the appropriate tool now. Use active draft data for a correction, propose_business_event for a sale, and respond_conversationally only for non-business conversation. Do not repeat an account request from history. Do not invent missing prices; the tool checks the catalogue.' });
+          continue;
+        }
         args.onFailure?.('missing_required_tool_call');
         return null;
       }
@@ -1891,7 +1901,11 @@ ${userText}` },
 
     // Validate the complete round before any executor can touch pending state.
     // Multiple proposals must be clarified, not allowed to overwrite each other.
-    const boundaryError = validateToolRound(calls, ASSISTANT_TOOLS, mutationExecuted);
+    const boundaryError = validateToolRound(calls, ASSISTANT_TOOLS, mutationExecuted)
+      ?? (calls.some((call) => call.name === 'request_account_action' && call.input.action === 'login')
+        && !isLoginRequest(userText)
+        ? { code: 'login_not_requested_in_current_message: handle the current business request, not earlier login history', path: 'action' }
+        : null);
     if (boundaryError) {
       args.onFailure?.(`tool_boundary:${boundaryError.code}`);
       // No executor has run for this round. Give the model the exact schema

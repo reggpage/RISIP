@@ -233,8 +233,9 @@ describe('the server checks bounds, which is not reading language', () => {
 });
 
 describe('resuming re-derives everything financial', () => {
-  it('refuses to resume a question that is not the one on the table', () => {
-    expect(webhook).toContain('Naomba unijibu hilo kwanza');
+  it('keeps mismatched answers recoverable without exposing internal field names', () => {
+    expect(webhook).toContain('The submitted fields do not resolve this state');
+    expect(webhook).not.toContain('Naomba unijibu hilo kwanza');
   });
 
   it('refuses to resume when nothing is parked, without ending the turn', () => {

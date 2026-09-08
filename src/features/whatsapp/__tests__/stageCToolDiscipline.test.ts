@@ -99,7 +99,7 @@ describe('the conversational path can do nothing', () => {
     const description = toolNamed('respond_conversationally')?.description ?? '';
     expect(description).toMatch(/Never use this because you are unsure/i);
     expect(description).toMatch(/never use it to ask for a missing detail/i);
-    expect(prompt).toContain('NOT the safe choice when you are unsure about a business request');
+    expect(prompt).toContain('For an uncertain business request, call its capability and let the server clarify.');
   });
 
   it('is a distinguishable intent in telemetry', () => {
@@ -219,7 +219,7 @@ describe('nothing about financial authority moved', () => {
   });
 
   it('marks the change in telemetry so before and after stay separable', () => {
-    expect(PROMPT_VERSION).toBe('risip-agent-v3-active-question');
+    expect(PROMPT_VERSION).toBe('risip-agent-v4-draft-review');
     expect(TOOL_SCHEMA_VERSION).toBe('tools-foundation-v1-runtime-checked');
   });
 });
@@ -251,7 +251,7 @@ describe('the first turn is forced to choose a capability', () => {
     // Measured, not assumed: forcing beat auto on intent, on semantics, on
     // prose-instead-of-tool AND on latency. Later rounds go back to auto
     // because after a tool has returned data, words are the right answer.
-    expect(assistant).toContain("type: round === 0 ? 'any' : 'auto'");
+    expect(assistant).toContain("type: executed.length === 0 ? 'any' : 'auto'");
   });
 
   it('keeps a landing place for a message that needs no data', () => {

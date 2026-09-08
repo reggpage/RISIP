@@ -10,7 +10,7 @@ export function pendingConversationContext(convo: PendingConversation): string {
   const snapshot: Record<string, unknown> = { awaiting: convo.awaiting, expires_at: convo.expires_at ?? null };
   for (const key of ['kind', 'step', 'originalText', 'asked', 'candidates', 'sale',
     'product', 'products', 'missingProducts', 'resolvedProducts', 'choices', 'answered',
-    'stockAnswers', 'stock', 'ledger', 'party', 'credit', 'paymentMethod', 'occurredAt', 'recovery']) {
+    'stockAnswers', 'stock', 'ledger', 'party', 'credit', 'paymentMethod', 'occurredAt', 'recovery', 'record']) {
     if (Object.prototype.hasOwnProperty.call(options, key)) snapshot[key] = options[key];
   }
   const encoded = JSON.stringify(snapshot);

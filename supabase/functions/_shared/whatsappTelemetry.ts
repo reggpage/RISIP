@@ -21,7 +21,7 @@
  * and 20 on others. A version that states a number would be wrong on one of
  * them, and a telemetry label that lies is worse than one that says less.
  */
-export const PROMPT_VERSION = 'risip-agent-v3-active-question';
+export const PROMPT_VERSION = 'risip-agent-v4-draft-review';
 export const TOOL_SCHEMA_VERSION = 'tools-foundation-v1-runtime-checked';
 /** Semantic runtime release written into privacy-safe operations telemetry. */
 export const AI_RUNTIME_VERSION = 'whatsapp-ai-phase10-observability-v1';

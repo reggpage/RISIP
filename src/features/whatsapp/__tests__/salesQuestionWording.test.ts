@@ -109,12 +109,12 @@ describe('when the model comes back with nothing', () => {
     expect(webhook).toContain('assistantCameBackEmpty = true;');
     // The truth is narrower than "I can help you with Risip": the question was
     // understood and the answer did not arrive. It is now narrower still —
-    // An operational failure now gets a context-aware next question and is not
+    // An operational failure is acknowledged without blaming user intent and is not
     // written into conversational memory as if it were an assistant answer.
-    expect(webhook).toContain('assistantClarificationQuestion(lang, body, pendingClarificationOf(convo))');
+    expect(webhook).toContain("assistantFailureMessage(aiFailureClass ?? 'unknown', lang)");
     expect(webhook).toContain('await replyQuietly(phone, failureReply, false);');
     const fallback = webhook.slice(webhook.indexOf('// Two honest outcomes and no third'));
-    expect(fallback.indexOf('assistantClarificationQuestion'))
+    expect(fallback.indexOf('assistantFailureMessage'))
       .toBeLessThan(fallback.indexOf("t('onlyRisip', lang)"));
   });
 });

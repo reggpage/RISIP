@@ -101,7 +101,7 @@ describe('receipt links', () => {
       lang: 'sw', userName: 'Asha', companyName: 'St. Ritha bookshop', role: 'owner',
       approvalFlowEnabled: false, reversalEnabled: false, payoutsEnabled: false,
     });
-    expect(prompt).toMatch(/Sending a link is not a protected action/);
+    expect(prompt).toContain('Pass on Risip links returned by tools; the signed-in page enforces access.');
     expect(prompt).toMatch(/You MAY add up figures/);
     expect(prompt).toMatch(/Do not subtract your way to profit/);
     expect(prompt).toMatch(/Keep confirmed and pending apart/);

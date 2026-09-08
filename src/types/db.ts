@@ -397,7 +397,7 @@ export type DailyRecordAudit = {
   daily_record_id: string;
   company_id: string;
   actor_id: string | null;
-  action: 'created' | 'confirmed' | 'voided';
+  action: 'created' | 'confirmed' | 'voided' | 'draft_corrected';
   from_status: DailyRecordStatus | null;
   to_status: DailyRecordStatus;
   reason: string | null;

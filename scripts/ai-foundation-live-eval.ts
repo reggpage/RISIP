@@ -6,6 +6,8 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { describePending } from '../supabase/functions/_shared/whatsappClarification';
+import { pendingConversationContext } from '../supabase/functions/_shared/whatsappPendingContext';
 
 const project = 'dsbplcqhlewxnivfwlcx';
 const mode = process.argv.includes('--boundary-loop') ? 'boundary-loop' : 'first-tool';
@@ -30,7 +32,17 @@ if (existing.some((item: { name?: string }) => item.name === secretName)) {
   throw new Error('Temporary evaluation credential already exists; investigate its owner before retrying.');
 }
 const token = randomBytes(32).toString('hex');
-const cases = [
+const draftContext = describePending({ field: 'payment_method', intent: 'draft_review' }) + '\n'
+  + pendingConversationContext({ awaiting: 'payment_source', expires_at: new Date(Date.now() + 3600000).toISOString(), options: {
+    kind: 'daily_record_confirmation', record: { kind: 'sale', amount: 46100, partyName: null, description: null, paymentMethod: null,
+      lines: [{ description: 'Velvet napkin', quantity: 4, unit_amount: 4000 }, { description: 'bahasha', quantity: 8, unit_amount: 200 }, { description: 'nguvu ya sala', quantity: 3, unit_amount: 9500 }] },
+  } });
+const allCases = [
+  { id: 'sale-after-login', say: 'nimeuza velvet napikin 4 bahasha 8 nguvu ya sala 3', tool: 'propose_business_event', kind: 'sale', direction: 'sale', history: [{ role: 'user', content: 'login' }, { role: 'assistant', content: 'Link ya kuingia imetumwa.' }] },
+  { id: 'draft-band-typo', say: 'Velevt napkin ni jumla', tool: 'resolve_pending_clarification', pendingClarification: draftContext },
+  { id: 'draft-mixed-correction', say: 'Velvet napkin ni jumla na bahasha rejareja', tool: 'resolve_pending_clarification', pendingClarification: draftContext },
+  { id: 'draft-payment', say: 'nimelipwa kwa mpesa', tool: 'resolve_pending_clarification', pendingClarification: draftContext },
+  { id: 'draft-new-topic', say: 'nimebakiza nini stoo?', tool: 'get_stock_on_hand', pendingClarification: draftContext },
   { id: 'retail', say: 'nimeuza vest 2 rejareja', tool: 'propose_business_event', kind: 'sale', direction: 'sale' },
   { id: 'supplier-payment', say: 'nimemlipa Musa 300000 cash', tool: 'propose_money_event', kind: 'supplier_payment' },
   { id: 'customer-credit-animal-sale', say: 'nimeuza ng’ombe mmoja kwa Musa kwa deni', tool: 'propose_business_event', kind: 'credit_sale', direction: 'sale' },
@@ -41,6 +53,10 @@ const cases = [
   { id: 'quantity-followup', say: 'vest tano', tool: 'resolve_pending_clarification', pendingClarification: 'Active question: new_product_quantity. Register vest and belt. Both products are sold in pieces. Prices are already collected. Still need opening quantities. Original request: sajili vest na belt. User has not confirmed any write. Ask only for missing quantities; retain each answered product.' },
   { id: 'oil-followup', say: 'mafuta ya taa', tool: 'resolve_pending_clarification', pendingClarification: 'Active question: product_choice. Original intent sale: nimeuza mafuta 2. Offered products: mafuta ya taa (litre), mafuta ya kula (litre), mafuta ya kujipaka (piece). Resolve the selected product without changing quantity 2 or sale intent. No record confirmed.' },
 ];
+const selectedCase = process.argv[process.argv.indexOf('--case') + 1];
+const cases = process.argv.includes('--case') ? allCases.filter((testCase) => testCase.id === selectedCase)
+  : process.argv.includes('--draft-review') ? allCases.slice(0, 5) : allCases;
+if (!cases.length) throw new Error('No matching evaluation cases.');
 const results: unknown[] = [];
 let failed = 0;
 let credentialAttempted = false;
@@ -52,7 +68,7 @@ try {
       method: 'POST', headers: { authorization: `Bearer ${serviceKey}`, 'content-type': 'application/json' },
       signal: AbortSignal.timeout(mode === 'boundary-loop' ? 75000 : 45000),
       body: JSON.stringify({ token, mode, force_tool_choice: true, context: { companyName: 'Synthetic AI Test Shop', userName: 'Test', role: 'owner',
-        vocabulary: 'Products: vest, belt, Nguvu ya sala, Printer, Biblia, nyama, ng’ombe, mafuta ya taa, mafuta ya kula, mafuta ya kujipaka. Suppliers: Musa. No prices, stock or balances supplied; backend tools must retrieve those.',
+        vocabulary: 'Products: Velvet napkin, bahasha, vest, belt, Nguvu ya sala, Printer, Biblia, nyama, ng’ombe, mafuta ya taa, mafuta ya kula, mafuta ya kujipaka. Suppliers: Musa. No prices, stock or balances supplied; backend tools must retrieve those.',
       }, cases: [testCase] }),
     });
     if (!response.ok) throw new Error(`Evaluator HTTP ${response.status}; no merchant request was sent.`);
@@ -61,6 +77,10 @@ try {
     const valid = result && !result.error && !result.schemaError && result.tools?.[0] === testCase.tool
       && (!testCase.kind || result.input?.kind === testCase.kind)
       && (!testCase.direction || result.input?.direction === testCase.direction)
+      && (testCase.id !== 'draft-band-typo' || (result.input?.answers?.length === 1 && result.input.answers[0].field === 'price_band' && result.input.answers[0].product?.toLowerCase() === 'velvet napkin' && result.input.answers[0].canonical_value === 'wholesale'))
+      && (testCase.id !== 'draft-mixed-correction' || (result.input?.answers?.length === 2 && ['velvet napkin:wholesale','bahasha:retail'].every((expected) => result.input.answers.some((answer: any) => `${answer.product?.toLowerCase()}:${answer.canonical_value}` === expected && answer.field === 'price_band'))))
+      && (testCase.id !== 'draft-payment' || result.input?.answers?.some((answer: any) => answer.field === 'payment_method' && answer.canonical_value === 'mobile_money'))
+      && (testCase.id !== 'sale-after-login' || (result.input?.lines?.length === 3 && result.input.lines.map((line: any) => line.quantity_candidate).join(',') === '4,8,3'))
       && (testCase.id !== 'retail' || result.input?.lines?.[0]?.price_band_wording === 'rejareja')
       && (testCase.id !== 'mixed-bands' || (result.input?.lines?.length === 3
         && result.input.lines[0].price_band_wording === 'rejareja'

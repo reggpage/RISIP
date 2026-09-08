@@ -220,7 +220,7 @@ describe('AI remains the only free-text business responder', () => {
       webhook.indexOf('// Adding a product is checked before anything records money'),
     );
     expect(aiFailureBoundary).toContain('if (aiEligible)');
-    expect(aiFailureBoundary).toContain('assistantClarificationQuestion');
+    expect(aiFailureBoundary).toContain('assistantFailureMessage');
     expect(aiFailureBoundary).not.toContain('quantityMeaningQuestion(lang, missingProducts)');
   });
 });

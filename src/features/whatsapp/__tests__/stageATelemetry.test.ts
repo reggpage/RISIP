@@ -159,7 +159,7 @@ describe('telemetry never costs a shop its answer', () => {
   });
 
   it('records a version so a later regression can be attributed', () => {
-    expect(PROMPT_VERSION).toBe('risip-agent-v3-active-question');
+    expect(PROMPT_VERSION).toBe('risip-agent-v4-draft-review');
     expect(TOOL_SCHEMA_VERSION).toBe('tools-foundation-v1-runtime-checked');
     expect(webhook).toContain('p_prompt_version: PROMPT_VERSION');
     expect(webhook).toContain('p_tool_schema_version: TOOL_SCHEMA_VERSION');

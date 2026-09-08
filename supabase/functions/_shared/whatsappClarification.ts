@@ -84,6 +84,12 @@ export type PendingClarification = {
  */
 export function describePending(pending: PendingClarification | null): string | null {
   if (!pending) return null;
+  if (pending.intent === 'draft_review') return [
+    'ACTIVE DRAFT REVIEW: the trader is reviewing an unconfirmed record, NOT being required to answer a payment question.',
+    'The complete record is in ACTIVE QUESTION DATA. For a price-band correction call resolve_pending_clarification with field=price_band, canonical_value=retail|wholesale and product=the exact draft product name. Resolve spelling from the draft context; ask if ambiguous. Return only the changed products. Never apply one unnamed answer to every draft row.',
+    'The draft resolver reads the applicable catalogue prices itself, calculates totals and returns a revised preview. Call it directly for one or several changed bands; do not replace a correction with get_selling_price or a price explanation. For a payment detail use field=payment_method. A correction does not create a new sale or update catalogue prices. Preserve every unchanged row, date, unit and payment detail. Explicit confirmation is still required.',
+    'For an unsupported correction, ask a contextual question or explain how to cancel and restate the draft. Never insist on payment first. Treat unrelated questions as a new topic without cancelling the draft.',
+  ].join('\n');
   const allowed = ALLOWED_VALUES[pending.field] ?? pending.choices;
   const saleRecovery = pending.intent === 'sale_missing_selling_price';
   const parts = [

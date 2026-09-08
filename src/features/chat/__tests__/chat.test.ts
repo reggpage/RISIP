@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/supabase', () => ({ supabase: { auth: { getSession: async () => ({ data: { session: { access_token: 'test-only' } } }) } } }));
-import { businessDay, confirmationRows, parseSse, saleSentence, sendChat } from '../chat';
+import { businessDay, confirmationRows, isMessageConfirmation, parseSse, saleSentence, sendChat } from '../chat';
 import { chatEnglish, chatSwahili } from '@/i18n/chat';
 
 describe('shared chat transport contract', () => {
+  it('never puts confirmation controls on an error just because a draft is pending', () => {
+    expect(isMessageConfirmation('Nilikuwa naulizia payment_method. Naomba unijibu hilo kwanza.', 'daily_record_confirmation')).toBe(false);
+    expect(isMessageConfirmation('Bei: TSh 3,500\nNi bidhaa ipi?', 'daily_record_confirmation')).toBe(false);
+    expect(isMessageConfirmation('Nimeelewa:\nJumla: *TSh 44,100*\nJibu *1* Ndiyo · *2* Hapana', 'daily_record_confirmation')).toBe(true);
+  });
   it('uses the shop timezone at UTC midnight boundaries', () => {
     expect(businessDay(0, new Date('2026-09-08T20:59:59Z'))).toBe('2026-09-08');
     expect(businessDay(0, new Date('2026-09-08T21:00:00Z'))).toBe('2026-09-09');

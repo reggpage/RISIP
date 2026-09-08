@@ -265,6 +265,7 @@ import { catalogueProposalBlocked, overallRetrievalStatus, retrievalHealthContex
 import { aiFailureLayer } from '../_shared/whatsappAiFailure.ts';
 import { mergeStockAnswers, pendingConversationContext, type StockAnswer } from '../_shared/whatsappPendingContext.ts';
 import {
+  assistantFailureMessage,
   classifyAssistantFailure,
   MAX_ASSISTANT_USER_CHARS,
   type AssistantFailureClass,
@@ -1291,39 +1292,6 @@ function releasesParkedQuestion(text: string): boolean {
   // that is not the answer is a new turn, and new turns belong to the model.
   return true;
 }
-
-/**
- * A model outage must not become a fake conversation turn. Give the trader a
- * useful, context-aware next question and keep this operational message out of
- * assistant history, so a future model call does not learn the wrong context.
- */
-function assistantClarificationQuestion(
-  lang: Lang,
-  body: string | null | undefined,
-  pending: PendingClarification | null,
-): string {
-  if (pending?.field === 'price_band') {
-    return lang === 'sw'
-      ? 'Nimepokea jibu lako, lakini sijaliunganisha na bei ya mauzo. Chagua (a) *REJAREJA*, (b) *JUMLA*, au (c) *GHAIRI*.'
-      : 'I received your answer, but could not attach it to the selling price. Choose (a) *RETAIL*, (b) *WHOLESALE*, or (c) *CANCEL*.';
-  }
-  if (pending?.field === 'quantity') {
-    const product = pending.product ? ` ya *${pending.product}*` : '';
-    return lang === 'sw'
-      ? `Nimepokea ujumbe wako kuhusu quantity${product}, lakini sijapata kiasi na kipimo salama. Andika kwa mfano: *${pending.product ?? 'bidhaa'} vipande 5*, *kilo 2.5* au *lita 0.5*.`
-      : `I received your quantity message${product}, but could not identify a safe amount and unit. Write for example: *${pending.product ?? 'product'} 5 pieces*, *2.5 kilos* or *0.5 litres*.`;
-  }
-  if (pending?.field === 'event_type') {
-    return lang === 'sw'
-      ? 'Nimeona orodha ya bidhaa, lakini sijui unataka nifanye nini: (a) *MAUZO*, (b) *ONGEZA STOCK*, au (c) *SAJILI BIDHAA*?'
-      : 'I see a product list, but I need the action: (a) *SALES*, (b) *ADD STOCK*, or (c) *REGISTER PRODUCTS*?';
-  }
-  const excerpt = String(body ?? '').replace(/\s+/g, ' ').trim().slice(0, 80);
-  return lang === 'sw'
-    ? `Nimepokea “${excerpt}”, lakini sitaki kukisia hatua unayotaka. Unataka (a) kurekodi mauzo, (b) kuongeza stock, (c) kusajili bidhaa, au (d) kupata taarifa?`
-    : `I received “${excerpt}”, but I do not want to guess the action. Do you want (a) record a sale, (b) add stock, (c) register products, or (d) get information?`;
-}
-
 
 /**
  * Decide "total or each?" from the shop's own price list instead of asking.
@@ -3889,7 +3857,7 @@ function pendingClarificationOf(convo: { awaiting?: string | null; options?: unk
   if (awaiting === 'payment_source' && kind === 'daily_record_confirmation') {
     // The draft is on the screen. NDIYO and HAPANA stay deterministic; how it
     // was paid is a sentence, and sentences belong to the model.
-    return { field: 'payment_method', intent: 'sale' };
+    return { field: 'payment_method', intent: 'draft_review' };
   }
   if (awaiting === 'product_cost' && kind === 'quantity_meaning_clarification') {
     return { field: 'event_type', intent: 'unknown' };
@@ -4189,6 +4157,20 @@ async function executeClarification(
   }
 
   const options = (convo?.options ?? {}) as Record<string, unknown>;
+  if (options.kind === 'daily_record_confirmation' && answers.some((answer) => answer.field === 'price_band')) {
+    const draft = options as unknown as DailyRecordConversation;
+    const { data, error } = await db.rpc('wa_correct_draft_sale_bands', {
+      p_identity_id: identity.id, p_profile_id: identity.profile_id, p_company_id: identity.company_id,
+      p_daily_record_id: draft.dailyRecordId, p_expected_record: draft.record,
+      p_answers: answers.map((answer) => ({ field: answer.field, product: answer.product, value: answer.canonicalValue })),
+    });
+    if (error || !data?.updated || !data?.record) return {
+      content: `Draft correction was not applied (${data?.reason ?? 'validation_failed'}). Do not claim a change or create a second sale. Ask which exact draft product needs changing if ambiguous; if expired or no longer pending, ask to review the current record.`,
+      isError: true,
+    };
+    const confirmation = buildDailyRecordConfirmation(data.record as ParsedDailyRecord, lang);
+    return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
+  }
   if (options.kind === 'product_read_choice') {
     const choice = options as unknown as ProductChoicePending;
     const requested = answers.find((answer) => answer.field === 'product')?.canonicalValue;
@@ -4212,9 +4194,7 @@ async function executeClarification(
   const byField = new Map(answers.map((answer) => [answer.field, answer]));
   const main = byField.get(pending.field);
   if (!main) {
-    return askBack(lang === 'sw'
-      ? `Nilikuwa naulizia ${pending.field}. Naomba unijibu hilo kwanza.`
-      : `I was asking about ${pending.field}. Answer that one first.`);
+    return { content: `The submitted fields do not resolve this state: ${describePending(pending)}. Re-read the current message and active data. Ask a concise contextual question if the correction is unsupported. Never expose internal field names or demand payment before a correction.`, isError: true };
   }
 
   // A new cost after the stock-arrival menu is still interpreted by the model;
@@ -5132,6 +5112,10 @@ async function runAssistantTool(
     return { content: message, terminalReply: message, isError: true };
   }
   if (name === 'request_account_action') {
+    if (input.action === 'login' && !isLoginRequest(said ?? null)) return {
+      content: 'Login was not requested in the CURRENT message. Do not replay an earlier account command. Re-read the current message and call its business tool, preserving the active draft context.',
+      isError: true,
+    };
     // The model selects a capability, never its actor or credentials.
     const { data: linked, error: linkError } = await db.from('whatsapp_identities')
       .select('phone_e164').eq('id', identity.id).eq('company_id', identity.company_id)
@@ -7787,7 +7771,7 @@ async function handleWebhook(req: Request, web?: NonNullable<ChatTransport['web'
         if (aiEligible && (conversationalAiBudgetBlock || assistantCameBackEmpty || aiFailureClass !== null)) {
           const failureReply = conversationalAiBudgetBlock
             ? aiBudgetMessage(lang, conversationalAiBudgetBlock.resetAt, conversationalAiBudgetBlock.reason)
-            : assistantClarificationQuestion(lang, body, pendingClarificationOf(convo));
+            : assistantFailureMessage(aiFailureClass ?? 'unknown', lang);
           // A provider failure is telemetry, not a business answer. Do not put
           // the apology/error into conversation history as if it were context.
           await replyQuietly(phone, failureReply, false);
@@ -7808,9 +7792,7 @@ async function handleWebhook(req: Request, web?: NonNullable<ChatTransport['web'
         // Protocol answers and system commands are excluded by aiEligible and
         // continue through their bounded handlers below.
         if (aiEligible) {
-          await replyQuietly(phone, assistantClarificationQuestion(
-            lang, body, pendingClarificationOf(convo),
-          ), false);
+          await replyQuietly(phone, assistantFailureMessage(aiFailureClass ?? 'unknown', lang), false);
           await audit(db, identity, waMessageId, 'conversational_ai', 'no_usable_response', 'failed');
           await finish('skipped');
           return true;
@@ -12864,7 +12846,7 @@ async function handleWebhook(req: Request, web?: NonNullable<ChatTransport['web'
         await replyQuietly(phone, conversationalAiBudgetBlock
           ? aiBudgetMessage(lang, conversationalAiBudgetBlock.resetAt, conversationalAiBudgetBlock.reason)
           : aiWasTried
-            ? assistantClarificationQuestion(lang, body, pendingClarificationOf(convo))
+            ? assistantFailureMessage(aiFailureClass ?? 'unknown', lang)
             : (intent === 'help' ? `${t('help', lang)}\n\n${buildKnowledgeReply(body, lang)}` : t('onlyRisip', lang)),
           !fallbackIsOperational);
         await finish('skipped');

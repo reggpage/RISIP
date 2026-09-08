@@ -23,6 +23,12 @@ export function confirmationRows(content: string): Array<[string, string]> {
 export function isConfirmation(kind: string | null): boolean {
   return Boolean(kind && /confirmation|_confirm$|price_batch|stock_intake|stock_count/.test(kind));
 }
+/** Pending state also accompanies errors/questions; only previews get approval controls. */
+export function isMessageConfirmation(content: string, kind: string | null): boolean {
+  return isConfirmation(kind) && (kind !== 'daily_record_confirmation'
+    || (confirmationRows(content).some(([, value]) => /TSh\s+[\d,.]+/.test(value))
+      && /(?:Jibu|Reply)\s+\*?1\b/.test(content)));
+}
 export function parseSse(frame: string): ChatEvent | null {
   const event = frame.split('\n').find((line) => line.startsWith('event:'))?.slice(6).trim();
   const data = frame.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');

@@ -2,7 +2,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } fr
 import { Check, CheckCheck, Clock3, Copy, CornerDownLeft, ExternalLink, Pencil, ShieldCheck, X } from 'lucide-react';
 import RisipLogo from '@/components/ui/RisipLogo';
 import { sw } from '@/i18n/sw';
-import { confirmationRows, isConfirmation, type ChatMessage } from '@/features/chat/chat';
+import { confirmationRows, isMessageConfirmation, type ChatMessage } from '@/features/chat/chat';
 import { compactChoiceCopy, hasMixedChoiceInstruction, lineCalculation, replyChoices, safeLink, type ReplyChoice } from '@/features/chat/presentation';
 
 export function toolLabel(name: string, active = false) {
@@ -55,8 +55,8 @@ export default memo(function ChatMessageView({ message, active, disabled, animat
     try { await navigator.clipboard.writeText(message.content); setCopyState('copied'); }
     catch { setCopyState('failed'); }
   }
-  const confirm = assistant && isConfirmation(message.awaiting);
   const rows = assistant ? confirmationRows(message.content) : [];
+  const confirm = assistant && isMessageConfirmation(message.content, message.awaiting);
   const metrics = !plain && !confirm && rows.length >= 2 && rows.length <= 4 && rows.every(([, value]) => /^TSh\s+[\d,.]+$/.test(value));
   const hasTable = confirm && rows.length > 0;
   const choices = !confirm ? replyChoices(message.content, message.awaiting) : [];
