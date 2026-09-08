@@ -1,21 +1,24 @@
 # Risip — maswali ya kubahatisha kutoka kwenye database
 
-> **Risip AI Current Capability Score: 100.0% | Grade: A**  
-> Production Ready — Highly Capable
+> **Risip AI Current Capability Score: 96.5% | Grade: B**  
+> Stable with minor edge-case risks
 
-Duka: **St. Ritha bookshop** · bidhaa 59 · rekodi zilizothibitishwa 26 · seeds `1, 2, 3, 4, 5` · 2026-08-24 04:40 UTC
+Duka: **St. Ritha bookshop** · bidhaa 72 · rekodi zilizothibitishwa 56 · seeds `1, 2, 3, 4, 5, 6, 7, 8, 9, 10` · 2026-09-08 08:39 UTC
 
-Maswali 1000, yametengenezwa kutoka kwenye majina na namba halisi za duka.
+Maswali 2400, yametengenezwa kutoka kwenye majina na namba halisi za duka.
 
 ## Yaliyobadilika tangu run iliyopita
 
-Hakuna mabadiliko.
+| Mada | Kabla | Sasa | |
+| --- | ---: | ---: | --- |
+| malipo ya deni | 100% | 0% | 🔻 imeshuka |
+| swali la stoko kwa mtaa | 100% | 98% | 🔻 imeshuka |
 
 | Hukumu | Idadi |
 | --- | ---: |
-| SAWA | 1000 |
-| NJIA MBAYA | 0 |
-| NAMBA MBAYA | 0 |
+| SAWA | 2316 |
+| NJIA MBAYA | 82 |
+| NAMBA MBAYA | 2 |
 | IMEACHIWA MODEL | 0 |
 | HAKUNA CHOMBO | 0 |
 | HAIJAJUDGIWA | 0 |
@@ -24,35 +27,629 @@ Hakuna mabadiliko.
 
 | Mada | Sawa | Jumla |
 | --- | ---: | ---: |
-| fedha kwa maneno | 40 | 40 |
-| kuhesabu stoko | 27 | 27 |
-| bidhaa zinazouza | 37 | 37 |
-| kuuliza stoko | 28 | 28 |
-| hakuna kilichotokea | 35 | 35 |
-| mada mbili kwenye ujumbe mmoja | 31 | 31 |
-| gharama ya kununua | 47 | 47 |
-| matumizi | 34 | 34 |
-| zilizoisha | 42 | 42 |
-| lugha mbili kwenye sentensi moja | 36 | 36 |
-| swali la stoko kwa mtaa | 30 | 30 |
-| faida | 38 | 38 |
-| kuweka bei | 27 | 27 |
-| wingi (tumeuza) | 35 | 35 |
-| manunuzi | 36 | 36 |
-| alama ya shilingi | 18 | 18 |
-| kelele | 29 | 29 |
-| wanaodaiwa | 27 | 27 |
-| mauzo (bei imetajwa) | 31 | 31 |
-| mauzo (bei kutoka kwenye orodha) | 28 | 28 |
-| muhtasari wa siku | 21 | 21 |
-| mauzo ya mstari mmoja | 30 | 30 |
-| bei ya bidhaa | 27 | 27 |
-| orodha ndefu ya siku | 28 | 28 |
-| orodha ya stoko | 28 | 28 |
-| maongezi ya kawaida | 32 | 32 |
-| malipo ya deni | 29 | 29 |
-| wingi (tumenunua) | 33 | 33 |
-| idadi za mwisho kabisa | 24 | 24 |
-| mauzo kwa fedha za maneno | 35 | 35 |
-| fedha kwa mkato | 27 | 27 |
-| madeni | 30 | 30 |
+| malipo ya deni | 0 | 82 |
+| swali la stoko kwa mtaa | 83 | 85 |
+| fedha kwa maneno | 92 | 92 |
+| kuhesabu stoko | 67 | 67 |
+| bidhaa zinazouza | 84 | 84 |
+| kuuliza stoko | 58 | 58 |
+| zilizoisha | 85 | 85 |
+| mada mbili kwenye ujumbe mmoja | 77 | 77 |
+| gharama ya kununua | 83 | 83 |
+| matumizi | 85 | 85 |
+| lugha mbili kwenye sentensi moja | 82 | 82 |
+| faida | 74 | 74 |
+| kuweka bei | 76 | 76 |
+| wingi (tumeuza) | 72 | 72 |
+| manunuzi | 72 | 72 |
+| alama ya shilingi | 55 | 55 |
+| kelele | 68 | 68 |
+| wanaodaiwa | 71 | 71 |
+| mauzo (bei imetajwa) | 76 | 76 |
+| mauzo (bei kutoka kwenye orodha) | 85 | 85 |
+| muhtasari wa siku | 62 | 62 |
+| mauzo ya mstari mmoja | 76 | 76 |
+| bei ya bidhaa | 67 | 67 |
+| orodha ndefu ya siku | 74 | 74 |
+| hakuna kilichotokea | 75 | 75 |
+| orodha ya stoko | 86 | 86 |
+| maongezi ya kawaida | 78 | 78 |
+| wingi (tumenunua) | 79 | 79 |
+| idadi za mwisho kabisa | 62 | 62 |
+| mauzo kwa fedha za maneno | 65 | 65 |
+| fedha kwa mkato | 71 | 71 |
+| madeni | 76 | 76 |
+
+## NAMBA MBAYA (2)
+
+**kitaub zipo?**
+
+- mada: swali la stoko kwa mtaa
+- database inasema: kitabu: 20
+- Risip: `stock_question` — haikupatikana kwenye orodha: "kitaub"
+- tatizo: ilitarajiwa 20, imepata jibu halina namba hiyo
+- jibu: Sina rekodi ya kitaub. Ukishaiuza au kuiingiza kama stock, nitaweza kuihesabu.
+
+**kitbu zipo?**
+
+- mada: swali la stoko kwa mtaa
+- database inasema: kitabu: 20
+- Risip: `stock_question` — haikupatikana kwenye orodha: "kitbu"
+- tatizo: ilitarajiwa 20, imepata jibu halina namba hiyo
+- jibu: Sina rekodi ya kitbu. Ukishaiuza au kuiingiza kama stock, nitaweza kuihesabu.
+
+## NJIA MBAYA (82)
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**STOO AMELIPA DENI 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo ameipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelpia deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo ameliap deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo aelipa deni 10000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 10000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo  amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 10000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 10000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**STOO AMELIPA DENI 10000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 10000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**STOO AMELIPA DENI 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo  amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo aemlipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 10000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 10000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 10000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 10000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelpia deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo aemlipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 10000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 10000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo  amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amlipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 10000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 10000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo  amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 10000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 10000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo aelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 10000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 10000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo aelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo aelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo ameilpa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelpa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 10000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 10000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo  amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**STOO AMELIPA DENI 10000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 10000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelia deni 10000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 10000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 10000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 10000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**STOO AMELIPA DENI 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo ameipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**STOO AMELIPA DENI 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 5000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 5000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 20000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 20000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 10000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 10000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelpia deni 2000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 2000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
+
+**stoo amelipa deni 10000**
+
+- mada: malipo ya deni
+- database inasema: malipo ya 10000 kutoka stoo
+- Risip: `stock_count`
+- tatizo: ilitarajiwa daily_record au daily_record_parsed, imekwenda stock_count
