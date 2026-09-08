@@ -5085,6 +5085,7 @@ async function executeAssistantTool(
   input: Record<string, unknown>,
   said?: string,
 ): Promise<AssistantToolExecution> {
+  chatTransport.getStore()?.emit?.('phase', { name });
   const result = await runAssistantTool(db, identity, waMessageId, lang, name, input, said);
   recordChatTool(result.isError ? 'checked_request' : name);
   // Only a READ needs the note. A proposing tool is already about the drafts,

@@ -37,13 +37,17 @@ export async function appendChatMessage(role: 'user' | 'assistant', content: str
     if (error) throw error;
     if (data?.expires_at > new Date().toISOString()) awaiting = String(data.options?.kind ?? data.awaiting);
   }
-  const sensitive = /^\s*LINK\b/i.test(content) || /\/wa-login\?[^\s]*token=/i.test(content);
-  const safeContent = content.replace(/^(\s*LINK)\s+.+/i, '$1 [redacted]').replace(/(\/wa-login\?[^\s]*token=)[^\s&]+/gi, '$1[redacted]');
+  const { sensitive, safeContent } = redactChatSecrets(content);
   const row = { identity_id: turn.identityId, company_id: turn.companyId, wa_message_id: turn.messageId,
     ordinal: turn.ordinal++, role, content: safeContent.replace(/\u2014/g, ','), chat_day: turn.day, tools: turn.tools, awaiting, sensitive };
   const { data, error } = await turn.db.from('chat_messages').insert(row).select().single();
   if (error) throw error;
   store?.emit?.('message', sensitive ? { ...data, content: content.replace(/\u2014/g, ',') } : data);
+}
+export function redactChatSecrets(content: string) {
+  const login = /(\/wa-login\?(?:[^\s#&]+&)*(?:token|t)=)[^\s&#]+/gi;
+  const safeContent = content.replace(/^(\s*LINK)\s+.+/i, '$1 [redacted]').replace(login, '$1[redacted]');
+  return { sensitive: safeContent !== content || /^\s*LINK\b/i.test(content), safeContent };
 }
 export function recordChatTool(name: string) {
   const store = chatTransport.getStore();

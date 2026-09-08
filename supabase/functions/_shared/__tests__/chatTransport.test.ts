@@ -1,8 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
-import { chatTransport, isWebChat, recordChatTool } from '../chatTransport';
+import { chatTransport, isWebChat, recordChatTool, redactChatSecrets } from '../chatTransport';
 import { startWhatsAppTurnHeartbeat } from '../whatsappTurn';
 
 describe('request-local reply sink', () => {
+  it('redacts both supported login token query names from stored history', () => {
+    for (const query of ['t=secret', 'token=secret', 'next=chat&t=secret']) {
+      const { sensitive, safeContent } = redactChatSecrets(`Open https://risip.online/wa-login?${query}`);
+      expect(sensitive).toBe(true); expect(safeContent).not.toContain('secret'); expect(safeContent).toContain('[redacted]');
+    }
+    expect(redactChatSecrets('Nimeuza sukari 2')).toEqual({ sensitive: false, safeContent: 'Nimeuza sukari 2' });
+  });
   it('renews long-running turns using Supabase thenables without crashing', async () => {
     vi.useFakeTimers();
     const rpc = vi.fn(() => ({ then: (resolve: (value: unknown) => void) => resolve({ data: true, error: null }) }));
