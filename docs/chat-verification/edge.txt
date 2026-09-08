@@ -1,0 +1,8 @@
+
+> risip@0.1.0 check:edge
+> vite-node scripts/check-edge-functions.ts
+
+
+21 edge functions checked. No undefined names, no redeclarations, no duplicate imports.
+
+Exit code: 0

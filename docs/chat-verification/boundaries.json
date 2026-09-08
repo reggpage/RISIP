@@ -1,0 +1,27 @@
+{
+  "pendingSwitch": "chat_pending",
+  "exclusiveLease": [
+    false,
+    true
+  ],
+  "lineItems": [
+    {
+      "description": "QA sukari",
+      "quantity": 2,
+      "unit_amount": 3000,
+      "line_total": 6000,
+      "daily_records": {
+        "company_id": "402182e0-6d7b-41f5-a046-7f4f3a149139"
+      }
+    },
+    {
+      "description": "QA sukari",
+      "quantity": 2,
+      "unit_amount": 3000,
+      "line_total": 6000,
+      "daily_records": {
+        "company_id": "7edd9cc7-700f-4998-bb6b-cc2f15f7d33d"
+      }
+    }
+  ]
+}

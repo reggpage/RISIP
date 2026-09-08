@@ -1,0 +1,69 @@
+{
+  "canonicalRecordsEqual": true,
+  "transports": [
+    {
+      "records": [
+        {
+          "kind": "sale",
+          "status": "confirmed",
+          "amount": 6000,
+          "currency": "TZS",
+          "payment_method": null,
+          "description": null
+        }
+      ],
+      "stock": [
+        {
+          "product_key": "qa sukari",
+          "product_name": "QA sukari",
+          "unit": "kilo",
+          "measured": false,
+          "counted_qty": 20,
+          "counted_at": "2026-09-08T05:28:32.701549+00:00",
+          "has_count": true,
+          "bought_since": 0,
+          "sold_since": 2,
+          "lost_since": 0,
+          "taken_since": 0,
+          "produced_since": 0,
+          "on_hand": 18,
+          "incomplete_purchases": false
+        }
+      ]
+    },
+    {
+      "records": [
+        {
+          "kind": "sale",
+          "status": "confirmed",
+          "amount": 6000,
+          "currency": "TZS",
+          "payment_method": null,
+          "description": null
+        }
+      ],
+      "stock": [
+        {
+          "product_key": "qa sukari",
+          "product_name": "QA sukari",
+          "unit": "kilo",
+          "measured": false,
+          "counted_qty": 20,
+          "counted_at": "2026-09-08T05:28:36.288348+00:00",
+          "has_count": true,
+          "bought_since": 0,
+          "sold_since": 2,
+          "lost_since": 0,
+          "taken_since": 0,
+          "produced_since": 0,
+          "on_hand": 18,
+          "incomplete_purchases": false
+        }
+      ]
+    }
+  ],
+  "replay": 200,
+  "conflictingId": 409,
+  "foreignCompany": 409,
+  "otherIdentityRows": 0
+}

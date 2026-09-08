@@ -1,0 +1,98 @@
+{
+  "transports": [
+    {
+      "records": [
+        {
+          "kind": "sale",
+          "status": "confirmed",
+          "amount": 3000,
+          "currency": "TZS",
+          "payment_method": null,
+          "description": null
+        },
+        {
+          "kind": "sale",
+          "status": "confirmed",
+          "amount": 6000,
+          "currency": "TZS",
+          "payment_method": null,
+          "description": null
+        }
+      ],
+      "stock": [
+        {
+          "product_key": "qa sukari",
+          "product_name": "QA sukari",
+          "unit": "kilo",
+          "measured": false,
+          "counted_qty": 20,
+          "counted_at": "2026-09-08T05:28:32.701549+00:00",
+          "has_count": true,
+          "bought_since": 0,
+          "sold_since": 3,
+          "lost_since": 0,
+          "taken_since": 0,
+          "produced_since": 0,
+          "on_hand": 17,
+          "incomplete_purchases": false
+        }
+      ]
+    },
+    {
+      "records": [
+        {
+          "kind": "sale",
+          "status": "confirmed",
+          "amount": 3000,
+          "currency": "TZS",
+          "payment_method": null,
+          "description": null
+        },
+        {
+          "kind": "sale",
+          "status": "confirmed",
+          "amount": 6000,
+          "currency": "TZS",
+          "payment_method": null,
+          "description": null
+        }
+      ],
+      "stock": [
+        {
+          "product_key": "qa sukari",
+          "product_name": "QA sukari",
+          "unit": "kilo",
+          "measured": false,
+          "counted_qty": 20,
+          "counted_at": "2026-09-08T05:28:36.288348+00:00",
+          "has_count": true,
+          "bought_since": 0,
+          "sold_since": 3,
+          "lost_since": 0,
+          "taken_since": 0,
+          "produced_since": 0,
+          "on_hand": 17,
+          "incomplete_purchases": false
+        }
+      ]
+    }
+  ],
+  "canonicalRecordsEqual": true,
+  "midnight": [
+    {
+      "content": "NDIYO",
+      "chat_day": "2026-09-07",
+      "created_at": "2026-09-08T05:46:59.46305+00:00"
+    }
+  ],
+  "unauthenticated": 401,
+  "production": {
+    "http": 200,
+    "sse": "event: accepted\ndata: {\"id\":\"web:8843bc17-ed4b-4bad-873f-2980b958f41a:3206d8f4-71a9-442b-8501-a2024061800a\"}\n\nevent: message\ndata: {\"id\":\"f677f2c3-04bd-4fca-8f37-f0699a8a98a8\",\"identity_id\":\"7822a581-19a9-4c76-bdc4-ab584b457890\",\"company_id\":\"7edd9cc7-700f-4998-bb6b-cc2f15f7d33d\",\"wa_message_id\":\"web:8843bc17-ed4b-4bad-873f-2980b958f41a:3206d8f4-71a9-442b-8501-a2024061800a\",\"ordinal\":0,\"role\":\"user\",\"content\":\"GHAIRI\",\"chat_day\":\"2026-09-08\",\"tools\":[],\"awaiting\":null,\"created_at\":\"2026-09-08T06:05:46.15072+00:00\",\"sensitive\":false}\n\nevent: tool\ndata: {\"name\":\"respond_conversationally\"}\n\nevent: message\ndata: {\"id\":\"3913c90b-e8d5-4461-8b67-ea48465db111\",\"identity_id\":\"7822a581-19a9-4c76-bdc4-ab584b457890\",\"company_id\":\"7edd9cc7-700f-4998-bb6b-cc2f15f7d33d\",\"wa_message_id\":\"web:8843bc17-ed4b-4bad-873f-2980b958f41a:3206d8f4-71a9-442b-8501-a2024061800a\",\"ordinal\":1,\"role\":\"assistant\",\"content\":\"Nimeshaghairi hilo ombi tayari , hakuna kingine kinachosubiri sasa. Habari za asubuhi, Chat! Kuna nitakalokusaidia?\",\"chat_day\":\"2026-09-08\",\"tools\":[\"respond_conversationally\"],\"awaiting\":null,\"created_at\":\"2026-09-08T06:05:52.71523+00:00\",\"sensitive\":false}\n\nevent: done\ndata: {\"status\":\"skipped\"}\n\n",
+    "replay": {
+      "http": 200,
+      "replayed": true
+    },
+    "conflict": 409
+  }
+}
