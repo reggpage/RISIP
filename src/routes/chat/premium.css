@@ -217,8 +217,8 @@
 
 /* The workspace controls are intentionally compact: chat keeps the full canvas. */
 .chat-main { width: 100%; }
-.chat-menu-trigger { width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid var(--chat-line); border-radius: 12px; background: rgb(var(--surface)); color: rgb(var(--ink)); box-shadow: 0 3px 12px rgb(var(--ink) / .04); }
-.chat-menu-trigger:hover { border-color: rgb(var(--role-admin) / .35); background: rgb(var(--role-admin) / .035); }
+.chat-menu-trigger { width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 9px; background: transparent; color: rgb(var(--ink)); }
+.chat-menu-trigger:hover { color: rgb(var(--role-admin)); }
 .chat-menu-backdrop { position: fixed; inset: 0; z-index: 20; background: rgb(var(--ink) / .12); backdrop-filter: blur(2px); cursor: default; }
 .chat-menu-panel { position: fixed; z-index: 21; top: 16px; right: 16px; width: min(370px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; padding: 18px; border: 1px solid rgb(var(--ink) / .11); border-radius: 18px; background: rgb(var(--surface)); box-shadow: 0 20px 60px rgb(var(--ink) / .16); animation: chat-menu-in 180ms ease-out; }
 .chat-menu-panel-head { display: flex; align-items: center; justify-content: space-between; color: rgb(var(--ink)); font-size: 13px; font-weight: 600; }
@@ -245,11 +245,11 @@
 .chat-menu-days button:hover, .chat-menu-days button[aria-current] { color: rgb(var(--role-admin)); border-color: rgb(var(--role-admin) / .25); background: rgb(var(--role-admin) / .045); }
 .chat-menu-days i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
 .chat-menu-days .chat-calendar-trigger { grid-column: 1 / -1; }
-.chat-choice-note { margin: 11px 0 0; color: rgb(var(--chat-secondary)); font-size: 11px; line-height: 1.6; }
+.chat-choice-notes { display: grid; gap: 5px; margin: 11px 0 0; color: rgb(var(--chat-secondary)); font-size: 11px; line-height: 1.6; }
 @keyframes chat-menu-in { from { opacity: 0; transform: translateY(-6px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @media (max-width: 760px) {
   .chat-header { min-height: 66px; }
-  .chat-menu-trigger { width: 39px; height: 39px; border-radius: 11px; }
+  .chat-menu-trigger { width: 34px; height: 34px; border-radius: 9px; }
   .chat-menu-panel { top: 10px; right: 10px; width: min(370px, calc(100vw - 20px)); max-height: calc(100dvh - 20px); padding: 16px; border-radius: 16px; }
   .chat-menu-business { padding: 14px; }
   .chat-menu-business > strong { font-size: 18px; }

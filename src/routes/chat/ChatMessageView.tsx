@@ -1,5 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Check, CheckCheck, ChevronDown, Clock3, CornerDownLeft, ExternalLink, Pencil, ShieldCheck, X } from 'lucide-react';
+import { Check, CheckCheck, Clock3, CornerDownLeft, ExternalLink, Pencil, ShieldCheck, X } from 'lucide-react';
 import RisipLogo from '@/components/ui/RisipLogo';
 import { sw } from '@/i18n/sw';
 import { confirmationRows, isConfirmation, type ChatMessage } from '@/features/chat/chat';
@@ -57,6 +57,7 @@ export default memo(function ChatMessageView({ message, active, disabled, animat
   const structuredBody = hasTable || metrics ? message.content.split('\n').filter((line) => confirmationRows(line).length === 0 && !/^(Jibu|Reply)\s+\*?1\b/.test(line)).join('\n').replace(/^\s*(?:Bidhaa|Products):\s*$/gm, '').trim() : message.content;
   const body = compactChoiceCopy(choices.some((choice) => choice.detail) ? structuredBody.split('\n').filter((line) => !/^(?:Chagua|Choose)\s+\(a\)/i.test(line.trim()) && !choices.some((choice) => choice.detail && line.replace(/\*/g, '').includes(choice.detail))).join('\n').trim() : structuredBody, choices);
   const hasMixedChoice = hasMixedChoiceInstruction(message.content, choices);
+  const hasPriceChoice = choices.some((choice) => /^(REJAREJA|RETAIL)$/i.test(choice.label)) && choices.some((choice) => /^(JUMLA|WHOLESALE)$/i.test(choice.label));
   const [visible, setVisible] = useState(animate ? 0 : body.length);
   const callbacks = useRef({ onRevealed, onGrow }); callbacks.current = { onRevealed, onGrow };
   useEffect(() => {
@@ -97,11 +98,8 @@ export default memo(function ChatMessageView({ message, active, disabled, animat
         <button disabled={disabled || revealing} onClick={edit}><Pencil size={14} />{c.edit}</button>
         <button disabled={disabled || revealing} onClick={() => send('GHAIRI')}><X size={14} />{c.cancel}</button>
       </div><p>{c.reviewNote}</p></div>}
-      {choices.length > 0 && <div className="chat-choice-area"><span>{c.chooseReply}</span><div className="chat-choices">{choices.map((choice) => <button key={choice.value} className={choice.cancel ? 'chat-choice-cancel' : ''} disabled={disabled || revealing || !active} onClick={() => send(choice.value)}><span>{choiceLabel(choice)}{choice.detail && <small>{choice.detail}</small>}</span>{choice.cancel ? <X size={14} /> : <CornerDownLeft size={14} />}</button>)}</div>{hasMixedChoice && <p className="chat-choice-note">{c.mixedChoiceNote}</p>}</div>}
+      {choices.length > 0 && <div className="chat-choice-area"><span>{c.chooseReply}</span><div className="chat-choices">{choices.map((choice) => <button key={choice.value} className={choice.cancel ? 'chat-choice-cancel' : ''} disabled={disabled || revealing || !active} onClick={() => send(choice.value)}><span>{choiceLabel(choice)}{choice.detail && <small>{choice.detail}</small>}</span>{choice.cancel ? <X size={14} /> : <CornerDownLeft size={14} />}</button>)}</div>{hasPriceChoice && <div className="chat-choice-notes"><p>{c.samePriceChoiceNote}</p>{hasMixedChoice && <p>{c.mixedChoiceNote}</p>}</div>}</div>}
     </div>
-    {assistant && <div className="chat-response-footer">
-      {message.tools.length > 0 && <details className="chat-tools"><summary><ChevronDown size={12} />{c.tools}</summary><ul>{[...new Set(message.tools.map((name) => toolLabel(name)))].map((label) => <li key={label}><Check size={12} />{label}</li>)}</ul></details>}
-      {seconds !== null && !revealing && <span className="chat-answer-time"><Clock3 size={11} />{c.answerTime.replace('{time}', seconds.toFixed(1))}</span>}
-    </div>}
+    {assistant && seconds !== null && !revealing && <div className="chat-response-footer"><span className="chat-answer-time"><Clock3 size={11} />{c.answerTime.replace('{time}', seconds.toFixed(1))}</span></div>}
   </article>;
 });
