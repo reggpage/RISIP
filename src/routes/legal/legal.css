@@ -34,18 +34,23 @@
 .legal-accept nav { display:flex; gap:22px; font-size:13px; margin:24px 0; text-decoration:underline; }
 .legal-accept button { padding:13px 20px; border-radius:11px; font-size:13px; }
 .legal-accept button[type=submit] { background:rgb(var(--role-admin)); color:white; width:100%; }
-.legal-accept .legal-links button { background:none; border:none; padding:0; font:inherit; color:inherit; text-decoration:underline; text-underline-offset:3px; cursor:pointer; }
+/* No underline; the link glows red on hover instead. */
+.legal-accept .legal-links button { background:none; border:none; padding:0; font:inherit; color:rgb(var(--ink)/.75); cursor:pointer; transition:color .18s ease, text-shadow .18s ease; }
+.legal-accept .legal-links button:hover { color:rgb(var(--role-admin)); text-shadow:0 0 14px rgb(var(--role-admin)/.4); }
 
-/* Terms / privacy shown over the accept screen, not on a new page. */
-.legal-modal-scrim { position:fixed; inset:0; z-index:80; background:rgb(var(--ink)/.45); display:grid; place-items:center; padding:20px; }
-.legal-modal { width:100%; max-width:660px; max-height:88vh; display:flex; flex-direction:column; background:white; border-radius:20px; overflow:hidden; box-shadow:0 30px 90px rgb(var(--ink)/.28); animation:legal-modal-in .2s cubic-bezier(.16,1,.3,1) both; }
+/* Terms / privacy shown over the accept screen, not on a new page.
+ * The scrim itself is the scroll container, so on a phone the whole dialog
+ * scrolls to its very end; a fixed-height inner body left the last clauses
+ * unreachable on some mobile browsers. The header stays put while it scrolls. */
+.legal-modal-scrim { position:fixed; inset:0; z-index:80; background:rgb(var(--ink)/.45); overflow-y:auto; -webkit-overflow-scrolling:touch; display:flex; justify-content:center; align-items:flex-start; padding:24px 20px; }
+.legal-modal { width:100%; max-width:660px; margin:auto; background:white; border-radius:20px; box-shadow:0 30px 90px rgb(var(--ink)/.28); animation:legal-modal-in .2s cubic-bezier(.16,1,.3,1) both; }
 @media(prefers-reduced-motion:reduce) { .legal-modal { animation:none; } }
 @keyframes legal-modal-in { from { opacity:0; transform:translateY(12px) scale(.99); } to { opacity:1; transform:none; } }
-.legal-modal-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; padding:26px 28px 20px; border-bottom:1px solid rgb(var(--ink)/.1); }
-.legal-modal-head h2 { font-family:Georgia,serif; font-size:26px; letter-spacing:-.03em; margin:10px 0 0; }
-.legal-modal-head button { flex-shrink:0; width:36px; height:36px; display:grid; place-items:center; border-radius:9px; color:rgb(var(--ink)/.55); background:rgb(var(--ink)/.05); }
-.legal-modal-head button:hover { color:rgb(var(--ink)); background:rgb(var(--ink)/.09); }
-.legal-modal-body { overflow-y:auto; padding:24px 28px 30px; }
+.legal-modal-head { position:sticky; top:0; z-index:1; display:flex; align-items:flex-start; justify-content:space-between; gap:20px; padding:26px 28px 20px; background:white; border-bottom:1px solid rgb(var(--ink)/.1); border-radius:20px 20px 0 0; }
+.legal-modal-head h2 { font-family:Georgia,serif; font-size:26px; letter-spacing:-.03em; margin:0; }
+.legal-modal-head button { flex-shrink:0; width:36px; height:36px; display:grid; place-items:center; border-radius:9px; background:none; color:rgb(var(--ink)/.5); transition:color .18s ease, text-shadow .18s ease; }
+.legal-modal-head button:hover { color:rgb(var(--role-admin)); text-shadow:0 0 14px rgb(var(--role-admin)/.45); }
+.legal-modal-body { padding:24px 28px 30px; }
 .legal-modal-lead { font-size:15px; line-height:1.6; color:rgb(var(--ink)/.7); margin:0 0 6px; }
 .legal-modal-version { font-size:11px; color:rgb(var(--ink)/.45); margin:0 0 22px; }
 .legal-modal-body section { padding-bottom:20px; margin-bottom:20px; border-bottom:1px solid rgb(var(--ink)/.08); }

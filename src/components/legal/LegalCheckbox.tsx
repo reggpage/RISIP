@@ -14,7 +14,7 @@ export default function LegalCheckbox({ checked, onChange }: { checked: boolean;
         <input type="checkbox" required checked={checked} onChange={(e) => onChange(e.target.checked)} />
         <span>{sw.legal.agree}</span>
       </label>
-      <nav className="legal-links flex gap-5 text-xs underline">
+      <nav className="legal-links flex gap-5 text-xs">
         <button type="button" onClick={() => setOpen('terms')}>{sw.legal.terms}</button>
         <button type="button" onClick={() => setOpen('privacy')}>{sw.legal.privacy}</button>
       </nav>

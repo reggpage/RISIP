@@ -40,10 +40,7 @@ export default function LegalModal({ kind, onClose }: { kind: LegalKind; onClose
         onClick={(event) => event.stopPropagation()}
       >
         <header className="legal-modal-head">
-          <div>
-            <span className="legal-eyebrow">{c.label}</span>
-            <h2>{doc.title}</h2>
-          </div>
+          <h2>{doc.title}</h2>
           <button ref={closeRef} type="button" onClick={onClose} aria-label={lang === 'sw' ? 'Funga' : 'Close'}>
             <X size={18} />
           </button>
