@@ -9,6 +9,7 @@ import { businessDay, sendChat, type ChatMessage, type Membership, type Outbox, 
 import { reconcileMessage, responseSeconds } from '@/features/chat/presentation';
 import ChatMessageView, { toolLabel } from './ChatMessageView';
 import ScanToSell from './ScanToSell';
+import MessageFinder from './MessageFinder';
 import './chat.css';
 import './premium.css';
 
@@ -62,11 +63,11 @@ export default function ChatPage() {
   const [online, setOnline] = useState(navigator.onLine);
   const [switching, setSwitching] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const composer = useRef<HTMLTextAreaElement>(null), thread = useRef<HTMLDivElement>(null), request = useRef(0), nearBottom = useRef(true), busy = useRef(false);
-  const manualScrollUntil = useRef(0);
+  const composer = useRef<HTMLTextAreaElement>(null), thread = useRef<HTMLDivElement>(null), request = useRef(0), busy = useRef(false);
+  const initialPositioned = useRef(false);
   const app = useRef<HTMLDivElement>(null);
   const outboxKey = `risip.chat.outbox:${userId}:${company}`;
-  const setSelectedDay = (value: string) => { if (value === day) return; nearBottom.current = true; request.current++; setMessages([]); setLoading(true); setDay(value); };
+  const setSelectedDay = (value: string) => { if (value === day) return; request.current++; setMessages([]); setLoading(true); setDay(value); };
   const refresh = useCallback(async () => {
     if (!company) return;
     const run = ++request.current;
@@ -101,7 +102,17 @@ export default function ChatPage() {
     resize(); viewport.addEventListener('resize', resize);
     return () => viewport.removeEventListener('resize', resize);
   }, []);
-  const grow = useCallback(() => { if (nearBottom.current) thread.current?.scrollTo({ top: thread.current.scrollHeight }); }, []);
+  const grow = useCallback(() => { const el = thread.current; if (el) setShowLatest(el.scrollHeight - el.scrollTop - el.clientHeight > 100); }, []);
+  const goToLatest = () => { thread.current?.scrollTo({ top: thread.current.scrollHeight, behavior: 'instant' }); setShowLatest(false); };
+  useEffect(() => {
+    if (!company || loading || initialPositioned.current) return;
+    const frame = requestAnimationFrame(() => {
+      if (!thread.current) return;
+      thread.current.scrollTo({ top: thread.current.scrollHeight, behavior: 'instant' });
+      initialPositioned.current = true;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [company, loading]);
   const revealed = useCallback((id: string) => setLiveIds((ids) => { const next = new Set(ids); next.delete(id); return next; }), []);
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -114,12 +125,12 @@ export default function ChatPage() {
     setText(sessionStorage.getItem(`${outboxKey}:draft`) ?? '');
   }, [company, outboxKey]);
   useEffect(() => { if (company) sessionStorage.setItem(`${outboxKey}:draft`, text); }, [text, company, outboxKey]);
-  useEffect(() => { if (nearBottom.current) thread.current?.scrollTo({ top: thread.current.scrollHeight }); }, [messages, sending]);
+  useEffect(() => { grow(); }, [messages, sending, grow]);
   async function send(value: string, saved?: Outbox) {
     if (busy.current || switching || !company || !value.trim() || !online || (retry && !saved)) return;
     const outgoing = saved ?? { id: crypto.randomUUID(), text: value.trim(), companyId: company };
     const outgoingDay = pending?.day ?? businessDay();
-    request.current++; busy.current = true; setSending(true); setLoading(false); if (!saved) setText(''); setError(''); setActiveTool(c.reading); setStarted(Date.now()); setReceived(false); nearBottom.current = true; manualScrollUntil.current = 0; setShowLatest(false); setDay(outgoingDay); setCalendar(false);
+    request.current++; busy.current = true; setSending(true); setLoading(false); if (!saved) setText(''); setError(''); setActiveTool(c.reading); setStarted(Date.now()); setReceived(false); setShowLatest(true); setDay(outgoingDay); setCalendar(false);
     if (!saved) setMessages((current) => [...current.filter((m) => m.chat_day === outgoingDay), { id: `local:${outgoing.id}`, wa_message_id: outgoing.id, role: 'user', content: outgoing.text, chat_day: outgoingDay, created_at: new Date().toISOString(), awaiting: null, tools: [] }]);
     sessionStorage.setItem(outboxKey, JSON.stringify(outgoing));
     try {
@@ -137,11 +148,11 @@ export default function ChatPage() {
       });
       sessionStorage.removeItem(outboxKey); setRetry(null);
     } catch (cause) { setRetry(outgoing); setError(cause instanceof Error && cause.message === 'pending' ? c.workingElsewhere : c.error); }
-    finally { busy.current = false; setSending(false); setActiveTool(''); void latestRefresh.current(); composer.current?.focus(); }
+    finally { busy.current = false; setSending(false); setActiveTool(''); void latestRefresh.current(); composer.current?.focus({ preventScroll: true }); }
   }
   const latestSend = useRef(send); latestSend.current = send;
   const sendReply = useCallback((value: string) => { void latestSend.current(value); }, []);
-  const editReply = useCallback(() => { setText(''); composer.current?.focus(); setError(c.editPrompt); }, [c.editPrompt]);
+  const editReply = useCallback(() => { setText(''); composer.current?.focus({ preventScroll: true }); setError(c.editPrompt); }, [c.editPrompt]);
   async function switchBusiness(id: string) {
     if (busy.current || retry) return;
     busy.current = true; setSwitching(true);
@@ -152,7 +163,7 @@ export default function ChatPage() {
     } catch { setError(c.switchError); }
     finally { busy.current = false; setSwitching(false); }
   }
-  function jump(id: string) { nearBottom.current = false; setShowLatest(true); document.getElementById(`message-${id}`)?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' }); }
+  function jump(id: string) { setShowLatest(true); document.getElementById(`message-${id}`)?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' }); }
   const controlsDisabled = sending || switching || !online || !company || Boolean(retry);
   const activeMembership = memberships.find((membership) => membership.company_id === company);
   return <div ref={app} className={`chat-app chat-style-${style}`}>
@@ -166,7 +177,7 @@ export default function ChatPage() {
         <nav className="chat-menu-days" aria-label={c.earlier}>{[c.today, c.yesterday, c.beforeYesterday].map((label, index) => <button key={label} aria-current={day === businessDay(-index) ? 'date' : undefined} onClick={() => { setSelectedDay(businessDay(-index)); setMenuOpen(false); }}><span>{label}</span>{days.includes(businessDay(-index)) && <i />}</button>)}<button className="chat-calendar-trigger" onClick={() => { setCalendar(true); setMenuOpen(false); }}><CalendarDays size={18} /><span>{c.calendar}</span></button></nav>
       </section></>}
       {pending && pending.day !== day && <button className="chat-pending-link" onClick={() => setSelectedDay(pending.day)}>{c.pendingDay}<ChevronRight size={16} /></button>}
-      <div className="chat-thread-wrap"><div ref={thread} className="chat-thread" onWheel={() => { manualScrollUntil.current = Date.now() + 1000; }} onTouchMove={() => { manualScrollUntil.current = Date.now() + 1000; }} onPointerDown={() => { manualScrollUntil.current = Date.now() + 1000; }} onKeyDown={(e) => { if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) manualScrollUntil.current = Date.now() + 1000; }} onScroll={() => { if (nearBottom.current && Date.now() > manualScrollUntil.current) return; const el = thread.current!; nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100; setShowLatest(!nearBottom.current); }}>
+      <div className="chat-thread-wrap"><div ref={thread} className="chat-thread" onScroll={grow}>
         <div className="chat-date-divider"><span /><time dateTime={day}>{dateLabel(day)}</time><span /></div>
         {loading && <p className="chat-status" role="status">{c.loading}</p>}
         {!loading && messages.length === 0 && <div className="chat-empty"><RisipLogo className="chat-empty-logo" /><span>{c.greetingLabel}</span><h2>{day === businessDay() ? c.greeting : c.emptyDay}</h2>{day === businessDay() && <p>{c.emptyBody}</p>}</div>}
@@ -175,9 +186,9 @@ export default function ChatPage() {
         </div>
         {sending && !received && <Working started={started} label={activeTool || c.thinkingNow} />}
       </div>
-      {messages.length > 0 && <nav className="chat-minimap" aria-label={c.minimap}>{messages.map((message, index) => <button key={message.id} className={message.role} aria-label={`${c.jump} ${index + 1}: ${message.content.slice(0, 65)}`} onClick={() => jump(message.id)}><i /><span className="chat-minimap-preview"><strong>{message.role === 'user' ? c.you : c.assistant}</strong>{message.content.slice(0, 180).replace(/\*/g, '')}</span></button>)}</nav>}
+      {messages.length > 0 && <MessageFinder messages={messages} jump={jump} />}
       </div>
-      {showLatest && <button className="chat-jump-latest" aria-label={c.returnLatest} onClick={() => { nearBottom.current = true; grow(); setShowLatest(false); }}><ArrowDown size={16} />{c.returnLatest}</button>}
+      {showLatest && <button className="chat-jump-latest" aria-label={c.returnLatest} onClick={goToLatest}><ArrowDown size={16} />{c.returnLatest}</button>}
       <div className="chat-composer-area">
         {!online && <p role="status" className="chat-error">{c.offline}</p>}
         {error && <div className="chat-error" role="alert"><span>{error}</span>{retry ? <button disabled={sending || !online} onClick={() => void send(retry.text, retry)}>{c.retry}</button> : error === c.loadError && <button onClick={() => { setError(''); void refresh(); }}>{c.reload}</button>}</div>}

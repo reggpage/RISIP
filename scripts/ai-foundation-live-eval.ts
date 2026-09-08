@@ -52,6 +52,7 @@ const allCases = [
   { id: 'yesterday-incomplete', say: 'jana nilifanya mauzo', tool: 'propose_money_event', kind: 'sale' },
   { id: 'quantity-followup', say: 'vest tano', tool: 'resolve_pending_clarification', pendingClarification: 'Active question: new_product_quantity. Register vest and belt. Both products are sold in pieces. Prices are already collected. Still need opening quantities. Original request: sajili vest na belt. User has not confirmed any write. Ask only for missing quantities; retain each answered product.' },
   { id: 'oil-followup', say: 'mafuta ya taa', tool: 'resolve_pending_clarification', pendingClarification: 'Active question: product_choice. Original intent sale: nimeuza mafuta 2. Offered products: mafuta ya taa (litre), mafuta ya kula (litre), mafuta ya kujipaka (piece). Resolve the selected product without changing quantity 2 or sale intent. No record confirmed.' },
+  { id: 'stock-location-sto', say: 'ongeza nguvu ya sala 100 sto', tool: 'propose_business_event', kind: 'stock_purchase', direction: 'purchase' },
 ];
 const selectedCase = process.argv[process.argv.indexOf('--case') + 1];
 const cases = process.argv.includes('--case') ? allCases.filter((testCase) => testCase.id === selectedCase)
@@ -77,6 +78,7 @@ try {
     const valid = result && !result.error && !result.schemaError && result.tools?.[0] === testCase.tool
       && (!testCase.kind || result.input?.kind === testCase.kind)
       && (!testCase.direction || result.input?.direction === testCase.direction)
+      && (testCase.id !== 'stock-location-sto' || (result.input?.lines?.length === 1 && result.input.lines[0].quantity_candidate === 100 && result.input.lines[0].unit_wording === null))
       && (testCase.id !== 'draft-band-typo' || (result.input?.answers?.length === 1 && result.input.answers[0].field === 'price_band' && result.input.answers[0].product?.toLowerCase() === 'velvet napkin' && result.input.answers[0].canonical_value === 'wholesale'))
       && (testCase.id !== 'draft-mixed-correction' || (result.input?.answers?.length === 2 && ['velvet napkin:wholesale','bahasha:retail'].every((expected) => result.input.answers.some((answer: any) => `${answer.product?.toLowerCase()}:${answer.canonical_value}` === expected && answer.field === 'price_band'))))
       && (testCase.id !== 'draft-payment' || result.input?.answers?.some((answer: any) => answer.field === 'payment_method' && answer.canonical_value === 'mobile_money'))

@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { buildKnowledgeReply, retrieveRisipKnowledge } from '../../../../supabase/functions/_shared/risipKnowledge';
 
 describe('Risip knowledge retrieval', () => {
+  it('grounds policy answers in the published bilingual documents and version', () => {
+    expect(buildKnowledgeReply('terms and conditions', 'en')).toContain('https://www.risip.online/terms · 2026-09-08');
+    expect(buildKnowledgeReply('sera ya faragha', 'sw')).toContain('https://www.risip.online/privacy');
+    expect(buildKnowledgeReply('privacy consent', 'en')).toContain('not treat acceptance of service terms as consent');
+  });
   it('retrieves daily-record guidance in Swahili', () => {
     const rows = retrieveRisipKnowledge('rekodi za mauzo na matumizi', 'sw');
     expect(rows.some((row) => row.topic === 'daily_records')).toBe(true);

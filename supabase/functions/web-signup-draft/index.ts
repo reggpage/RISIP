@@ -13,6 +13,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { sha256Hex } from '../_shared/whatsapp.ts';
+import { LEGAL_VERSION } from '../_shared/risipLegal.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -64,6 +65,7 @@ Deno.serve(async (req) => {
   }
 
   const businessName = clean(body.business_name, 80);
+  if (body.accept_terms !== true || body.terms_version !== LEGAL_VERSION) return json({ error: 'terms_required' }, 400);
   const businessDescription = clean(body.business_description, 300);
   const fullName = clean(body.full_name, 80);
   const location = clean(body.location, 160);
@@ -112,6 +114,8 @@ Deno.serve(async (req) => {
     closing_time: closingTime,
     lang,
     created_ip: ip,
+    terms_version: LEGAL_VERSION,
+    terms_accepted_at: new Date().toISOString(),
     expires_at: new Date(Date.now() + DRAFT_TTL_MINUTES * 60_000).toISOString(),
   });
   if (error) {

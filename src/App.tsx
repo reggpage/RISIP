@@ -32,6 +32,7 @@ const ProductsPage = lazy(() => import('@/routes/products/ProductsPage'));
 const ScanPage = lazy(() => import('@/routes/products/ScanPage'));
 const SellPage = lazy(() => import('@/routes/products/SellPage'));
 const ChatPage = lazy(() => import('@/routes/chat/ChatPage'));
+const LegalPage = lazy(() => import('@/routes/legal/LegalPage'));
 
 export default function App() {
   return (
@@ -40,6 +41,9 @@ export default function App() {
       <Routes>
       {/* Public routes */}
       <Route path="/" element={<Landing />} />
+      <Route path="/terms" element={<LegalPage kind="terms" />} />
+      <Route path="/privacy" element={<LegalPage kind="privacy" />} />
+      <Route path="/policies" element={<Navigate to="/privacy" replace />} />
       <Route path="/login" element={<WhatsAppAuth mode="login" />} />
       <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
       {/* Spends a one-shot WhatsApp login token and starts a session. Public

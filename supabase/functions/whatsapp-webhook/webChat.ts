@@ -12,6 +12,9 @@ export async function handleWebChat(req: Request, run: (input: WebInput) => Prom
   const userDb = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false } });
   const { data: auth, error: authError } = await userDb.auth.getUser();
   if (authError || !auth.user) return json({ error: 'unauthorized' }, { status: 401 });
+  const { data: agreement, error: agreementError } = await userDb.rpc('my_legal_acceptance');
+  if (agreementError) return json({ error: 'agreement_unavailable' }, { status: 503 });
+  if (!agreement?.accepted) return json({ error: 'terms_required' }, { status: 403 });
   let body: { id?: string; companyId?: string; text?: string };
   try { body = await req.json(); } catch { return json({ error: 'invalid_request' }, { status: 400 }); }
   if (!body || typeof body.text !== 'string' || !body.text.trim() || body.text.length > 2000 ||

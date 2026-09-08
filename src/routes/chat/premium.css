@@ -260,3 +260,18 @@
   .chat-menu-business { padding: 14px; }
   .chat-menu-business > strong { font-size: 18px; }
 }
+.chat-thread { overflow-anchor: none; scroll-behavior: auto; }
+.chat-finder { position: absolute; right: 10px; top: 12%; bottom: 12%; width: 38px; z-index: 8; display: flex; align-items: center; }
+.chat-finder-ticks { display: flex; flex-direction: column; width: 100%; max-height: 100%; height: max-content; overflow-y: auto; scrollbar-width: none; }
+.chat-finder-ticks button { width: 38px; min-height: 8px; height: 16px; flex: 1 0 8px; display: flex; justify-content: flex-end; align-items: center; border: 0; background: transparent; cursor: pointer; padding: 0 5px; }
+.chat-finder-ticks i { display: block; width: calc(8px + var(--proximity) * 23px); height: 2px; background: rgb(var(--ink) / .2); transition: width 160ms ease, background 160ms ease; }
+.chat-finder-ticks .user i { background: rgb(var(--ink) / .4); }
+.chat-finder-ticks .is-active i, .chat-finder-ticks button:focus-visible i { background: rgb(var(--ink)); }
+.chat-finder-card { position: absolute; right: 44px; width: min(350px, calc(100vw - 100px)); transform: translateY(-50%); background: white; border: 1px solid rgb(var(--ink) / .12); border-radius: 20px; padding: 20px 23px; box-shadow: 0 14px 40px rgb(var(--ink) / .1); pointer-events: none; animation: finder-in 150ms ease-out; }
+.chat-finder-card header { display:flex; justify-content:space-between; gap:20px; font-size:11px; color:rgb(var(--ink) / .55); }
+.chat-finder-card strong { color:rgb(var(--ink)); font-weight:600; }
+.chat-finder-card p { margin:14px 0 0; font-size:13px; line-height:1.7; white-space:pre-line; overflow:hidden; display:-webkit-box; -webkit-line-clamp:5; -webkit-box-orient:vertical; overflow-wrap:anywhere; }
+.chat-finder-amount { display:block; margin-top:14px; font-variant-numeric:tabular-nums; font-size:19px; letter-spacing:-.03em; }
+@keyframes finder-in { from { opacity:0; margin-right:-8px; } to { opacity:1; margin-right:0; } }
+@media (max-width:640px) { .chat-finder { right:0; width:26px; } .chat-finder-ticks button { width:26px; } .chat-finder-ticks i { width:calc(5px + var(--proximity) * 15px); } .chat-finder-card { right:30px; } }
+@media (prefers-reduced-motion:reduce) { .chat-finder-ticks i { transition:none; } .chat-finder-card { animation:none; } }

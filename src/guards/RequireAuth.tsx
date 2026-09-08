@@ -2,6 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth, signOut } from '@/lib/auth';
 import { sw } from '@/i18n/sw';
 import Button from '@/components/ui/Button';
+import LegalGate from '@/components/legal/LegalGate';
 
 export default function RequireAuth({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
@@ -41,5 +42,5 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
     return <Navigate to="/settings" replace />;
   }
 
-  return <>{children}</>;
+  return <LegalGate key={auth.session.user.id}>{children}</LegalGate>;
 }

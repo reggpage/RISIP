@@ -27,8 +27,8 @@ export function validateToolValue(value: unknown, schema: Record<string, unknown
   }
   if (typeof value === 'string') {
     // Validate a structured unit field, never route or interpret the sentence.
-    if (/\.(?:unit_wording|purchase_unit|cost_unit_wording)$/.test(path)
-      && ['stoo', 'store', 'stock', 'dukani', 'warehouse'].includes(value.trim().toLowerCase())) {
+    if (/\.(?:unit|unit_wording|purchase_unit|cost_unit_wording)$/.test(path)
+      && ['sto', 'stoo', 'store', 'stock', 'dukani', 'warehouse'].includes(value.trim().toLowerCase())) {
       return bad('location_is_not_measurement_unit');
     }
     const max = typeof schema.maxLength === 'number' ? schema.maxLength : 4000;
@@ -79,6 +79,14 @@ export function validateToolRound(calls: ProposedToolCall[], contracts: ToolCont
     if (!contract) return { code: 'tool_not_exposed', path: '$' };
     const error = validateToolValue(call.input, contract.input_schema);
     if (error) return error;
+    if (call.name === 'resolve_pending_clarification' && Array.isArray(call.input.answers)) {
+      for (const [index, answer] of call.input.answers.entries()) {
+        if (answer.field === 'unit' && typeof answer.canonical_value === 'string'
+          && ['sto', 'stoo', 'store', 'stock', 'dukani', 'warehouse'].includes(answer.canonical_value.trim().toLowerCase())) {
+          return { code: 'location_is_not_measurement_unit', path: `$.answers[${index}].canonical_value` };
+        }
+      }
+    }
     if (call.name === 'propose_business_event') {
       const lines = call.input.lines as Array<Record<string, unknown>>;
       if (!Array.isArray(lines) || lines.length === 0) return { code: 'event_product_required', path: '$.lines' };

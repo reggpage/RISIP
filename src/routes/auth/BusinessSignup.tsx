@@ -7,6 +7,9 @@ import { buildSignupConfirmUrl } from '@/features/whatsapp/publicWhatsApp';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/lib/auth';
 import { getLang } from '@/lib/lang';
+import { sw } from '@/i18n/sw';
+import LegalCheckbox from '@/components/legal/LegalCheckbox';
+import { LEGAL_VERSION } from '../../../supabase/functions/_shared/risipLegal';
 
 /**
  * Business signup, asked on the web instead of over six WhatsApp round trips.
@@ -168,6 +171,7 @@ export default function BusinessSignup() {
   });
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [done, setDone] = useState<{ code: string; waUrl: string } | null>(null);
 
   if (auth.status === 'signed-in' && auth.profile) return <Navigate to="/dashboard" replace />;
@@ -177,12 +181,13 @@ export default function BusinessSignup() {
   const isTime = step >= 4;
 
   async function save() {
+    if (!acceptedTerms) { setError(sw.legal.required); return; }
     setSaving(true);
     setError(null);
     try {
       const { data, error: fnError } = await supabase.functions.invoke<{ code: string }>(
         'web-signup-draft',
-        { body: { ...answers, lang } },
+        { body: { ...answers, lang, accept_terms: acceptedTerms, terms_version: LEGAL_VERSION } },
       );
       if (fnError || !data?.code) throw fnError ?? new Error('no code');
       setDone({ code: data.code, waUrl: buildSignupConfirmUrl(data.code) });
@@ -281,6 +286,7 @@ export default function BusinessSignup() {
             </p>
           )}
 
+          {step === FIELDS.length - 1 && <LegalCheckbox checked={acceptedTerms} onChange={setAcceptedTerms} />}
           <div className="rp-auth-actions">
             {step > 0 && (
               <button

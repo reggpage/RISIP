@@ -4,8 +4,10 @@
 import { getLang } from '@/lib/lang';
 import { swahiliOverrides } from './swahili_overrides';
 import { chatEnglish, chatSwahili } from './chat';
+import { legalEnglish, legalSwahili } from './legal';
 
 const english = {
+  legal: legalEnglish,
   chat: chatEnglish,
   landing: {
     heroTitle: 'Scan receipts,',
@@ -383,7 +385,7 @@ function deepMerge<T>(base: T, over: unknown): T {
 }
 
 export const sw = getLang() === 'sw'
-  ? deepMerge(english, { ...swahiliOverrides, chat: chatSwahili })
+  ? deepMerge(english, { ...swahiliOverrides, chat: chatSwahili, legal: legalSwahili })
   : english;
 
 export type SwCopy = typeof english;

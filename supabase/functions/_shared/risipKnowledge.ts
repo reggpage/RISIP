@@ -1,4 +1,5 @@
 import type { Lang } from './whatsappIntent.ts';
+import { legalDocuments, LEGAL_VERSION } from './risipLegal.ts';
 
 export type KnowledgeChunk = {
   id: string;
@@ -11,6 +12,12 @@ export type KnowledgeChunk = {
 // Small, versioned retrieval corpus for WhatsApp help. It is intentionally local
 // and deterministic in this phase: no user data is sent to a model to answer FAQs.
 export const RISIP_KNOWLEDGE: KnowledgeChunk[] = [
+  ...(['terms', 'privacy'] as const).map((kind): KnowledgeChunk => ({
+    id: `legal-${kind}`, topic: 'security',
+    keywords: kind === 'terms' ? ['terms', 'conditions', 'masharti', 'vigezo', 'sera', 'policies', 'agreement'] : ['privacy', 'faragha', 'personal', 'consent', 'pdpc', 'retention', 'haki'],
+    sw: `https://www.risip.online/${kind} · ${LEGAL_VERSION}\n` + legalDocuments.sw[kind].sections.map((s) => `${s.title}\n${s.paragraphs.join('\n')}`).join('\n\n'),
+    en: `https://www.risip.online/${kind} · ${LEGAL_VERSION}\n` + legalDocuments.en[kind].sections.map((s) => `${s.title}\n${s.paragraphs.join('\n')}`).join('\n\n'),
+  })),
   { id: 'billing-what-counts', topic: 'billing', keywords: ['ujumbe', 'jumbe', 'message', 'kikomo', 'allowance', 'limit', 'zimebaki', 'remaining'], sw: 'Kinachohesabiwa ni ujumbe UNAOTUMA kwa Risip. Majibu ya Risip hayahesabiwi. Kikomo huanza upya kila mwezi, hata kama umelipia mwaka mzima. Kwa idadi yako halisi, Risip itaisoma kwenye akaunti yako.', en: 'What counts is the messages YOU send to Risip. Replies from Risip are not counted. The allowance restarts every month, even on a yearly subscription. For your own figure, Risip reads it from your account.' },
   { id: 'billing-over-allowance', topic: 'billing', keywords: ['nimezidi', 'over', 'zaidi', 'overage', 'imefungwa', 'suspended', 'kufungiwa'], sw: 'Ukizidi kikomo hakuna kinachokatika ghafla: unaambiwa kwanza. Akaunti hufungwa tu kwa bili ambayo haijalipwa baada ya muda wa neema, na rekodi zako zote hubaki pale pale.', en: 'Going over the allowance cuts nothing off suddenly: you are told first. An account is suspended only for a bill left unpaid past its grace period, and every record you have stays where it is.' },
   { id: 'billing-cycle', topic: 'billing', keywords: ['mwezi', 'mwaka', 'monthly', 'yearly', 'cycle', 'kulipa', 'bili', 'bill', 'malipo ya risip'], sw: 'Unaweza kulipa kwa mwezi au kwa mwaka. Kwa mwaka unalipa mara moja na kuokoa, lakini kikomo cha jumbe kinabaki cha mwezi. Bili hufika WhatsApp, na kujibu *1* kunaanzisha malipo kwenye simu yako.', en: 'You can pay monthly or yearly. Yearly is one payment and saves money, but the message allowance stays monthly. A bill arrives on WhatsApp, and replying *1* starts the payment on your phone.' },

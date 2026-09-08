@@ -630,7 +630,7 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
   tool('get_pending_approvals', 'Read the company receipt approval-inbox count. This is finance-only and the server will enforce the role.', {}, []),
   tool(
     'search_risip_help',
-    'Retrieve Risip product guidance, permissions and workflow help. Use when the question is about how Risip works rather than live business data.',
+    'Retrieve Risip product guidance, permissions, published terms and privacy policies. Use for how Risip works; policy answers must follow this source, not invented promises.',
     { query: { type: 'string', description: 'A non-empty Risip help question; the server enforces the length limit.' } },
     ['query'],
   ),
@@ -765,7 +765,7 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
             product_wording: { type: 'string', description: 'The product as the trader said it. Never a product id or a corrected name.' },
             quantity_wording: { type: ['string', 'null'], description: 'The quantity phrase exactly as said, or null if not stated.' },
             quantity_candidate: { type: ['number', 'null'], description: 'Your reading of that phrase as a number, or null. The server verifies it against the wording.' },
-            unit_wording: { type: ['string', 'null'], description: 'The measurement word as said — kilo, trei, gunia, kifuko — or null. Stoo, dukani, store and warehouse describe a location, NEVER a measurement unit. Leave unit null when none is specified; do not invent one.' },
+            unit_wording: { type: ['string', 'null'], description: 'The measurement word as said — kilo, trei, gunia, kifuko — or null. Sto, stoo, dukani, store and warehouse describe a location, NEVER a measurement unit. Leave unit null when none is specified; do not invent one.' },
             price_band_wording: { type: ['string', 'null'], description: 'The price band stated for THIS product line — "rejareja" or "jumla" — copied exactly, or null. Never move a band from another line.' },
           },
           required: ['product_wording', 'quantity_wording', 'quantity_candidate', 'unit_wording', 'price_band_wording'],

@@ -14,6 +14,7 @@ import WhatsAppIcon from '@/components/ui/WhatsappIcon';
 import { buildRisipWhatsAppUrl } from '@/features/whatsapp/publicWhatsApp';
 import { useAuth } from '@/lib/auth';
 import { getLang } from '@/lib/lang';
+import { sw } from '@/i18n/sw';
 import { BUCHA } from './landingDemo';
 import { Bubble, ChatHeader, OperationsPreview, ProductHero, ProductStory, UnderstandingSection } from './ProductStory';
 import './landing.css';
@@ -730,7 +731,7 @@ export default function Landing() {
           <section><h2 className="text-base font-semibold text-white/90">{c.footerContact}</h2><address className="mt-5 space-y-4 text-sm not-italic text-white/75"><p className="flex items-start gap-3"><Mail className="mt-0.5 h-4 w-4 shrink-0 text-role-admin" /><a className="break-all transition hover:text-white" href="mailto:reaganfraizer13@gmail.com">reaganfraizer13@gmail.com</a></p><p className="flex items-center gap-3"><Phone className="h-4 w-4 shrink-0 text-role-admin" /><a className="transition hover:text-white" href="tel:+255624107354">0624 107 354</a></p><p className="flex items-start gap-3"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-role-admin" /><span>Mbezi Shule<br />Dar es Salaam, Tanzania</span></p></address></section>
           <section><h2 className="text-base font-semibold text-white/90">{c.footerFaq}</h2><p className="mt-5 text-sm leading-6 text-white/70">{c.footerFaqLink}</p>{chatUrl && <a href={chatUrl} target="_blank" rel="noopener noreferrer" className="mt-5 inline-flex items-center gap-2 rounded-full border border-[#25D366]/35 px-4 py-2.5 text-sm font-semibold text-[#25D366] transition hover:bg-[#25D366]/10"><WhatsAppIcon className="h-5 w-5" />{c.chat}</a>}</section>
         </div>
-        <div className="mx-auto mt-12 flex max-w-7xl flex-col items-start gap-4 border-t border-white/10 px-4 pt-7 text-xs text-white/45 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8"><span>© 2026 Risip. {c.footerRights}</span><LanguageToggle /></div>
+        <div className="mx-auto mt-12 flex max-w-7xl flex-col items-start gap-4 border-t border-white/10 px-4 pt-7 text-xs text-white/60 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8"><span>© 2026 Risip. {c.footerRights}</span><nav className="flex gap-6" aria-label={sw.legal.label}><Link to="/terms">{sw.legal.terms}</Link><Link to="/privacy">{sw.legal.privacy}</Link></nav><LanguageToggle /></div>
       </footer>
 
     </div>
