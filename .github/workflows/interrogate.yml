@@ -56,7 +56,14 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Unit tests
-        run: npm test
+        # Pure helpers import the client module but do not contact Supabase.
+        # Use inert values so the gate never needs production credentials.
+        env:
+          VITE_SUPABASE_URL: http://127.0.0.1:1
+          VITE_SUPABASE_ANON_KEY: test-only-anon-key
+        # QR CPU-budget assertions need an uncontended runner. Keep their
+        # existing time limits while running test files sequentially.
+        run: npm test -- --no-file-parallelism
       - name: Edge functions boot-safe
         run: npx vite-node scripts/check-edge-functions.ts
 

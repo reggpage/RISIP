@@ -76,3 +76,7 @@ Console inspection found the two existing React Router v7 future warnings (`v7_s
 Migrations 0171, 0172 and 0173 were applied to the linked project. Legacy remote migration history prevents a blanket `db push`; only these exact migrations were applied and marked, without rewriting unrelated remote history. The webhook deployed successfully with the requested `--no-verify-jwt`; the chat route verifies the user's JWT explicitly and the WhatsApp route retains HMAC verification.
 
 The temporary evaluator was deleted remotely and removed from the source tree. Both QA companies and auth users were removed, and the fixture credentials were deleted locally. [Cleanup result](cleanup.json) confirms the original six profiles and four live identities remain.
+
+Vercel reported successful deployments for the pushed application. Both `risip.online` and `www.risip.online` served HTTP 200 with a bundle containing the authenticated `/chat` route and `ChatPage-B3JWhIq6.js`.
+
+The first GitHub CI run exposed runner configuration problems: nine existing suites failed to import without frontend environment values, and two existing QR wall-clock assertions exceeded their limits under parallel CPU load. The CI unit-test step now supplies inert localhost values and runs files sequentially. No assertions or timing thresholds were changed. [Local run using the CI configuration](ci-local.txt) captures the complete result.
