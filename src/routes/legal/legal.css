@@ -42,15 +42,28 @@
  * The scrim itself is the scroll container, so on a phone the whole dialog
  * scrolls to its very end; a fixed-height inner body left the last clauses
  * unreachable on some mobile browsers. The header stays put while it scrolls. */
-.legal-modal-scrim { position:fixed; inset:0; z-index:80; background:rgb(var(--ink)/.45); overflow-y:auto; -webkit-overflow-scrolling:touch; display:flex; justify-content:center; align-items:flex-start; padding:24px 20px; }
-.legal-modal { width:100%; max-width:660px; margin:auto; background:white; border-radius:20px; box-shadow:0 30px 90px rgb(var(--ink)/.28); animation:legal-modal-in .2s cubic-bezier(.16,1,.3,1) both; }
+/* The dialog stays INSIDE the visible area and its body does the scrolling.
+ *
+ * MEASURED FAILURE, on a real iPhone: a sticky header inside a transformed,
+ * animated card inside a scrolling scrim made iOS Safari drop the card's own
+ * background. The page behind showed straight through the text. No sticky
+ * header, and no transform in the animation, for that reason.
+ *
+ * The bottom-unreachable bug that started this is fixed by the two things
+ * that actually caused it: the height is 100% of the padded scrim (a real
+ * measure of what the phone shows) instead of vh (which counts the area
+ * hidden behind the browser toolbars), and the scrolling flex child gets
+ * min-height:0, without which a flex item refuses to shrink and its overflow
+ * never becomes scrollable. */
+.legal-modal-scrim { position:fixed; inset:0; z-index:80; background:rgb(var(--ink)/.45); display:flex; justify-content:center; align-items:center; padding:20px; }
+.legal-modal { width:100%; max-width:660px; max-height:100%; display:flex; flex-direction:column; background:white; border-radius:20px; overflow:hidden; box-shadow:0 30px 90px rgb(var(--ink)/.28); animation:legal-modal-in .18s ease-out both; }
 @media(prefers-reduced-motion:reduce) { .legal-modal { animation:none; } }
-@keyframes legal-modal-in { from { opacity:0; transform:translateY(12px) scale(.99); } to { opacity:1; transform:none; } }
-.legal-modal-head { position:sticky; top:0; z-index:1; display:flex; align-items:flex-start; justify-content:space-between; gap:20px; padding:26px 28px 20px; background:white; border-bottom:1px solid rgb(var(--ink)/.1); border-radius:20px 20px 0 0; }
+@keyframes legal-modal-in { from { opacity:0; } to { opacity:1; } }
+.legal-modal-head { flex-shrink:0; display:flex; align-items:flex-start; justify-content:space-between; gap:20px; padding:26px 28px 20px; background:white; border-bottom:1px solid rgb(var(--ink)/.1); }
 .legal-modal-head h2 { font-family:Georgia,serif; font-size:26px; letter-spacing:-.03em; margin:0; }
 .legal-modal-head button { flex-shrink:0; width:36px; height:36px; display:grid; place-items:center; border-radius:9px; background:none; color:rgb(var(--ink)/.5); transition:color .18s ease, text-shadow .18s ease; }
 .legal-modal-head button:hover { color:rgb(var(--role-admin)); text-shadow:0 0 14px rgb(var(--role-admin)/.45); }
-.legal-modal-body { padding:24px 28px 30px; }
+.legal-modal-body { flex:1; min-height:0; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; padding:24px 28px 30px; }
 .legal-modal-lead { font-size:15px; line-height:1.6; color:rgb(var(--ink)/.7); margin:0 0 6px; }
 .legal-modal-version { font-size:11px; color:rgb(var(--ink)/.45); margin:0 0 22px; }
 .legal-modal-body section { padding-bottom:20px; margin-bottom:20px; border-bottom:1px solid rgb(var(--ink)/.08); }
@@ -58,7 +71,10 @@
 .legal-modal-body p { font-size:13px; line-height:1.85; color:rgb(var(--ink)/.75); margin:0 0 12px; }
 .legal-modal-contact { font-size:13px; color:rgb(var(--ink)/.7); }
 .legal-modal-contact a { color:rgb(var(--role-admin)); text-decoration:underline; text-underline-offset:3px; }
-@media(max-width:600px) { .legal-modal { max-height:92vh; border-radius:16px; } .legal-modal-head { padding:20px; } .legal-modal-body { padding:20px; } }
+/* No vh here: it counts the strip hidden behind the phone's browser toolbars,
+   which is what left the last clauses unreachable. max-height:100% inherits
+   from the scrim, which is the real visible area. */
+@media(max-width:600px) { .legal-modal { border-radius:16px; } .legal-modal-scrim { padding:16px; } .legal-modal-head { padding:20px; } .legal-modal-body { padding:20px; } }
 .legal-accept button:disabled { opacity:.45; cursor:not-allowed; }
 .legal-accept [role=alert] { color:rgb(var(--role-admin)); }
 @media(max-width:750px) { .legal-nav { padding:22px; } .legal-nav>div { gap:8px; } .legal-page main { padding:0 24px 50px; } .legal-intro { padding:50px 0 36px; } .legal-layout { display:block; } .legal-toc { position:static; padding-bottom:30px; margin-bottom:30px; border-bottom:1px solid rgb(var(--ink)/.1); display:grid; grid-template-columns:1fr 1fr; gap:15px; } .legal-toc>span { grid-column:1/-1; } .legal-tabs { margin-bottom:30px; } .legal-accept>section { padding:28px; } }
