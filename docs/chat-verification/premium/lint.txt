@@ -1,0 +1,5 @@
+
+> risip@0.1.0 lint:landing
+> eslint --config eslint.landing.config.mjs src/routes/marketing src/App.tsx tailwind.config.ts
+
+Exit code: 0

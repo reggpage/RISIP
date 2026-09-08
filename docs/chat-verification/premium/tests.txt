@@ -1,0 +1,202 @@
+
+> risip@0.1.0 test
+> vitest run
+
+
+ RUN  v2.1.9 C:/Users/HP/Documents/risip
+
+ ✓ src/features/whatsapp/__tests__/aiFirstRouting.test.ts (27 tests) 20ms
+ ✓ src/features/receipts/__tests__/traVerify.test.ts (21 tests) 19ms
+ ✓ src/features/whatsapp/__tests__/onboarding.test.ts (28 tests) 18ms
+ ✓ src/features/whatsapp/__tests__/combos.test.ts (31 tests) 30ms
+ ✓ src/features/whatsapp/__tests__/typingQueueDiagnosis.test.ts (28 tests) 34ms
+ ✓ src/features/whatsapp/__tests__/dailyRecords.test.ts (49 tests) 98ms
+ ✓ src/features/whatsapp/__tests__/stock.test.ts (39 tests) 68ms
+ ✓ src/features/whatsapp/__tests__/stageATelemetry.test.ts (22 tests) 15ms
+ ✓ src/features/whatsapp/__tests__/pendingClarification.test.ts (27 tests) 21ms
+ ✓ src/features/whatsapp/__tests__/stageDNoTemplates.test.ts (19 tests) 13ms
+ ✓ src/features/whatsapp/__tests__/stageCToolDiscipline.test.ts (25 tests) 17ms
+ ✓ src/features/whatsapp/__tests__/assistantCore.test.ts (17 tests) 93ms
+ ✓ src/features/whatsapp/__tests__/quantitySale.test.ts (68 tests) 123ms
+ ✓ src/features/whatsapp/__tests__/ownerScreenshotFixes.test.ts (22 tests) 58ms
+ ✓ src/features/whatsapp/__tests__/aiFoundationBoundary.test.ts (37 tests) 73ms
+ ✓ src/features/whatsapp/__tests__/aiAuthorityBoundary.test.ts (20 tests) 30ms
+ ✓ src/features/whatsapp/__tests__/dayClose.test.ts (48 tests) 239ms
+ ✓ src/features/whatsapp/__tests__/advisor.test.ts (22 tests) 149ms
+ ✓ src/features/whatsapp/__tests__/intent.test.ts (34 tests) 60ms
+ ✓ src/features/whatsapp/__tests__/buchaProductSetup.test.ts (28 tests) 88ms
+ ✓ src/features/whatsapp/__tests__/noBusinessFallback.test.ts (19 tests) 20ms
+ ✓ src/features/whatsapp/__tests__/priceBand.test.ts (34 tests) 69ms
+ ✓ src/features/whatsapp/__tests__/stageBLanguageContract.test.ts (22 tests) 28ms
+ ✓ src/features/whatsapp/__tests__/dateRange.test.ts (33 tests) 77ms
+ ✓ src/features/whatsapp/__tests__/productAnalytics.test.ts (19 tests) 70ms
+ ✓ src/features/whatsapp/__tests__/invite.test.ts (23 tests) 39ms
+ ✓ src/features/whatsapp/__tests__/recordQueue.test.ts (24 tests) 12ms
+ ✓ src/features/whatsapp/__tests__/snippeSignature.test.ts (28 tests) 27ms
+ ✓ src/features/whatsapp/__tests__/transactionAiFallback.test.ts (20 tests) 736ms
+   ✓ mocked Claude tool call and deterministic revalidation wiring > rejects a legacy tool hidden from the model instead of executing it 650ms
+ ✓ src/features/whatsapp/__tests__/bulkStock.test.ts (19 tests) 55ms
+ ✓ src/features/whatsapp/__tests__/newProduct.test.ts (29 tests) 47ms
+ ✓ src/features/whatsapp/__tests__/portions.test.ts (20 tests) 53ms
+ ✓ src/features/whatsapp/__tests__/spelling.test.ts (22 tests) 51ms
+ ✓ src/features/whatsapp/__tests__/hypotheticalProfit.test.ts (16 tests) 51ms
+ ✓ src/features/whatsapp/__tests__/buchaVocabulary.test.ts (32 tests) 33ms
+ ✓ src/features/whatsapp/__tests__/chaos.test.ts (20 tests) 224ms
+ ✓ src/features/receipts/__tests__/privacy.test.ts (22 tests) 11ms
+ ✓ src/features/whatsapp/__tests__/voidRecord.test.ts (17 tests) 53ms
+ ✓ src/features/whatsapp/__tests__/subscriptionTool.test.ts (18 tests) 40ms
+ ✓ src/features/whatsapp/__tests__/recurringCosts.test.ts (22 tests) 36ms
+ ✓ src/features/whatsapp/__tests__/chooseByNumber.test.ts (22 tests) 28ms
+ ✓ src/features/whatsapp/__tests__/stockBatch.test.ts (24 tests) 47ms
+ ✓ src/features/whatsapp/__tests__/buchaLedgerFoundation.test.ts (21 tests) 65ms
+ ✓ src/features/whatsapp/__tests__/theAnswerWeAskedFor.test.ts (20 tests) 15ms
+ ✓ src/features/whatsapp/__tests__/whatsapp.test.ts (23 tests) 47ms
+ ✓ src/features/whatsapp/__tests__/bareListDirection.test.ts (17 tests) 9ms
+ ✓ src/features/whatsapp/__tests__/groundedFigures.test.ts (16 tests) 40ms
+ ✓ src/features/whatsapp/__tests__/dailyRecordBatch.test.ts (9 tests) 84ms
+ ✓ src/features/whatsapp/__tests__/readTools.test.ts (12 tests) 67ms
+ ✓ src/features/whatsapp/__tests__/buchaStockLoss.test.ts (32 tests) 54ms
+ ✓ src/features/whatsapp/__tests__/recordsStatement.test.ts (22 tests) 47ms
+ ✓ src/features/whatsapp/__tests__/priceUpdateTool.test.ts (12 tests) 23ms
+ ✓ src/features/whatsapp/__tests__/operationalSafety.test.ts (19 tests) 10ms
+ ✓ src/features/whatsapp/__tests__/summaryDateEvidence.test.ts (11 tests) 53ms
+ ✓ src/features/receipts/__tests__/approvalFlow.test.ts (20 tests) 11ms
+ ✓ src/features/whatsapp/__tests__/onboardingThreeMessages.test.ts (17 tests) 14ms
+ ✓ src/features/whatsapp/__tests__/aiBudget.test.ts (10 tests) 62ms
+ ✓ src/features/whatsapp/__tests__/buchaCreditSale.test.ts (19 tests) 32ms
+ ✓ src/features/whatsapp/__tests__/buchaLanguageContext.test.ts (16 tests) 25ms
+ ✓ src/features/whatsapp/__tests__/onePriceListPerProduct.test.ts (17 tests) 13ms
+ ✓ src/features/whatsapp/__tests__/debtorHistory.test.ts (13 tests) 18ms
+ ✓ src/features/whatsapp/__tests__/stockArrivalLanguage.test.ts (10 tests) 124ms
+ ✓ src/features/whatsapp/__tests__/groundedArithmetic.test.ts (16 tests) 41ms
+ ✓ src/features/whatsapp/__tests__/addProduct.test.ts (15 tests) 50ms
+ ✓ src/features/whatsapp/__tests__/productCosts.test.ts (24 tests) 59ms
+ ✓ src/features/whatsapp/__tests__/halfAPriceList.test.ts (18 tests) 22ms
+ ✓ src/features/whatsapp/__tests__/aiEligibility.test.ts (8 tests) 37ms
+ ✓ src/features/whatsapp/__tests__/toolSchemaShape.test.ts (9 tests) 14ms
+ ✓ src/features/whatsapp/__tests__/measuredSales.test.ts (17 tests) 44ms
+ ✓ src/features/whatsapp/__tests__/expenseVersusPurchase.test.ts (9 tests) 8ms
+ ✓ src/features/whatsapp/__tests__/buchaAliasWritePath.test.ts (12 tests) 11ms
+ ✓ src/features/whatsapp/__tests__/logout.test.ts (17 tests) 17ms
+ ✓ src/features/whatsapp/__tests__/sellingPrice.test.ts (19 tests) 42ms
+ ✓ src/features/whatsapp/__tests__/helpAndLinking.test.ts (21 tests) 11ms
+ ✓ src/features/whatsapp/__tests__/evalCoverage.test.ts (5 tests) 119ms
+ ✓ src/features/whatsapp/__tests__/missingQuantity.test.ts (23 tests) 25ms
+ ✓ src/features/whatsapp/__tests__/paymentSuggestion.test.ts (13 tests) 8ms
+ ✓ src/features/whatsapp/__tests__/directionQuestionKnowsShop.test.ts (12 tests) 7ms
+ ✓ src/features/whatsapp/__tests__/priceFieldContract.test.ts (9 tests) 50ms
+ ✓ src/features/whatsapp/__tests__/billingMessages.test.ts (20 tests) 11ms
+ ✓ src/features/whatsapp/__tests__/mixedTopics.test.ts (17 tests) 24ms
+ ✓ src/features/whatsapp/__tests__/compareDays.test.ts (11 tests) 9ms
+ ✓ src/features/whatsapp/__tests__/costBatch.test.ts (11 tests) 63ms
+ ✓ src/features/whatsapp/__tests__/quantitySaleUnits.test.ts (17 tests) 35ms
+ ✓ src/features/whatsapp/__tests__/billingPage.test.ts (17 tests) 13ms
+ ✓ src/features/whatsapp/__tests__/countOnlyRegistered.test.ts (12 tests) 8ms
+ ✓ src/features/whatsapp/__tests__/payByOne.test.ts (18 tests) 11ms
+ ✓ src/features/whatsapp/__tests__/onboardingLanguage.test.ts (16 tests) 11ms
+ ✓ src/features/whatsapp/__tests__/buchaPaymentMethod.test.ts (26 tests) 17ms
+ ✓ src/features/whatsapp/__tests__/notifications.test.ts (9 tests) 45ms
+ ✓ src/features/whatsapp/__tests__/salesQuestionWording.test.ts (19 tests) 66ms
+ ✓ src/features/whatsapp/__tests__/multiProductSale.test.ts (11 tests) 47ms
+ ✓ src/features/whatsapp/__tests__/noReceiptTalk.test.ts (11 tests) 10ms
+ ✓ src/features/whatsapp/__tests__/directionGate.test.ts (27 tests) 13ms
+ ✓ src/features/whatsapp/__tests__/barcode.test.ts (17 tests) 12ms
+ ✓ src/features/whatsapp/__tests__/noWorkIsDropped.test.ts (12 tests) 8ms
+ ✓ src/features/whatsapp/__tests__/recordVoid.test.ts (10 tests) 12ms
+ ✓ src/features/whatsapp/__tests__/sellingPriceBatch.test.ts (14 tests) 44ms
+ ✓ src/features/whatsapp/__tests__/webSignupDraft.test.ts (12 tests) 14ms
+ ✓ src/features/whatsapp/__tests__/numberedChoices.test.ts (7 tests) 11ms
+ ✓ src/features/whatsapp/__tests__/exportRecords.test.ts (11 tests) 37ms
+ ✓ src/features/whatsapp/__tests__/stockArrivalBatch.test.ts (18 tests) 45ms
+ ✓ src/features/whatsapp/__tests__/bidhaaWording.test.ts (7 tests) 66ms
+ ✓ src/features/whatsapp/__tests__/knownProduct.test.ts (20 tests) 13ms
+ ✓ src/features/whatsapp/__tests__/catalogueTokenResolution.test.ts (9 tests) 13ms
+ ✓ src/features/whatsapp/__tests__/confirmationsAreTerminal.test.ts (8 tests) 10ms
+ ✓ src/features/products/__tests__/scanner.test.ts (11 tests) 12ms
+ ✓ src/features/whatsapp/__tests__/directionSurvivesRegistration.test.ts (8 tests) 7ms
+ ✓ src/features/whatsapp/__tests__/stageAEvaluatorIsolation.test.ts (11 tests) 9ms
+ ✓ src/features/whatsapp/__tests__/migrationIntegrity.test.ts (6 tests) 7ms
+ ✓ src/features/whatsapp/__tests__/costPrompt.test.ts (14 tests) 36ms
+ ✓ src/features/whatsapp/__tests__/stockPurchase.test.ts (9 tests) 35ms
+ ✓ src/features/whatsapp/__tests__/noLegacyReadPath.test.ts (9 tests) 11ms
+ ✓ src/features/whatsapp/__tests__/stockArrivalDirection.test.ts (10 tests) 15ms
+ ✓ src/features/whatsapp/__tests__/portionYield.test.ts (13 tests) 55ms
+ ✓ src/features/whatsapp/__tests__/phase10Observability.test.ts (4 tests) 44ms
+ ✓ src/features/products/__tests__/catalog.test.ts (15 tests) 34ms
+ ✓ src/features/whatsapp/__tests__/pdfText.test.ts (16 tests) 11ms
+ ✓ src/features/receipts/__tests__/reversal.test.ts (14 tests) 8ms
+ ✓ src/features/whatsapp/__tests__/productNames.test.ts (13 tests) 14ms
+ ✓ src/features/chat/__tests__/presentation.test.ts (8 tests) 12ms
+ ✓ src/features/whatsapp/__tests__/stageDHardening.test.ts (4 tests) 43ms
+ ✓ src/features/whatsapp/__tests__/grade.test.ts (10 tests) 9ms
+ ✓ src/features/whatsapp/__tests__/ourOwnFormIsNotLanguage.test.ts (8 tests) 10ms
+ ✓ src/features/whatsapp/__tests__/conversationMemory.test.ts (5 tests) 60ms
+ ✓ src/features/whatsapp/__tests__/phase9ReportingIntegrity.test.ts (6 tests) 48ms
+ ✓ src/features/whatsapp/__tests__/starterExamples.test.ts (9 tests) 17ms
+ ✓ src/features/whatsapp/__tests__/productResolver.test.ts (5 tests) 20ms
+ ✓ src/routes/dailyRecords/__tests__/groupByDay.test.ts (9 tests) 41ms
+ ✓ src/features/whatsapp/__tests__/buchaSaleWiring.test.ts (6 tests) 6ms
+ ✓ src/features/whatsapp/__tests__/priceBandWording.test.ts (11 tests) 27ms
+ ✓ src/features/reimbursements/__tests__/payouts.test.ts (13 tests) 7ms
+ ✓ src/features/whatsapp/__tests__/expiredQuestionRecovery.test.ts (6 tests) 6ms
+ ✓ src/features/receipts/__tests__/typedCode.test.ts (8 tests) 36ms
+ ✓ src/features/whatsapp/__tests__/historicalPricing.test.ts (7 tests) 42ms
+ ✓ src/features/whatsapp/__tests__/butcherFractions.test.ts (6 tests) 33ms
+ ✓ src/features/whatsapp/__tests__/businessClassifier.test.ts (6 tests) 15ms
+ ✓ src/features/whatsapp/__tests__/wholeAnimalProcurement.test.ts (7 tests) 51ms
+ ✓ src/features/whatsapp/__tests__/interrogation.test.ts (7 tests) 151ms
+ ✓ src/features/whatsapp/__tests__/whatsappTurn.test.ts (4 tests) 26ms
+ ✓ src/features/whatsapp/__tests__/guardRefusalCode.test.ts (10 tests) 7ms
+ ✓ src/features/products/__tests__/receipt.test.ts (8 tests) 40ms
+ ✓ src/features/receipts/__tests__/reasonQuality.test.ts (32 tests) 14ms
+ ✓ src/features/chat/__tests__/chat.test.ts (7 tests) 24ms
+ ✓ src/features/receipts/__tests__/extractedStatus.test.ts (10 tests) 10ms
+ ✓ src/features/receipts/__tests__/qrFollowUp.test.ts (7 tests) 29ms
+ ✓ src/features/whatsapp/__tests__/measureIsNotAProduct.test.ts (4 tests) 12ms
+ ✓ src/features/whatsapp/__tests__/permanentDeletion.test.ts (4 tests) 11ms
+ ✓ src/features/whatsapp/__tests__/bareNumberNoDirection.test.ts (5 tests) 6ms
+ ✓ src/features/whatsapp/__tests__/linkToken.test.ts (8 tests) 7ms
+ ✓ src/features/whatsapp/__tests__/haikuOnly.test.ts (4 tests) 13ms
+ ✓ src/features/whatsapp/__tests__/whatsappMarkdown.test.ts (12 tests) 10ms
+ ✓ src/features/whatsapp/__tests__/machineText.test.ts (5 tests) 6ms
+ ✓ src/features/products/__tests__/counter.test.ts (8 tests) 6ms
+ ✓ src/features/whatsapp/__tests__/templateRegistry.test.ts (5 tests) 7ms
+ ✓ src/features/whatsapp/__tests__/supplierPayables.test.ts (9 tests) 23ms
+ ✓ src/features/whatsapp/__tests__/twoInstructions.test.ts (6 tests) 26ms
+ ✓ src/features/whatsapp/__tests__/onePiecePortion.test.ts (4 tests) 10ms
+ ✓ src/features/whatsapp/__tests__/wholeAnimalBreakdown.test.ts (5 tests) 36ms
+ ✓ src/features/products/__tests__/portionUi.test.ts (4 tests) 13ms
+ ✓ src/features/dashboard/__tests__/themeTokens.test.ts (3 tests) 861ms
+   ✓ every theme token a component uses is defined > has no token that index.css never had, by its old spelling 710ms
+ ✓ src/features/whatsapp/__tests__/dailySummary.test.ts (2 tests) 27ms
+ ✓ src/features/whatsapp/__tests__/projectSetup.test.ts (6 tests) 8ms
+ ✓ src/features/whatsapp/__tests__/lowStock.test.ts (6 tests) 30ms
+ ✓ supabase/functions/_shared/__tests__/chatTransport.test.ts (3 tests) 36ms
+ ✓ src/features/whatsapp/__tests__/workerWritePolicy.test.ts (3 tests) 6ms
+ ✓ src/features/whatsapp/__tests__/knowledge.test.ts (5 tests) 12ms
+ ✓ src/features/products/__tests__/nav.test.ts (6 tests) 6ms
+ ✓ src/features/whatsapp/__tests__/identityEmail.test.ts (6 tests) 6ms
+ ✓ src/features/dailyRecords/__tests__/uiRules.test.ts (4 tests) 7ms
+ ✓ src/features/whatsapp/__tests__/stockPurchaseCostChoice.test.ts (12 tests) 29ms
+ ✓ src/features/whatsapp/__tests__/knowledgeCorpus.test.ts (2 tests) 21ms
+ ✓ src/features/whatsapp/__tests__/readIntentAi.test.ts (2 tests) 7ms
+ ✓ src/features/whatsapp/__tests__/dailyRecordsAi.test.ts (3 tests) 6ms
+ ✓ src/features/whatsapp/__tests__/typingIndicator.test.ts (3 tests) 5ms
+ ✓ src/features/whatsapp/__tests__/productRename.test.ts (2 tests) 28ms
+ ✓ src/features/whatsapp/__tests__/webAuthRequest.test.ts (3 tests) 5ms
+ ✓ src/features/whatsapp/__tests__/locationUnitBoundary.test.ts (1 test) 5ms
+ ✓ src/features/whatsapp/__tests__/publicWhatsApp.test.ts (3 tests) 4ms
+ ✓ src/features/whatsapp/__tests__/companyInvites.test.ts (2 tests) 4ms
+ ✓ src/features/whatsapp/__tests__/whatsappTextPayload.test.ts (2 tests) 6ms
+ ✓ src/features/receipts/__tests__/receiptQr.test.ts (14 tests) 6051ms
+   ✓ a square that is small in a big photo > finds the square in a WhatsApp HD photo 308ms
+   ✓ a square that is small in a big photo > finds it in a standard-quality photo too 441ms
+   ✓ a square that is small in a big photo > gives up rather than grinding on a raw twelve-megapixel original 2599ms
+   ✓ a square that is small in a big photo > stays inside its time budget instead of trying everything 2157ms
+
+ Test Files  182 passed (182)
+      Tests  2635 passed (2635)
+   Start at  10:10:17
+   Duration  9.84s (transform 13.32s, setup 0ms, collect 29.35s, tests 13.56s, environment 63ms, prepare 41.52s)
+
+Exit code: 0

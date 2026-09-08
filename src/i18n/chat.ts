@@ -18,6 +18,13 @@ export const chatEnglish = {
   loadError: 'The conversation could not be loaded. Try again.', reload: 'Reload', switchError: 'Finish or cancel the pending question before switching businesses. A message may still be processing.',
   pendingDay: 'Continue the pending question', offline: 'You are offline. Your unsent message stays here.',
   workingElsewhere: 'This message is still processing. Retry shortly to check the result.', failed: 'Risip could not complete this message. Review the response before sending a new request.',
+  profile: 'Your profile', workspace: 'Your workspace', responseStyle: 'Reply appearance', cards: 'Cards', plain: 'Open text',
+  sending: 'Sending', sent: 'Sent', answerTime: 'Answered in {time}s', elapsed: '{time}s', writing: 'Writing the reply…',
+  reading: 'Reading your message…', thinkingNow: 'Thinking…', readingSales: 'Reading sales…', readingProfit: 'Reviewing profit…',
+  readingStock: 'Checking stock…', readingPrices: 'Looking up prices…', preparing: 'Preparing your review…', checking: 'Checking your request…',
+  reviewNote: 'Saved only when you confirm.', chooseReply: 'Choose your answer', retail: 'Retail', wholesale: 'Wholesale', skip: 'Skip for now', yes: 'Yes', no: 'No',
+  greeting: 'A clearer view of your business.', greetingLabel: 'Your daily conversation', ready: 'Ready when you are', returnLatest: 'Latest messages',
+  openLink: 'Open link', linkExpired: 'Sign-in link hidden. Request a new link to continue.',
 };
 export const chatSwahili: typeof chatEnglish = {
   title: 'Risip', subtitle: 'Biashara yako, kwa mazungumzo.', nav: 'Mazungumzo', business: 'Biashara', back: 'Rudi kwenye dashibodi',
@@ -39,4 +46,11 @@ export const chatSwahili: typeof chatEnglish = {
   loadError: 'Mazungumzo hayakuweza kupakiwa. Jaribu tena.', reload: 'Pakia tena', switchError: 'Maliza au ghairi swali linalosubiri kabla ya kubadili biashara. Huenda ujumbe bado unashughulikiwa.',
   pendingDay: 'Endelea na swali linalosubiri', offline: 'Huna intaneti. Ujumbe ambao hujatuma unabaki hapa.',
   workingElsewhere: 'Ujumbe huu bado unashughulikiwa. Jaribu tena baada ya muda mfupi kuona matokeo.', failed: 'Risip hakuweza kumaliza ujumbe huu. Pitia jibu kabla ya kutuma ombi jipya.',
+  profile: 'Wasifu wako', workspace: 'Eneo lako la kazi', responseStyle: 'Muonekano wa majibu', cards: 'Kadi', plain: 'Maandishi wazi',
+  sending: 'Unatumwa', sent: 'Umetumwa', answerTime: 'Amejibu kwa sekunde {time}', elapsed: 'Sekunde {time}', writing: 'Anaandika jibu…',
+  reading: 'Anasoma ujumbe wako…', thinkingNow: 'Anafikiria…', readingSales: 'Anasoma mauzo…', readingProfit: 'Anaangalia faida…',
+  readingStock: 'Anahakiki stoo…', readingPrices: 'Anatafuta bei…', preparing: 'Anaandaa rekodi uihakiki…', checking: 'Anahakiki ombi lako…',
+  reviewNote: 'Inahifadhiwa ukithibitisha tu.', chooseReply: 'Chagua jibu lako', retail: 'Rejareja', wholesale: 'Jumla', skip: 'Ruka kwa sasa', yes: 'Ndiyo', no: 'Hapana',
+  greeting: 'Ielewe biashara yako vizuri.', greetingLabel: 'Mazungumzo yako ya kila siku', ready: 'Tayari kukusaidia', returnLatest: 'Ujumbe wa mwisho',
+  openLink: 'Fungua link', linkExpired: 'Link ya kuingia imefichwa. Omba link mpya ili kuendelea.',
 };
