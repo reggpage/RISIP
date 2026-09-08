@@ -1526,7 +1526,15 @@ export function enforceResolvedDateLabel(answer: string, evidence: string[]): st
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\s{2,}/g, ' ')
     .trim();
-  if (cleaned.includes(label)) return cleaned;
+  // MEASURED: the answer said "Mauzo ya leo (8 Septemba 2026)" and the label
+  // was "Jumanne, 8 Septemba 2026". One string did not contain the other, so
+  // the date was stamped on a second time: "leo (Jumanne, 8 Septemba 2026)
+  // (8 Septemba 2026)". The same day can be written several ways, so every
+  // spelling of it counts as already present.
+  const withoutWeekday = label.replace(/^[^,]+,\s*/u, '');
+  const alreadySaid = [label, withoutWeekday, dates]
+    .filter((form): form is string => typeof form === 'string' && form.length > 3);
+  if (alreadySaid.some((form) => cleaned.includes(form))) return cleaned;
   const period = joined.match(/^period=(.+)$/m)?.[1]?.trim().toLocaleLowerCase('sw-TZ') ?? '';
   if (period === 'jana' && /\bjana\b/iu.test(cleaned)) {
     return cleaned.replace(/\bjana\b/iu, (match) => `${match} (${label})`);
