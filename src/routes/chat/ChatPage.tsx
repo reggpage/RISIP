@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowDown, ArrowLeft, ArrowUp, CalendarDays, ChevronLeft, ChevronRight, Layers2, ScanLine, AlignLeft, UserRound, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, CalendarDays, ChevronLeft, ChevronRight, Layers2, Menu, ScanLine, AlignLeft, X } from 'lucide-react';
 import RisipLogo from '@/components/ui/RisipLogo';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { getLang } from '@/lib/lang';
 import { sw } from '@/i18n/sw';
 import { businessDay, sendChat, type ChatMessage, type Membership, type Outbox, type Pending } from '@/features/chat/chat';
-import { reconcileMessage, responseSeconds, safeLink } from '@/features/chat/presentation';
+import { reconcileMessage, responseSeconds } from '@/features/chat/presentation';
 import ChatMessageView, { toolLabel } from './ChatMessageView';
 import ScanToSell from './ScanToSell';
 import './chat.css';
@@ -52,9 +51,6 @@ function Calendar({ days, day, pick, close }: { days: string[]; day: string; pic
 export default function ChatPage() {
   const c = sw.chat, auth = useAuth();
   const userId = auth.status === 'signed-in' ? auth.session.user.id : '';
-  const fullName = auth.status === 'signed-in' ? auth.profile?.full_name ?? c.you : c.you;
-  const avatarUrl = auth.status === 'signed-in' ? safeLink(auth.session.user.user_metadata?.avatar_url ?? auth.session.user.user_metadata?.picture) : null;
-  const [avatarFailed, setAvatarFailed] = useState(false);
   const [style, setStyle] = useState<'cards' | 'plain'>(() => localStorage.getItem('risip.chat.style') === 'plain' ? 'plain' : 'cards');
   const [liveIds, setLiveIds] = useState<Set<string>>(new Set());
   const [started, setStarted] = useState(0), [received, setReceived] = useState(false), [showLatest, setShowLatest] = useState(false);
@@ -65,6 +61,7 @@ export default function ChatPage() {
   const [retry, setRetry] = useState<Outbox | null>(null), [calendar, setCalendar] = useState(false), [scan, setScan] = useState(false), [activeTool, setActiveTool] = useState('');
   const [online, setOnline] = useState(navigator.onLine);
   const [switching, setSwitching] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const composer = useRef<HTMLTextAreaElement>(null), thread = useRef<HTMLDivElement>(null), request = useRef(0), nearBottom = useRef(true), busy = useRef(false);
   const manualScrollUntil = useRef(0);
   const app = useRef<HTMLDivElement>(null);
@@ -151,21 +148,23 @@ export default function ChatPage() {
     try {
       const { error: switchError } = await db.rpc('switch_active_company', { p_company: id });
       if (switchError) throw switchError;
-      request.current++; setCompany(id); setMessages([]); setPending(null); setSelectedDay(businessDay()); setError('');
+      request.current++; setCompany(id); setMessages([]); setPending(null); setSelectedDay(businessDay()); setError(''); setMenuOpen(false);
     } catch { setError(c.switchError); }
     finally { busy.current = false; setSwitching(false); }
   }
   function jump(id: string) { nearBottom.current = false; setShowLatest(true); document.getElementById(`message-${id}`)?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' }); }
   const controlsDisabled = sending || switching || !online || !company || Boolean(retry);
+  const activeMembership = memberships.find((membership) => membership.company_id === company);
   return <div ref={app} className={`chat-app chat-style-${style}`}>
-    <aside className="chat-rail">
-      <div className="chat-identity"><Link to="/settings" className="chat-avatar" aria-label={c.profile}>{avatarUrl && !avatarFailed ? <img src={avatarUrl} alt={fullName} onError={() => setAvatarFailed(true)} referrerPolicy="no-referrer" /> : fullName !== c.you ? <span>{fullName.split(/\s+/).slice(0, 2).map((part) => part[0]).join('')}</span> : <UserRound size={22} />}</Link><Link to="/dashboard" className="chat-brand" aria-label={c.back}><RisipLogo className="chat-wordmark" /></Link><Link to="/dashboard" className="chat-back" aria-label={c.back}><ArrowLeft size={16} /></Link></div>
-      <label className="chat-business"><span>{c.business}</span><select value={company} disabled={sending || switching || Boolean(retry)} onChange={(e) => void switchBusiness(e.target.value)}>{memberships.map((m) => <option key={m.company_id} value={m.company_id}>{m.company_name}</option>)}</select></label>
-      <nav className="chat-days" aria-label={c.earlier}>{[c.today, c.yesterday, c.beforeYesterday].map((label, index) => <button key={label} aria-current={day === businessDay(-index) ? 'date' : undefined} onClick={() => setSelectedDay(businessDay(-index))}><span>{label}</span>{days.includes(businessDay(-index)) && <i />}</button>)}<button className="chat-calendar-trigger" aria-label={c.calendar} onClick={() => setCalendar(true)}><CalendarDays size={19} /><span>{c.calendar}</span></button></nav>
-      <div className="chat-allowance"><div><span>{c.allowance}</span>{usage && <strong>{usage.messages_used.toLocaleString()} <small>/ {usage.allowance.toLocaleString()}</small></strong>}</div>{usage ? <progress aria-label={c.allowance} max={usage.allowance} value={Math.min(usage.messages_used, usage.allowance)} /> : <p>{c.noPlan}</p>}<p>{c.allowanceNote}</p></div>
-    </aside>
     <main className="chat-main">
-      <header className="chat-header"><div><h1>{c.nav}</h1><p><i />{c.subtitle}</p></div><div className="chat-header-controls"><div className="chat-style-switch" role="group" aria-label={c.responseStyle}><button aria-pressed={style === 'cards'} title={c.cards} onClick={() => setStyle('cards')}><Layers2 size={15} /><span>{c.cards}</span></button><button aria-pressed={style === 'plain'} title={c.plain} onClick={() => setStyle('plain')}><AlignLeft size={15} /><span>{c.plain}</span></button></div></div></header>
+      <header className="chat-header"><div><h1>{c.nav}</h1><p><i />{c.subtitle}</p></div><button className="chat-menu-trigger" aria-label={c.menu} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}><Menu size={21} /></button></header>
+      {menuOpen && <><button className="chat-menu-backdrop" aria-label={c.closeMenu} onClick={() => setMenuOpen(false)} /><section className="chat-menu-panel" aria-label={c.menu}>
+        <div className="chat-menu-panel-head"><span>{c.menu}</span><button aria-label={c.closeMenu} onClick={() => setMenuOpen(false)}><X size={18} /></button></div>
+        <div className="chat-menu-business"><span>{c.business}</span><strong>{activeMembership?.company_name ?? c.business}</strong><label><span>{c.changeBusiness}</span><select value={company} disabled={sending || switching || Boolean(retry)} onChange={(e) => void switchBusiness(e.target.value)}>{memberships.map((m) => <option key={m.company_id} value={m.company_id}>{m.company_name}</option>)}</select></label></div>
+        <div className="chat-menu-section"><span>{c.responseStyle}</span><div className="chat-style-switch" role="group" aria-label={c.responseStyle}><button aria-pressed={style === 'cards'} title={c.cards} onClick={() => { setStyle('cards'); setMenuOpen(false); }}><Layers2 size={15} /><span>{c.cards}</span></button><button aria-pressed={style === 'plain'} title={c.plain} onClick={() => { setStyle('plain'); setMenuOpen(false); }}><AlignLeft size={15} /><span>{c.plain}</span></button></div></div>
+        <div className="chat-menu-allowance"><div><span>{c.allowance}</span>{usage && <strong>{usage.messages_used.toLocaleString()} <small>/ {usage.allowance.toLocaleString()}</small></strong>}</div>{usage ? <progress aria-label={c.allowance} max={usage.allowance} value={Math.min(usage.messages_used, usage.allowance)} /> : <p>{c.noPlan}</p>}<p>{c.allowanceNote}</p></div>
+        <nav className="chat-menu-days" aria-label={c.earlier}>{[c.today, c.yesterday, c.beforeYesterday].map((label, index) => <button key={label} aria-current={day === businessDay(-index) ? 'date' : undefined} onClick={() => { setSelectedDay(businessDay(-index)); setMenuOpen(false); }}><span>{label}</span>{days.includes(businessDay(-index)) && <i />}</button>)}<button className="chat-calendar-trigger" onClick={() => { setCalendar(true); setMenuOpen(false); }}><CalendarDays size={18} /><span>{c.calendar}</span></button></nav>
+      </section></>}
       {pending && pending.day !== day && <button className="chat-pending-link" onClick={() => setSelectedDay(pending.day)}>{c.pendingDay}<ChevronRight size={16} /></button>}
       <div className="chat-thread-wrap"><div ref={thread} className="chat-thread" onWheel={() => { manualScrollUntil.current = Date.now() + 1000; }} onTouchMove={() => { manualScrollUntil.current = Date.now() + 1000; }} onPointerDown={() => { manualScrollUntil.current = Date.now() + 1000; }} onKeyDown={(e) => { if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) manualScrollUntil.current = Date.now() + 1000; }} onScroll={() => { if (nearBottom.current && Date.now() > manualScrollUntil.current) return; const el = thread.current!; nearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 100; setShowLatest(!nearBottom.current); }}>
         <div className="chat-date-divider"><span /><time dateTime={day}>{dateLabel(day)}</time><span /></div>

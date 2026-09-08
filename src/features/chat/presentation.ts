@@ -38,6 +38,23 @@ export function replyChoices(content: string, awaiting: string | null): ReplyCho
   return choices.slice(0, 12);
 }
 
+/** Removes instructions already expressed by the active reply buttons. */
+export function compactChoiceCopy(content: string, choices: ReplyChoice[]): string {
+  if (!choices.length) return content;
+  return content.replace(/\s*(?:Namba hizi ni za bidhaa zenye bei mbili pekee; bidhaa zilizokwisha pimiwa juu hazihitaji jibu|These numbers are only for products with two prices; products already priced above need no answer)\.?/gi, '').split('\n').filter((line) => {
+    const clean = line.replace(/\*/g, '').trim();
+    return !(/^(?:(?:Kama zote ni bei moja,?\s*)?chagua|Choose)\s+\(a\)/i.test(clean)
+      || /^Kama zimechanganyika,?\s*(?:andika|write)\s+namba:/i.test(clean)
+      || /^(?:Ukitaka|Ukifanya|If you want)\s+(?:kuacha|to skip),?\s*(?:chagua|choose)\s+\(c\)/i.test(clean)
+      || /^💡\s*(?:Ukiandika|If you write)\s+(?:neno\s+)?(?:rejareja|retail|jumla|wholesale)/i.test(clean)
+      || /^(?:Ukiamua|If you decide)\s+(?:kuacha|to cancel),?\s*(?:andika|write)\s+(?:GHAIRI|CANCEL)/i.test(clean));
+  }).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+export function hasMixedChoiceInstruction(content: string, choices: ReplyChoice[]): boolean {
+  return choices.length > 1 && /(?:Kama zimechanganyika|mixed prices?)/i.test(content);
+}
+
 export function reconcileMessage(messages: ChatMessage[], incoming: ChatMessage, outgoingId: string): ChatMessage[] {
   return [...messages.filter((message) => message.id !== incoming.id && message.id !== `local:${outgoingId}` && message.chat_day === incoming.chat_day), incoming];
 }

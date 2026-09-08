@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { lineCalculation, reconcileMessage, replyChoices, responseSeconds, safeLink } from '../presentation';
+import { compactChoiceCopy, hasMixedChoiceInstruction, lineCalculation, reconcileMessage, replyChoices, responseSeconds, safeLink } from '../presentation';
 import type { ChatMessage } from '../chat';
 
 const question = 'punch 3, umeuza kwa bei gani?\n\n• rejareja TSh 12,000 = TSh 36,000\n• jumla TSh 11,000 = TSh 33,000\n\nChagua (a) *REJAREJA* · (b) *JUMLA* · (c) *GHAIRI*. Unaweza pia kuandika jumla kamili.';
@@ -28,6 +28,13 @@ describe('chat presentation preserves the text contract', () => {
   });
   it('supports English choices with the same ordinary-message protocol', () => {
     expect(replyChoices('Choose (a) *RETAIL*, (b) *WHOLESALE*, or (c) *CANCEL*.', 'price_band_choice').map((c) => c.value)).toEqual(['RETAIL', 'WHOLESALE', 'CANCEL']);
+  });
+  it('removes only button-redundant choice instructions and keeps a mixed-price fallback', () => {
+    const content = '1. Daftari 4, rejareja TSh 1,500 · jumla TSh 1,200 Namba hizi ni za bidhaa zenye bei mbili pekee; bidhaa zilizokwisha pimiwa juu hazihitaji jibu.\nKama zote ni bei moja, chagua (a) REJAREJA au (b) JUMLA.\nKama zimechanganyika, andika namba: 1 rejareja, 2 jumla.\nUkifanya kuacha, chagua (c) GHAIRI.';
+    const choices = replyChoices('Chagua (a) REJAREJA · (b) JUMLA · (c) GHAIRI.', 'price_band_choice');
+    expect(compactChoiceCopy(content, choices)).toBe('1. Daftari 4, rejareja TSh 1,500 · jumla TSh 1,200');
+    expect(hasMixedChoiceInstruction(content, choices)).toBe(true);
+    expect(compactChoiceCopy(content, [])).toBe(content);
   });
   const message = (id: string, role: ChatMessage['role'], time = '2026-09-08T10:00:00Z'): ChatMessage => ({ id, role, content: 'sale', created_at: time, wa_message_id: 'web:user:client', chat_day: '2026-09-08', awaiting: null, tools: [] });
   it('replaces an optimistic bubble with its durable acknowledgement, then deduplicates retries', () => {

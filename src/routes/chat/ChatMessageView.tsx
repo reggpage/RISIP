@@ -3,7 +3,7 @@ import { Check, CheckCheck, ChevronDown, Clock3, CornerDownLeft, ExternalLink, P
 import RisipLogo from '@/components/ui/RisipLogo';
 import { sw } from '@/i18n/sw';
 import { confirmationRows, isConfirmation, type ChatMessage } from '@/features/chat/chat';
-import { lineCalculation, replyChoices, safeLink, type ReplyChoice } from '@/features/chat/presentation';
+import { compactChoiceCopy, hasMixedChoiceInstruction, lineCalculation, replyChoices, safeLink, type ReplyChoice } from '@/features/chat/presentation';
 
 export function toolLabel(name: string, active = false) {
   const c = sw.chat;
@@ -55,7 +55,8 @@ export default memo(function ChatMessageView({ message, active, disabled, animat
   const hasTable = confirm && rows.length > 0;
   const choices = !confirm ? replyChoices(message.content, message.awaiting) : [];
   const structuredBody = hasTable || metrics ? message.content.split('\n').filter((line) => confirmationRows(line).length === 0 && !/^(Jibu|Reply)\s+\*?1\b/.test(line)).join('\n').replace(/^\s*(?:Bidhaa|Products):\s*$/gm, '').trim() : message.content;
-  const body = choices.some((choice) => choice.detail) ? structuredBody.split('\n').filter((line) => !/^(?:Chagua|Choose)\s+\(a\)/i.test(line.trim()) && !choices.some((choice) => choice.detail && line.replace(/\*/g, '').includes(choice.detail))).join('\n').trim() : structuredBody;
+  const body = compactChoiceCopy(choices.some((choice) => choice.detail) ? structuredBody.split('\n').filter((line) => !/^(?:Chagua|Choose)\s+\(a\)/i.test(line.trim()) && !choices.some((choice) => choice.detail && line.replace(/\*/g, '').includes(choice.detail))).join('\n').trim() : structuredBody, choices);
+  const hasMixedChoice = hasMixedChoiceInstruction(message.content, choices);
   const [visible, setVisible] = useState(animate ? 0 : body.length);
   const callbacks = useRef({ onRevealed, onGrow }); callbacks.current = { onRevealed, onGrow };
   useEffect(() => {
@@ -96,7 +97,7 @@ export default memo(function ChatMessageView({ message, active, disabled, animat
         <button disabled={disabled || revealing} onClick={edit}><Pencil size={14} />{c.edit}</button>
         <button disabled={disabled || revealing} onClick={() => send('GHAIRI')}><X size={14} />{c.cancel}</button>
       </div><p>{c.reviewNote}</p></div>}
-      {choices.length > 0 && <div className="chat-choice-area"><span>{c.chooseReply}</span><div className="chat-choices">{choices.map((choice) => <button key={choice.value} className={choice.cancel ? 'chat-choice-cancel' : ''} disabled={disabled || revealing || !active} onClick={() => send(choice.value)}><span>{choiceLabel(choice)}{choice.detail && <small>{choice.detail}</small>}</span>{choice.cancel ? <X size={14} /> : <CornerDownLeft size={14} />}</button>)}</div></div>}
+      {choices.length > 0 && <div className="chat-choice-area"><span>{c.chooseReply}</span><div className="chat-choices">{choices.map((choice) => <button key={choice.value} className={choice.cancel ? 'chat-choice-cancel' : ''} disabled={disabled || revealing || !active} onClick={() => send(choice.value)}><span>{choiceLabel(choice)}{choice.detail && <small>{choice.detail}</small>}</span>{choice.cancel ? <X size={14} /> : <CornerDownLeft size={14} />}</button>)}</div>{hasMixedChoice && <p className="chat-choice-note">{c.mixedChoiceNote}</p>}</div>}
     </div>
     {assistant && <div className="chat-response-footer">
       {message.tools.length > 0 && <details className="chat-tools"><summary><ChevronDown size={12} />{c.tools}</summary><ul>{[...new Set(message.tools.map((name) => toolLabel(name)))].map((label) => <li key={label}><Check size={12} />{label}</li>)}</ul></details>}
