@@ -1,4 +1,5 @@
 export const chatEnglish = {
+  copy: 'Copy message', copied: 'Copied', copyFailed: 'Could not copy. Select the text to copy it.',
   title: 'Risip', subtitle: 'Your business, in conversation.', nav: 'Chat', business: 'Business', back: 'Back to dashboard',
   today: 'Today', yesterday: 'Yesterday', beforeYesterday: 'Two days ago', calendar: 'Choose a day', earlier: 'Earlier conversations',
   previousMonth: 'Previous month', nextMonth: 'Next month', close: 'Close', weekdays: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
@@ -27,6 +28,7 @@ export const chatEnglish = {
   openLink: 'Open link', linkExpired: 'Sign-in link hidden. Request a new link to continue.',
 };
 export const chatSwahili: typeof chatEnglish = {
+  copy: 'Nakili ujumbe', copied: 'Imenakiliwa', copyFailed: 'Imeshindikana kunakili. Chagua maandishi unakili.',
   title: 'Risip', subtitle: 'Biashara yako, kwa mazungumzo.', nav: 'Mazungumzo', business: 'Biashara', back: 'Rudi kwenye dashibodi',
   today: 'Leo', yesterday: 'Jana', beforeYesterday: 'Juzi', calendar: 'Chagua siku', earlier: 'Mazungumzo ya nyuma',
   previousMonth: 'Mwezi uliopita', nextMonth: 'Mwezi unaofuata', close: 'Funga', weekdays: ['Jtt', 'Jnn', 'Jtn', 'Alh', 'Iju', 'Jmo', 'Jpl'],

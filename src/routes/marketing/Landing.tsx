@@ -3,7 +3,6 @@ import { Link, Navigate } from 'react-router-dom';
 import { Check, ChevronDown, ChevronLeft, ChevronRight, Mail, MapPin, Phone, ShieldCheck } from 'lucide-react';
 import landingBucha from '@/assets/landing-bucha.jpg';
 import landingCashFlow from '@/assets/landing-cash-flow.jpg';
-import landingChat from '@/assets/landing-chat.jpeg';
 import landingProductsBarcode from '@/assets/landing-products-barcode.jpg';
 import landingRisipAi from '@/assets/landing-risip-ai.jpg';
 import landingShop from '@/assets/landing-shop.jpg';
@@ -21,15 +20,15 @@ import './landing.css';
 
 const COPY = {
   sw: {
-    features: 'Uwezo', faqNav: 'Maswali', login: 'Ingia', start: 'Anza WhatsApp',
+    features: 'Uwezo', faqNav: 'Maswali', login: 'Ingia', start: 'Anza na Risip',
     eyebrow: 'Rekodi za mauzo na usimamizi wa biashara',
     hero: 'Rekodi biashara yako.', accent: 'Elewa pesa yako.',
-    lead: 'Uza, hesabu bidhaa, rekodi mapato na matumizi, kisha uliza Risip kuhusu biashara yako moja kwa moja kupitia WhatsApp.',
+    lead: 'Uza, hesabu bidhaa, rekodi mapato na matumizi, kisha uliza Risip kuhusu biashara yako kwenye chat ya app ya Risip.',
     primary: 'Sajili biashara', secondary: 'Nina akaunti',
     howTitle: 'Biashara yako kwa hatua tatu rahisi',
     howLead: 'Risip inafuata kazi zako za kila siku bila kukulazimisha kujaza fomu ndefu.',
     steps: [
-      ['Sajili biashara', 'Anza kupitia WhatsApp. Risip itakuuliza jina lako, jina la biashara na bidhaa unazouza.'],
+      ['Sajili biashara', 'Sajili biashara, hakiki namba yako kupitia WhatsApp, kisha fungua chat ya app.'],
       ['Rekodi kinachotokea', 'Scan barcode au andika mauzo, matumizi, madeni na malipo kwa lugha unayotumia kila siku.'],
       ['Pata majibu yaliyo wazi', 'Uliza kilichouza, bidhaa zilizobaki, pesa iliyoingia na matumizi ya biashara yako.'],
     ],
@@ -37,7 +36,7 @@ const COPY = {
     featureLead: 'Risip inakuonyesha kilichouzwa, kilichobaki na pesa ilikoenda.',
     cards: [
       ['Bidhaa na barcode', 'Sajili bidhaa mara moja, scan kwa kamera, uza haraka na fuatilia bidhaa zilizobaki.'],
-      ['Rekodi kupitia WhatsApp', 'Andika mauzo, matumizi, madeni na malipo bila kutumia maneno magumu ya uhasibu.'],
+      ['Chat ya biashara yako', 'Andika mauzo, matumizi, madeni na malipo bila kutumia maneno magumu ya uhasibu.'],
       ['Jua pesa ilikoenda', 'Tazama mauzo, matumizi, madeni na malipo katika sehemu zilizo wazi na rahisi kufuatilia.'],
       ['Uliza Risip kuhusu biashara', 'Pata majibu kutokana na mauzo, bidhaa, matumizi na malipo yaliyorekodiwa kwenye biashara yako.'],
     ],
@@ -45,7 +44,7 @@ const COPY = {
     faqTitle: 'Maswali yanayoulizwa mara nyingi',
     faqLead: 'Majibu ya haraka kabla hujaanza kutumia Risip.',
     faqs: [
-      ['Risip inafanya nini?', 'Risip inakusaidia kusajili bidhaa, kurekodi mauzo na matumizi, kufuatilia bidhaa, madeni na malipo, kisha kuuliza maswali kuhusu biashara yako kupitia WhatsApp.'],
+      ['Risip inafanya nini?', 'Risip inakusaidia kusajili bidhaa, kurekodi mauzo na matumizi, kufuatilia bidhaa, madeni na malipo, kisha kuuliza maswali kuhusu biashara yako kwenye chat ya app.'],
       ['Ninasajilije biashara?', 'Bonyeza Sajili biashara, weka namba yako ya WhatsApp na ufuate maswali ya Risip. Hutahitaji email wala password.'],
       ['Ninaingiaje kwenye dashboard?', 'Weka namba yako kwenye ukurasa wa kuingia. Risip itakutumia link salama ya dakika 5 kupitia WhatsApp. Link inatumika mara moja tu.'],
       ['Naweza kutumia barcode?', 'Ndiyo. Unaweza kusajili bidhaa kwa barcode na kuitumia wakati wa kuuza ili bidhaa ipatikane haraka.'],
@@ -91,7 +90,7 @@ const COPY = {
       ],
     },
     ctaTitle: 'Anza kuweka biashara yako sawa leo.',
-    ctaBody: 'Hakuna password ya kukumbuka. Fungua WhatsApp, sajili biashara na uanze kurekodi.',
+    ctaBody: 'Ingia kwa link ya WhatsApp, kisha rekodi na uliza maswali kwenye chat ya app.',
     bucha: {
       eyebrow: 'Bucha',
       title: 'Bucha unalo, Bossi?',
@@ -122,13 +121,14 @@ const COPY = {
     },
     featureEyebrow: 'Uwezo wa Risip',
     carouselLabel: 'Uwezo wa Risip', prevCards: 'Kadi zilizotangulia', nextCards: 'Kadi zinazofuata', cardWord: 'Kadi',
-    proofEyebrow: 'Mazungumzo halisi',
-    proofTitle: 'Hii si picha ya mfano.',
-    proofBody: 'Ni mazungumzo halisi ya Risip na duka linalotumia mfumo: orodha ya bidhaa zilizouzwa jana, idadi iliyobaki ya kitabu kimoja, na bidhaa inayouza zaidi mwezi huu. Maswali yaliulizwa kwa Kiswahili cha kawaida, bila menyu wala fomu.',
+    proofEyebrow: 'Ndani ya Risip Chat',
+    proofTitle: 'Biashara yako. Kwenye mazungumzo.',
+    proofBody: 'Rekodi mauzo, uliza kuhusu stoo na fuatilia pesa kwenye chat ya app. Chagua jibu kwa kitufe, hakiki kabla ya kuthibitisha, nakili ujumbe na urudi kwenye mazungumzo kwa siku. Badili kati ya Kadi na Maandishi wazi.',
+    channelBody: 'WhatsApp kwa login, verification, mialiko na vikumbusho vyote. Mazungumzo ya kila siku yanaendelea kwenye app.',
     proofAlt: 'Picha ya WhatsApp: mfanyabiashara anauliza orodha ya bidhaa zilizouzwa jana, idadi ya vitabu vilivyobaki na bidhaa inayouza zaidi, na Risip inajibu kwa Kiswahili.',
-    proofCaption: 'WhatsApp · mazungumzo ya mteja wa Risip',
+    proofCaption: 'Risip Chat · mfano wa matumizi',
     trustTitle: 'Unabaki na udhibiti',
-    ctaEyebrow: 'WhatsApp × Risip',
+    ctaEyebrow: 'Risip Chat',
     skip: 'Nenda kwenye maudhui', navMain: 'Urambazaji mkuu', navSections: 'Sehemu za ukurasa',
     howNav: 'Inavyofanya kazi', stepsEyebrow: 'Anza kwa urahisi', yes: 'Ndiyo', no: 'Hapana',
     openMenu: 'Fungua menyu', closeMenu: 'Funga menyu',
@@ -137,15 +137,15 @@ const COPY = {
     footerRights: 'Haki zote zimehifadhiwa.',
   },
   en: {
-    features: 'Features', faqNav: 'FAQ', login: 'Sign in', start: 'Start on WhatsApp',
+    features: 'Features', faqNav: 'FAQ', login: 'Sign in', start: 'Start with Risip',
     eyebrow: 'Sales records and business bookkeeping',
     hero: 'Record your business.', accent: 'Understand your money.',
-    lead: 'Sell, count products, record income and expenses, then ask Risip about your business directly on WhatsApp.',
+    lead: 'Sell, count products, record income and expenses, then ask Risip about your business in the Risip app chat.',
     primary: 'Register business', secondary: 'I have an account',
     howTitle: 'Your business in three simple steps',
     howLead: 'Risip follows the work you already do every day without making you fill in long forms.',
     steps: [
-      ['Register the business', 'Start on WhatsApp. Risip asks for your name, business name and the products you sell.'],
+      ['Register the business', 'Register your business, verify your number through WhatsApp, then open the app chat.'],
       ['Record what happens', 'Scan a barcode or write sales, expenses, debts and payments in the language you use every day.'],
       ['Get clear answers', 'Ask what sold, what products are left, how much money came in and what the business spent.'],
     ],
@@ -153,7 +153,7 @@ const COPY = {
     featureLead: 'Risip shows you what sold, what remains and where the money went.',
     cards: [
       ['Products and barcodes', 'Register a product once, scan it with the camera, sell quickly and track the products left.'],
-      ['Records through WhatsApp', 'Write sales, expenses, debts and payments without learning complicated accounting terms.'],
+      ['Your business chat', 'Write sales, expenses, debts and payments without learning complicated accounting terms.'],
       ['Know where the money went', 'See sales, expenses, debts and payments in clear sections that are easy to follow.'],
       ['Ask Risip about your business', 'Get answers based on the sales, products, expenses and payments recorded for your business.'],
     ],
@@ -161,7 +161,7 @@ const COPY = {
     faqTitle: 'Frequently asked questions',
     faqLead: 'Quick answers before you start using Risip.',
     faqs: [
-      ['What does Risip do?', 'Risip helps you register products, record sales and expenses, track products, debts and payments, then ask questions about your business on WhatsApp.'],
+      ['What does Risip do?', 'Risip helps you register products, record sales and expenses, track products, debts and payments, then ask questions about your business in the app chat.'],
       ['How do I register my business?', 'Choose Register business, enter your WhatsApp number and follow the questions from Risip. You do not need an email address or password.'],
       ['How do I sign in to the dashboard?', 'Enter your number on the sign in page. Risip sends a secure five minute link on WhatsApp. The link works once.'],
       ['Can I use product barcodes?', 'Yes. You can register products with barcodes and scan them during a sale so they are found quickly.'],
@@ -207,7 +207,7 @@ const COPY = {
       ],
     },
     ctaTitle: 'Put your business records in order today.',
-    ctaBody: 'There is no password to remember. Open WhatsApp, register your business and start recording.',
+    ctaBody: 'Sign in with your WhatsApp link, then record and ask questions in the app chat.',
     bucha: {
       eyebrow: 'Butchery',
       title: 'You run a butchery, boss?',
@@ -238,13 +238,14 @@ const COPY = {
     },
     featureEyebrow: 'What Risip does',
     carouselLabel: 'What Risip does', prevCards: 'Previous cards', nextCards: 'Next cards', cardWord: 'Card',
-    proofEyebrow: 'A real conversation',
-    proofTitle: 'This one is not a mock-up.',
-    proofBody: 'A real Risip conversation with a shop that uses it: what sold yesterday, how many copies of one title are left, and what sells most this month. The questions were asked in everyday Kiswahili, with no menu and no form.',
+    proofEyebrow: 'Inside Risip Chat',
+    proofTitle: 'Your business. In conversation.',
+    proofBody: 'Record sales, ask about stock and follow your money in the app chat. Tap a reply, review before confirming, copy messages and revisit conversations by day. Switch between Cards and Open text.',
+    channelBody: 'WhatsApp handles sign-in, verification, invitations and all reminders. Your daily conversations happen in the app.',
     proofAlt: 'WhatsApp screenshot: a shopkeeper asks what sold yesterday, how many copies of a book are left and what sells most, and Risip answers in Kiswahili.',
-    proofCaption: 'WhatsApp · a Risip customer conversation',
+    proofCaption: 'Risip Chat · illustrative conversation',
     trustTitle: 'You stay in control',
-    ctaEyebrow: 'WhatsApp × Risip',
+    ctaEyebrow: 'Risip Chat',
     skip: 'Skip to content', navMain: 'Main navigation', navSections: 'Page sections',
     howNav: 'How it works', stepsEyebrow: 'A simple start', yes: 'Yes', no: 'No',
     openMenu: 'Open menu', closeMenu: 'Close menu',
@@ -395,7 +396,7 @@ function FeatureCarousel({ c }: { c: Copy }) {
  * photograph behind it, and the screen is shown on a device sharp enough to
  * actually read the conversation on.
  */
-function PhoneShowcase({ src, alt, caption }: { src: string; alt: string; caption: string }) {
+function PhoneShowcase({ caption, lang }: { caption: string; lang: ReturnType<typeof getLang> }) {
   return (
     <figure className="rp-showcase">
       <div aria-hidden="true" className="rp-showcase-glow" />
@@ -405,7 +406,7 @@ function PhoneShowcase({ src, alt, caption }: { src: string; alt: string; captio
           <span aria-hidden="true" className="rp-phone-button is-down" />
           <span aria-hidden="true" className="rp-phone-button is-power" />
           <div className="rp-phone-screen">
-            <img src={src} alt={alt} loading="lazy" decoding="async" width="500" height="1082" />
+            <div className="rp-device-status" aria-hidden="true">9:41 <span>▮▮▮ ▰</span></div><ChatHeader lang={lang} /><div className="rp-device-chat"><Bubble outgoing>{lang === 'sw' ? 'Leo nimeuza nini zaidi?' : 'What sold most today?'}</Bubble><Bubble>{lang === 'sw' ? 'Biblia inaongoza: nakala 4. Printer 3, Nguvu ya sala 2.' : 'Biblia leads: 4 copies. Printer 3, Nguvu ya sala 2.'}</Bubble><Bubble outgoing>{lang === 'sw' ? 'Nguvu ya sala zimebaki ngapi?' : 'How many Nguvu ya sala are left?'}</Bubble><Bubble>{lang === 'sw' ? 'Zimebaki 3. Rejareja TSh 10,600. Jumla TSh 9,500.' : '3 left. Retail TSh 10,600. Wholesale TSh 9,500.'}</Bubble></div><div className="rp-device-compose">{lang === 'sw' ? 'Mwandikie Risip…' : 'Write to Risip…'}<span>↑</span></div>
             <span aria-hidden="true" className="rp-phone-island" />
             <span aria-hidden="true" className="rp-phone-gloss" />
           </div>
@@ -572,13 +573,13 @@ export default function Landing() {
             <div>
               <p className="rp-eyebrow"><span className="rp-status-dot" />{c.proofEyebrow}</p>
               <h2>{c.proofTitle}</h2>
-              <p className="rp-proof-lead">{c.proofBody}</p>
+              <p className="rp-proof-lead">{c.proofBody}</p><p className="rp-channel-note"><WhatsAppIcon className="h-5 w-5" />{c.channelBody}</p>
               <div className="rp-trust">
                 <p>{c.trustTitle}</p>
                 <ul>{c.trust.map((item) => <li key={item}><ShieldCheck size={16} />{item}</li>)}</ul>
               </div>
             </div>
-            <PhoneShowcase src={landingChat} alt={c.proofAlt} caption={c.proofCaption} />
+            <PhoneShowcase lang={lang} caption={c.proofCaption} />
           </div>
         </section>
         <OperationsPreview lang={lang} />

@@ -1,5 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Check, CheckCheck, Clock3, CornerDownLeft, ExternalLink, Pencil, ShieldCheck, X } from 'lucide-react';
+import { Check, CheckCheck, Clock3, Copy, CornerDownLeft, ExternalLink, Pencil, ShieldCheck, X } from 'lucide-react';
 import RisipLogo from '@/components/ui/RisipLogo';
 import { sw } from '@/i18n/sw';
 import { confirmationRows, isConfirmation, type ChatMessage } from '@/features/chat/chat';
@@ -49,6 +49,12 @@ type Props = {
 
 export default memo(function ChatMessageView({ message, active, disabled, animate, seconds, plain, send, edit, onRevealed, onGrow }: Props) {
   const c = sw.chat, assistant = message.role === 'assistant';
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  useEffect(() => { if (copyState === 'idle') return; const timer = setTimeout(() => setCopyState('idle'), 2200); return () => clearTimeout(timer); }, [copyState]);
+  async function copyMessage() {
+    try { await navigator.clipboard.writeText(message.content); setCopyState('copied'); }
+    catch { setCopyState('failed'); }
+  }
   const confirm = assistant && isConfirmation(message.awaiting);
   const rows = assistant ? confirmationRows(message.content) : [];
   const metrics = !plain && !confirm && rows.length >= 2 && rows.length <= 4 && rows.every(([, value]) => /^TSh\s+[\d,.]+$/.test(value));
@@ -100,6 +106,6 @@ export default memo(function ChatMessageView({ message, active, disabled, animat
       </div><p>{c.reviewNote}</p></div>}
       {choices.length > 0 && <div className="chat-choice-area"><span>{c.chooseReply}</span><div className="chat-choices">{choices.map((choice) => <button key={choice.value} className={choice.cancel ? 'chat-choice-cancel' : ''} disabled={disabled || revealing || !active} onClick={() => send(choice.value)}><span>{choiceLabel(choice)}{choice.detail && <small>{choice.detail}</small>}</span>{choice.cancel ? <X size={14} /> : <CornerDownLeft size={14} />}</button>)}</div>{hasPriceChoice && <div className="chat-choice-notes"><p>{c.samePriceChoiceNote}</p>{hasMixedChoice && <p>{c.mixedChoiceNote}</p>}</div>}</div>}
     </div>
-    {assistant && seconds !== null && !revealing && <div className="chat-response-footer"><span className="chat-answer-time"><Clock3 size={11} />{c.answerTime.replace('{time}', seconds.toFixed(1))}</span></div>}
+    {!revealing && <div className="chat-response-footer"><button className="chat-copy" onClick={() => void copyMessage()} title={c.copy} aria-label={copyState === 'copied' ? c.copied : c.copy}>{copyState === 'copied' ? <Check size={14} /> : <Copy size={14} />}</button><span className="chat-copy-status" role="status">{copyState === 'copied' ? c.copied : copyState === 'failed' ? c.copyFailed : ''}</span>{assistant && seconds !== null && <span className="chat-answer-time"><Clock3 size={11} />{c.answerTime.replace('{time}', seconds.toFixed(1))}</span>}</div>}
   </article>;
 });

@@ -342,6 +342,23 @@
 .rp-phone-button.is-down { left: -3px; top: 29.5%; width: 3px; height: 7.5%; }
 
 .rp-phone-caption { position: relative; margin-top: 20px; text-align: center; font-size: 11px; letter-spacing: .2px; color: #9aa795; }
+.rp-showcase { perspective: 1200px; padding: 22px 0; }
+.rp-phone { transform: rotateY(-17deg) rotateX(6deg) rotateZ(5deg); transform-style: preserve-3d; transition: transform 650ms ease; }
+.rp-showcase:hover .rp-phone { transform: rotateY(-5deg) rotateX(2deg) rotateZ(1deg); }
+.rp-phone-frame { padding: 8px; border-radius: 40px; background: linear-gradient(115deg, #e2ddd5, #6e6b67 12%, #242424 42%, #a49e95 96%); box-shadow: 2px 1px 0 #e2ded7, 5px 2px 0 #85817b, 8px 3px 0 #4a4846, 11px 4px 0 #222, 25px 45px 65px #0009; }
+.rp-phone-screen { border-radius: 32px; border: 3px solid #090909; }
+.rp-phone-island { background: #080808; box-shadow: inset -10px 0 6px #222; }
+.rp-channel-note { display: flex; align-items: flex-start; gap: 13px; margin-top: 25px; padding-top: 24px; border-top: 1px solid #ffffff24; font-size: 14px; line-height: 1.8; color: #d5dbd2; max-width: 470px; }
+.rp-channel-note svg { flex-shrink: 0; margin-top: 4px; }
+.rp-device-status { display: flex; justify-content: space-between; padding: 14px 18px 12px; color: #202124; font-size: 10px; font-weight: 600; background: #faf9f7; }
+.rp-proof .rp-phone-screen { background: #faf9f7; color: #202124; display: flex; flex-direction: column; }
+.rp-device-chat { display: grid; gap: 15px; padding: 18px 12px; flex: 1; align-content: start; }
+.rp-device-chat .rp-bubble { font-size: 12px; line-height: 1.65; padding: 12px; }
+.rp-device-chat .rp-bubble-out { background: #202124; color: #fff; }
+.rp-device-chat .rp-bubble-in { background: #fff; border: 1px solid #e7e5e1; color: #202124; }
+.rp-device-compose { display: flex; justify-content: space-between; margin: 0 10px 22px; padding: 12px; border: 1px solid #deddd9; border-radius: 13px; color: #777; background: #fff; font-size: 11px; }
+@media (max-width: 600px) { .rp-showcase { width: min(275px, 85%); } .rp-phone { transform: rotateY(-10deg) rotateZ(3deg); } }
+@media (prefers-reduced-motion: reduce) { .rp-phone { transition: none; } }
 .rp-pricing { background: #fff; padding: 100px 0 80px; }
 .rp-pricing h2 { text-align: center; }
 .rp-pricing .rp-plan-grid { align-items: stretch; gap: 14px; }

@@ -217,6 +217,12 @@
 
 /* The workspace controls are intentionally compact: chat keeps the full canvas. */
 .chat-main { width: 100%; }
+.chat-copy { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; color: rgb(var(--chat-secondary)); }
+.chat-copy:hover { background: rgb(var(--ink) / .06); color: rgb(var(--ink)); }
+.chat-copy-status { font-size: 10px; align-self: center; }
+.chat-copy-status:empty { display: none; }
+.chat-response-footer { align-items: center; gap: 8px; }
+.chat-message.user .chat-response-footer { justify-content: flex-end; }
 .chat-menu-trigger { width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 9px; background: transparent; color: rgb(var(--ink)); }
 .chat-menu-trigger:hover { color: rgb(var(--role-admin)); }
 .chat-menu-backdrop { position: fixed; inset: 0; z-index: 20; background: rgb(var(--ink) / .12); backdrop-filter: blur(2px); cursor: default; }

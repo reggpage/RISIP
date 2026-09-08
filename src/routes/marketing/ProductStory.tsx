@@ -3,15 +3,14 @@ import { Link } from 'react-router-dom';
 import { ArrowDown, ArrowRight, Check, CheckCheck, ChevronDown, MessageCircle, Package, ShieldCheck, TrendingUp, Wallet } from 'lucide-react';
 import landingShop from '@/assets/landing-shop.jpg';
 import RisipLogo from '@/components/ui/RisipLogo';
-import WhatsAppIcon from '@/components/ui/WhatsappIcon';
 import type { LangCode } from '@/lib/lang';
 import { DEMO, DEMO_PRODUCTS, demoProfit, tsh } from './landingDemo';
 
 const text = {
   en: {
     eyebrow: 'Your business. One conversation.', hero: 'You run the shop.', accent: 'Risip keeps up.',
-    lead: 'A sale. A delivery. A customer who pays later. Just tell Risip on WhatsApp. Keep your stock, money and daily decisions in view.',
-    start: 'Start on WhatsApp', watch: 'See it in action', trial: '7 days free', noCard: 'No card needed', languages: 'Kiswahili & English',
+    lead: 'A sale. A delivery. A customer who pays later. Just tell Risip in the app chat. Keep your stock, money and daily decisions in view.',
+    start: 'Start with Risip', watch: 'See it in action', trial: '7 days free', noCard: 'No card needed', languages: 'Kiswahili & English',
     example: 'Illustrative demo', conversation: 'Business assistant', confirmed: 'Sale confirmed', revenue: 'Sales', profit: 'Gross profit',
     raw: 'nimeuza nguvu ya sala 2 rejareja, printer 3, biblia 4 jumla',
     received: 'Got it. Retail for Nguvu ya sala, wholesale for Biblia.', total: 'Total sale', confirm: 'You confirm. Risip records.',
@@ -47,8 +46,8 @@ const text = {
   },
   sw: {
     eyebrow: 'Biashara yako. Mazungumzo moja.', hero: 'Wewe endesha duka.', accent: 'Risip ifuatilie.',
-    lead: 'Mauzo. Mzigo mpya. Mteja anayelipa baadaye. Iambie Risip kwenye WhatsApp. Jua bidhaa zilizobaki, pesa yako na hatua ya kuchukua.',
-    start: 'Anza WhatsApp', watch: 'Ona inavyofanya kazi', trial: 'Siku 7 bure', noCard: 'Bila kadi', languages: 'Kiswahili na English',
+    lead: 'Mauzo. Mzigo mpya. Mteja anayelipa baadaye. Iambie Risip kwenye chat ya app. Jua bidhaa zilizobaki, pesa yako na hatua ya kuchukua.',
+    start: 'Anza na Risip', watch: 'Ona inavyofanya kazi', trial: 'Siku 7 bure', noCard: 'Bila kadi', languages: 'Kiswahili na English',
     example: 'Mfano wa matumizi', conversation: 'Msaidizi wa biashara', confirmed: 'Mauzo yamethibitishwa', revenue: 'Mauzo', profit: 'Faida ghafi',
     raw: 'nimeuza nguvu ya sala 2 rejareja, printer 3, biblia 4 jumla',
     received: 'Nimeelewa. Nguvu ya sala kwa rejareja, Biblia kwa jumla.', total: 'Jumla ya mauzo', confirm: 'Unathibitisha. Risip inarekodi.',
@@ -116,7 +115,7 @@ export function Bubble({ children, outgoing = false }: { children: ReactNode; ou
 }
 
 export function ChatHeader({ lang }: { lang: LangCode }) {
-  return <div className="rp-chat-header"><span className="rp-avatar">r<span>.</span></span><div><strong>Risip</strong><small>{text[lang].conversation}</small></div><WhatsAppIcon className="rp-chat-icon" /></div>;
+  return <div className="rp-chat-header"><span className="rp-avatar">r<span>.</span></span><div><strong>Risip</strong><small>{text[lang].conversation}</small></div><MessageCircle className="rp-chat-icon" /></div>;
 }
 
 export function ProductHero({ lang }: { lang: LangCode }) {
@@ -129,11 +128,11 @@ export function ProductHero({ lang }: { lang: LangCode }) {
         <p className="rp-eyebrow"><span className="rp-status-dot" />{c.eyebrow}</p>
         <h1>{c.hero}<br /><span>{c.accent}</span></h1>
         <p className="rp-lead">{c.lead}</p>
-        <div className="rp-hero-actions"><Link to="/signup" className="rp-button rp-button-red"><WhatsAppIcon className="h-5 w-5" />{c.start}</Link><a href="#product-story" className="rp-watch">{c.watch}<ArrowDown size={17} /></a></div>
+        <div className="rp-hero-actions"><Link to="/signup" className="rp-button rp-button-red"><MessageCircle className="h-5 w-5" />{c.start}</Link><a href="#product-story" className="rp-watch">{c.watch}<ArrowDown size={17} /></a></div>
         <div className="rp-hero-assurances"><span><Check size={14} />{c.trial}</span><span>{c.noCard}</span><span>{c.languages}</span></div>
       </div>
       <div className="rp-hero-product">
-        <div className="rp-demo-label"><span className="rp-status-dot" />{c.example} / WhatsApp</div>
+        <div className="rp-demo-label"><span className="rp-status-dot" />{c.example} / Risip Chat</div>
         <div className="rp-hero-chat"><ChatHeader lang={lang} /><div className="rp-chat-body">
           <Bubble outgoing>{c.raw}</Bubble>
           <Bubble><strong>{c.received}</strong><div className="rp-chat-total"><span>{c.total}</span><b>{tsh(DEMO.revenue)}</b></div><small>{c.confirm}</small></Bubble>
@@ -231,7 +230,7 @@ export function UnderstandingSection({ lang }: { lang: LangCode }) {
   return <section id="understanding" className="rp-understanding"><div className="rp-wrap">
     <div className="rp-section-head"><div><p className="rp-eyebrow">{c.messyLabel}</p><h2>{c.messyTitle}</h2></div><p>{c.messyLead}</p></div>
     <div className="rp-understanding-grid">
-      <article><span className="rp-mini-label">{c.rawLabel}</span><div className="rp-raw-message">“{c.raw}”</div><span className="rp-understanding-bottom"><WhatsAppIcon className="h-4 w-4" />WhatsApp<StepArrow /></span></article>
+      <article><span className="rp-mini-label">{c.rawLabel}</span><div className="rp-raw-message">“{c.raw}”</div><span className="rp-understanding-bottom"><MessageCircle className="h-4 w-4" />Risip Chat<StepArrow /></span></article>
       <article><span className="rp-mini-label">{c.understanding}</span><ul>{c.interpretation.map(item => <li key={item}><Check size={16} />{item}</li>)}</ul><span className="rp-understanding-bottom"><RisipLogo className="h-6 w-auto" /><StepArrow /></span></article>
       <article className="rp-understanding-result"><span className="rp-mini-label">{c.validated}</span><small>{c.total}</small><strong>{tsh(DEMO.revenue)}</strong><p>{c.validatedNote}</p><span className="rp-understanding-bottom"><ShieldCheck size={18} />{c.example}</span></article>
     </div>
