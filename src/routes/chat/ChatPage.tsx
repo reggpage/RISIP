@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFollowBottom } from '@/features/chat/useFollowBottom';
 import { ArrowDown, ArrowUp, CalendarDays, ChevronLeft, ChevronRight, Layers2, Menu, ScanLine, AlignLeft, X } from 'lucide-react';
 import RisipLogo from '@/components/ui/RisipLogo';
 import { useAuth } from '@/lib/auth';
@@ -54,7 +55,7 @@ export default function ChatPage() {
   const userId = auth.status === 'signed-in' ? auth.session.user.id : '';
   const [style, setStyle] = useState<'cards' | 'plain'>(() => localStorage.getItem('risip.chat.style') === 'plain' ? 'plain' : 'cards');
   const [liveIds, setLiveIds] = useState<Set<string>>(new Set());
-  const [started, setStarted] = useState(0), [received, setReceived] = useState(false), [showLatest, setShowLatest] = useState(false);
+  const [started, setStarted] = useState(0), [received, setReceived] = useState(false);
   const [memberships, setMemberships] = useState<Membership[]>([]), [company, setCompany] = useState('');
   const [day, setDay] = useState(businessDay()), [days, setDays] = useState<string[]>([]), [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState<Pending>(null), [usage, setUsage] = useState<{ messages_used: number; allowance: number } | null>(null);
@@ -63,7 +64,12 @@ export default function ChatPage() {
   const [online, setOnline] = useState(navigator.onLine);
   const [switching, setSwitching] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const composer = useRef<HTMLTextAreaElement>(null), thread = useRef<HTMLDivElement>(null), request = useRef(0), busy = useRef(false);
+  const composer = useRef<HTMLTextAreaElement>(null), request = useRef(0), busy = useRef(false);
+  // Following the newest message, the way ChatGPT and Claude do: on by
+  // default, off the moment the reader scrolls up to look at something, back
+  // on when they return to the bottom or send.
+  const follow = useFollowBottom();
+  const thread = follow.ref, messagesBox = follow.contentRef;
   const initialPositioned = useRef(false);
   const app = useRef<HTMLDivElement>(null);
   const outboxKey = `risip.chat.outbox:${userId}:${company}`;
@@ -102,8 +108,7 @@ export default function ChatPage() {
     resize(); viewport.addEventListener('resize', resize);
     return () => viewport.removeEventListener('resize', resize);
   }, []);
-  const grow = useCallback(() => { const el = thread.current; if (el) setShowLatest(el.scrollHeight - el.scrollTop - el.clientHeight > 100); }, []);
-  const goToLatest = () => { thread.current?.scrollTo({ top: thread.current.scrollHeight, behavior: 'instant' }); setShowLatest(false); };
+  const { onScroll: userScrolled, grow, goToLatest, followNow, stopFollowing, showLatest } = follow;
   useEffect(() => {
     if (!company || loading || initialPositioned.current) return;
     const frame = requestAnimationFrame(() => {
@@ -130,7 +135,7 @@ export default function ChatPage() {
     if (busy.current || switching || !company || !value.trim() || !online || (retry && !saved)) return;
     const outgoing = saved ?? { id: crypto.randomUUID(), text: value.trim(), companyId: company };
     const outgoingDay = pending?.day ?? businessDay();
-    request.current++; busy.current = true; setSending(true); setLoading(false); if (!saved) setText(''); setError(''); setActiveTool(c.reading); setStarted(Date.now()); setReceived(false); setShowLatest(true); setDay(outgoingDay); setCalendar(false);
+    request.current++; busy.current = true; setSending(true); setLoading(false); if (!saved) setText(''); setError(''); setActiveTool(c.reading); setStarted(Date.now()); setReceived(false); followNow(); setDay(outgoingDay); setCalendar(false);
     if (!saved) setMessages((current) => [...current.filter((m) => m.chat_day === outgoingDay), { id: `local:${outgoing.id}`, wa_message_id: outgoing.id, role: 'user', content: outgoing.text, chat_day: outgoingDay, created_at: new Date().toISOString(), awaiting: null, tools: [] }]);
     sessionStorage.setItem(outboxKey, JSON.stringify(outgoing));
     try {
@@ -163,7 +168,7 @@ export default function ChatPage() {
     } catch { setError(c.switchError); }
     finally { busy.current = false; setSwitching(false); }
   }
-  function jump(id: string) { setShowLatest(true); document.getElementById(`message-${id}`)?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' }); }
+  function jump(id: string) { stopFollowing(); document.getElementById(`message-${id}`)?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' }); }
   const controlsDisabled = sending || switching || !online || !company || Boolean(retry);
   const activeMembership = memberships.find((membership) => membership.company_id === company);
   return <div ref={app} className={`chat-app chat-style-${style}`}>
@@ -177,11 +182,11 @@ export default function ChatPage() {
         <nav className="chat-menu-days" aria-label={c.earlier}>{[c.today, c.yesterday, c.beforeYesterday].map((label, index) => <button key={label} aria-current={day === businessDay(-index) ? 'date' : undefined} onClick={() => { setSelectedDay(businessDay(-index)); setMenuOpen(false); }}><span>{label}</span>{days.includes(businessDay(-index)) && <i />}</button>)}<button className="chat-calendar-trigger" onClick={() => { setCalendar(true); setMenuOpen(false); }}><CalendarDays size={18} /><span>{c.calendar}</span></button></nav>
       </section></>}
       {pending && pending.day !== day && <button className="chat-pending-link" onClick={() => setSelectedDay(pending.day)}>{c.pendingDay}<ChevronRight size={16} /></button>}
-      <div className="chat-thread-wrap"><div ref={thread} className="chat-thread" onScroll={grow}>
+      <div className="chat-thread-wrap"><div ref={thread} className="chat-thread" onScroll={userScrolled}>
         <div className="chat-date-divider"><span /><time dateTime={day}>{dateLabel(day)}</time><span /></div>
         {loading && <p className="chat-status" role="status">{c.loading}</p>}
         {!loading && messages.length === 0 && <div className="chat-empty"><RisipLogo className="chat-empty-logo" /><span>{c.greetingLabel}</span><h2>{day === businessDay() ? c.greeting : c.emptyDay}</h2>{day === businessDay() && <p>{c.emptyBody}</p>}</div>}
-        <div className="chat-messages" aria-live="polite" aria-relevant="additions">
+        <div className="chat-messages" ref={messagesBox} aria-live="polite" aria-relevant="additions">
           {messages.map((message) => <ChatMessageView key={message.id} message={message} plain={style === 'plain'} active={pending?.message_id === message.id} disabled={controlsDisabled} animate={liveIds.has(message.id)} seconds={responseSeconds(message, messages)} send={sendReply} edit={editReply} onRevealed={revealed} onGrow={grow} />)}
         </div>
         {sending && !received && <Working started={started} label={activeTool || c.thinkingNow} />}
