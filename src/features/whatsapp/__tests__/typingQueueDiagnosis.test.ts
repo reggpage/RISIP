@@ -86,7 +86,7 @@ describe('rapid messages are all processed, in the order they were sent', () => 
       resolve(process.cwd(), 'supabase/functions/_shared/whatsappTurn.ts'), 'utf8');
     expect(turn).toContain(".in('status', ['pending', 'processing'])");
     expect(turn).toContain(".lt('created_at', createdAt)");
-    expect(turn).toContain(".eq('phone_e164', phone)");
+    expect(turn).toContain(".eq(phone.startsWith('identity:') ? 'chat_identity_id' : 'phone_e164', phone.startsWith('identity:') ? phone.slice(9) : phone)");
   });
 });
 
@@ -120,9 +120,9 @@ describe('typing is requested for every message, not only the first', () => {
   it('does not spend the pulse in the instant the previous reply lands', () => {
     // The settle is conditional on having actually queued. A message arriving
     // alone waits for nothing, because there is nothing to wait behind.
-    expect(webhook).toContain('if (queuedBehind) await typingSettlePause();');
+    expect(webhook).toContain('if (!web && queuedBehind) await typingSettlePause();');
     expect(webhook).toContain('const TYPING_SETTLE_MS = 1_200;');
-    const settle = webhook.indexOf('if (queuedBehind) await typingSettlePause();');
+    const settle = webhook.indexOf('if (!web && queuedBehind) await typingSettlePause();');
     const heartbeat = webhook.indexOf('startWhatsAppTypingHeartbeat(() => pulseTyping())');
     expect(heartbeat).toBeGreaterThan(settle);
   });
@@ -224,7 +224,7 @@ describe('an indicator is never raised into its own reply', () => {
   it('releases the seal when the turn ends', () => {
     expect(webhook).toContain('clearTypingSeal(waMessageId);');
     const finallyBlock = webhook.indexOf('clearTypingSeal(waMessageId);');
-    const release = webhook.indexOf('releaseWhatsAppTurn(db, phone, turnOwner)', finallyBlock);
+    const release = webhook.indexOf('releaseWhatsAppTurn(db, lockKey, turnOwner)', finallyBlock);
     expect(release).toBeGreaterThan(finallyBlock);
   });
 
@@ -282,7 +282,7 @@ describe('a redelivered webhook still changes nothing', () => {
 
   it('records the message before doing any work with it', () => {
     const insert = webhook.indexOf('wa_message_id: waMessageId,');
-    const loop = webhook.indexOf('for (const { message, waMessageId, phone, receivedAtMs }');
+    const loop = webhook.indexOf('for (const { message, waMessageId, phone, receivedAtMs, identityId }');
     expect(insert).toBeGreaterThan(-1);
     expect(loop).toBeGreaterThan(insert);
   });
@@ -296,7 +296,7 @@ describe('Meta is answered promptly, and the work still finishes', () => {
   it('falls back to awaiting when the runtime cannot keep it alive', () => {
     // Without this a missing convenience would silently drop messages, which
     // is the one failure this codebase keeps having to apologise for.
-    const dispatch = webhook.indexOf("if (typeof runtime?.waitUntil === 'function')");
+    const dispatch = webhook.indexOf("if (!web && typeof runtime?.waitUntil === 'function')");
     expect(dispatch).toBeGreaterThan(-1);
     expect(webhook.slice(dispatch, dispatch + 260)).toContain('await processAll();');
   });

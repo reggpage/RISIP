@@ -16,6 +16,8 @@
 //      WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_API_VERSION?, RISIP_PUBLIC_APP_URL,
 //      SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
+import { handleWebChat } from './webChat.ts';
+import { chatTransport, isWebChat, beginChatTurn, recordChatTool, type ChatTransport } from '../_shared/chatTransport.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import {
   billingAskProvider,
@@ -1669,6 +1671,12 @@ function priceAndCostConfirmation(pending: PriceAndCostPending, lang: Lang): str
 }
 
 async function loadAssistantHistory(db: Admin, identity: ResolvedWhatsAppIdentity): Promise<AssistantHistoryMessage[]> {
+  const turn = chatTransport.getStore()?.turn;
+  if (turn) {
+    const { data, error } = await db.from('chat_messages').select('role, content').eq('identity_id', identity.id).eq('company_id', identity.company_id).eq('chat_day', turn.day).eq('sensitive', false).neq('wa_message_id', turn.messageId).order('created_at', { ascending: false }).limit(12);
+    if (error) throw error;
+    return (data ?? []).reverse() as AssistantHistoryMessage[];
+  }
   const { data: thread } = await db.from('whatsapp_ai_threads')
     .select('identity_id')
     .eq('identity_id', identity.id)
@@ -5078,6 +5086,7 @@ async function executeAssistantTool(
   said?: string,
 ): Promise<AssistantToolExecution> {
   const result = await runAssistantTool(db, identity, waMessageId, lang, name, input, said);
+  recordChatTool(result.isError ? 'checked_request' : name);
   // Only a READ needs the note. A proposing tool is already about the drafts,
   // and closing the day stops and asks for them outright.
   if (!name.startsWith('get_')) return result;
@@ -6660,7 +6669,7 @@ async function resumePendingReceipt(db: Admin, identity: any, mediaMessageId: st
  * phone-shaped masked, and never a linking token — turns the audit log into the
  * work queue it should always have been.
  */
-let auditedText: string | null = null;
+// Audit text lives with the request, so simultaneous tenants cannot cross it.
 
 const LINK_TOKEN = /^\s*link\b/i;
 
@@ -6673,7 +6682,8 @@ function rememberForAudit(body: string | null | undefined): void {
   const text = String(body ?? '').trim();
   // A LINK message carries a single-use secret. It is never worth learning from
   // and must never be written down.
-  auditedText = !text || LINK_TOKEN.test(text) ? null : text.slice(0, 2000);
+  const store = chatTransport.getStore();
+  if (store) store.auditText = !text || LINK_TOKEN.test(text) ? null : text.slice(0, 2000);
 }
 
 async function audit(
@@ -6682,6 +6692,7 @@ async function audit(
   claimedBy?: string,
 ): Promise<void> {
   try {
+    const auditedText = chatTransport.getStore()?.auditText ?? null;
     await db.from('whatsapp_audit_log').insert({
       company_id: identity?.company_id ?? null,
       profile_id: identity?.profile_id ?? null,
@@ -6701,6 +6712,7 @@ function maskDigits(text: string): string {
 
 /** Best-effort reply. A send failure must never turn into a non-200 for Meta. */
 async function sendReplyText(to: string, body: string, replyToMessageId?: string | null): Promise<void> {
+  body = body.replace(/\u2014/g, ',');
   if (looksLikeMachineText(body)) {
     // Loud on purpose: this is a bug in whichever branch built `body`, and the
     // only way to find it is to see it in the logs. The shop gets a clean line
@@ -6716,6 +6728,7 @@ async function sendReplyText(to: string, body: string, replyToMessageId?: string
   try {
     await sendWhatsAppText(to, body, { replyToMessageId });
   } catch (err) {
+    if (isWebChat()) throw err;
     console.error('reply failed', maskPhone(to), err instanceof Error ? err.message : 'unknown');
   }
 }
@@ -6848,26 +6861,11 @@ async function handleLink(db: Admin, phone: string, waId: string, token: string)
     return 'This WhatsApp number is already connected to a different Risip account. Revoke it there first.';
   }
 
-  // Replace any previous identity for this profile, then link.
-  await db.from('whatsapp_identities')
-    .update({ revoked_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq('profile_id', profile.id)
-    .is('revoked_at', null);
-
-  const { data: created, error: insErr } = await db.from('whatsapp_identities').insert({
-    profile_id: profile.id,
-    company_id: profile.company_id,
-    phone_e164: phone,
-    wa_id: waId,
-  }).select('id').single();
-  if (insErr || !created) {
-    console.error('identity insert failed', insErr?.message);
-    return 'Could not connect this number right now. Please try again.';
-  }
-
-  await db.from('whatsapp_link_tokens')
-    .update({ used_at: new Date().toISOString() })
-    .eq('id', row.id);
+  const { data: created, error: insErr } = await db.rpc('chat_link_phone', {
+    p_token_hash: hash, p_phone: phone, p_wa_id: waId,
+  });
+  if (insErr || !created) return 'Could not connect this number right now. Please try again.';
+  if (created.has_conversation) return 'Connected. You can continue your pending conversation here or in the web chat.';
 
   // Ask for a language once, right after linking, and park the conversation there
   // so the next message is read as the answer.
@@ -7207,7 +7205,7 @@ function nudgeWorker(): void {
   }).catch(() => undefined);
 }
 
-Deno.serve(async (req) => {
+async function handleWebhook(req: Request, web?: NonNullable<ChatTransport['web']>): Promise<Response> {
   const url = new URL(req.url);
 
   // ── Meta subscription challenge ──────────────────────────────────────────
@@ -7225,16 +7223,16 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('method not allowed', { status: 405 });
 
   // ── Signature over the raw body ──────────────────────────────────────────
-  const raw = await req.text();
+  const raw = web ? '' : await req.text();
   const appSecret = Deno.env.get('WHATSAPP_APP_SECRET') ?? '';
-  const ok = await verifyMetaSignature(raw, req.headers.get('x-hub-signature-256'), appSecret);
+  const ok = web || await verifyMetaSignature(raw, req.headers.get('x-hub-signature-256'), appSecret);
   if (!ok) {
     console.error('rejected: bad signature');
     return new Response('invalid signature', { status: 401 });
   }
 
   let payload: any;
-  try { payload = JSON.parse(raw); } catch { return new Response('ok', { status: 200 }); }
+  try { payload = web ? { entry: [{ changes: [{ value: { messages: [{ id: web.messageId, from: web.phone, type: 'text', text: { body: web.text } }] } }] }] } : JSON.parse(raw); } catch { return new Response('ok', { status: 200 }); }
 
   let db: Admin;
   try { db = admin(); } catch { return new Response('misconfigured', { status: 500 }); }
@@ -7263,10 +7261,12 @@ Deno.serve(async (req) => {
     // one in every seventy — and every one of those shopkeepers typed, waited,
     // and was never told anything at all. Silence is the worst failure mode
     // this system has, because the person cannot tell it from being ignored.
+    if (web) throw new Error('web_skips_meta_sweep');
     const abandonedSince = new Date(Date.now() - 10 * 60_000).toISOString();
     const { data: abandoned } = await db.from('whatsapp_messages')
       .select('wa_message_id, phone_e164, created_at')
       .in('status', ['pending', 'processing'])
+      .eq('transport', 'whatsapp')
       .lt('created_at', abandonedSince)
       .order('created_at', { ascending: false })
       .limit(20);
@@ -7279,6 +7279,7 @@ Deno.serve(async (req) => {
         updated_at: new Date().toISOString(),
       })
       .in('status', ['pending', 'processing'])
+      .eq('transport', 'whatsapp')
       .lt('created_at', abandonedSince);
 
     // Only the recent ones get an apology, and the original reasoning for that
@@ -7307,7 +7308,7 @@ Deno.serve(async (req) => {
   } catch { /* the sweep must never stop the message in front of us */ }
 
   const entries = Array.isArray(payload?.entry) ? payload.entry : [];
-  const incomingMessages: Array<{ message: any; waMessageId: string; phone: string; receivedAtMs: number }> = [];
+  const incomingMessages: Array<{ message: any; waMessageId: string; phone: string; receivedAtMs: number; identityId: string | null }> = [];
   for (const entry of entries) {
     for (const change of entry?.changes ?? []) {
       const value = change?.value ?? {};
@@ -7316,17 +7317,23 @@ Deno.serve(async (req) => {
 
       for (const message of messages) {
         const waMessageId = String(message?.id ?? '');
-        const phone = normalizeE164(message?.from);
+        const phone = web?.phone ?? normalizeE164(message?.from);
         if (!waMessageId || !phone) continue;
 
         // Idempotency gate: Meta delivers at least once, so a repeat delivery
         // must collide here rather than create a second job. Unique index does
         // the work. This preflight intentionally registers every new message in
         // the webhook batch before any one of them starts the slow AI path.
+        const { data: linkedIdentity } = web ? { data: { id: web.identityId } } : await db.from('whatsapp_identities').select('id').eq('phone_e164', phone).is('revoked_at', null).maybeSingle();
+        const identityId = linkedIdentity?.id ?? null;
         const { error: dupErr } = await db.from('whatsapp_messages').insert({
           wa_message_id: waMessageId,
           phone_e164: phone,
           kind: String(message?.type ?? 'unknown'),
+          chat_identity_id: identityId,
+          transport: web ? 'web' : 'whatsapp',
+          request_hash: web ? await sha256Hex(web.text) : null,
+          ...(web ? { company_id: web.companyId } : {}),
           status: 'pending',
         });
         if (dupErr) {
@@ -7337,7 +7344,7 @@ Deno.serve(async (req) => {
         // When Meta handed it to us. Every typing pulse is measured from here,
         // because "the indicator was requested" and "the indicator was
         // requested eleven seconds in" are different facts.
-        incomingMessages.push({ message, waMessageId, phone, receivedAtMs: Date.now() });
+        incomingMessages.push({ message, waMessageId, phone, receivedAtMs: Date.now(), identityId });
       }
     }
   }
@@ -7361,7 +7368,7 @@ Deno.serve(async (req) => {
   // the work is awaited exactly as before. A message may be slow. It may not
   // be dropped because a convenience was missing.
   const processAll = async () => {
-  for (const { message, waMessageId, phone, receivedAtMs } of incomingMessages) {
+  for (const { message, waMessageId, phone, receivedAtMs, identityId } of incomingMessages) {
         // MEASURED FAILURE, and the worst kind: total silence.
         //
         //   whatsapp_messages  15:25:32 | text | pending | retries=0 | (no error)
@@ -7378,6 +7385,10 @@ Deno.serve(async (req) => {
         // invocations at the same time. A per-phone database lease keeps the
         // older turn's conversation state and AI memory ahead of the newer one;
         // it does not serialize different businesses.
+        // Both transports lock the identity, so arrival order wins and a second
+        // confirmation sees the state left by the first. Never last-writer-wins.
+        const lockKey = identityId ? `identity:${identityId}` : phone;
+        if (chatTransport.getStore()) chatTransport.getStore()!.turn = undefined;
         const turnOwner = crypto.randomUUID();
         let stopTypingHeartbeat = () => {};
         let turnAcquired = false;
@@ -7386,7 +7397,7 @@ Deno.serve(async (req) => {
         // typing and the messages that do not.
         const waitStartedAt = Date.now();
         try {
-          turnAcquired = await waitForWhatsAppTurn(db, phone, waMessageId, turnOwner);
+          turnAcquired = await waitForWhatsAppTurn(db, lockKey, waMessageId, turnOwner);
         } catch {
           turnAcquired = false;
         }
@@ -7407,16 +7418,18 @@ Deno.serve(async (req) => {
         let stopTurnHeartbeat = () => {};
         try {
           await markWhatsAppTurnProcessing(db, waMessageId);
-          stopTurnHeartbeat = startWhatsAppTurnHeartbeat(db, phone, turnOwner);
+          stopTurnHeartbeat = startWhatsAppTurnHeartbeat(db, lockKey, turnOwner);
           // A message that queued has just watched the previous reply go out.
           // Meta dismisses the indicator when a message is delivered, so the
           // instant the turn is released is the worst possible instant to ask
           // for one. Let that delivery land first, THEN ask.
-          if (queuedBehind) await typingSettlePause();
-          stopTypingHeartbeat = startWhatsAppTypingHeartbeat(() => pulseTyping());
-          await typingVisibilityPause();
+          if (!web && queuedBehind) await typingSettlePause();
+          if (!web) {
+            stopTypingHeartbeat = startWhatsAppTypingHeartbeat(() => pulseTyping());
+            await typingVisibilityPause();
+          }
         } catch {
-          await releaseWhatsAppTurn(db, phone, turnOwner);
+          await releaseWhatsAppTurn(db, lockKey, turnOwner);
           await db.from('whatsapp_messages').update({
             status: 'failed', last_error: 'whatsapp_turn_processing_claim_failed',
             processed_at: new Date().toISOString(), updated_at: new Date().toISOString(),
@@ -7438,7 +7451,7 @@ Deno.serve(async (req) => {
         await pulseTyping();
 
         // Resolve identity once; used by both branches below.
-        const { data: rawIdentity } = await db
+        const { data: rawIdentity } = web ? { data: { id: web.identityId, revoked_at: null } } : await db
           .from('whatsapp_identities')
           .select('id, revoked_at')
           .eq('phone_e164', phone)
@@ -7447,6 +7460,8 @@ Deno.serve(async (req) => {
 
         let body: string | null = message?.text?.body ?? null;
         const identity = await resolveWhatsAppContext(db, rawIdentity as { id: string; revoked_at: string | null } | null);
+        if (web && identity?.company_id !== web.companyId) throw new Error('business_changed');
+        if (identity && body?.trim()) await beginChatTurn(db, identity, waMessageId, phone, body);
         let lang: Lang = identity?.lang ?? detectLanguage(body) ?? 'en';
         const finish = async (status: string, error?: string) => {
           const messageStatus = status === 'failed'
@@ -12874,17 +12889,17 @@ Deno.serve(async (req) => {
           // left to protect. Left behind it would grow for the life of the
           // isolate.
           clearTypingSeal(waMessageId);
-          await releaseWhatsAppTurn(db, phone, turnOwner);
+          await releaseWhatsAppTurn(db, lockKey, turnOwner);
         }
   }
 
-  nudgeWorker();
+  if (!web) nudgeWorker();
   };
 
   const runtime = (globalThis as {
     EdgeRuntime?: { waitUntil?: (work: Promise<unknown>) => void };
   }).EdgeRuntime;
-  if (typeof runtime?.waitUntil === 'function') {
+  if (!web && typeof runtime?.waitUntil === 'function') {
     // Keeps the isolate alive past the response instead of racing its teardown.
     runtime.waitUntil(processAll());
   } else {
@@ -12896,4 +12911,8 @@ Deno.serve(async (req) => {
     status: 200,
     headers: { 'content-type': 'application/json' },
   });
-});
+}
+
+Deno.serve((req) => new URL(req.url).pathname.endsWith('/chat')
+  ? handleWebChat(req, (web) => handleWebhook(req, web))
+  : chatTransport.run({}, () => handleWebhook(req)));

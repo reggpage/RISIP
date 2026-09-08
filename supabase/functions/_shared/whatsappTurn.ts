@@ -34,7 +34,7 @@ export async function waitForWhatsAppTurn(
 
     const { data: earlier } = await db.from('whatsapp_messages')
       .select('id')
-      .eq('phone_e164', phone)
+      .eq(phone.startsWith('identity:') ? 'chat_identity_id' : 'phone_e164', phone.startsWith('identity:') ? phone.slice(9) : phone)
       .in('status', ['pending', 'processing'])
       // Receipt images have their own worker queue and do not carry
       // conversation state; they must not hold a text turn behind them.
@@ -120,11 +120,13 @@ export function startWhatsAppTurnHeartbeat(
   ownerToken: string,
 ): () => void {
   const timer = setInterval(() => {
-    void db.rpc('wa_renew_whatsapp_turn', {
+    // Supabase's PostgrestBuilder is thenable, not a native Promise. Calling
+    // .catch on it crashed the isolate at the first 30-second heartbeat.
+    void Promise.resolve(db.rpc('wa_renew_whatsapp_turn', {
       p_phone: phone,
       p_owner_token: ownerToken,
       p_lease_seconds: 300,
-    }).catch(() => undefined);
+    })).catch(() => undefined);
   }, 30_000);
   return () => clearInterval(timer);
 }

@@ -1,6 +1,7 @@
 // Thin wrapper over the WhatsApp Cloud API. Network-only; all decision logic that
 // deserves tests lives in ./whatsapp.ts instead.
 
+import { appendChatMessage, chatTransport, isWebChat } from './chatTransport.ts';
 import { typingIndicatorPayload } from './whatsappApiPayloads.ts';
 import { toWhatsAppText } from './whatsappMarkdown.ts';
 import { whatsappTextPayload } from './whatsappTextPayload.ts';
@@ -70,6 +71,7 @@ export async function whatsAppDisplayNumber(): Promise<string | null> {
 const typingSealed = new Set<string>();
 
 export function clearTypingSeal(messageId: string): void {
+  if (isWebChat()) return;
   typingSealed.delete(messageId);
 }
 
@@ -78,6 +80,10 @@ export async function sendWhatsAppText(
   body: string,
   options: { replyToMessageId?: string | null } = {},
 ): Promise<void> {
+  const transport = chatTransport.getStore();
+  if (transport?.turn?.phone === toE164) await appendChatMessage('assistant', body);
+  if (transport?.web) return;
+  if (!/^\+[1-9]\d{7,14}$/.test(toE164)) throw new Error('recipient_has_no_verified_phone');
   // Sealed BEFORE the request goes out, not after: the race is measured in
   // hundreds of milliseconds and the send itself takes longer than that.
   const answering = options.replyToMessageId?.trim();
@@ -117,6 +123,7 @@ export type TypingOutcome = {
  * supposedly failing. The caller records the outcome; see migration 0153.
  */
 export async function showTyping(messageId: string): Promise<TypingOutcome> {
+  if (isWebChat()) return { status: -1, code: null };
   // The answer is already going out. Raising an indicator now is raising one
   // that arrives beside the reply and outlives it. Recorded as -1 so the audit
   // shows a pulse that was deliberately not sent, which is a different fact
