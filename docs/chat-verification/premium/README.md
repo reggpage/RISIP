@@ -21,7 +21,7 @@ npx tsc -b
 Exit code: 0
 
 npm run build
-✓ built in 5.39s
+✓ built in 4.86s
 Exit code: 0
 
 npm test
@@ -50,6 +50,7 @@ Observed in the browser:
 - A next draft typed during processing remained `Ujumbe wangu unaofuata` after the reply completed.
 - After acknowledgement, optimistic bubble count was `0`, the old choice was disabled, and the conversation bottom gap was `0` pixels.
 - At 390 px, document scroll width was `390`, enclosing app scroll was `0`, and the header remained at its expected `139` px position below the mobile rail. Edit focused the textarea.
+- A shortened 390 x 600 visual viewport kept the app height at `600` and composer bottom at `587`, leaving the composer inside the visible area. The layout follows visual-viewport resize events for soft-keyboard accommodation; a physical mobile keyboard was not exercised in this environment.
 - Both English and Swahili UI, the persisted appearance toggle, minimap jump, and confirmation layout were inspected. Reduced-motion behavior is implemented through the existing media preference and the reveal effect.
 - Console inspection found only the two existing React Router v7 future warnings. No chat runtime errors were observed in the final UI session.
 

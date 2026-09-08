@@ -67,6 +67,7 @@ export default function ChatPage() {
   const [switching, setSwitching] = useState(false);
   const composer = useRef<HTMLTextAreaElement>(null), thread = useRef<HTMLDivElement>(null), request = useRef(0), nearBottom = useRef(true), busy = useRef(false);
   const manualScrollUntil = useRef(0);
+  const app = useRef<HTMLDivElement>(null);
   const outboxKey = `risip.chat.outbox:${userId}:${company}`;
   const setSelectedDay = (value: string) => { if (value === day) return; nearBottom.current = true; request.current++; setMessages([]); setLoading(true); setDay(value); };
   const refresh = useCallback(async () => {
@@ -94,6 +95,15 @@ export default function ChatPage() {
   }, [userId, c.loadError]);
   useEffect(() => { if (!busy.current) { setLoading(true); void refresh(); } const timer = setInterval(() => { if (!busy.current) void refresh(); }, 5000); return () => { clearInterval(timer); request.current++; }; }, [refresh]);
   useEffect(() => { localStorage.setItem('risip.chat.style', style); }, [style]);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    // Soft keyboards resize the visual viewport without changing 100dvh.
+    // Keep the composer visible without scrolling the rail off the screen.
+    const resize = () => { if (viewport.scale === 1) app.current?.style.setProperty('--chat-height', `${viewport.height}px`); };
+    resize(); viewport.addEventListener('resize', resize);
+    return () => viewport.removeEventListener('resize', resize);
+  }, []);
   const grow = useCallback(() => { if (nearBottom.current) thread.current?.scrollTo({ top: thread.current.scrollHeight }); }, []);
   const revealed = useCallback((id: string) => setLiveIds((ids) => { const next = new Set(ids); next.delete(id); return next; }), []);
   useEffect(() => {
@@ -147,7 +157,7 @@ export default function ChatPage() {
   }
   function jump(id: string) { nearBottom.current = false; setShowLatest(true); document.getElementById(`message-${id}`)?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'center' }); }
   const controlsDisabled = sending || switching || !online || !company || Boolean(retry);
-  return <div className={`chat-app chat-style-${style}`}>
+  return <div ref={app} className={`chat-app chat-style-${style}`}>
     <aside className="chat-rail">
       <div className="chat-identity"><Link to="/settings" className="chat-avatar" aria-label={c.profile}>{avatarUrl && !avatarFailed ? <img src={avatarUrl} alt={fullName} onError={() => setAvatarFailed(true)} referrerPolicy="no-referrer" /> : fullName !== c.you ? <span>{fullName.split(/\s+/).slice(0, 2).map((part) => part[0]).join('')}</span> : <UserRound size={22} />}</Link><Link to="/dashboard" className="chat-brand" aria-label={c.back}><RisipLogo className="chat-wordmark" /></Link><Link to="/dashboard" className="chat-back" aria-label={c.back}><ArrowLeft size={16} /></Link></div>
       <label className="chat-business"><span>{c.business}</span><select value={company} disabled={sending || switching || Boolean(retry)} onChange={(e) => void switchBusiness(e.target.value)}>{memberships.map((m) => <option key={m.company_id} value={m.company_id}>{m.company_name}</option>)}</select></label>

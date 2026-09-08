@@ -2,6 +2,7 @@
 .chat-app {
   position: fixed;
   inset: 0;
+  height: var(--chat-height, 100dvh);
   overflow: clip;
   --chat-paper: 250 249 247;
   --chat-night: 28 30 33;
