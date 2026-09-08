@@ -28,6 +28,7 @@ export function useWhatsAppLink() {
       .from('whatsapp_identities')
       .select('id, phone_e164, verified_at')
       .is('revoked_at', null)
+      .not('verified_at', 'is', null)
       .maybeSingle();
     setLoading(false);
     if (err) {

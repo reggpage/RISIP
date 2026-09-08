@@ -3,8 +3,10 @@
 // The variable is still named `sw` for import stability across the app.
 import { getLang } from '@/lib/lang';
 import { swahiliOverrides } from './swahili_overrides';
+import { chatEnglish, chatSwahili } from './chat';
 
 const english = {
+  chat: chatEnglish,
   landing: {
     heroTitle: 'Scan receipts,',
     heroTitleAccent: 'auto-generate invoices.',
@@ -381,7 +383,7 @@ function deepMerge<T>(base: T, over: unknown): T {
 }
 
 export const sw = getLang() === 'sw'
-  ? deepMerge(english, swahiliOverrides)
+  ? deepMerge(english, { ...swahiliOverrides, chat: chatSwahili })
   : english;
 
 export type SwCopy = typeof english;

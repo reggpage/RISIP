@@ -18,7 +18,7 @@ import type { UserRole } from './roles';
 // duka open it in the same week she signed up?
 
 export type NavKey =
-  | 'dashboard' | 'daily-records' | 'products' | 'sell' | 'notifications' | 'settings' | 'billing'
+  | 'chat' | 'dashboard' | 'daily-records' | 'products' | 'sell' | 'notifications' | 'settings' | 'billing'
   // Off for now — the contractor half of the product.
   | 'projects' | 'receipts' | 'retirements' | 'reimbursements' | 'claims' | 'invoices' | 'petty-cash';
 
@@ -26,6 +26,7 @@ export type NavKey =
 export const VISIBLE_NAV: readonly NavKey[] = [
   'dashboard',
   'sell',
+  'chat',
   'products',
   'daily-records',
   'notifications',

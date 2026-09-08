@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, FolderKanban, Receipt, FileText, Settings, Wallet, X, LogOut, Handshake, Bell, HandCoins,
-  Banknote, ClipboardList, Package, ScanLine, CreditCard,
+  Banknote, ClipboardList, Package, ScanLine, CreditCard, MessageCircle,
 } from 'lucide-react';
 import RisipLogo from '@/components/ui/RisipLogo';
 import { useNotifications } from '@/features/notifications/notifications';
@@ -23,6 +23,7 @@ type Item = {
 // place — see lib/nav.ts — because "for now we are only a shop" is a product
 // decision and it should be readable as one line, not inferred from a nav list.
 const allItems: Item[] = [
+  { key: 'chat', to: '/chat', label: sw.chat.nav, icon: MessageCircle, allowed: ['owner', 'accountant', 'worker'] },
   { key: 'dashboard', to: '/dashboard', label: sw.nav.dashboard, icon: LayoutDashboard, allowed: ['owner', 'accountant', 'worker'] },
   // Selling sits above everything else: it is the thing a shop does all day.
   { key: 'sell', to: '/sell', label: getLang() === 'sw' ? 'Uza kwa scan' : 'Sell by scan', icon: ScanLine, allowed: ['owner', 'accountant', 'worker'] },

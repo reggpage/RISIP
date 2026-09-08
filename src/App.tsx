@@ -31,6 +31,7 @@ const DailyRecordsPage = lazy(() => import('@/routes/dailyRecords/DailyRecordsPa
 const ProductsPage = lazy(() => import('@/routes/products/ProductsPage'));
 const ScanPage = lazy(() => import('@/routes/products/ScanPage'));
 const SellPage = lazy(() => import('@/routes/products/SellPage'));
+const ChatPage = lazy(() => import('@/routes/chat/ChatPage'));
 
 export default function App() {
   return (
@@ -54,6 +55,7 @@ export default function App() {
       <Route path="/public/invoices/:token" element={<PublicInvoice />} />
 
       {/* Authed app */}
+      <Route path="/chat" element={<RequireAuth><ChatPage /></RequireAuth>} />
       <Route
         element={
           <RequireAuth>
