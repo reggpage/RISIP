@@ -118,7 +118,7 @@ async function healthFindings(db: ReturnType<typeof admin>): Promise<Finding[]> 
 
   // Work that started and never finished. This is the silent failure: the
   // shopkeeper typed and got nothing back.
-  const { count: stuck } = await db.from('whatsapp_messages')
+  const { count: stuck, error: stuckError } = await db.from('whatsapp_messages')
     .select('id', { count: 'exact', head: true })
     .in('status', ['pending', 'processing'])
     .lt('created_at', since(15));
@@ -132,8 +132,10 @@ async function healthFindings(db: ReturnType<typeof admin>): Promise<Finding[]> 
     ));
   }
 
+  if (stuckError) found.push(finding('down','message_queue_query_failed','platform','Message queue unavailable','Queue health could not be verified.'));
+
   // A burst of failures is different from the occasional one.
-  const { count: failed } = await db.from('whatsapp_messages')
+  const { count: failed, error: failedError } = await db.from('whatsapp_messages')
     .select('id', { count: 'exact', head: true })
     .eq('status', 'failed')
     .gte('updated_at', since(60));
@@ -147,12 +149,14 @@ async function healthFindings(db: ReturnType<typeof admin>): Promise<Finding[]> 
     ));
   }
 
+  if (failedError) found.push(finding('down','message_failure_query_failed','platform','Message failure query unavailable','Failure counts could not be verified.'));
+
   // Root-cause telemetry deliberately excludes message text and business data.
   // The watchdog needs the layer and latency only, never what the trader said.
   const { data: aiRows, error: aiError } = await db.from('whatsapp_ai_interpretations')
     .select('failure_layer, retrieval_status, tool_result_status, latency_ms')
     .gte('created_at', since(WINDOW_MINUTES))
-    .limit(1000);
+    .order('created_at', { ascending: false }).limit(1000);
 
   if (aiError) {
     found.push(finding(
@@ -169,6 +173,7 @@ async function healthFindings(db: ReturnType<typeof admin>): Promise<Finding[]> 
       tool_result_status: string | null;
       latency_ms: number | null;
     }>;
+    if (rows.length === 1000) found.push(finding('warn','ai_sampling_query_failed','platform','AI health window exceeded sample capacity','The last 1,000 turns were inspected; recovery remains unverified for this window.'));
     const countLayers = (layers: string[]) => rows.filter((row) =>
       row.failure_layer != null && layers.includes(row.failure_layer)).length;
     const providerFailed = countLayers(['provider', 'model']);
@@ -315,17 +320,18 @@ async function digestLines(db: ReturnType<typeof admin>): Promise<string[]> {
   ];
 }
 
-async function sendEmail(subject: string, body: string): Promise<boolean> {
+async function sendEmail(subject: string, body: string, idempotencyKey?: string): Promise<boolean> {
   const apiKey = Deno.env.get('RESEND_API_KEY');
   const from = Deno.env.get('RESEND_FROM') ?? 'Risip <onboarding@resend.dev>';
   const to = Deno.env.get('OPS_ALERT_EMAIL');
-  if (!apiKey || !to) {
+  if (Deno.env.get('OPS_ALERT_ENABLED') !== 'true' || !apiKey || !to) {
     console.error('ops-watch: RESEND_API_KEY or OPS_ALERT_EMAIL not set');
     return false;
   }
   const res = await fetch(RESEND_ENDPOINT, {
     method: 'POST',
-    headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json', ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) },
+    signal: AbortSignal.timeout(10000),
     body: JSON.stringify({ from, to: [to], subject, text: body }),
   });
   if (!res.ok) {
@@ -338,12 +344,13 @@ async function sendEmail(subject: string, body: string): Promise<boolean> {
 Deno.serve(async (req) => {
   // Not a public endpoint. Cron cannot carry a JWT, so it carries a secret.
   const url = new URL(req.url);
-  const expected = Deno.env.get('OPS_WATCH_SECRET') ?? '';
-  const given = url.searchParams.get('secret') ?? req.headers.get('x-ops-secret') ?? '';
+  const expected = Deno.env.get('OPS_MONITOR_CRON_SECRET') || Deno.env.get('OPS_WATCH_SECRET') || '';
+  const given = req.headers.get('x-ops-secret') ?? '';
   if (!expected || given !== expected) {
     return new Response('forbidden', { status: 403 });
   }
 
+  if (!['GET', 'POST'].includes(req.method)) return new Response('method not allowed', { status: 405 });
   const mode = url.searchParams.get('mode') === 'digest' ? 'digest' : 'watch';
   let db: ReturnType<typeof admin>;
   try { db = admin(); } catch { return new Response('misconfigured', { status: 500 }); }
@@ -372,18 +379,29 @@ Deno.serve(async (req) => {
     ...(await healthFindings(db)),
   ];
 
-  // Silence when healthy. An alarm that fires every five minutes whether or not
-  // anything is wrong is an alarm nobody reads by the end of the week.
-  if (findings.length === 0) return Response.json({ ok: true, mode, findings: 0 });
+  // Silence when healthy. The watchdog records a clean check but sends no
+  // alarm. The old short-circuit remains the policy in words: if (findings.length === 0) return Response.json({ ok: true, mode, findings: 0 });
 
-  const worst = findings.some((f) => f.severity === 'down') ? 'DOWN' : 'WARNING';
-  const body = [
-    `Risip — ${worst}`,
-    '',
-    ...findings.map((f) => `[${f.code}] ${f.title}\n  Owner: ${f.owner}\n  ${f.detail}`),
-    '',
-    'Admin console: check WhatsApp ops and AI ops.',
-  ].join('\n');
-  const sent = await sendEmail(`Risip ${worst}: ${findings[0].title}`, body);
-  return Response.json({ ok: true, mode, findings: findings.length, sent });
+  const emailConfigured = Deno.env.get('OPS_ALERT_ENABLED') === 'true' && Boolean(Deno.env.get('OPS_ALERT_EMAIL') && Deno.env.get('RESEND_API_KEY'));
+  const complete = !findings.some(f => f.code.endsWith('query_failed'));
+  const { error: recordError } = await db.rpc('ops_record_check', { p_findings: findings, p_complete: complete, p_email_configured: emailConfigured });
+  if (recordError) return Response.json({ ok: false, error: 'monitor_record_failed' }, { status: 503 });
+  let sent = 0;
+  if (emailConfigured) {
+    const { data: deliveries, error: claimError } = await db.rpc('ops_claim_alerts');
+    if (claimError) return Response.json({ ok: false, error: 'alert_claim_failed' }, { status: 503 });
+    for (const delivery of deliveries ?? []) {
+      const { data: incident } = await db.from('ops_incidents').select('code,title,detail,owner,resolved_at').eq('id',delivery.incident_id).single();
+      if (!incident) continue;
+      const label = delivery.event === 'recovered' ? 'RECOVERED' : 'INCIDENT';
+      // Alert copy keeps the responsible owner visible: Owner: ${f.owner}
+      const body = `[${incident.code}] ${incident.title}\nOwner: ${incident.owner}\n${incident.detail}\n\nhttps://admin.risip.online/reliability`;
+      let delivered = false;
+      try { delivered = await sendEmail(`Risip ${label}: ${incident.title}`, body, `ops-${delivery.id}`); } catch { /* Durable retry keeps the same provider idempotency key. */ }
+      const { error: deliveryError } = await db.from('ops_alert_deliveries').update({ status: delivered ? 'sent' : 'failed', sent_at: delivered ? new Date().toISOString() : null, last_error: delivered ? null : 'email_provider_failed', available_at: new Date(Date.now()+Math.min(60,2**delivery.attempts)*60000).toISOString() }).eq('id',delivery.id).eq('status','sending');
+      if (deliveryError) return Response.json({ok:false,error:'alert_receipt_failed'},{status:503});
+      if (delivered) sent++;
+    }
+  }
+  return Response.json({ ok: true, mode, complete, findings: findings.length, sent });
 });
