@@ -1483,17 +1483,90 @@ function listLengths(evidence: string): Set<string> {
   return counts;
 }
 
+/** Does this passage state this exact shilling figure, however it is punctuated? */
+function statesAmount(text: string, value: number): boolean {
+  const wanted = Math.round(Math.abs(value));
+  for (const match of text.matchAll(/\d[\d.,  ]*/gu)) {
+    const digits = match[0].replace(/\D/gu, '');
+    if (digits && Number(digits) === wanted) return true;
+  }
+  return false;
+}
+
+/**
+ * A product's REVENUE quoted in a sentence that is talking about profit.
+ *
+ * MEASURED, on the owner's own screen:
+ *
+ *   "Faida: TSh 6,685,740 ... Wachangiaji wakuu: Printer (TSh 6,000,000),
+ *    Biblia (TSh 1,920,000), vest (TSh 1,020,000)."
+ *
+ * Those three are revenue, and they add up to 8,940,000 — more than the profit
+ * the same sentence had just stated. Every figure was grounded, so the
+ * ungrounded-number guard had nothing to say; the fault is that they are
+ * attached to the wrong noun, and a shopkeeper reads it as the Printer having
+ * earned him six million.
+ *
+ * Naming the period as sales is all it takes to satisfy this, so the model can
+ * still say the same thing correctly.
+ */
+function findRevenueQuotedAsProfit(answer: string, joined: string): string[] {
+  const movers = [...joined.matchAll(/^top_mover=([^|\n]+)\|qty=[^|\n]*\|revenue=(-?\d+)\|margin=(unknown|-?\d+)$/gmiu)]
+    .map((row) => ({
+      name: row[1].trim(),
+      revenue: Number(row[2]),
+      margin: row[3] === 'unknown' ? null : Number(row[3]),
+    }))
+    .filter((mover) => mover.name.length > 1 && Number.isFinite(mover.revenue) && mover.revenue !== mover.margin);
+  if (movers.length === 0) return [];
+
+  const flagged = new Set<string>();
+  for (const segment of answer.split(/(?<=[.!?])\s+|\n+/u)) {
+    const low = segment.toLocaleLowerCase('sw-TZ');
+    const aboutProfit = /\bfaida\b|\bprofit\b/u.test(low);
+    const aboutSales = /\bmauzo\b|\bmapato\b|\bsales\b|\brevenue\b|\bturnover\b/u.test(low);
+    if (!aboutProfit || aboutSales) continue;
+    for (const mover of movers) {
+      if (!low.includes(mover.name.toLocaleLowerCase('sw-TZ'))) continue;
+      if (statesAmount(segment, mover.revenue)) flagged.add(`revenue_as_profit:${mover.name}`);
+    }
+  }
+  return [...flagged];
+}
+
 export function findUnsafeProfitWording(answer: string, evidence: string[]): string[] {
   const joined = evidence.join('\n');
-  if (!/\bestimated_profit\s*=/i.test(joined) || !/\bcogs\s*=/i.test(joined)) return [];
   const issues: string[] = [];
-  if (/\bgharama za bidhaa\b(?!\s+zilizouzwa|\s*\(cogs\))/iu.test(answer)) {
-    issues.push('cogs_label');
+  // The two label checks keep the gate they were written with, so no answer
+  // that used to pass starts being refused for a different reason.
+  if (/\bestimated_profit\s*=/i.test(joined) && /\bcogs\s*=/i.test(joined)) {
+    if (/\bgharama za bidhaa\b(?!\s+zilizouzwa|\s*\(cogs\))/iu.test(answer)) {
+      issues.push('cogs_label');
+    }
+    if (/\bfaida ya\b/iu.test(answer) && !/\bfaida\s+(?:ghafi|baada ya matumizi)\b/iu.test(answer)) {
+      issues.push('profit_label');
+    }
   }
-  if (/\bfaida ya\b/iu.test(answer) && !/\bfaida\s+(?:ghafi|baada ya matumizi)\b/iu.test(answer)) {
-    issues.push('profit_label');
-  }
+  // The adviser's evidence carries no cogs line, so the gate above switched
+  // this whole guard off for exactly the answers that needed it most.
+  issues.push(...findRevenueQuotedAsProfit(answer, joined));
   return issues;
+}
+
+/**
+ * Small tidying of every reply before it goes out.
+ *
+ * Two things the model does that the house style does not: long dashes, which
+ * it reaches for in ranges like "1-9 Septemba", and a space before a comma,
+ * which comes from product names that were saved with a trailing space and
+ * then echoed ("Vestline , bidhaa"). Neither touches a digit.
+ */
+export function tidyReplyText(answer: string): string {
+  return answer
+    .replace(/[–—―]/gu, '-')
+    .replace(/[ \t]+([,.;:!?])/gu, '$1')
+    .replace(/[ \t]{2,}/gu, ' ')
+    .replace(/[ \t]+\n/gu, '\n');
 }
 
 export function findFalseDateCaveat(answer: string, evidence: string[]): string[] {
@@ -1798,7 +1871,7 @@ ${userText}` },
       }
       const modelText = textFrom(payload.content);
       const reply = modelText
-        ? enforceResolvedDateLabel(modelText, evidence)
+        ? tidyReplyText(enforceResolvedDateLabel(modelText, evidence))
         : unavailable(args.context.lang);
       const ungrounded = findUngroundedNumbers(reply, evidence);
       const unsafeProfitWording = findUnsafeProfitWording(reply, evidence);
@@ -1841,6 +1914,12 @@ ${userText}` },
               + 'derive, subtract, project, forecast or round. If answering properly needs a '
               + 'figure you were not given, say plainly that it is not recorded, and answer '
               + 'with what you do have.'
+            : unsafeProfitWording.some((issue) => issue.startsWith('revenue_as_profit:'))
+              ? 'You listed the SALES figure for each product in a sentence about profit, so it reads '
+              + 'as the profit that product made. Those top_mover figures are revenue, not '
+              + 'margin. Rewrite so the reader cannot mistake them: say plainly that they are '
+              + 'sales ("wachangiaji wakuu wa MAUZO"), or quote the margin= figure instead. '
+              + 'Never let per-product revenue sit under the word Faida.'
             : unsafeProfitWording.length > 0
               ? 'Rewrite the daily profit answer with precise accounting labels. In Kiswahili, '
               + 'cogs must be "Gharama za bidhaa zilizouzwa (COGS)", gross_profit must be '

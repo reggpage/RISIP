@@ -72,6 +72,9 @@ export default function ChatPage() {
   const thread = follow.ref, messagesBox = follow.contentRef;
   const initialPositioned = useRef(false);
   const app = useRef<HTMLDivElement>(null);
+  // Consecutive failed refreshes. The thread reloads every five seconds, so a
+  // single blip is not worth a banner; two in a row means something is wrong.
+  const failures = useRef(0);
   const outboxKey = `risip.chat.outbox:${userId}:${company}`;
   const setSelectedDay = (value: string) => { if (value === day) return; request.current++; setMessages([]); setLoading(true); setDay(value); };
   const refresh = useCallback(async () => {
@@ -82,7 +85,19 @@ export default function ChatPage() {
       db.rpc('chat_days', { p_company: company }), db.rpc('chat_usage_now'), db.rpc('chat_pending', { p_company: company }),
     ]);
     if (run !== request.current || busy.current) return;
-    if (results.some((r: { error: unknown }) => r.error)) { setError(c.loadError); setLoading(false); return; }
+    if (results.some((r: { error: unknown }) => r.error)) {
+      failures.current += 1;
+      // The banner used to appear on the first failure and then never leave,
+      // because nothing cleared it when the next refresh worked. It sat under
+      // a conversation that had loaded perfectly well.
+      if (failures.current >= 2) setError((current) => current || c.loadError);
+      setLoading(false);
+      return;
+    }
+    failures.current = 0;
+    // Clear only this banner. A send error carries its own retry button and
+    // must survive a background refresh.
+    setError((current) => (current === c.loadError ? '' : current));
     setMessages((current) => [...(results[0].data ?? []), ...current.filter((m) => m.id.startsWith('local:') && m.chat_day === day && !results[0].data?.some((saved: ChatMessage) => saved.wa_message_id.endsWith(m.id.slice(6))))]); setDays((results[1].data ?? []).map((r: { chat_day: string }) => r.chat_day)); setUsage(results[2].data); setPending(results[3].data); setLoading(false);
   }, [company, day, c.loadError]);
   const latestRefresh = useRef(refresh);
