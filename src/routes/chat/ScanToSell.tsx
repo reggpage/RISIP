@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, ArrowUp, Trash2 } from 'lucide-react';
-import { startScanner, type ScannerHandle } from '@/features/products/scanner';
+import { startScanner, beep, type ScannerHandle } from '@/features/products/scanner';
 import { findProductByBarcode, fetchSellingPrice, type ProductBarcode } from '@/features/products/products';
 import { basketSentence, type BasketLine } from '@/features/chat/chat';
 import { formatMoney } from '@/lib/format';
@@ -25,8 +25,8 @@ export default function ScanToSell({ close, send }: { close: () => void; send: (
   const alive = useRef(true), looking = useRef(false);
   const [lines, setLines] = useState<BasketLine[]>([]);
   const [pending, setPending] = useState<Pending | null>(null);
-  const [code, setCode] = useState(''), [error, setError] = useState(''), [note, setNote] = useState('');
-  const [loading, setLoading] = useState(false), [found, setFound] = useState(false);
+  const [error, setError] = useState(''), [note, setNote] = useState('');
+  const [found, setFound] = useState(false);
 
   /** One line per product; scanning the same code again just counts one more. */
   function addLine(product: ProductBarcode, price: number | null) {
@@ -40,14 +40,14 @@ export default function ScanToSell({ close, send }: { close: () => void; send: (
 
   async function lookup(barcode: string) {
     if (looking.current) return;
-    looking.current = true; setLoading(true); setError(''); setNote('');
+    looking.current = true; setError(''); setNote('');
     scanner.current?.pause();
     try {
       const product = await findProductByBarcode(barcode);
       if (!alive.current) return;
       if (!product) { setError(c.missingProduct); scanner.current?.resume(); return; }
       setFound(true);
-      setCode('');
+      beep();
       const price = await fetchSellingPrice(product.productKey).catch(() => null);
       if (!alive.current) return;
       const wholesale = price?.wholesalePrice ?? null;
@@ -63,7 +63,6 @@ export default function ScanToSell({ close, send }: { close: () => void; send: (
       if (alive.current) { setError(c.loadError); scanner.current?.resume(); }
     } finally {
       looking.current = false;
-      if (alive.current) setLoading(false);
     }
   }
 
@@ -118,14 +117,6 @@ export default function ScanToSell({ close, send }: { close: () => void; send: (
         </button>
       </div>
     </div>}
-
-    {!pending && <form onSubmit={(e) => { e.preventDefault(); void lookup(code); }}>
-      <label htmlFor="chat-barcode">{c.barcode}</label>
-      <div className="chat-code-row">
-        <input id="chat-barcode" value={code} onChange={(e) => setCode(e.target.value)} inputMode="numeric" />
-        <button disabled={loading || !code.trim()}>{c.lookup}</button>
-      </div>
-    </form>}
 
     <section className="chat-basket" aria-label={c.basket}>
       {lines.length === 0 ? <p className="chat-basket-empty">{c.basketEmpty}</p> : <ul>

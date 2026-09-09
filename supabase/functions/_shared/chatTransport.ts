@@ -1,3 +1,4 @@
+import { tidyReplyText } from './replyText.ts';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 export type ChatTurn = {
@@ -39,10 +40,10 @@ export async function appendChatMessage(role: 'user' | 'assistant', content: str
   }
   const { sensitive, safeContent } = redactChatSecrets(content);
   const row = { identity_id: turn.identityId, company_id: turn.companyId, wa_message_id: turn.messageId,
-    ordinal: turn.ordinal++, role, content: safeContent.replace(/\u2014/g, ','), chat_day: turn.day, tools: turn.tools, awaiting, sensitive };
+    ordinal: turn.ordinal++, role, content: tidyReplyText(safeContent), chat_day: turn.day, tools: turn.tools, awaiting, sensitive };
   const { data, error } = await turn.db.from('chat_messages').insert(row).select().single();
   if (error) throw error;
-  store?.emit?.('message', sensitive ? { ...data, content: content.replace(/\u2014/g, ',') } : data);
+  store?.emit?.('message', sensitive ? { ...data, content: tidyReplyText(content) } : data);
 }
 export function redactChatSecrets(content: string) {
   const login = /(\/wa-login\?(?:[^\s#&]+&)*(?:token|t)=)[^\s&#]+/gi;

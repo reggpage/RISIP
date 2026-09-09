@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { findUnsafeProfitWording, tidyReplyText } from '../../../../supabase/functions/_shared/whatsappAssistant';
+import { findUnsafeProfitWording } from '../../../../supabase/functions/_shared/whatsappAssistant';
+import { tidyReplyText } from '../../../../supabase/functions/_shared/replyText';
 
 /**
  * MEASURED, on the owner's own screen, 9 September 2026:

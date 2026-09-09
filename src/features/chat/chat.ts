@@ -71,14 +71,22 @@ export function parseSse(frame: string): ChatEvent | null {
   const data = frame.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');
   return event && data ? { event, data: JSON.parse(data) } : null;
 }
-export async function sendChat(input: Outbox, receive: (event: ChatEvent) => void) {
+/**
+ * The signal stops this screen waiting; it does not cancel the turn.
+ *
+ * A turn that has begun finishes on the server on purpose, because it may be
+ * partway through a sale the shopkeeper already confirmed, and half a sale
+ * recorded is worse than a late reply. So stopping means: no longer listening.
+ * The reply still lands in the record and appears on the next refresh.
+ */
+export async function sendChat(input: Outbox, receive: (event: ChatEvent) => void, signal?: AbortSignal) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('unauthorized');
   const endpoint = import.meta.env.DEV && import.meta.env.VITE_CHAT_TEST_ENDPOINT
     ? import.meta.env.VITE_CHAT_TEST_ENDPOINT
     : `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-webhook/chat`;
   const response = await fetch(endpoint, {
-    method: 'POST', headers: { Authorization: `Bearer ${session.access_token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    method: 'POST', headers: { Authorization: `Bearer ${session.access_token}`, apikey: import.meta.env.VITE_SUPABASE_ANON_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(input), signal,
   });
   if (response.status === 202) throw new Error('pending');
   if (!response.ok) throw new Error('send_failed');
@@ -107,5 +115,10 @@ export async function sendChat(input: Outbox, receive: (event: ChatEvent) => voi
       }
     }
     if (!done) throw new Error('interrupted_stream');
+  } catch (cause) {
+    // Stopping is not a failure, and must not offer to send the message again:
+    // the server took it and is still working on it.
+    if (signal?.aborted) throw new Error('stopped');
+    throw cause;
   } finally { reader.releaseLock(); }
 }

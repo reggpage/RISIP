@@ -1,23 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AT_BOTTOM, createFollow, distanceFromBottom, type Follow } from './followBottom';
 
 /**
- * Keeping a thread pinned to its newest message, the way ChatGPT and Claude do.
- *
- * The rule is one sentence: follow the end unless the reader has moved away
- * from it. Sending always brings them back, because they just added the thing
- * at the end.
- *
- * It lives in its own module so the behaviour can be driven and checked
- * directly. The chat page itself needs a signed-in WhatsApp session to reach,
- * which makes the behaviour there awkward to exercise.
+ * The React end of `followBottom`: it owns the two refs, the "back to latest"
+ * button's state, and the observer that reports growth no render tells us
+ * about. Every decision about when to follow lives in the plain module next to
+ * it, where it can be driven and checked.
  */
 
-/** Past this many pixels from the end, the reader is looking at something else. */
-export const AT_BOTTOM = 120;
-
-export function distanceFromBottom(el: HTMLElement): number {
-  return el.scrollHeight - el.scrollTop - el.clientHeight;
-}
+export { AT_BOTTOM, distanceFromBottom };
 
 export type FollowBottom = {
   /** Put this on the scrolling element. */
@@ -32,10 +23,7 @@ export type FollowBottom = {
   goToLatest: () => void;
   /** Sending: return to the end wherever the reader was. */
   followNow: () => void;
-  /**
-   * Stop following, for a deliberate jump to an older message. Without this a
-   * jump would be undone by the next thing that made the thread taller.
-   */
+  /** Stop following, for a deliberate jump to an older message. */
   stopFollowing: () => void;
   /** Whether to offer the "back to latest" button. */
   showLatest: boolean;
@@ -45,83 +33,34 @@ export type FollowBottom = {
 export function useFollowBottom(): FollowBottom {
   const ref = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const following = useRef(true);
   const [showLatest, setShowLatest] = useState(false);
 
-  const animation = useRef(0);
+  const follow: Follow = useMemo(() => createFollow({
+    el: () => ref.current,
+    showLatest: setShowLatest,
+    // A hidden tab gets no animation frames, so a tween there would stop
+    // partway and stay there.
+    instantOnly: () => (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)
+      || (typeof document !== 'undefined' && document.hidden),
+  }), []);
 
-  /**
-   * MEASURED: `scrollTo({ behavior: 'smooth' })` moved this container zero
-   * pixels and reported no error, so "back to latest" silently did nothing.
-   * The tween is written by hand for that reason, and because the end of the
-   * thread keeps moving while a reply is being written: the target is read on
-   * every frame rather than fixed when the scroll starts.
-   */
-  const toBottom = useCallback((smooth = false) => {
-    const el = ref.current;
-    if (!el) return;
-    cancelAnimationFrame(animation.current);
-    const end = () => el.scrollHeight - el.clientHeight;
-    const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    // Instant while a reply is being written: an eased scroll restarted on
-    // every character never arrives, and on a phone it stutters.
-    //
-    // Also instant when the page is not being looked at: a hidden tab gets no
-    // animation frames, so a tween there would stop partway and stay there.
-    if (!smooth || reduce || (typeof document !== 'undefined' && document.hidden)) {
-      el.scrollTop = end();
-      return;
-    }
-    const from = el.scrollTop, started = performance.now(), duration = 260;
-    const step = (now: number) => {
-      const progress = Math.min(1, (now - started) / duration);
-      const eased = 1 - (1 - progress) ** 3;
-      el.scrollTop = from + (end() - from) * eased;
-      if (progress < 1) animation.current = requestAnimationFrame(step);
-    };
-    animation.current = requestAnimationFrame(step);
-  }, []);
+  useEffect(() => () => follow.dispose(), [follow]);
 
-  useEffect(() => () => cancelAnimationFrame(animation.current), []);
+  const onScroll = useCallback(() => follow.onScroll(), [follow]);
+  const grow = useCallback(() => follow.grow(), [follow]);
+  const goToLatest = useCallback(() => follow.goToLatest(), [follow]);
+  const followNow = useCallback(() => follow.followNow(), [follow]);
+  const stopFollowing = useCallback(() => follow.stopFollowing(), [follow]);
 
-  const grow = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (following.current) { toBottom(); setShowLatest(false); return; }
-    setShowLatest(distanceFromBottom(el) > AT_BOTTOM);
-  }, [toBottom]);
-
-  const onScroll = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
-    const distance = distanceFromBottom(el);
-    following.current = distance <= AT_BOTTOM;
-    setShowLatest(distance > AT_BOTTOM);
-  }, []);
-
-  const goToLatest = useCallback(() => {
-    following.current = true;
-    toBottom(true);
-    setShowLatest(false);
-  }, [toBottom]);
-
-  const followNow = useCallback(() => {
-    following.current = true;
-    setShowLatest(false);
-    requestAnimationFrame(() => toBottom(true));
-  }, [toBottom]);
-
-  // Growth no reveal frame reports: a picture finishing, a font landing, the
+  // Growth no render frame reports: a picture finishing, a font landing, the
   // working indicator giving way to the reply.
   useEffect(() => {
     const box = contentRef.current;
     if (!box || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => { if (following.current) toBottom(); });
+    const observer = new ResizeObserver(() => follow.grow());
     observer.observe(box);
     return () => observer.disconnect();
-  }, [toBottom]);
-
-  const stopFollowing = useCallback(() => { following.current = false; setShowLatest(true); }, []);
+  }, [follow]);
 
   return { ref, contentRef, onScroll, grow, goToLatest, followNow, stopFollowing, showLatest, setShowLatest };
 }

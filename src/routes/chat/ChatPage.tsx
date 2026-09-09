@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFollowBottom } from '@/features/chat/useFollowBottom';
-import { ArrowDown, ArrowUp, CalendarDays, ChevronLeft, ChevronRight, Layers2, Menu, ScanLine, AlignLeft, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Square, CalendarDays, ChevronLeft, ChevronRight, Layers2, Menu, ScanLine, AlignLeft, X } from 'lucide-react';
 import RisipLogo from '@/components/ui/RisipLogo';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
@@ -65,6 +65,9 @@ export default function ChatPage() {
   const [switching, setSwitching] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const composer = useRef<HTMLTextAreaElement>(null), request = useRef(0), busy = useRef(false);
+  /** Set while a reply is in flight, so the send button can become a stop button. */
+  const stopper = useRef<AbortController | null>(null);
+  const [stopped, setStopped] = useState(false);
   // Following the newest message, the way ChatGPT and Claude do: on by
   // default, off the moment the reader scrolls up to look at something, back
   // on when they return to the bottom or send.
@@ -146,11 +149,16 @@ export default function ChatPage() {
   }, [company, outboxKey]);
   useEffect(() => { if (company) sessionStorage.setItem(`${outboxKey}:draft`, text); }, [text, company, outboxKey]);
   useEffect(() => { grow(); }, [messages, sending, grow]);
+  // The notice has done its job once the reply it warned about arrives. It also
+  // clears at once when the stop came during the writing out, where the reply
+  // was already on screen and nothing was being waited for.
+  useEffect(() => { if (stopped && messages.at(-1)?.role === 'assistant') setStopped(false); }, [messages, stopped]);
   async function send(value: string, saved?: Outbox) {
     if (busy.current || switching || !company || !value.trim() || !online || (retry && !saved)) return;
     const outgoing = saved ?? { id: crypto.randomUUID(), text: value.trim(), companyId: company };
     const outgoingDay = pending?.day ?? businessDay();
-    request.current++; busy.current = true; setSending(true); setLoading(false); if (!saved) setText(''); setError(''); setActiveTool(c.reading); setStarted(Date.now()); setReceived(false); followNow(); setDay(outgoingDay); setCalendar(false);
+    const controller = new AbortController(); stopper.current = controller;
+    request.current++; busy.current = true; setSending(true); setStopped(false); setLoading(false); if (!saved) setText(''); setError(''); setActiveTool(c.reading); setStarted(Date.now()); setReceived(false); followNow(); setDay(outgoingDay); setCalendar(false);
     if (!saved) setMessages((current) => [...current.filter((m) => m.chat_day === outgoingDay), { id: `local:${outgoing.id}`, wa_message_id: outgoing.id, role: 'user', content: outgoing.text, chat_day: outgoingDay, created_at: new Date().toISOString(), awaiting: null, tools: [] }]);
     sessionStorage.setItem(outboxKey, JSON.stringify(outgoing));
     try {
@@ -165,10 +173,26 @@ export default function ChatPage() {
         if (event === 'phase') setActiveTool(data.name ? toolLabel(data.name, true) : c.thinkingNow);
         if (event === 'tool') setActiveTool(c.thinkingNow);
         if (event === 'done' && data.status === 'failed') setError(c.failed);
-      });
+      }, controller.signal);
       sessionStorage.removeItem(outboxKey); setRetry(null);
-    } catch (cause) { setRetry(outgoing); setError(cause instanceof Error && cause.message === 'pending' ? c.workingElsewhere : c.error); }
-    finally { busy.current = false; setSending(false); setActiveTool(''); void latestRefresh.current(); composer.current?.focus({ preventScroll: true }); }
+    } catch (cause) {
+      // Stopping is the reader's own doing, so it gets no error and no offer to
+      // send again: the turn was accepted and is still running.
+      if (controller.signal.aborted) sessionStorage.removeItem(outboxKey);
+      else { setRetry(outgoing); setError(cause instanceof Error && cause.message === 'pending' ? c.workingElsewhere : c.error); }
+    }
+    finally { if (stopper.current === controller) stopper.current = null; busy.current = false; setSending(false); setActiveTool(''); void latestRefresh.current(); composer.current?.focus({ preventScroll: true }); }
+  }
+  /**
+   * The written-out reply is revealed whole rather than frozen mid-word: it is
+   * already saved, and half a sentence about money can read as a different
+   * number than the one recorded.
+   */
+  function stop() {
+    if (!stopper.current) return;
+    stopper.current.abort();
+    setLiveIds(new Set());
+    setStopped(true);
   }
   const latestSend = useRef(send); latestSend.current = send;
   const sendReply = useCallback((value: string) => { void latestSend.current(value); }, []);
@@ -206,6 +230,7 @@ export default function ChatPage() {
           {messages.map((message) => <ChatMessageView key={message.id} message={message} plain={style === 'plain'} active={pending?.message_id === message.id} disabled={controlsDisabled} animate={liveIds.has(message.id)} seconds={responseSeconds(message, messages)} send={sendReply} edit={editReply} onRevealed={revealed} onGrow={grow} />)}
         </div>
         {sending && !received && <Working started={started} label={activeTool || c.thinkingNow} />}
+        {stopped && !sending && <p className="chat-stopped" role="status">{c.stopped}</p>}
         </div>
       </div>
       {messages.length > 0 && <MessageFinder messages={messages} jump={jump} />}
@@ -218,7 +243,9 @@ export default function ChatPage() {
         <form className="chat-composer" onSubmit={(e) => { e.preventDefault(); void send(text); }}>
           <textarea ref={composer} rows={1} maxLength={2000} aria-label={c.placeholder} placeholder={c.placeholder} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(text); } }} />
           <button type="button" className="chat-scan-button" aria-label={c.scan} title={c.scan} disabled={controlsDisabled} onClick={() => setScan(true)}><ScanLine size={21} /></button>
-          <button className="chat-send" aria-label={c.send} title={c.send} disabled={controlsDisabled || !text.trim()}><ArrowUp size={21} /></button>
+          {sending
+            ? <button type="button" className="chat-send chat-stop" aria-label={c.stop} title={c.stop} onClick={stop}><Square size={17} fill="currentColor" /></button>
+            : <button className="chat-send" aria-label={c.send} title={c.send} disabled={controlsDisabled || !text.trim()}><ArrowUp size={21} /></button>}
         </form>
       </div>
     </main>

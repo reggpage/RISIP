@@ -1,4 +1,5 @@
 import { resolveAnthropicModel, resolveProseModel } from './anthropicModel.ts';
+import { tidyReplyText } from './replyText.ts';
 import type { Lang } from './whatsappIntent.ts';
 import { ADVISOR_VOICE, BUSINESS_RULES } from './whatsappAdvisor.ts';
 import { WHATSAPP_RECEIPTS_ENABLED } from './whatsappReadTools.ts';
@@ -1551,22 +1552,6 @@ export function findUnsafeProfitWording(answer: string, evidence: string[]): str
   // this whole guard off for exactly the answers that needed it most.
   issues.push(...findRevenueQuotedAsProfit(answer, joined));
   return issues;
-}
-
-/**
- * Small tidying of every reply before it goes out.
- *
- * Two things the model does that the house style does not: long dashes, which
- * it reaches for in ranges like "1-9 Septemba", and a space before a comma,
- * which comes from product names that were saved with a trailing space and
- * then echoed ("Vestline , bidhaa"). Neither touches a digit.
- */
-export function tidyReplyText(answer: string): string {
-  return answer
-    .replace(/[–—―]/gu, '-')
-    .replace(/[ \t]+([,.;:!?])/gu, '$1')
-    .replace(/[ \t]{2,}/gu, ' ')
-    .replace(/[ \t]+\n/gu, '\n');
 }
 
 export function findFalseDateCaveat(answer: string, evidence: string[]): string[] {
