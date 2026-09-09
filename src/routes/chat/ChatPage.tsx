@@ -201,10 +201,12 @@ export default function ChatPage() {
         <div className="chat-date-divider"><span /><time dateTime={day}>{dateLabel(day)}</time><span /></div>
         {loading && <p className="chat-status" role="status">{c.loading}</p>}
         {!loading && messages.length === 0 && <div className="chat-empty"><RisipLogo className="chat-empty-logo" /><span>{c.greetingLabel}</span><h2>{day === businessDay() ? c.greeting : c.emptyDay}</h2>{day === businessDay() && <p>{c.emptyBody}</p>}</div>}
-        <div className="chat-messages" ref={messagesBox} aria-live="polite" aria-relevant="additions">
+        <div ref={messagesBox}>
+        <div className="chat-messages" aria-live="polite" aria-relevant="additions">
           {messages.map((message) => <ChatMessageView key={message.id} message={message} plain={style === 'plain'} active={pending?.message_id === message.id} disabled={controlsDisabled} animate={liveIds.has(message.id)} seconds={responseSeconds(message, messages)} send={sendReply} edit={editReply} onRevealed={revealed} onGrow={grow} />)}
         </div>
         {sending && !received && <Working started={started} label={activeTool || c.thinkingNow} />}
+        </div>
       </div>
       {messages.length > 0 && <MessageFinder messages={messages} jump={jump} />}
       </div>

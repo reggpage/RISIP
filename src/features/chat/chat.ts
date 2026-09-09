@@ -13,6 +13,43 @@ export function saleSentence(template: string, product: string, quantity: number
   if (!Number.isFinite(quantity) || quantity <= 0) throw new Error('invalid_quantity');
   return template.replace('{product}', product).replace('{quantity}', String(quantity));
 }
+
+/** One scanned product: what it is, how many, and the price the shopkeeper picked. */
+export type BasketLine = { productKey: string; name: string; quantity: number; price: number | null };
+
+/**
+ * Several scanned products as one ordinary sentence.
+ *
+ * It goes through the same door a typed message does, so the assistant reads,
+ * confirms and records it exactly as it would "nimeuza daftari 10 na kalamu
+ * 20". The chosen price is stated only when there was a choice to make: for a
+ * product with one price the shop's own figure is already the right one, and
+ * repeating it would look like an override.
+ */
+export function basketSentence(
+  copy: { saleSentence: string; saleSentenceAt: string; saleJoin: string },
+  lines: BasketLine[],
+): string {
+  if (lines.length === 0) throw new Error('empty_basket');
+  const parts = lines.map((line) => {
+    if (!Number.isFinite(line.quantity) || line.quantity <= 0) throw new Error('invalid_quantity');
+    const quantity = String(line.quantity);
+    return line.price === null
+      ? copy.saleSentence.replace('{product}', line.name).replace('{quantity}', quantity)
+      : copy.saleSentenceAt
+        .replace('{product}', line.name)
+        .replace('{quantity}', quantity)
+        .replace('{price}', String(Math.round(line.price)));
+  });
+  // "Nimeuza" leads once; the rest are joined onto it.
+  const [first, ...rest] = parts;
+  if (rest.length === 0) return first;
+  // Only the verb is dropped from the later parts. The prefix also carries the
+  // opening quote, and taking that off left the product name half-quoted.
+  const verb = copy.saleSentence.split('{product}')[0].replace(/["'\s]+$/u, '');
+  const tail = rest.map((part) => (verb && part.startsWith(verb) ? part.slice(verb.length).replace(/^\s+/u, '') : part));
+  return [first, ...tail].join(copy.saleJoin);
+}
 export function confirmationRows(content: string): Array<[string, string]> {
   return content.split('\n').flatMap((line) => {
     const clean = line.replace(/\*/g, '').trim().replace(/^[-•]\s*/, '');
