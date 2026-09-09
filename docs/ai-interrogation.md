@@ -3,16 +3,13 @@
 > **Risip AI Current Capability Score: 96.5% | Grade: B**  
 > Stable with minor edge-case risks
 
-Duka: **St. Ritha bookshop** · bidhaa 72 · rekodi zilizothibitishwa 56 · seeds `1, 2, 3, 4, 5, 6, 7, 8, 9, 10` · 2026-09-08 08:39 UTC
+Duka: **St. Ritha bookshop** · bidhaa 72 · rekodi zilizothibitishwa 58 · seeds `1, 2, 3, 4, 5, 6, 7, 8, 9, 10` · 2026-09-09 08:42 UTC
 
 Maswali 2400, yametengenezwa kutoka kwenye majina na namba halisi za duka.
 
 ## Yaliyobadilika tangu run iliyopita
 
-| Mada | Kabla | Sasa | |
-| --- | ---: | ---: | --- |
-| malipo ya deni | 100% | 0% | 🔻 imeshuka |
-| swali la stoko kwa mtaa | 100% | 98% | 🔻 imeshuka |
+Hakuna mabadiliko.
 
 | Hukumu | Idadi |
 | --- | ---: |
