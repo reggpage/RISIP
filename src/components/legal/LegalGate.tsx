@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
-import { signOut } from '@/lib/auth';
+import { signOut, DEV_PREVIEW } from '@/lib/auth';
 import { getLang } from '@/lib/lang';
 import { sw } from '@/i18n/sw';
 import RisipLogo from '@/components/ui/RisipLogo';
@@ -10,6 +10,9 @@ import { LEGAL_VERSION } from '../../../supabase/functions/_shared/risipLegal';
 import '@/routes/legal/legal.css';
 
 export default function LegalGate({ children }: { children: ReactNode }) {
+  // TEMP DEV PREVIEW: skip the legal gate — as an anonymous preview session the
+  // `my_legal_acceptance` RPC can never be satisfied. Remove with DEV_PREVIEW.
+  if (DEV_PREVIEW) return <>{children}</>;
   const c = sw.legal;
   const [accepted, setAccepted] = useState(false), [checked, setChecked] = useState(false), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [error, setError] = useState(false);
   useEffect(() => {

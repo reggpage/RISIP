@@ -19,3 +19,12 @@ vite.config.ts.timestamp-*.mjs
 qa-catalogue.json
 Risip-Maswali-na-Majibu.docx
 Risip-Maswali-na-Majibu-v*.docx
+
+# Android native shell
+android/.gradle/
+android/app/build/
+android/build/
+android/keystore/  # signing secrets — never commit
+android/.idea/
+android/capacitor-cordova-android-plugins/build/
+android/**/local.properties

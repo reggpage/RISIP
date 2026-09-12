@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Archive, Barcode, Package, Plus, RefreshCw, ScanLine, Search, TrendingDown } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -12,6 +11,7 @@ import { useToast } from '@/components/ui/Toast';
 import { friendlyError } from '@/lib/errors';
 import { formatDate, formatMoney } from '@/lib/format';
 import { getLang } from '@/lib/lang';
+import { openScan } from '@/lib/scanOverlay';
 import {
   formatQuantity,
   marginPercent,
@@ -275,26 +275,22 @@ export default function ProductsPage() {
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-ink">{ui.title}</h1>
-          <p className="mt-1 text-sm text-ink-muted">{ui.description}</p>
+          <p className="text-sm text-ink-muted">{ui.description}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {/* Selling is what a shop does all day, so it is the first button
-              here and not buried behind the catalogue. Every role may use it. */}
-          <Link to="/sell">
-            <Button tint="admin">
-              <ScanLine className="h-4 w-4" aria-hidden />{ui.sell}
-            </Button>
-          </Link>
+              here and not buried behind the catalogue. Every role may use it.
+              It opens as a full-screen sheet (ScanOverlayHost), not a route. */}
+          <Button tint="admin" onClick={() => openScan('sell')}>
+            <ScanLine className="h-4 w-4" aria-hidden />{ui.sell}
+          </Button>
           {canPrice ? (
             <>
               {/* Scanning is the fast way in for a shop whose goods carry codes:
                   the number is the one part of a product nobody can mistype. */}
-              <Link to="/scan">
-                <Button variant="secondary">
-                  <Barcode className="h-4 w-4" aria-hidden />{ui.scan}
-                </Button>
-              </Link>
+              <Button variant="secondary" onClick={() => openScan('scan')}>
+                <Barcode className="h-4 w-4" aria-hidden />{ui.scan}
+              </Button>
               <Button onClick={() => setAdding(true)}>
                 <Plus className="h-4 w-4" aria-hidden />{ui.add}
               </Button>

@@ -11,6 +11,21 @@ export type Profile = {
   role: UserRole;
 };
 
+// ── TEMP DEV PREVIEW ────────────────────────────────────────────────────
+// Lets you open the installed app straight into the signed-in owner UI
+// without going through WhatsApp. Cosmetic only: RLS still treats the
+// webview as anonymous, so screens backed by real data render empty.
+// Flip DEV_PREVIEW back to `true` to restore WhatsApp-only auth.
+export const DEV_PREVIEW = false;
+const DEV_PREVIEW_OWNER: Profile = {
+  id: '00000000-0000-4000-8000-000000000001',
+  company_id: '00000000-0000-4000-8000-000000000002',
+  full_name: 'Mmiliki Preview',
+  phone: '255700000000',
+  role: 'owner',
+};
+// ── end TEMP DEV PREVIEW ────────────────────────────────────────────────
+
 export type AuthState =
   | { status: 'loading' }
   | { status: 'signed-out' }
@@ -48,6 +63,25 @@ function withTimeout<T>(promise: PromiseLike<T>, ms: number, message: string): P
 
 async function hydrate(session: Session | null) {
   const run = ++hydrateRun;
+
+  // TEMP DEV PREVIEW: pretend to be a signed-in owner so the app's UI can be
+  // walked through without WhatsApp. Remove with the DEV_PREVIEW flag above.
+  if (!session && DEV_PREVIEW) {
+    publish({
+      status: 'signed-in',
+      session: {
+        access_token: 'dev-preview',
+        refresh_token: 'dev-preview',
+        expires_in: 3600,
+        expires_at: 0,
+        token_type: 'bearer',
+        user: { id: DEV_PREVIEW_OWNER.id } as Session['user'],
+      } as Session,
+      profile: DEV_PREVIEW_OWNER,
+    });
+    return;
+  }
+
   if (!session) {
     lastProfileUserId = null;
     lastProfile = null;

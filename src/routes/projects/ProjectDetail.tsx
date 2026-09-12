@@ -223,7 +223,7 @@ export default function ProjectDetail() {
       {/* Invite links live in a modal reachable from the top "Invite" button, so they
           stay accessible even when the receipts list is long. */}
       {canSeeLinks && inviteOpen && (
-        <div className="fixed inset-0 z-[150] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" onClick={() => setInviteOpen(false)}>
+        <div data-overlay className="fixed inset-0 z-[150] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" onClick={() => setInviteOpen(false)}>
           <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-surface shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="sticky top-0 flex items-center justify-between border-b border-surface-border bg-surface px-5 py-3">
               <h2 className="text-base font-semibold text-ink">{sw.projects.inviteLinksTitle}</h2>

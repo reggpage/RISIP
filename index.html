@@ -2,18 +2,22 @@
 <html lang="sw">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
     <meta name="theme-color" content="#DD2D4A" />
     <meta name="application-name" content="Risip" />
-    <!-- Chrome deprecated the apple- prefixed form and warns about it on every
-         page load. Both are sent: the standard one for Chrome and Android, the
-         apple one because iOS Safari still reads only that. -->
+    <meta name="description" content="Piga picha risiti, tengeneza ankara, na fuatilia biashara yako yote mahali pamoja." />
+    <!-- Chrome / Android -->
     <meta name="mobile-web-app-capable" content="yes" />
+    <!-- iOS Safari -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Risip" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- PWA -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/pwa-icon.svg" type="image/svg+xml" />
+    <!-- Splash screen background matches theme_color for branded launch -->
+    <meta name="msapplication-TileColor" content="#DD2D4A" />
     <title>Risip</title>
     <!-- Outfit: UI + headings. Lora: large numeric displays on dashboard (financial feel). -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />

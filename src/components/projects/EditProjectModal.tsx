@@ -85,7 +85,7 @@ export default function EditProjectModal({
 
   return (
     <div
-      className="fixed inset-0 z-[150] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+      data-overlay className="fixed inset-0 z-[150] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="edit-project-title"

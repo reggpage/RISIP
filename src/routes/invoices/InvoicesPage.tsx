@@ -142,8 +142,6 @@ export default function InvoicesPage() {
 
   return (
     <div className="mx-auto max-w-4xl p-4 sm:p-6">
-      <h1 className="mb-6 text-2xl font-semibold text-ink">{sw.nav.invoices}</h1>
-
       {canGenerate && (
         <Card className="mb-6">
           <CardHeader>

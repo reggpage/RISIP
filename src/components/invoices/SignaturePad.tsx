@@ -66,7 +66,7 @@ export default function SignaturePad({
   }
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true">
+    <div data-overlay className="fixed inset-0 z-[200] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true">
       <div className="w-full max-w-md rounded-t-2xl bg-surface shadow-2xl sm:rounded-2xl">
         <div className="flex items-center justify-between border-b border-surface-border px-5 py-3">
           <h2 className="text-base font-semibold text-ink">Sign to approve</h2>

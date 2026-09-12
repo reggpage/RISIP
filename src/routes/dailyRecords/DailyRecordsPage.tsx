@@ -184,8 +184,7 @@ export default function DailyRecordsPage() {
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-ink">{ui.title}</h1>
-          <p className="mt-1 text-sm text-ink-muted">{ui.description}</p>
+          <p className="text-sm text-ink-muted">{ui.description}</p>
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" className="sm:hidden" onClick={() => setFiltersOpen(true)}><Filter className="h-4 w-4" /> {ui.filter}</Button>
@@ -550,7 +549,7 @@ function Detail({ label, value }: { label: string; value: string }) {
 
 function Modal({ title, onClose, children }: { title: ReactNode; onClose: () => void; children: ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" role="presentation" onMouseDown={onClose}>
+    <div data-overlay className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4" role="presentation" onMouseDown={onClose}>
       <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl bg-surface p-5 shadow-xl sm:rounded-2xl" role="dialog" aria-modal="true" aria-label={typeof title === 'string' ? title : ui.details} onMouseDown={(event) => event.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-ink">{title}</h2>

@@ -124,7 +124,7 @@ const COPY = {
   },
 } as const;
 
-export default function ScanPage() {
+export default function ScanPage({ onExit }: { onExit?: () => void } = {}) {
   const auth = useAuth();
   const role = auth.status === 'signed-in' ? auth.profile?.role : undefined;
   const allowed = role === 'owner' || role === 'accountant';
@@ -384,9 +384,13 @@ export default function ScanPage() {
         </div>
       ) : null}
 
-      <Link to="/products" className="block text-center text-xs text-ink-muted">
-        {c.back}
-      </Link>
+      {onExit ? (
+        <button type="button" onClick={onExit} className="block w-full text-center text-xs text-ink-muted">{c.back}</button>
+      ) : (
+        <Link to="/products" className="block text-center text-xs text-ink-muted">
+          {c.back}
+        </Link>
+      )}
     </div>
   );
 }

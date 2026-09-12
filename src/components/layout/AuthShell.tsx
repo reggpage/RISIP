@@ -3,6 +3,7 @@ import { ArrowLeft } from 'lucide-react';
 import LanguageToggle from '@/components/ui/LanguageToggle';
 import RisipLogo from '@/components/ui/RisipLogo';
 import { getLang } from '@/lib/lang';
+import { isNative } from '@/lib/native';
 import '@/routes/auth/auth.css';
 
 const COPY = {
@@ -33,24 +34,33 @@ export default function AuthShell({
 
   return (
     <div className="rp-auth" lang={lang}>
-      <header className="rp-auth-header">
-        <div className="rp-auth-header-inner">
-          <Link to="/" className="rp-auth-logo" aria-label="Risip">
-            <RisipLogo />
-          </Link>
-          <nav className="rp-auth-header-side" aria-label={c.nav}>
-            <Link to="/" className="rp-auth-home">
-              <ArrowLeft size={15} aria-hidden="true" />
-              <span>{c.home}</span>
+      {!isNative() && (
+        <header className="rp-auth-header">
+          <div className="rp-auth-header-inner">
+            <Link to="/" className="rp-auth-logo" aria-label="Risip">
+              <RisipLogo />
             </Link>
-            <LanguageToggle />
-            {footer}
-          </nav>
-        </div>
-      </header>
+            <nav className="rp-auth-header-side" aria-label={c.nav}>
+              <Link to="/" className="rp-auth-home">
+                <ArrowLeft size={15} aria-hidden="true" />
+                <span>{c.home}</span>
+              </Link>
+              <LanguageToggle />
+              {footer}
+            </nav>
+          </div>
+        </header>
+      )}
 
       <main className="rp-auth-main">
-        <div className="rp-auth-card">{children}</div>
+        <div className="rp-auth-app">
+          {isNative() && (
+            <Link to="/" className="rp-auth-app-logo" aria-label="Risip">
+              <RisipLogo />
+            </Link>
+          )}
+          <div className="rp-auth-card">{children}</div>
+        </div>
       </main>
     </div>
   );

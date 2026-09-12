@@ -38,7 +38,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
       {children}
       {state && (
         <div
-          className="fixed inset-0 z-[300] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
+          data-overlay className="fixed inset-0 z-[300] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
           role="dialog"
           aria-modal="true"
           onClick={() => close(false)}

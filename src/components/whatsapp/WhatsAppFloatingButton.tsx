@@ -1,9 +1,11 @@
 import WhatsAppIcon from '@/components/ui/WhatsappIcon';
 import { buildRisipWhatsAppUrl } from '@/features/whatsapp/publicWhatsApp';
 import { getLang } from '@/lib/lang';
+import { isNative } from '@/lib/native';
 
 export default function WhatsAppFloatingButton() {
   const lang = getLang();
+  if (isNative()) return null;
   const url = buildRisipWhatsAppUrl('support', lang);
   if (!url) return null;
 

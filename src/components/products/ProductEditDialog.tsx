@@ -326,7 +326,7 @@ export default function ProductEditDialog({ product, level, initialTab = 'count'
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+    <div data-overlay className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
       <div className="relative max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto rounded-xl bg-surface p-5 shadow-lg">
         {/* The only way out. Saving used to close the dialog, which made filling
             in a count, a buying price and a selling price for one product three

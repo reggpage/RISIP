@@ -47,7 +47,7 @@ export default function PayoutDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+    <div data-overlay className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
       <div className="w-full max-w-md rounded-t-2xl bg-surface p-5 sm:rounded-2xl">
         <h2 className="text-lg font-semibold text-ink">Record payment</h2>
         <p className="mt-1 text-sm text-ink-muted">

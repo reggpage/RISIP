@@ -140,8 +140,7 @@ export default function RetirementsPage() {
     <div className="mx-auto w-full max-w-7xl p-4 sm:p-6 lg:p-8">
       <header className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-ink">Retirements</h1>
-          <p className="mt-1 text-sm text-ink-muted">
+          <p className="text-sm text-ink-muted">
             Staff submit receipts and signed voucher forms for accountant review.
           </p>
         </div>
@@ -829,7 +828,7 @@ function RequestChangesModal({
   const [receiptIds, setReceiptIds] = useState<Set<string>>(new Set());
 
   return (
-    <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/40 p-4">
+    <div data-overlay className="fixed inset-0 z-[75] flex items-center justify-center bg-black/40 p-4">
       <Card className="w-full max-w-lg">
         <h3 className="text-base font-semibold text-ink">Request changes</h3>
         <p className="mt-1 text-sm text-ink-muted">Add a note and mark receipts that need correction.</p>

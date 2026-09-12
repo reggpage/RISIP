@@ -73,7 +73,7 @@ export default function ProductMergeDialog({ product, all, onClose, onDone }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+    <div data-overlay className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
       <div className="w-full max-w-md rounded-xl bg-surface p-5 shadow-lg">
         <h2 className="text-base font-semibold text-ink">{ui.title}</h2>
         <p className="mt-1 text-xs text-ink-muted">{ui.intro}</p>

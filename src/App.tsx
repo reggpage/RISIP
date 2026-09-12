@@ -2,14 +2,17 @@ import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import RequireAuth from '@/guards/RequireAuth';
 import RequireRole from '@/guards/RequireRole';
+import ScanOverlayHost from '@/components/layout/ScanOverlayHost';
 import Landing from '@/routes/marketing/Landing';
+import WhatsAppAuth from '@/routes/auth/WhatsAppAuth';
 import InstallPromptBanner from '@/components/pwa/InstallPromptBanner';
+import { isNative } from '@/lib/native';
+import AppDeepLink from '@/components/navigation/AppDeepLink';
 
 // Load business screens when opened, keeping the public landing page lightweight.
 const AppShell = lazy(() => import('@/components/layout/AppShell'));
 const WaLogin = lazy(() => import('@/routes/auth/WaLogin'));
 const BusinessSignup = lazy(() => import('@/routes/auth/BusinessSignup'));
-const WhatsAppAuth = lazy(() => import('@/routes/auth/WhatsAppAuth'));
 const ClaimsInbox = lazy(() => import('@/routes/claims/ClaimsInbox'));
 const ProjectsList = lazy(() => import('@/routes/projects/ProjectsList'));
 const NewProject = lazy(() => import('@/routes/projects/NewProject'));
@@ -34,13 +37,41 @@ const SellPage = lazy(() => import('@/routes/products/SellPage'));
 const ChatPage = lazy(() => import('@/routes/chat/ChatPage'));
 const LegalPage = lazy(() => import('@/routes/legal/LegalPage'));
 
+/**
+ * Branded launch screen shown only inside the installed app while a business
+ * screen's chunk is downloading. It is a plain paper surface just like the
+ * sign-in page — never a logo flash — so the installed app never shows a
+ * black gap or a dead preloader between screens.
+ */
+function NativeBootScreen() {
+  return <div className="h-dvh w-full" style={{ background: '#f6f5f0' }} aria-hidden="true" />;
+}
+
+/**
+ * Installed-app entry point. The marketing landing page is a website touch:
+ * inside the native shell we boot straight into the sign-in form — it is
+ * loaded eagerly, so the splash melts right into it, and it already redirects
+ * signed-in sessions to the dashboard. The web stays as-is.
+ */
+function HomeEntry() {
+  if (!isNative()) return <Landing />;
+  return <WhatsAppAuth mode="login" />;
+}
+
 export default function App() {
+  // Route chunks lazy-load on first visit. On the web that flash of the
+  // branded loading screen is a deliberate touch; inside the native app it
+  // becomes a plain paper surface so nothing ever looks like a preloader or
+  // a black hole.
+  const fallback = isNative()
+    ? <NativeBootScreen />
+    : <div className="grid min-h-screen place-items-center bg-white" role="status" aria-label="Loading Risip"><span className="text-xl font-semibold text-role-admin">Risip</span></div>;
   return (
     <>
-      <Suspense fallback={<div className="grid min-h-screen place-items-center bg-white" role="status" aria-label="Loading Risip"><span className="text-xl font-semibold text-role-admin">Risip</span></div>}>
+      <Suspense fallback={fallback}>
       <Routes>
       {/* Public routes */}
-      <Route path="/" element={<Landing />} />
+      <Route path="/" element={<HomeEntry />} />
       <Route path="/terms" element={<LegalPage kind="terms" />} />
       <Route path="/privacy" element={<LegalPage kind="privacy" />} />
       <Route path="/policies" element={<Navigate to="/privacy" replace />} />
@@ -59,7 +90,6 @@ export default function App() {
       <Route path="/public/invoices/:token" element={<PublicInvoice />} />
 
       {/* Authed app */}
-      <Route path="/chat" element={<RequireAuth><ChatPage /></RequireAuth>} />
       <Route
         element={
           <RequireAuth>
@@ -68,6 +98,7 @@ export default function App() {
         }
       >
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/chat" element={<ChatPage />} />
 
         <Route path="/projects" element={<ProjectsList />} />
         <Route
@@ -146,6 +177,8 @@ export default function App() {
 
       <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <AppDeepLink />
+      <ScanOverlayHost />
       </Suspense>
       <InstallPromptBanner />
     </>

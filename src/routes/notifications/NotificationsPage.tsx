@@ -44,8 +44,7 @@ export default function NotificationsPage() {
     <div className="mx-auto max-w-4xl p-4 sm:p-6 lg:p-8">
       <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-ink">Notifications</h1>
-          <p className="mt-1 text-sm text-ink-muted">
+          <p className="text-sm text-ink-muted">
             Company updates, access changes, and claim activity appear here.
           </p>
         </div>

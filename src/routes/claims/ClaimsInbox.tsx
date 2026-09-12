@@ -139,8 +139,7 @@ export default function ClaimsInbox() {
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-ink">Supplier claims</h1>
-          <p className="mt-1 text-sm text-ink-muted">Approve supplier access and track receipt-backed claims.</p>
+          <p className="text-sm text-ink-muted">Approve supplier access and track receipt-backed claims.</p>
         </div>
         <a
           href="/supplier-claims"
@@ -358,7 +357,7 @@ function DisputeDialog({ onCancel, onSubmit }: { onCancel: () => void; onSubmit:
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
+    <div data-overlay className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4">
       <Card className="w-full max-w-md rounded-t-2xl sm:rounded-2xl">
         <h3 className="text-base font-semibold text-ink">Dispute supplier claim</h3>
         <p className="mt-1 text-sm text-ink-muted">Write a clear reason so the dispute is useful in the audit trail.</p>

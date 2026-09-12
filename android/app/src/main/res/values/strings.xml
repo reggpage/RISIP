@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Risip</string>
+    <string name="title_activity_main">Risip</string>
+    <string name="package_name">co.risip.app</string>
+    <string name="custom_url_scheme">co.risip.app</string>
+</resources>

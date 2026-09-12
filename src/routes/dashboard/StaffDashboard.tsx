@@ -39,8 +39,7 @@ export default function StaffDashboard() {
     <div className="mx-auto max-w-4xl p-4 sm:p-6">
       <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-ink">My receipts</h1>
-          <p className="mt-1 text-sm text-ink-muted">
+          <p className="text-sm text-ink-muted">
             Everything you have sent in, and what is still waiting on you.
           </p>
         </div>

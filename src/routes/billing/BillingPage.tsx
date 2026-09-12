@@ -160,7 +160,6 @@ export default function BillingPage() {
   if (!subscription) {
     return (
       <div className={`${COLUMN} space-y-6`}>
-        <h1 className="text-2xl font-semibold tracking-tight text-ink">{t.title}</h1>
         <Card><p className="text-sm text-ink-muted">{t.noSubscription}</p></Card>
       </div>
     );
@@ -173,8 +172,7 @@ export default function BillingPage() {
   return (
     <div className={`${COLUMN} space-y-8 pb-16`}>
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight text-ink">{t.title}</h1>
-        <p className="mt-1 text-sm text-ink-muted">{t.subtitle}</p>
+        <p className="text-sm text-ink-muted">{t.subtitle}</p>
       </header>
 
       <Banner subscription={subscription} />

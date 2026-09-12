@@ -14,9 +14,22 @@
     "interrogate": "vite-node scripts/interrogate.ts",
     "interrogate:quick": "vite-node scripts/interrogate.ts --seeds 2 --count 120",
     "check:edge": "vite-node scripts/check-edge-functions.ts",
-    "check:pdf": "vite-node scripts/check-pdf-layout.ts"
+    "check:pdf": "vite-node scripts/check-pdf-layout.ts",
+    "app:build": "vite build && cap sync android",
+    "app:apk": "cd android && ./gradlew assembleDebug",
+    "app:install": "adb install -r android/app/build/outputs/apk/debug/app-debug.apk"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/camera": "^8.2.4",
+    "@capacitor/cli": "^7.6.9",
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/keyboard": "^8.0.5",
+    "@capacitor/local-notifications": "^8.3.1",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.3",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.0",
     "@zxing/browser": "^0.2.1",

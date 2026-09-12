@@ -7,6 +7,7 @@ import WhatsAppIcon from '@/components/ui/WhatsappIcon';
 import { buildRisipWhatsAppUrl } from '@/features/whatsapp/publicWhatsApp';
 import { useAuth } from '@/lib/auth';
 import { getLang } from '@/lib/lang';
+import { apiUrl, isNative } from '@/lib/native';
 
 type Mode = 'login' | 'register';
 type Phase = 'form' | 'sending' | 'sent';
@@ -89,7 +90,7 @@ export default function WhatsAppAuth({ mode }: { mode: Mode }) {
 
     setPhase('sending');
     try {
-      const response = await fetch('/api/auth/whatsapp/request', {
+      const response = await fetch(apiUrl('/api/auth/whatsapp/request'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ whatsapp_number: `+255${phone}`, purpose: mode, language: lang }),
@@ -121,7 +122,10 @@ export default function WhatsAppAuth({ mode }: { mode: Mode }) {
       ) : (
         <>
           {/* Two routes, one component: the segments are links, so the URL
-              still says which page you are on. */}
+              still says which page you are on. The installed app hides the
+              segment tabs — the switch link at the foot of the card is enough,
+              and the screen reads cleaner like a real app. */}
+          {!isNative() && (
           <div className="rp-auth-tabs">
             {([['login', '/login', c.login], ['register', '/signup', c.register]] as const).map(([key, to, label]) => (
               <Link key={key} to={to} aria-current={mode === key ? 'page' : undefined} className="rp-auth-tab">
@@ -129,6 +133,7 @@ export default function WhatsAppAuth({ mode }: { mode: Mode }) {
               </Link>
             ))}
           </div>
+          )}
 
           <div className="rp-auth-centre">
             <span className="rp-auth-mark"><WhatsAppIcon /></span>

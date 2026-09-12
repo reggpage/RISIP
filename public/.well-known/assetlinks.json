@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "co.risip.app",
+      "sha256_cert_fingerprints": [
+        "3d62898a8dc75202687353b8549d93ff62797c8563d3c6e5854d4121c371d517"
+      ]
+    }
+  }
+]

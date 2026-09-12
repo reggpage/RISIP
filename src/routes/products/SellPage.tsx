@@ -98,7 +98,10 @@ const COPY = {
   },
 } as const;
 
-export default function SellPage() {
+export default function SellPage({
+  onExit,
+  onShowScan,
+}: { onExit?: () => void; onShowScan?: () => void } = {}) {
   const auth = useAuth();
   const lang = getLang() === 'sw' ? 'sw' : 'en';
   const c = COPY[lang];
@@ -265,9 +268,13 @@ export default function SellPage() {
               <>
                 <p className="text-sm font-medium text-ink">{c.unknown}</p>
                 <p className="mt-0.5 font-mono text-xs text-ink-muted">{problem.text}</p>
-                <Link to="/scan" className="mt-2 inline-block">
-                  <Button variant="secondary">{c.register}</Button>
-                </Link>
+                {onShowScan ? (
+                  <Button className="mt-2" variant="secondary" onClick={onShowScan}>{c.register}</Button>
+                ) : (
+                  <Link to="/scan" className="mt-2 inline-block">
+                    <Button variant="secondary">{c.register}</Button>
+                  </Link>
+                )}
               </>
             ) : (
               <>
@@ -350,7 +357,11 @@ export default function SellPage() {
         </ul>
       )}
 
-      <Link to="/products" className="block text-center text-xs text-ink-muted">{c.back}</Link>
+      {onExit ? (
+        <button type="button" onClick={onExit} className="block w-full text-center text-xs text-ink-muted">{c.back}</button>
+      ) : (
+        <Link to="/products" className="block text-center text-xs text-ink-muted">{c.back}</Link>
+      )}
 
       {/* The total and the way to finish stay under the thumb, over everything
           else: a counter is not a place to scroll. */}

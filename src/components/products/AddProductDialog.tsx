@@ -166,21 +166,21 @@ export default function AddProductDialog({ onClose, onAdded }: {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
-      <div className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-xl bg-surface p-5 shadow-lg">
-        <h2 className="text-base font-semibold text-ink">{ui.title}</h2>
-        <p className="mt-1 text-xs text-ink-muted">{ui.intro}</p>
+    <div data-overlay className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="flex max-h-[92vh] w-full max-w-xl flex-col rounded-xl bg-surface shadow-lg">
+<div className="min-h-0 flex-1 overflow-y-auto p-5" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <h2 className="text-base font-semibold text-ink">{ui.title}</h2>
+          <p className="mt-1 text-xs text-ink-muted">{ui.intro}</p>
 
-        <div className="mt-4 space-y-4">
-          <label className="block">
-            <span className="text-sm text-ink">{ui.name}</span>
-            <Input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder={ui.namePlaceholder}
-              autoFocus
-              className="mt-1"
-            />
+          <div className="mt-4 space-y-4">
+            <label className="block">
+              <span className="text-sm text-ink">{ui.name}</span>
+              <Input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder={ui.namePlaceholder}
+                className="mt-1"
+              />
           </label>
 
           <fieldset>
@@ -277,8 +277,9 @@ export default function AddProductDialog({ onClose, onAdded }: {
         </div>
 
         <p className="mt-3 text-[11px] leading-snug text-ink-muted">{measured ? ui.measuredNote : ui.note}</p>
+        </div>
 
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-surface-border p-4">
           <Button variant="ghost" onClick={onClose} disabled={busy}>{ui.cancel}</Button>
           <Button onClick={() => void add()} disabled={busy || !valid}>
             {busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden />{ui.adding}</> : ui.add}

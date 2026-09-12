@@ -6,6 +6,7 @@ import { useAuth } from '@/lib/auth';
 import Button from '@/components/ui/Button';
 import { navVisible } from '@/lib/nav';
 import { getLang, type LangCode } from '@/lib/lang';
+import { openScan } from '@/lib/scanOverlay';
 import { sw } from '@/i18n/sw';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import Select from '@/components/ui/Select';
@@ -53,9 +54,8 @@ function ShopDashboard() {
   const dailySummary = getDailyRecordSummary(dailyRecords.records);
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
-      <h1 className="mb-5 text-2xl font-semibold text-ink">{sw.nav.dashboard}</h1>
       <div className="mb-6 flex flex-wrap gap-2">
-        <Link to="/sell"><Button tint="admin">{lang === 'sw' ? 'Uza kwa scan' : 'Sell by scan'}</Button></Link>
+        <Button tint="admin" onClick={() => openScan('sell')}>{lang === 'sw' ? 'Uza kwa scan' : 'Sell by scan'}</Button>
         <Link to="/products"><Button variant="secondary">{lang === 'sw' ? 'Bidhaa' : 'Products'}</Button></Link>
       </div>
       <DailyDashboardContent dailyRecords={dailyRecords} dailySummary={dailySummary} text={text} lang={lang} />
@@ -89,8 +89,7 @@ function CompanyDashboard() {
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <div className="mb-5 flex items-end justify-between gap-3">
-        <h1 className="text-2xl font-semibold text-ink">{sw.nav.dashboard}</h1>
-        {projectsOn && dashboardTab === 'project' && activeProjects.length > 1 && <div className="min-w-[220px]"><Select label={sw.dashboard.filterProject} value={projectId} onChange={setProjectId} placeholder={sw.dashboard.allProjects} options={[{ value: '', label: sw.dashboard.allProjects }, ...activeProjects.map((project) => ({ value: project.id, label: project.name }))]} /></div>}
+        {projectsOn && dashboardTab === 'project' && activeProjects.length > 1 && <div className="ml-auto min-w-[220px]"><Select label={sw.dashboard.filterProject} value={projectId} onChange={setProjectId} placeholder={sw.dashboard.allProjects} options={[{ value: '', label: sw.dashboard.allProjects }, ...activeProjects.map((project) => ({ value: project.id, label: project.name }))]} /></div>}
       </div>
 
       {projectsOn ? <UnderlineTabs

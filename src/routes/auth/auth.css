@@ -9,6 +9,10 @@
 .rp-auth {
   min-height: 100vh;
   min-height: 100svh;
+  /* Dynamic viewport: when the soft keyboard resizes the window (adjustResize),
+     the auth screen shrinks to the visible area so content rises onto the
+     keyboard instead of panning into an empty gap. */
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--rp-paper);
@@ -33,6 +37,12 @@
 
 /* --- the card -------------------------------------------------------------- */
 .rp-auth-main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 52px 20px 76px; }
+/* Installed-app column: the brand logo sits centered above the card, with no
+   top bar. Web keeps the dark landing header. */
+.rp-auth-app { display: flex; flex-direction: column; align-items: center; width: min(472px, 100%); }
+.rp-auth-app-logo { display: inline-flex; color: var(--rp-red); margin-bottom: 28px; }
+.rp-auth-app-logo svg { height: 46px; width: 105px; }
+.rp-auth-app .rp-auth-card { width: 100%; }
 .rp-auth-card { width: min(472px, 100%); background: #fff; border: 1px solid #e4e7dd; border-radius: 12px; padding: 38px 36px 32px; box-shadow: 0 22px 55px #1c302010; }
 .rp-auth-centre { text-align: center; }
 /* The icon alone. The disc behind it was one more shape on a card that is
@@ -137,3 +147,44 @@ textarea.rp-auth-input { height: auto; padding: 14px 16px; line-height: 1.7; res
      so it keeps turning, slowly, rather than freezing into a static arc. */
   .rp-auth-spinner { animation: rp-auth-spin 2400ms linear infinite !important; }
 }
+
+/* ─── soft keyboard, installed app only ──────────────────────────────────
+   wireNativeKeyboard() toggles `html.keyboard-open` and publishes `--vvh`
+   (the live visualViewport height). The activity uses
+   android:windowSoftInputMode `adjustNothing`, so the Framework's IME-inset
+   resize never shrinks the WebView; instead the auth screen is pinned to
+   exactly the strip that is truly visible above the keyboard. No gap, no
+   content behind the keys. */
+html.keyboard-open .rp-auth {
+  position: fixed;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: var(--vvh, 100dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+/* Let tall content keep its top edge when scrolled; centering would hide it. */
+html.keyboard-open .rp-auth-main { align-items: flex-start; padding: 18px 16px 48px; }
+html.keyboard-open .rp-auth-app-logo { margin-bottom: 10px; }
+html.keyboard-open .rp-auth-app-logo svg { height: 30px; width: 68px; }
+html.keyboard-open .rp-auth-card { padding: 16px 20px 14px; }
+html.keyboard-open .rp-auth-mark { width: 26px; height: 26px; margin-bottom: 8px; }
+html.keyboard-open .rp-auth-mark > svg { width: 26px; height: 26px; }
+html.keyboard-open .rp-auth-title { font-size: 20px; letter-spacing: -.4px; margin-top: 6px; line-height: 1.2; }
+html.keyboard-open .rp-auth-lead { margin-top: 6px; font-size: 12px; line-height: 1.5; }
+html.keyboard-open .rp-auth-form { margin-top: 12px; gap: 10px; }
+html.keyboard-open .rp-auth-input { height: 46px; padding: 0 14px; }
+html.keyboard-open .rp-auth-prefix { width: 66px; height: 46px; }
+html.keyboard-open .rp-auth-button, html.keyboard-open .rp-auth-wa { min-height: 46px; padding: 12px 16px; }
+html.keyboard-open .rp-auth-tabs { margin-bottom: 16px; }
+html.keyboard-open .rp-auth-progress { gap: 4px; }
+html.keyboard-open .rp-auth-step { margin-top: 8px; }
+html.keyboard-open .rp-auth-question { font-size: 19px; letter-spacing: -.3px; margin-top: 6px; line-height: 1.25; }
+html.keyboard-open .rp-auth-hint { margin-top: 6px; font-size: 12px; line-height: 1.5; }
+html.keyboard-open .rp-auth-summary { margin-top: 10px; }
+html.keyboard-open .rp-auth-code { margin-top: 10px; }
+html.keyboard-open .rp-auth-why { margin-top: 10px; }
+/* The privacy note and the switch row are secondary; keep them but tight. */
+html.keyboard-open .rp-auth-note { margin-top: 10px; }
+html.keyboard-open .rp-auth-alt { margin-top: 10px; padding-top: 12px; }

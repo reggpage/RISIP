@@ -76,3 +76,79 @@ input[type='password']::-webkit-contacts-auto-fill-button {
 }
 
 :where([id]) { scroll-margin-top: 80px; }
+
+/* ─── PWA native-app feel ─────────────────────────────────────────────── */
+
+/* Prevent the whole page from bouncing/overscrolling like a webpage.
+   Each scrollable container (the main content area, modals, drawers) handles
+   its own scrolling, so the root can safely clamp. */
+html {
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Remove the blue flash on tap for interactive elements — app-native. */
+a, button, [role="button"], [role="tab"], [role="menuitem"], label {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* When running as a standalone PWA (installed to home screen), the browser
+   chrome is gone. Pad content so it doesn't sit behind the iOS notch or the
+   Android gesture bar. The bottom tab bar adds its own padding separately. */
+@supports (padding: env(safe-area-inset-top)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* ─── Soft-keyboard resilience (native app) ───────────────────────────────
+   wireNativeKeyboard adds `keyboard-open` on <html> and keeps `--vvh` (the
+   live visualViewport height) in sync. While the keyboard is up:
+   - the whole app column shrinks to `--vvh`, so the focused field, the chat
+     composer and anything above them stay inside the visible band;
+   - the bottom tab bar hides — it is navigation, not something you need while
+     typing, and it must never cover a composer;
+   - any modal marked with data-overlay pins its panel to the top and lets the
+     panel scroll inside the visible band, so the keyboard can never bury the
+     field being filled in. (The Activity uses adjustNothing, so the WebView's
+     layout viewport is never shrunk for us to rely on.) */
+html.keyboard-open .shell-col { height: var(--vvh, 100dvh); }
+html.keyboard-open .shell-col main { overflow: hidden !important; }
+html.keyboard-open .chat-app {
+  position: relative !important;
+  inset: auto !important;
+  height: 100% !important;
+}
+html.keyboard-open .chat-composer-area { padding-top: 6px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 84px) !important; }
+html.keyboard-open nav[role="tablist"].bottom-tab-bar { display: none; }
+html.keyboard-open [data-overlay] > :first-child {
+  max-height: var(--vvh, 100dvh);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+/* Scan opens as a centred modal (dimmed backdrop + rounded panel). When the
+   keyboard opens, keep the overlay inside the visible band so the sheet never
+   slides behind the keys; fixed elements inside the sheet (sale-done overlay,
+   sticky action bar) are re-anchored to the sheet itself. */
+html.keyboard-open .scan-overlay-frame { inset: 0 0 auto 0; height: var(--vvh, 100dvh); }
+.scan-overlay-sheet .fixed { position: absolute; }
+
+/* Standalone mode: tighter chrome, no selection on drag (feels like a native
+   app, not a page you can long-press to share). */
+@media (display-mode: standalone) {
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Allow text selection inside inputs and text areas even in standalone. */
+  input, textarea, [contenteditable="true"] {
+    -webkit-user-select: auto;
+    user-select: auto;
+  }
+}

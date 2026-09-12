@@ -101,7 +101,7 @@ export default function ProjectTeamPanel({
   const memberOptions = team.members.map((m) => ({ value: m.profile_id, label: m.full_name }));
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" onClick={onClose}>
+    <div data-overlay className="fixed inset-0 z-[150] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-surface shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-surface-border px-5 py-3">
           <h2 className="flex min-w-0 items-center gap-2 text-base font-semibold text-ink">

@@ -227,7 +227,6 @@ export default function ReceiptsPage() {
   return (
     <div className="mx-auto max-w-4xl p-4 sm:p-6">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-semibold text-ink">{sw.nav.receipts}</h1>
         <div className="flex flex-wrap gap-2">
           {/* Finance only: it rewrites stored figures with TRA's own. */}
           {receiptsState.status === 'ready' && (

@@ -59,7 +59,6 @@ export default function ProjectsList() {
   return (
     <div className={pageClass}>
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-ink">{sw.nav.projects}</h1>
         {canCreate && (
           <Link to="/projects/new">
             <Button tint="admin">

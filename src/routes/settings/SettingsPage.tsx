@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Bell, Building2, Check, Copy, Languages, Mail, MessageCircle, Printer, User, Users } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { AlertTriangle, Bell, Building2, Check, ChevronRight, Copy, CreditCard, Languages, LogOut, Mail, MessageCircle, Printer, User, Users } from 'lucide-react';
 import { getLang, setLang, LANG_OPTIONS, type LangCode } from '@/lib/lang';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -14,13 +14,15 @@ import WhatsAppCompanyInviteCard from '@/components/whatsapp/WhatsAppCompanyInvi
 import WhatsAppNotificationPreferences from '@/components/whatsapp/WhatsAppNotificationPreferences';
 import { createNotifications } from '@/features/notifications/notifications';
 import { useAuth, signOut } from '@/lib/auth';
-import { roleLabel } from '@/lib/roles';
+import { roleBgClass, roleColorClass, roleLabel, shortName } from '@/lib/roles';
 import { supabase } from '@/lib/supabase';
 import type { Company, Profile } from '@/types/db';
 import { sw } from '@/i18n/sw';
 
-// Pro-SaaS two-column settings layout: on md+ the section title & description sit in the
-// left column, the actual form/card in the wider right column. On mobile it stacks.
+// Phone-native grouped settings: each section is a small header (title +
+// description) above its control, stacked full-width like a real app's
+// Settings screen. On phones this collapses to exactly the list feel the
+// other pages already have; on desktop it stays one readable column.
 function SettingsSection({
   icon,
   title,
@@ -35,17 +37,15 @@ function SettingsSection({
   danger?: boolean;
 }) {
   return (
-    <section className="grid gap-6 md:grid-cols-3 md:gap-10 py-10 first:pt-0">
-      <div>
-        <h2 className={`flex items-center gap-2 text-base font-semibold ${danger ? 'text-red-700' : 'text-ink'}`}>
-          <span className={danger ? 'text-red-600' : 'text-ink-muted'}>{icon}</span>
-          {title}
-        </h2>
-        <p className={`mt-2 text-sm leading-relaxed ${danger ? 'text-red-600' : 'text-ink-muted'}`}>
-          {description}
-        </p>
-      </div>
-      <div className="md:col-span-2">{children}</div>
+    <section className="py-8 first:pt-0">
+      <h2 className={`flex items-center gap-2 text-sm font-semibold ${danger ? 'text-red-700' : 'text-ink'}`}>
+        <span className={danger ? 'text-red-600' : 'text-ink-muted'}>{icon}</span>
+        {title}
+      </h2>
+      <p className={`mt-1 text-xs ${danger ? 'text-red-600' : 'text-ink-muted'}`}>
+        {description}
+      </p>
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
@@ -390,7 +390,7 @@ export default function SettingsPage() {
 
   if (auth.status === 'loading') {
     return (
-      <div className="mx-auto max-w-5xl p-4 sm:p-6 lg:p-8">
+      <div className="mx-auto max-w-3xl p-4 sm:p-6">
         <div className="mb-8 h-8 w-32 animate-pulse rounded-lg bg-surface-muted" />
         <Card className="p-6 sm:p-8"><CompanyProfileSkeleton /></Card>
       </div>
@@ -398,13 +398,66 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6 lg:p-10">
-      <header className="mb-4 border-b border-surface-border pb-6">
-        <h1 className="text-3xl font-semibold text-ink">{sw.nav.settings}</h1>
-        <p className="mt-2 text-sm text-ink-muted">{sw.settingsCopy.subtitle}</p>
+    <div className="mx-auto max-w-3xl p-4 sm:p-6">
+      <header className="mb-6">
+        <p className="text-sm text-ink-muted">{sw.settingsCopy.subtitle}</p>
       </header>
 
       <div className="divide-y divide-surface-border">
+        {/* ── Profile summary — who you are, seen first, like native settings ─── */}
+        {profile && (
+          <Card className="mb-6 p-5">
+            <div className="flex items-center gap-4">
+              <div
+                className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white ${roleBgClass[profile.role]}`}
+              >
+                {shortName(profile.full_name).slice(0, 1).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-base font-semibold text-ink">{shortName(profile.full_name)}</div>
+                <div className={`mt-0.5 text-sm font-medium ${roleColorClass[profile.role]}`}>
+                  {roleLabel[profile.role]}
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* ── App shortcuts — the navigation drawer has moved in here ─────────── */}
+        <Card className="mb-6 overflow-hidden">
+          <ul className="flex flex-col divide-y divide-surface-border">
+            <li>
+              <Link to="/chat" className="flex items-center gap-3 px-5 py-4 hover:bg-surface-muted">
+                <MessageCircle className="h-5 w-5 shrink-0 text-ink-muted" />
+                <span className="flex-1 text-sm font-medium text-ink">{sw.chat.nav}</span>
+                <ChevronRight className="h-4 w-4 text-ink-muted" />
+              </Link>
+            </li>
+            {isOwner && (
+              <li>
+                <Link to="/billing" className="flex items-center gap-3 px-5 py-4 hover:bg-surface-muted">
+                  <CreditCard className="h-5 w-5 shrink-0 text-ink-muted" />
+                  <span className="flex-1 text-sm font-medium text-ink">
+                    {getLang() === 'sw' ? 'Bili' : 'Billing'}
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-ink-muted" />
+                </Link>
+              </li>
+            )}
+            <li>
+              <button
+                type="button"
+                onClick={() => void signOut()}
+                className="flex w-full items-center gap-3 px-5 py-4 text-left hover:bg-surface-muted"
+              >
+                <LogOut className="h-5 w-5 shrink-0 text-red-600" />
+                <span className="flex-1 text-sm font-medium text-red-600">{sw.common.logout}</span>
+                <ChevronRight className="h-4 w-4 text-red-400" />
+              </button>
+            </li>
+          </ul>
+        </Card>
+
         {/* ── Language (any role) ─────────────────────────────────────────── */}
         <SettingsSection
           icon={<Bell className="h-4 w-4" />}
