@@ -51,18 +51,19 @@ function secretHash(value: string, secret: string): string {
 async function sendTemplate(input: {
   to: string;
   template: string;
-  language: 'en' | 'sw';
-  parameters?: string[];
+  buttonParameter?: string;
 }) {
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const graphVersion = process.env.META_GRAPH_VERSION || process.env.WHATSAPP_API_VERSION || 'v22.0';
   if (!token || !phoneId) throw new Error('WhatsApp delivery is not configured');
 
-  const components = input.parameters?.length
+  const components = input.buttonParameter
     ? [{
-        type: 'body',
-        parameters: input.parameters.map((text) => ({ type: 'text', text })),
+        type: 'button',
+        sub_type: 'url',
+        index: '0',
+        parameters: [{ type: 'text', text: input.buttonParameter }],
       }]
     : undefined;
 
@@ -79,7 +80,7 @@ async function sendTemplate(input: {
       type: 'template',
       template: {
         name: input.template,
-        language: { code: input.language === 'sw' ? 'sw' : 'en_US' },
+        language: { code: 'en_US' },
         ...(components ? { components } : {}),
       },
     }),
@@ -177,12 +178,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (identity?.profile_id) {
       const { data: token, error: tokenError } = await admin.rpc('wa_issue_login_token', { p_phone: phone });
       if (tokenError || typeof token !== 'string') throw new Error(tokenError?.message || 'Could not issue login token');
-      const appUrl = (process.env.RISIP_PUBLIC_APP_URL || 'https://risip.online').replace(/\/$/, '');
       await sendTemplate({
         to: phone,
         template: process.env.WHATSAPP_LOGIN_TEMPLATE || 'risip_login_link',
-        language,
-        parameters: [`${appUrl}/wa-login?t=${token}`],
+        buttonParameter: token,
       });
     } else {
       const { data: onboarding, error: onboardingReadError } = await admin
@@ -209,7 +208,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await sendTemplate({
         to: phone,
         template: process.env.WHATSAPP_ONBOARDING_TEMPLATE || 'risip_start_onboarding',
-        language,
       });
     }
   } catch (error) {
