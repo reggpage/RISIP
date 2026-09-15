@@ -51,19 +51,18 @@ function secretHash(value: string, secret: string): string {
 async function sendTemplate(input: {
   to: string;
   template: string;
-  buttonParameter?: string;
+  language: 'en' | 'sw';
+  parameters?: string[];
 }) {
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const graphVersion = process.env.META_GRAPH_VERSION || process.env.WHATSAPP_API_VERSION || 'v22.0';
   if (!token || !phoneId) throw new Error('WhatsApp delivery is not configured');
 
-  const components = input.buttonParameter
+  const components = input.parameters?.length
     ? [{
-        type: 'button',
-        sub_type: 'url',
-        index: '0',
-        parameters: [{ type: 'text', text: input.buttonParameter }],
+        type: 'body',
+        parameters: input.parameters.map((text) => ({ type: 'text', text })),
       }]
     : undefined;
 
@@ -80,10 +79,7 @@ async function sendTemplate(input: {
       type: 'template',
       template: {
         name: input.template,
-        // Meta does not offer Swahili for this account's outbound template
-        // picker. Saved language still controls the conversational webhook
-        // after the customer replies.
-        language: { code: 'en_US' },
+        language: { code: input.language === 'sw' ? 'sw' : 'en_US' },
         ...(components ? { components } : {}),
       },
     }),
@@ -181,10 +177,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (identity?.profile_id) {
       const { data: token, error: tokenError } = await admin.rpc('wa_issue_login_token', { p_phone: phone });
       if (tokenError || typeof token !== 'string') throw new Error(tokenError?.message || 'Could not issue login token');
+      const appUrl = (process.env.RISIP_PUBLIC_APP_URL || 'https://risip.online').replace(/\/$/, '');
       await sendTemplate({
         to: phone,
         template: process.env.WHATSAPP_LOGIN_TEMPLATE || 'risip_login_link',
-        buttonParameter: token,
+        language,
+        parameters: [`${appUrl}/wa-login?t=${token}`],
       });
     } else {
       const { data: onboarding, error: onboardingReadError } = await admin
@@ -211,6 +209,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await sendTemplate({
         to: phone,
         template: process.env.WHATSAPP_ONBOARDING_TEMPLATE || 'risip_start_onboarding',
+        language,
       });
     }
   } catch (error) {
