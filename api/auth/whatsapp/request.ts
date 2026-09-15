@@ -107,6 +107,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const origin = firstHeader(req.headers.origin);
   const allowedOrigins = new Set(['https://risip.online', 'https://www.risip.online']);
+  // Capacitor shells load the WebView from a local origin (https://localhost
+  // on Android, capacitor://localhost on iOS). The installed app is a first
+  // class client of this endpoint alongside the website.
+  allowedOrigins.add('https://localhost');
+  allowedOrigins.add('capacitor://localhost');
   if (process.env.NODE_ENV !== 'production') {
     allowedOrigins.add('http://localhost:5173');
     allowedOrigins.add('http://127.0.0.1:5173');
