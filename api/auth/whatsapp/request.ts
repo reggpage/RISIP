@@ -11,6 +11,7 @@ type VercelRequest = {
 type VercelResponse = {
   status(code: number): VercelResponse;
   setHeader(name: string, value: string): void;
+  end(body?: unknown): void;
   json(body: unknown): void;
 };
 
@@ -96,11 +97,6 @@ async function sendTemplate(input: {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    res.status(405).json({ error: 'Method not allowed' });
-    return;
-  }
 
   const origin = firstHeader(req.headers.origin);
   const allowedOrigins = new Set(['https://risip.online', 'https://www.risip.online']);
@@ -113,7 +109,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     allowedOrigins.add('http://localhost:5173');
     allowedOrigins.add('http://127.0.0.1:5173');
   }
-  if (origin && !allowedOrigins.has(origin)) {
+  const originAllowed = origin && allowedOrigins.has(origin);
+  if (originAllowed) {
+    // Browsers on the web are same-origin and never need this. The WebView sends
+    // a preflight first and the browser accepts the response only if the API
+    // answers both OPTIONS and the real request with these headers.
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  if (req.method === 'OPTIONS') {
+    // CORS preflight: the WebView announces method + headers before the POST.
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Max-Age', '600');
+    res.status(204).end();
+    return;
+  }
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
+  if (origin && !originAllowed) {
     res.status(403).json({ error: 'Request origin is not allowed' });
     return;
   }

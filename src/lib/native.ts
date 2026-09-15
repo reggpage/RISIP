@@ -15,7 +15,7 @@ export function isNative(): boolean {
  * WebView origin is `https://localhost`, so a relative `fetch('/api/...')`
  * would hit the device itself instead of the Risip backend.
  */
-export const NATIVE_API_ORIGIN = 'https://risip.online';
+export const NATIVE_API_ORIGIN = 'https://www.risip.online';
 
 /** Resolve a web-relative path to a working URL in the current runtime. */
 export function apiUrl(path: `/${string}`): string {
