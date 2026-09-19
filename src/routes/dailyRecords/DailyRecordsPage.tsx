@@ -191,18 +191,32 @@ export default function DailyRecordsPage() {
           {/* Exports exactly what is on screen — the current filter and date —
               so "download what I am looking at" is what happens. Owner and
               accountant only, the same wall the reports live behind. */}
+          {/* On a phone these sat beside Chuja and wrapped onto a second row,
+              pushing the records themselves down the screen. The icon carries
+              the meaning; the word is what does not fit. "Pakua CSV" becomes
+              "CSV" and refresh keeps only its arrow — the full label stays on
+              aria-label and title, so nothing is lost to a screen reader or a
+              long press. */}
           {canExport && (
             <>
-              <Button variant="secondary" onClick={exportRecords} disabled={exportRows.length === 0}>
-                <Download className="h-4 w-4" /> {ui.export}
+              <Button variant="secondary" onClick={exportRecords} disabled={exportRows.length === 0}
+                      aria-label={ui.export} title={ui.export}>
+                <Download className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">{ui.export}</span>
+                <span className="sm:hidden">CSV</span>
               </Button>
-              <Button variant="secondary" onClick={() => void exportPdfReport()} disabled={exportRows.length === 0 || pdfBusy}>
-                <Download className="h-4 w-4" /> {pdfBusy ? ui.saving : ui.exportPdf}
+              <Button variant="secondary" onClick={() => void exportPdfReport()} disabled={exportRows.length === 0 || pdfBusy}
+                      aria-label={ui.exportPdf} title={ui.exportPdf}>
+                <Download className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">{pdfBusy ? ui.saving : ui.exportPdf}</span>
+                <span className="sm:hidden">{pdfBusy ? '…' : 'PDF'}</span>
               </Button>
             </>
           )}
-          <Button variant="secondary" onClick={state.reload} disabled={state.status === 'loading'}>
-            <RefreshCw className="h-4 w-4" /> {ui.refresh}
+          <Button variant="secondary" onClick={state.reload} disabled={state.status === 'loading'}
+                  aria-label={ui.refresh} title={ui.refresh}>
+            <RefreshCw className={`h-4 w-4 ${state.status === 'loading' ? 'animate-spin' : ''}`} aria-hidden="true" />
+            <span className="hidden sm:inline">{ui.refresh}</span>
           </Button>
         </div>
       </div>

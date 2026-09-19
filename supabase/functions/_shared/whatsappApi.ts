@@ -203,8 +203,8 @@ export async function sendWhatsAppDocument(
   link: string,
   filename: string,
   caption?: string,
-): Promise<{ ok: boolean; status: number | null; code: number | null }> {
-  if (!/^\+[1-9]\d{7,14}$/.test(toE164)) return { ok: false, status: null, code: null };
+): Promise<{ ok: boolean; status: number | null; code: number | null; messageId: string | null }> {
+  if (!/^\+[1-9]\d{7,14}$/.test(toE164)) return { ok: false, status: null, code: null, messageId: null };
   const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
   if (!phoneNumberId) throw new Error('WHATSAPP_PHONE_NUMBER_ID not set');
 
@@ -223,10 +223,10 @@ export async function sendWhatsAppDocument(
         document: { link, filename, ...(caption ? { caption } : {}) },
       }),
     });
-    const body = await res.json().catch(() => ({})) as { error?: { code?: number } };
-    return { ok: res.ok, status: res.status, code: body.error?.code ?? null };
+    const body = await res.json().catch(() => ({})) as { error?: { code?: number }; messages?: Array<{ id?: string }> };
+    return { ok: res.ok, status: res.status, code: body.error?.code ?? null, messageId: String(body.messages?.[0]?.id ?? '') || null };
   } catch {
     // Never echo the link or the number: the link is a signed URL.
-    return { ok: false, status: null, code: null };
+    return { ok: false, status: null, code: null, messageId: null };
   }
 }
