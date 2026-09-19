@@ -278,6 +278,7 @@ Deno.serve(async (req) => {
   for (const claim of claims) {
     let path: string | null = null;
     let sent = false;
+    let messageId: string | null = null;
     let failure: string | null = null;
     try {
       const bytes = await buildPdf(claim);
@@ -304,7 +305,7 @@ Deno.serve(async (req) => {
             : `Invoice ${claim.invoiceNo} from ${claim.supplierName}. Total ${claim.currency} ${money(claim.total)}.`,
         );
         sent = out.ok;
-        if (out.messageId) console.info('marketplace_invoice_sent', claim.invoiceNo, out.messageId);
+        messageId = out.messageId;
         if (!out.ok) {
           // 131047 is Meta refusing a message outside the 24h window. It needs
           // an approved template with a document header, not a retry.
@@ -324,6 +325,7 @@ Deno.serve(async (req) => {
     // in the app, which needs nobody's approval.
     await db.rpc('marketplace_mark_invoice', {
       p_order_id: claim.orderId, p_path: path, p_sent: sent, p_error: failure,
+      p_message_id: messageId, p_sent_to: claim.buyerPhone,
     });
   }
 
