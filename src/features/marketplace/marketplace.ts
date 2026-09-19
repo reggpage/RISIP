@@ -17,6 +17,8 @@ export type MarketplaceSettings = {
   indexedProducts: number;
   /** Products with a count fresh enough to be offered — what joining would publish. */
   countedProducts: number;
+  /** Indexed but too old to be returned: the number that explains an empty marketplace. */
+  staleProducts: number;
   ordersIncoming: number;
   ordersOutgoing: number;
 };
@@ -46,8 +48,8 @@ function unwrap<T>(data: unknown, error: unknown, fallback: T): T {
 export async function fetchMarketplaceSettings(): Promise<MarketplaceSettings> {
   const { data, error } = await supabase.rpc('marketplace_my_settings');
   return unwrap<MarketplaceSettings>(data, error, {
-    companyId: '', optIn: false, sharePrices: false, maxStockAgeDays: 14,
-    optedInAt: null, indexedProducts: 0, countedProducts: 0,
+    companyId: '', optIn: false, sharePrices: false, maxStockAgeDays: 30,
+    optedInAt: null, indexedProducts: 0, countedProducts: 0, staleProducts: 0,
     ordersIncoming: 0, ordersOutgoing: 0,
   });
 }
@@ -55,7 +57,7 @@ export async function fetchMarketplaceSettings(): Promise<MarketplaceSettings> {
 export async function setMarketplaceOptIn(
   optIn: boolean,
   sharePrices: boolean,
-  maxStockAgeDays = 14,
+  maxStockAgeDays = 30,
 ): Promise<void> {
   const { error } = await supabase.rpc('marketplace_set_my_optin', {
     p_opt_in: optIn,

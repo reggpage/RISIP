@@ -144,8 +144,8 @@ export default function MarketplacePage() {
                 <p className="mt-1 text-sm text-ink-muted">
                   {settings?.optIn
                     ? (sw
-                      ? `Bidhaa ${settings.indexedProducts} zinaonekana kwa maduka mengine yaliyojiunga.`
-                      : `${settings.indexedProducts} products are visible to other joined shops.`)
+                      ? `Bidhaa ${settings.indexedProducts - settings.staleProducts} kati ya ${settings.indexedProducts} zinaonekana kwa maduka mengine.`
+                      : `${settings.indexedProducts - settings.staleProducts} of ${settings.indexedProducts} products are visible to other shops.`)
                     : (sw
                       ? `Ukijiunga, bidhaa ${settings?.countedProducts ?? 0} zenye hesabu mpya zitaonekana kwa maduka mengine yaliyojiunga — nao utaona zao.`
                       : `If you join, ${settings?.countedProducts ?? 0} recently counted products become visible to other joined shops — and you can see theirs.`)}
@@ -155,6 +155,16 @@ export default function MarketplacePage() {
                     {sw
                       ? 'Bei haionyeshwi isipokuwa ukiruhusu. Unaweza kujitoa wakati wowote.'
                       : 'Prices stay hidden unless you allow them. You can leave at any time.'}
+                  </p>
+                )}
+                {/* Without this line an empty marketplace looks broken. A stale
+                    count is not evidence the goods are still on the shelf, so
+                    it is held back — but the shop has to be told that is why. */}
+                {settings?.optIn && settings.staleProducts > 0 && (
+                  <p className="mt-2 text-xs text-amber-700">
+                    {sw
+                      ? `Bidhaa ${settings.staleProducts} hazionekani kwa sababu hesabu yake ni ya zaidi ya siku ${settings.maxStockAgeDays}. Hesabu upya ili zionekane.`
+                      : `${settings.staleProducts} products are hidden because their stock count is older than ${settings.maxStockAgeDays} days. Count them again to make them visible.`}
                   </p>
                 )}
               </div>

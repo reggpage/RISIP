@@ -992,6 +992,7 @@ export type Database = {
           optedInAt: string | null;
           indexedProducts: number;
           countedProducts: number;
+          staleProducts: number;
           ordersIncoming: number;
           ordersOutgoing: number;
         };
