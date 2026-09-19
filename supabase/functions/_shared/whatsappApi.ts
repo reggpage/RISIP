@@ -183,3 +183,50 @@ export async function downloadMedia(url: string): Promise<{ bytes: Uint8Array; m
   const mimeType = (res.headers.get('content-type') || '').split(';')[0].trim();
   return { bytes: new Uint8Array(await res.arrayBuffer()), mimeType };
 }
+
+/**
+ * Send a PDF (or any document) by public link.
+ *
+ * Meta fetches the URL server-side at send time, so a time-limited Supabase
+ * signed URL works and the file never has to be public. The link only has to
+ * outlive the send, not the conversation.
+ *
+ * Returns Meta's status and error code rather than throwing, because the
+ * caller records the outcome against the order: an invoice that failed to
+ * reach the buyer must be visible, not swallowed. A send outside the 24-hour
+ * service window is refused by Meta with 131047 and needs an approved template
+ * with a document header — that is a business-account matter, not a bug, and
+ * the code is preserved so it can be told apart from a real failure.
+ */
+export async function sendWhatsAppDocument(
+  toE164: string,
+  link: string,
+  filename: string,
+  caption?: string,
+): Promise<{ ok: boolean; status: number | null; code: number | null }> {
+  if (!/^\+[1-9]\d{7,14}$/.test(toE164)) return { ok: false, status: null, code: null };
+  const phoneNumberId = Deno.env.get('WHATSAPP_PHONE_NUMBER_ID');
+  if (!phoneNumberId) throw new Error('WHATSAPP_PHONE_NUMBER_ID not set');
+
+  try {
+    const res = await fetch(`${apiBase()}/${phoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken()}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: toE164.replace(/\D/g, ''),
+        type: 'document',
+        document: { link, filename, ...(caption ? { caption } : {}) },
+      }),
+    });
+    const body = await res.json().catch(() => ({})) as { error?: { code?: number } };
+    return { ok: res.ok, status: res.status, code: body.error?.code ?? null };
+  } catch {
+    // Never echo the link or the number: the link is a signed URL.
+    return { ok: false, status: null, code: null };
+  }
+}
