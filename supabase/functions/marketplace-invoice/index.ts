@@ -8,10 +8,47 @@
 // Money note: nothing here computes a price. unit_price came from the
 // supplier's own wholesale price at the moment the order was placed, and the
 // total was fixed in marketplace_claim_invoices. This renders what was agreed.
+//
+// DESIGN: bank statement, not brochure. Black on white, ruled columns, one
+// weight of line, no colour. A trader files this next to bank slips and TRA
+// receipts; it has to look like it belongs in that pile, and it has to survive
+// a monochrome shop printer without losing a single distinction.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { PDFDocument, StandardFonts, rgb } from 'https://esm.sh/pdf-lib@1.17.1';
+// Pure JS, no Node builtins: it returns the module grid and we draw it with
+// pdf-lib, so no image encoder and no polyfill are involved.
+import qrcode from 'https://esm.sh/qrcode-generator@1.4.4';
+// pdf-lib only embeds the 14 standard PDF fonts on its own. Anything else —
+// Poppins included — needs fontkit registered first.
+import fontkit from 'https://esm.sh/@pdf-lib/fontkit@1.1.1';
 import { corsHeaders } from '../_shared/cors.ts';
 import { sendWhatsAppDocument } from '../_shared/whatsappApi.ts';
+
+const LOGO_URL = 'https://www.risip.online/icon-192.png';
+// Poppins, the family the rest of Risip uses. Google's own font repository,
+// pinned by path rather than by a CSS API that would hand back woff2 — fontkit
+// wants a real TTF.
+const POPPINS = {
+  regular: 'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Regular.ttf',
+  semibold: 'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-SemiBold.ttf',
+};
+
+// Fetched once per cold start, not per invoice.
+const assetCache = new Map<string, Uint8Array | null>();
+async function asset(url: string): Promise<Uint8Array | null> {
+  if (assetCache.has(url)) return assetCache.get(url) ?? null;
+  let bytes: Uint8Array | null = null;
+  try {
+    const res = await fetch(url);
+    bytes = res.ok ? new Uint8Array(await res.arrayBuffer()) : null;
+  } catch {
+    // An invoice in Helvetica, or without a logo, is still a valid invoice.
+    // An invoice that failed to build because a CDN was slow is not.
+    bytes = null;
+  }
+  assetCache.set(url, bytes);
+  return bytes;
+}
 
 type Claim = {
   orderId: string;
@@ -27,6 +64,9 @@ type Claim = {
   buyerCompanyId: string;
   buyerName: string;
   supplierName: string;
+  supplierContactName: string | null;
+  supplierPhone: string | null;
+  supplierWhatsapp: string | null;
   buyerPhone: string | null;
   lang: string;
 };
@@ -44,104 +84,169 @@ const day = (iso: string | null) => (iso ? new Date(iso).toISOString().slice(0, 
 async function buildPdf(claim: Claim): Promise<Uint8Array> {
   const sw = claim.lang === 'sw';
   const doc = await PDFDocument.create();
+  doc.registerFontkit(fontkit);
   // A4, the paper a Tanzanian shop actually prints on.
   const page = doc.addPage([595.28, 841.89]);
-  const font = await doc.embedFont(StandardFonts.Helvetica);
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-  const ink = rgb(0.08, 0.09, 0.13);
-  const muted = rgb(0.42, 0.45, 0.5);
-  const line = rgb(0.85, 0.87, 0.9);
 
-  // Brand red, the colour the sidebar uses. One accent, used three times, so
-  // the page reads as Risip without becoming a poster.
-  const brand = rgb(0.53, 0.05, 0.12);
+  // Poppins where it can be had, Helvetica where it cannot. Subset so the PDF
+  // stays small enough to arrive over mobile data: the full family is ~160KB
+  // per weight, the glyphs an invoice actually uses are a fraction of that.
+  const [regularTtf, semiboldTtf] = await Promise.all([
+    asset(POPPINS.regular), asset(POPPINS.semibold),
+  ]);
+  const font = regularTtf
+    ? await doc.embedFont(regularTtf, { subset: true })
+    : await doc.embedFont(StandardFonts.Helvetica);
+  const bold = semiboldTtf
+    ? await doc.embedFont(semiboldTtf, { subset: true })
+    : await doc.embedFont(StandardFonts.HelveticaBold);
 
-  let y = 780;
-  const text = (s: string, x: number, size: number, f = font, color = ink) => {
+  // Monochrome only. Three greys do all the work a colour palette would.
+  const black = rgb(0, 0, 0);
+  const grey = rgb(0.45, 0.45, 0.45);
+  const hair = rgb(0.72, 0.72, 0.72);
+  const L = 50, R = 545;
+
+  let y = 0;
+  const text = (s: string, x: number, size: number, f = font, color = black) =>
     page.drawText(s, { x, y, size, font: f, color });
-  };
-  // Right-align against a column edge, so figures line up on their last digit
-  // rather than their first — the whole point of a money column.
-  const right = (s: string, edge: number, size: number, f = font, color = ink) => {
+  // Money right-aligns on its last digit. That is the entire reason a
+  // statement is readable at a glance.
+  const right = (s: string, edge: number, size: number, f = font, color = black) =>
     page.drawText(s, { x: edge - f.widthOfTextAtSize(s, size), y, size, font: f, color });
-  };
+  const rule = (at: number, thickness = 0.75, color = hair) =>
+    page.drawLine({ start: { x: L, y: at }, end: { x: R, y: at }, thickness, color });
 
-  page.drawRectangle({ x: 0, y: 792, width: 595.28, height: 50, color: brand });
-  y = 810;
-  text('RISIP', 50, 18, bold, rgb(1, 1, 1));
-  right(sw ? 'ANKARA' : 'INVOICE', 545, 18, bold, rgb(1, 1, 1));
+  // ── Masthead ────────────────────────────────────────────────────────────
+  const logo = await asset(LOGO_URL);
+  if (logo) {
+    try {
+      const png = await doc.embedPng(logo);
+      page.drawImage(png, { x: L, y: 762, width: 38, height: 38 });
+    } catch { /* a bad logo must never cost the invoice */ }
+  }
+  y = 788;
+  text('RISIP', logo ? L + 48 : L, 17, bold);
+  y = 772;
+  text(sw ? 'Mfumo wa biashara' : 'Business system', logo ? L + 48 : L, 8, font, grey);
 
-  y = 755;
-  text(claim.invoiceNo, 50, 20, bold);
-  y -= 16;
-  text(sw ? 'Ankara ya mzigo kati ya maduka' : 'Shop-to-shop restock invoice', 50, 9, font, muted);
+  y = 788;
+  right(sw ? 'ANKARA' : 'INVOICE', R, 17, bold);
+  y = 772;
+  right(claim.invoiceNo, R, 9, bold, grey);
 
-  y = 720;
-  page.drawLine({ start: { x: 50, y }, end: { x: 545, y }, thickness: 1, color: line });
+  rule(752, 1.2, black);
 
-  // Who owes whom. Named plainly: this is the document a trader files.
-  y -= 30;
-  text(sw ? 'MUUZAJI' : 'SUPPLIER', 50, 9, bold, muted);
-  text(sw ? 'MNUNUZI' : 'BUYER', 320, 9, bold, muted);
-  y -= 16;
-  text(claim.supplierName, 50, 12, bold);
-  text(claim.buyerName, 320, 12, bold);
+  // ── Parties ─────────────────────────────────────────────────────────────
+  const mid = 310;
+  y = 734;
+  text(sw ? 'MUUZAJI' : 'SUPPLIER', L, 8, bold, grey);
+  text(sw ? 'MNUNUZI' : 'BUYER', mid, 8, bold, grey);
+  y = 718;
+  text(claim.supplierName, L, 11, bold);
+  text(claim.buyerName, mid, 11, bold);
 
-  y -= 34;
-  text(sw ? 'Tarehe ya oda' : 'Ordered', 50, 9, bold, muted);
-  text(sw ? 'Tarehe ya kufikishwa' : 'Delivered', 320, 9, bold, muted);
-  y -= 15;
-  text(day(claim.placedAt), 50, 11);
-  text(day(claim.deliveredAt), 320, 11);
+  // The contact block. An invoice about a trade between two shops that does
+  // not say how to reach the other shop sends the trader back to the app.
+  y = 702;
+  if (claim.supplierContactName) text(claim.supplierContactName, L, 9, font, grey);
+  if (claim.supplierPhone) { y -= 12; text(`${sw ? 'Simu' : 'Phone'}: ${claim.supplierPhone}`, L, 9); }
+  if (claim.supplierWhatsapp && claim.supplierWhatsapp !== claim.supplierPhone) {
+    y -= 12; text(`WhatsApp: ${claim.supplierWhatsapp}`, L, 9);
+  }
 
-  y -= 44;
-  page.drawRectangle({ x: 50, y: y - 8, width: 495, height: 26, color: rgb(0.96, 0.97, 0.98) });
-  text(sw ? 'BIDHAA' : 'ITEM', 60, 9, bold, muted);
-  right(sw ? 'IDADI' : 'QTY', 360, 9, bold, muted);
-  right(sw ? 'BEI' : 'UNIT PRICE', 450, 9, bold, muted);
-  right(sw ? 'JUMLA' : 'AMOUNT', 535, 9, bold, muted);
+  y = 674;
+  text(`${sw ? 'Tarehe ya oda' : 'Order date'}: ${day(claim.placedAt)}`, mid, 9, font, grey);
+  y -= 12;
+  text(`${sw ? 'Imefikishwa' : 'Delivered'}: ${day(claim.deliveredAt)}`, mid, 9, font, grey);
 
-  y -= 30;
-  text(claim.productName, 60, 11);
-  right(`${money(claim.quantity)}${claim.unit ? ` ${claim.unit}` : ''}`, 360, 11);
-  right(money(claim.unitPrice), 450, 11);
-  right(money(claim.total), 535, 11);
+  rule(648);
 
-  y -= 18;
-  page.drawLine({ start: { x: 50, y }, end: { x: 545, y }, thickness: 1, color: line });
+  // ── Line items ──────────────────────────────────────────────────────────
+  const cQty = 360, cUnit = 450, cAmt = R;
+  y = 630;
+  text(sw ? 'BIDHAA' : 'DESCRIPTION', L, 8, bold, grey);
+  right(sw ? 'IDADI' : 'QTY', cQty, 8, bold, grey);
+  right(sw ? 'BEI' : 'UNIT PRICE', cUnit, 8, bold, grey);
+  right(sw ? 'KIASI' : 'AMOUNT', cAmt, 8, bold, grey);
+  rule(622);
 
-  // The figure the trader is looking for, given its own block so the eye lands
-  // on it without reading the rest.
-  y -= 44;
-  page.drawRectangle({ x: 330, y: y - 12, width: 215, height: 44, color: rgb(0.98, 0.95, 0.96) });
-  y += 10;
-  text(sw ? 'JUMLA KUU' : 'TOTAL DUE', 342, 9, bold, muted);
-  y -= 20;
-  right(`${claim.currency} ${money(claim.total)}`, 535, 16, bold, brand);
+  y = 604;
+  text(claim.productName, L, 10);
+  right(`${money(claim.quantity)}${claim.unit ? ` ${claim.unit}` : ''}`, cQty, 10);
+  right(money(claim.unitPrice), cUnit, 10);
+  right(money(claim.total), cAmt, 10);
 
-  // Payment is explicitly out of scope: Risip records the trade, the two shops
-  // settle it between themselves. Saying so ON the document, in a box rather
-  // than in small print, is what stops a shop believing Risip took the money.
-  y -= 70;
-  page.drawRectangle({ x: 50, y: y - 16, width: 495, height: 36, color: rgb(0.97, 0.98, 0.99) });
-  page.drawRectangle({ x: 50, y: y - 16, width: 3, height: 36, color: brand });
-  y += 6;
+  rule(588);
+
+  // ── Total ───────────────────────────────────────────────────────────────
+  // Double rule under the total: the statement convention for "this is the
+  // figure", achieved without a single drop of ink that is not black.
+  y = 568;
+  right(sw ? 'JUMLA KUU' : 'TOTAL DUE', cUnit, 9, bold, grey);
+  right(`${claim.currency} ${money(claim.total)}`, cAmt, 13, bold);
+  page.drawLine({ start: { x: cUnit - 70, y: 560 }, end: { x: R, y: 560 }, thickness: 0.75, color: black });
+  page.drawLine({ start: { x: cUnit - 70, y: 557 }, end: { x: R, y: 557 }, thickness: 0.75, color: black });
+
+  // ── QR + settlement note ────────────────────────────────────────────────
+  // The QR opens a WhatsApp chat with the supplier. On a printed slip it is
+  // the only part a phone can act on, which is why it earns the space.
+  const waNumber = (claim.supplierWhatsapp ?? claim.supplierPhone ?? '').replace(/\D/g, '');
+  const qrTarget = waNumber
+    ? `https://wa.me/${waNumber}`
+    : `${claim.invoiceNo} ${claim.supplierName} ${claim.currency} ${money(claim.total)}`;
+  try {
+    const qr = qrcode(0, 'M');
+    qr.addData(qrTarget);
+    qr.make();
+    const count = qr.getModuleCount();
+    const box = 90;
+    const cell = box / count;
+    const qx = L, qy = 430;
+    for (let r = 0; r < count; r++) {
+      for (let c = 0; c < count; c++) {
+        if (!qr.isDark(r, c)) continue;
+        page.drawRectangle({
+          x: qx + c * cell,
+          y: qy + box - (r + 1) * cell,
+          width: cell, height: cell, color: black,
+        });
+      }
+    }
+    y = qy - 14;
+    text(sw ? 'Scan kuwasiliana na muuzaji' : 'Scan to message the supplier', qx, 7, font, grey);
+  } catch { /* no QR is survivable; a failed invoice is not */ }
+
+  y = 500;
+  text(sw ? 'MALIPO' : 'PAYMENT', 165, 8, bold, grey);
+  y = 484;
   text(
-    sw
-      ? 'Malipo hufanyika kati ya maduka yenyewe.'
-      : 'Payment is settled directly between the two shops.',
-    64, 10, bold,
+    sw ? 'Malipo hufanyika kati ya maduka yenyewe.'
+       : 'Payment is settled directly between the two shops.',
+    165, 10, bold,
   );
   y -= 14;
   text(
-    sw ? 'Risip haipokei fedha za bidhaa.' : 'Risip does not collect money for goods.',
-    64, 9, font, muted,
+    sw ? 'Risip haipokei fedha za bidhaa.'
+       : 'Risip does not collect money for goods.',
+    165, 9, font, grey,
   );
+  if (claim.supplierPhone) {
+    y -= 18;
+    text(`${sw ? 'Piga' : 'Call'}: ${claim.supplierPhone}`, 165, 10, bold);
+  }
 
-  y = 60;
-  page.drawLine({ start: { x: 50, y: y + 16 }, end: { x: 545, y: y + 16 }, thickness: 1, color: line });
-  text(sw ? 'Imetengenezwa na Risip' : 'Generated by Risip', 50, 8, font, muted);
-  right(day(claim.deliveredAt), 545, 8, font, muted);
+  // ── Foot ────────────────────────────────────────────────────────────────
+  rule(96);
+  y = 82;
+  text(sw ? 'Imetengenezwa na Risip' : 'Generated by Risip', L, 8, font, grey);
+  right(claim.invoiceNo, R, 8, font, grey);
+  y = 70;
+  text(
+    sw ? 'Hati hii ni kumbukumbu ya manunuzi kati ya maduka mawili.'
+       : 'This document records a purchase between two shops.',
+    L, 8, font, grey,
+  );
 
   return await doc.save();
 }
@@ -181,7 +286,7 @@ Deno.serve(async (req) => {
       path = `${claim.orderId}/invoice.pdf`;
       const up = await db.storage.from('invoices')
         .upload(path, bytes, { contentType: 'application/pdf', upsert: true });
-      if (up.error) throw new Error(`upload_failed`);
+      if (up.error) throw new Error('upload_failed');
       result.built += 1;
 
       if (claim.buyerPhone) {
