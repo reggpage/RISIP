@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertTriangle, Bell, Building2, Check, ChevronRight, Copy, CreditCard, Languages, LogOut, Mail, MessageCircle, Printer, User, Users } from 'lucide-react';
+import { AlertTriangle, Bell, Building2, Check, ChevronRight, Copy, CreditCard, Store, Languages, LogOut, Mail, MessageCircle, Printer, User, Users } from 'lucide-react';
 import { getLang, setLang, LANG_OPTIONS, type LangCode } from '@/lib/lang';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -426,6 +426,18 @@ export default function SettingsPage() {
         {/* ── App shortcuts — the navigation drawer has moved in here ─────────── */}
         <Card className="mb-6 overflow-hidden">
           <ul className="flex flex-col divide-y divide-surface-border">
+            {/* The sidebar is desktop-only and the bottom tab bar holds five
+                fixed tabs, so on a phone this is the only way in — the same
+                reason Chat and Billing live here. */}
+            <li>
+              <Link to="/marketplace" className="flex items-center gap-3 px-5 py-4 hover:bg-surface-muted">
+                <Store className="h-5 w-5 shrink-0 text-ink-muted" />
+                <span className="flex-1 text-sm font-medium text-ink">
+                  {getLang() === 'sw' ? 'Mzigo kwa maduka' : 'Restock marketplace'}
+                </span>
+                <ChevronRight className="h-4 w-4 text-ink-muted" />
+              </Link>
+            </li>
             <li>
               <Link to="/chat" className="flex items-center gap-3 px-5 py-4 hover:bg-surface-muted">
                 <MessageCircle className="h-5 w-5 shrink-0 text-ink-muted" />
