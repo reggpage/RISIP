@@ -49,6 +49,7 @@ import {
   startWhatsAppTurnHeartbeat,
   waitForWhatsAppTurn,
 } from '../_shared/whatsappTurn.ts';
+import { marketplaceSearch, marketplaceOrder, marketplaceConfirm } from '../_shared/whatsappMarketplace.ts';
 import { looksLikeMachineText } from '../_shared/whatsappMachineText.ts';
 import {
   isProactiveNotificationStop,
@@ -6354,6 +6355,39 @@ ${trendShapeFacts(days)}`,
     // question landing on receivables because no payables tool existed at all.
     const supplier = typeof input.supplier_wording === 'string' ? input.supplier_wording.trim() : '';
     return { content: await supplierBalanceReply(db, identity, { supplierName: supplier || null }, lang) };
+  }
+  // ── Cross-shop restocking ────────────────────────────────────────────────
+  // The only path in Risip where one company is shown another's stock. Consent
+  // is mutual and checked in the database, not here.
+  if (name === 'find_restock_suppliers') {
+    const product = typeof input.product === 'string' ? input.product.trim() : '';
+    if (!product) {
+      const ask = lang === 'sw'
+        ? 'Umeishiwa nini? Taja bidhaa, mf. "Nimeishiwa sabuni".'
+        : 'What have you run out of? Name the product, e.g. "I have run out of soap".';
+      return { content: 'marketplace_missing_product', isError: true, terminalReply: ask };
+    }
+    return await marketplaceSearch(
+      db, identity.company_id, identity.profile_id, product, lang === 'sw' ? 'sw' : 'en',
+    );
+  }
+  if (name === 'place_restock_order') {
+    const optionIndex = Number(input.option_index);
+    const quantity = Number(input.quantity);
+    if (!Number.isInteger(optionIndex) || optionIndex < 1 || !Number.isFinite(quantity) || quantity <= 0) {
+      const ask = lang === 'sw'
+        ? 'Chagua namba kutoka kwenye orodha na useme kiasi, mf. "2 x 50".'
+        : 'Pick a number from the list and say how many, e.g. "2 x 50".';
+      return { content: 'marketplace_bad_choice', isError: true, terminalReply: ask };
+    }
+    return await marketplaceOrder(
+      db, identity.company_id, identity.profile_id, optionIndex, quantity, lang === 'sw' ? 'sw' : 'en',
+    );
+  }
+  if (name === 'answer_restock_order') {
+    const accept = input.accept === true;
+    const reason = typeof input.reason === 'string' && input.reason.trim() ? input.reason.trim() : null;
+    return await marketplaceConfirm(db, identity.company_id, accept, reason, lang === 'sw' ? 'sw' : 'en');
   }
   if (name === 'propose_catalogue_transaction') {
     const interpreted = validateAiTransactionCandidate(input);
