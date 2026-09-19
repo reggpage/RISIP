@@ -140,7 +140,16 @@ Deno.serve(async (req) => {
     return json({ error: 'misconfigured' }, 500);
   }
 
-  if (!serviceRequest(req, serviceKey)) return json({ error: 'forbidden' }, 403);
+  // Two ways in, both trusted. The Bearer service key is how the Vercel cron
+  // called this; pg_cron uses a scoped secret instead, because a scheduler
+  // holding the service key can do anything in the project while this one only
+  // needs to drain a notification queue. The old path stays until the Vercel
+  // schedule is actually switched off, so the reminders cannot fall down the
+  // gap between the two arrangements.
+  const cronSecret = Deno.env.get('NOTIFICATIONS_CRON_SECRET') ?? '';
+  const givenSecret = req.headers.get('x-notifications-secret') ?? '';
+  const bySecret = cronSecret !== '' && givenSecret === cronSecret;
+  if (!bySecret && !serviceRequest(req, serviceKey)) return json({ error: 'forbidden' }, 403);
 
   const db = createClient(supabaseUrl, serviceKey, {
     auth: { persistSession: false, autoRefreshToken: false },
