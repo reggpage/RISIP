@@ -189,12 +189,27 @@ async function buildPdf(claim: Claim): Promise<Uint8Array> {
   page.drawLine({ start: { x: cUnit - 70, y: 557 }, end: { x: R, y: 557 }, thickness: 0.75, color: black });
 
   // ── QR + settlement note ────────────────────────────────────────────────
-  // The QR opens a WhatsApp chat with the supplier. On a printed slip it is
-  // the only part a phone can act on, which is why it earns the space.
-  const waNumber = (claim.supplierWhatsapp ?? claim.supplierPhone ?? '').replace(/\D/g, '');
-  const qrTarget = waNumber
-    ? `https://wa.me/${waNumber}`
-    : `${claim.invoiceNo} ${claim.supplierName} ${claim.currency} ${money(claim.total)}`;
+  // A vCard, not a payment link. This is a record document: months later the
+  // useful question is "who did I buy this from and how do I reach them", and
+  // a scan should answer it by offering to save the shop as a contact that
+  // stays on the phone. A wa.me link opens a chat window and leaves nothing
+  // behind — and on an invoice, anything that looks like a payment action
+  // invites the wrong conclusion about who is owed what.
+  const vcard = [
+    'BEGIN:VCARD',
+    'VERSION:3.0',
+    `FN:${claim.supplierName}`,
+    `ORG:${claim.supplierName}`,
+    ...(claim.supplierContactName ? [`N:;${claim.supplierContactName};;;`] : []),
+    ...(claim.supplierPhone ? [`TEL;TYPE=CELL:${claim.supplierPhone}`] : []),
+    ...(claim.supplierWhatsapp && claim.supplierWhatsapp !== claim.supplierPhone
+      ? [`TEL;TYPE=WORK:${claim.supplierWhatsapp}`] : []),
+    // The trade it came from, so a saved contact still points back at the
+    // invoice that created it.
+    `NOTE:${claim.invoiceNo} - ${claim.currency} ${money(claim.total)}`,
+    'END:VCARD',
+  ];
+  const qrTarget = vcard.join('\n');
   try {
     const qr = qrcode(0, 'M');
     qr.addData(qrTarget);
@@ -214,7 +229,9 @@ async function buildPdf(claim: Claim): Promise<Uint8Array> {
       }
     }
     y = qy - 14;
-    text(sw ? 'Scan kuwasiliana na muuzaji' : 'Scan to message the supplier', qx, 7, font, grey);
+    text(sw ? 'Scan kuhifadhi mawasiliano' : 'Scan to save shop contact', qx, 7, font, grey);
+    y -= 10;
+    text(sw ? 'ya duka hili' : 'details', qx, 7, font, grey);
   } catch { /* no QR is survivable; a failed invoice is not */ }
 
   y = 500;
