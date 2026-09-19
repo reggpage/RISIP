@@ -977,6 +977,47 @@ export type Database = {
        * Null when the shop may write. A reason when it may not, so a banner can
        * go up BEFORE somebody types a sale and loses it to an exception.
        */
+      /**
+       * Cross-shop restocking. The company is derived from the caller inside
+       * each function, never passed from the browser, so a tampered client
+       * cannot read or join on behalf of another business.
+       */
+      marketplace_my_settings: {
+        Args: Record<string, never>;
+        Returns: {
+          companyId: string;
+          optIn: boolean;
+          sharePrices: boolean;
+          maxStockAgeDays: number;
+          optedInAt: string | null;
+          indexedProducts: number;
+          countedProducts: number;
+          ordersIncoming: number;
+          ordersOutgoing: number;
+        };
+      };
+      marketplace_set_my_optin: {
+        Args: { p_opt_in: boolean; p_share_prices?: boolean; p_max_stock_age_days?: number };
+        Returns: {
+          companyId: string;
+          optIn: boolean;
+          sharePrices: boolean;
+          maxStockAgeDays: number;
+          indexedProducts: number;
+        };
+      };
+      marketplace_my_incoming_orders: {
+        Args: { p_status?: string | null };
+        Returns: unknown;
+      };
+      marketplace_my_outgoing_orders: {
+        Args: { p_status?: string | null };
+        Returns: unknown;
+      };
+      marketplace_answer_order: {
+        Args: { p_order_id: string; p_status: string; p_reason?: string | null };
+        Returns: { orderId: string; status: string };
+      };
       billing_write_block: {
         Args: Record<string, never>;
         Returns: {

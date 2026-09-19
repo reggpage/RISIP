@@ -106,6 +106,9 @@ describe('the two receipt tools', () => {
     // Twenty-nine since get_my_subscription: the shop could not ask what it was
     // paying for, and the answer must be visible to the model or the question
     // has nowhere to land.
-    expect(shown).toHaveLength(33);
+    // Thirty-six since the restock marketplace: search_restock_suppliers,
+    // propose_restock_order and propose_restock_answer. Cross-shop restocking
+    // is a shop question, so the model must be able to see it.
+    expect(shown).toHaveLength(36);
   });
 });

@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, FolderKanban, Receipt, FileText, Settings, Wallet, LogOut, Handshake, Bell, HandCoins,
-  Banknote, ClipboardList, Package, ScanLine, CreditCard, MessageCircle,
+  Banknote, ClipboardList, Package, ScanLine, CreditCard, MessageCircle, Store,
 } from 'lucide-react';
 import RisipLogo from '@/components/ui/RisipLogo';
 import { useNotifications } from '@/features/notifications/notifications';
@@ -28,6 +28,7 @@ const allItems: Item[] = [
   // Selling sits above everything else: it is the thing a shop does all day.
   { key: 'sell', to: '/sell', label: getLang() === 'sw' ? 'Uza kwa scan' : 'Sell by scan', icon: ScanLine, allowed: ['owner', 'accountant', 'worker'] },
   { key: 'products', to: '/products', label: getLang() === 'sw' ? 'Bidhaa' : 'Products', icon: Package, allowed: ['owner', 'accountant', 'worker'] },
+  { key: 'marketplace', to: '/marketplace', label: getLang() === 'sw' ? 'Mzigo kwa maduka' : 'Restock marketplace', icon: Store, allowed: ['owner', 'accountant'] },
   { key: 'daily-records', to: '/daily-records', label: getLang() === 'sw' ? 'Rekodi za Siku' : 'Daily Records', icon: ClipboardList, allowed: ['owner', 'accountant', 'worker'] },
   { key: 'notifications', to: '/notifications', label: getLang() === 'sw' ? 'Taarifa' : 'Notifications', icon: Bell, allowed: ['owner', 'accountant', 'worker'] },
   { key: 'billing', to: '/billing', label: getLang() === 'sw' ? 'Bili' : 'Billing', icon: CreditCard, allowed: ['owner'] },

@@ -436,9 +436,9 @@ export const ASSISTANT_TOOL_NAMES = [
   'request_account_action',
   // Cross-shop restocking. The only path in Risip where one company sees
   // another's stock, gated on mutual opt-in in company_marketplace_settings.
-  'find_restock_suppliers',
-  'place_restock_order',
-  'answer_restock_order',
+  'search_restock_suppliers',
+  'propose_restock_order',
+  'propose_restock_answer',
 ] as const;
 
 function tool(
@@ -477,7 +477,7 @@ const CONTRACTOR_TOOLS = new Set([
 
 const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
   tool(
-    'find_restock_suppliers',
+    'search_restock_suppliers',
     'Finds OTHER shops that currently hold a product, after the trader says they have run out of it or asks where to buy more. '
       + 'Use for "nimeishiwa sabuni", "sabuni imeisha", "nani ana unga", "nataka kununua sukari kwa jumla". '
       + 'This is NOT a sale, an expense, a stock count or a purchase the trader already made: "nimenunua sabuni 10" is a restock they ALREADY bought and belongs to a money-event tool, while "nimeishiwa sabuni" is asking where to buy. '
@@ -486,30 +486,29 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
       product: {
         type: 'string',
         description: 'The product exactly as the trader wrote it, including size or pack words. "sabuni ya unga 500g" stays whole; do not shorten to "sabuni".',
-        maxLength: 120,
       },
     },
     ['product'],
   ),
   tool(
-    'place_restock_order',
-    'Places an order against the numbered list of shops the trader was just shown by find_restock_suppliers. '
+    'propose_restock_order',
+    'Places an order against the numbered list of shops the trader was just shown by search_restock_suppliers. '
       + 'Use when the reply picks from that list: "2 x 50", "namba 1 nipe 20", "ya pili". '
       + 'If the trader named a shop but no quantity, ask how much before calling this. Never guess a quantity.',
     {
-      option_index: { type: 'integer', minimum: 1, maximum: 10, description: 'Which shop from the list, starting at 1.' },
-      quantity: { type: 'number', minimum: 1, description: 'How many units to order.' },
+      option_index: { type: 'integer', description: 'Which shop from the list, starting at 1. The boundary rejects anything outside the list.' },
+      quantity: { type: 'number', description: 'How many units to order. Never guess: ask if the trader did not say.' },
     },
     ['option_index', 'quantity'],
   ),
   tool(
-    'answer_restock_order',
+    'propose_restock_answer',
     'Accepts or declines a restock order ANOTHER shop placed with this shop. '
       + 'Use when the trader is answering a new-order notification: "1", "ndio", "nakubali", "0", "hapana", "sina". '
       + 'Only the oldest order still waiting on this shop is affected.',
     {
       accept: { type: 'boolean', description: 'true to accept, false to decline.' },
-      reason: { type: ['string', 'null'], description: 'Why, if the trader said. Shown to the buyer. Otherwise null.', maxLength: 200 },
+      reason: { type: ['string', 'null'], description: 'Why, if the trader said. Shown to the buyer. Otherwise null.' },
     },
     ['accept', 'reason'],
   ),

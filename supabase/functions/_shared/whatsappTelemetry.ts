@@ -48,6 +48,7 @@ export type SemanticIntent =
   | 'approvals_query' | 'hypothetical_profit' | 'help'
   | 'conversational'
   | 'account_action'
+  | 'restock_search' | 'restock_order' | 'restock_answer'
   // A parked question answered through the model rather than by a parser.
   | 'clarification_answer'
   // Ending the trading day, and reading one day back entry by entry.
@@ -90,6 +91,9 @@ const TOOL_INTENT: Record<string, SemanticIntent> = {
   get_pending_approvals: 'approvals_query',
   get_stock_on_hand: 'stock_query',
   search_risip_help: 'help',
+  search_restock_suppliers: 'restock_search',
+  propose_restock_order: 'restock_order',
+  propose_restock_answer: 'restock_answer',
   get_supplier_payables: 'payables_query',
   respond_conversationally: 'conversational',
   propose_day_close: 'day_close',

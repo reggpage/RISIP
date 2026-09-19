@@ -49,7 +49,7 @@ import {
   startWhatsAppTurnHeartbeat,
   waitForWhatsAppTurn,
 } from '../_shared/whatsappTurn.ts';
-import { marketplaceSearch, marketplaceOrder, marketplaceConfirm } from '../_shared/whatsappMarketplace.ts';
+import { marketplaceSearch, marketplaceDraftOrder, marketplaceOrder, marketplaceConfirm } from '../_shared/whatsappMarketplace.ts';
 import { looksLikeMachineText } from '../_shared/whatsappMachineText.ts';
 import {
   isProactiveNotificationStop,
@@ -6359,7 +6359,7 @@ ${trendShapeFacts(days)}`,
   // ── Cross-shop restocking ────────────────────────────────────────────────
   // The only path in Risip where one company is shown another's stock. Consent
   // is mutual and checked in the database, not here.
-  if (name === 'find_restock_suppliers') {
+  if (name === 'search_restock_suppliers') {
     const product = typeof input.product === 'string' ? input.product.trim() : '';
     if (!product) {
       const ask = lang === 'sw'
@@ -6371,7 +6371,7 @@ ${trendShapeFacts(days)}`,
       db, identity.company_id, identity.profile_id, product, lang === 'sw' ? 'sw' : 'en',
     );
   }
-  if (name === 'place_restock_order') {
+  if (name === 'propose_restock_order') {
     const optionIndex = Number(input.option_index);
     const quantity = Number(input.quantity);
     if (!Number.isInteger(optionIndex) || optionIndex < 1 || !Number.isFinite(quantity) || quantity <= 0) {
@@ -6380,14 +6380,53 @@ ${trendShapeFacts(days)}`,
         : 'Pick a number from the list and say how many, e.g. "2 x 50".';
       return { content: 'marketplace_bad_choice', isError: true, terminalReply: ask };
     }
-    return await marketplaceOrder(
-      db, identity.company_id, identity.profile_id, optionIndex, quantity, lang === 'sw' ? 'sw' : 'en',
+    // Nothing is written yet. The model's reading of "2 x 50" becomes a draft
+    // and waits for NDIYO, exactly like a sale does — the far side of this is
+    // another business expecting to be paid.
+    const draft = await marketplaceDraftOrder(
+      db, identity.company_id, optionIndex, quantity, lang === 'sw' ? 'sw' : 'en',
     );
+    if (!draft.ok) {
+      return { content: 'marketplace_selection_expired', isError: true, terminalReply: draft.reply };
+    }
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id,
+      company_id: identity.company_id,
+      profile_id: identity.profile_id,
+      awaiting: 'restock_order',
+      receipt_id: null,
+      options: { kind: 'restock_order', option_index: optionIndex, quantity },
+      expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    }, { onConflict: 'identity_id' });
+    return { content: `marketplace_order_drafted=${optionIndex}x${quantity}`, terminalReply: draft.reply };
   }
-  if (name === 'answer_restock_order') {
+  if (name === 'propose_restock_answer') {
     const accept = input.accept === true;
     const reason = typeof input.reason === 'string' && input.reason.trim() ? input.reason.trim() : null;
-    return await marketplaceConfirm(db, identity.company_id, accept, reason, lang === 'sw' ? 'sw' : 'en');
+    const { data: waiting } = await db.rpc('marketplace_pending_confirmation', {
+      p_supplier_company_id: identity.company_id,
+    });
+    const pending = waiting as { productName: string; quantity: number; unit: string | null; buyerName: string } | null;
+    if (!pending) {
+      const none = lang === 'sw'
+        ? 'Hakuna oda inayosubiri jibu lako.'
+        : 'No order is waiting for your answer.';
+      return { content: 'marketplace_no_pending_order', isError: true, terminalReply: none };
+    }
+    const qty = `${Math.round(pending.quantity).toLocaleString('en-US')}${pending.unit ? ` ${pending.unit}` : ''}`;
+    const draft = lang === 'sw'
+      ? `${accept ? 'Kukubali' : 'Kukataa'} oda ya ${pending.buyerName}:\n${qty} ${pending.productName}\n\nNi sahihi? *1* Ndiyo · *2* Hapana`
+      : `${accept ? 'Accept' : 'Decline'} ${pending.buyerName}'s order:\n${qty} ${pending.productName}\n\nCorrect? *1* Yes · *2* No`;
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id,
+      company_id: identity.company_id,
+      profile_id: identity.profile_id,
+      awaiting: 'restock_answer',
+      receipt_id: null,
+      options: { kind: 'restock_answer', accept, reason },
+      expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+    }, { onConflict: 'identity_id' });
+    return { content: `marketplace_answer_drafted=${accept}`, terminalReply: draft };
   }
   if (name === 'propose_catalogue_transaction') {
     const interpreted = validateAiTransactionCandidate(input);
@@ -10350,6 +10389,62 @@ async function handleWebhook(req: Request, web?: NonNullable<ChatTransport['web'
         // here so the write happens on the shopkeeper's word, never the
         // model's. A rejection clears the draft and changes nothing — the
         // records stay exactly as they were.
+        // A RESTOCK ORDER, waiting to be sent. Parked by propose_restock_order;
+        // answered here so another business is only committed to on the
+        // shopkeeper's word, never the model's reading of "2 x 50".
+        if (convo?.awaiting === 'restock_order') {
+          if (isPendingEscape(body) || isCancel(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, lang === 'sw'
+              ? 'Sawa, sijatuma oda. Hakuna kilichobadilika.'
+              : 'Fine, I have not sent the order. Nothing has changed.');
+            await audit(db, identity, waMessageId, 'restock_order', 'cancelled', null);
+            await finish('cancelled');
+            continue;
+          }
+          if (isConfirm(body)) {
+            const parked = (convo?.options ?? {}) as { option_index?: number; quantity?: number };
+            const placed = await marketplaceOrder(
+              db, identity.company_id as string, identity.profile_id as string,
+              Number(parked.option_index), Number(parked.quantity), lang === 'sw' ? 'sw' : 'en',
+            );
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, placed.terminalReply);
+            await audit(db, identity, waMessageId, 'restock_order',
+              placed.isError ? 'failed' : 'applied', null);
+            await finish(placed.isError ? 'failed' : 'applied');
+            continue;
+          }
+        }
+
+        // ACCEPTING OR DECLINING another shop's order. Parked by
+        // propose_restock_answer. Accepting promises goods, so it is confirmed
+        // like every other write.
+        if (convo?.awaiting === 'restock_answer') {
+          if (isPendingEscape(body) || isCancel(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, lang === 'sw'
+              ? 'Sawa, sijajibu oda hiyo. Bado inasubiri.'
+              : 'Fine, I have not answered that order. It is still waiting.');
+            await audit(db, identity, waMessageId, 'restock_answer', 'cancelled', null);
+            await finish('cancelled');
+            continue;
+          }
+          if (isConfirm(body)) {
+            const parked = (convo?.options ?? {}) as { accept?: boolean; reason?: string | null };
+            const answered = await marketplaceConfirm(
+              db, identity.company_id as string, parked.accept === true,
+              parked.reason ?? null, lang === 'sw' ? 'sw' : 'en',
+            );
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, answered.terminalReply);
+            await audit(db, identity, waMessageId, 'restock_answer',
+              answered.isError ? 'failed' : 'applied', null);
+            await finish(answered.isError ? 'failed' : 'applied');
+            continue;
+          }
+        }
+
         if (convo?.awaiting === 'day_close') {
           if (isPendingEscape(body) || isCancel(body)) {
             await clearConversation(db, identity.id as string);

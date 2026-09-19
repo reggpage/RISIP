@@ -227,7 +227,10 @@ describe('Stage A changed no behaviour', () => {
     // messages were left, so "nimebakiza ngapi" had nowhere to land. It takes
     // no arguments, reads only billing_plans and a count of the shop's own
     // messages, and can change nothing.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(41);
+    // Forty-four since the restock marketplace added three: one read and two
+    // proposals. Both writers park a draft and wait for NDIYO, so the authority
+    // boundary is unchanged.
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(44);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('propose_business_event');
     expect(shown).toContain('propose_money_event');

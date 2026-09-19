@@ -19,6 +19,7 @@ import type { UserRole } from './roles';
 
 export type NavKey =
   | 'chat' | 'dashboard' | 'daily-records' | 'products' | 'sell' | 'notifications' | 'settings' | 'billing'
+  | 'marketplace'
   // Off for now — the contractor half of the product.
   | 'projects' | 'receipts' | 'retirements' | 'reimbursements' | 'claims' | 'invoices' | 'petty-cash';
 
@@ -28,6 +29,7 @@ export const VISIBLE_NAV: readonly NavKey[] = [
   'sell',
   'chat',
   'products',
+  'marketplace',
   'daily-records',
   'notifications',
   'billing',

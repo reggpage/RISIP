@@ -167,7 +167,10 @@ describe('nothing about financial authority moved', () => {
     // messages, and can change nothing.
     // Phase 9 adds three read-only, backend-grounded report capabilities for
     // stock loss, owner use and whole-animal breakdowns.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(41);
+    // Forty-four since the restock marketplace added three: one read and two
+    // proposals. Both writers park a draft and wait for NDIYO, so the authority
+    // boundary is unchanged.
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(44);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('respond_conversationally');
     expect(shown).not.toContain('propose_catalogue_transaction');

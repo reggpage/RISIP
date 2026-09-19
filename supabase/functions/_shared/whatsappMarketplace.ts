@@ -175,7 +175,64 @@ export async function marketplaceSearch(
   };
 }
 
-/** Step two: "2 x 50" — place the order and hand over contacts. */
+/**
+ * Step two, part one: show what is about to be committed.
+ *
+ * Nothing is written here. The model read "2 x 50" and could have read it
+ * wrong, and the far side of this is another business expecting to be paid,
+ * so the shopkeeper confirms the draft before anything moves — the same
+ * contract every other write in Risip follows.
+ */
+export async function marketplaceDraftOrder(
+  db: Db,
+  companyId: string,
+  optionIndex: number,
+  quantity: number,
+  lang: MarketplaceLang,
+): Promise<{ ok: false; reply: string } | { ok: true; reply: string; option: MarketplaceOption }> {
+  const { data, error } = await db.rpc('marketplace_open_selection', {
+    p_buyer_company_id: companyId,
+  });
+  const selection = data as { options?: MarketplaceOption[] } | null;
+  if (error || !selection?.options?.length) {
+    return {
+      ok: false,
+      reply: lang === 'sw'
+        ? 'Orodha imeisha muda. Andika tena unachohitaji, mf. "Nimeishiwa sabuni".'
+        : 'That list has expired. Say what you need again, e.g. "I have run out of soap".',
+    };
+  }
+
+  const option = selection.options[optionIndex - 1];
+  if (!option) {
+    return {
+      ok: false,
+      reply: lang === 'sw'
+        ? `Chagua namba kati ya 1 na ${selection.options.length}.`
+        : `Pick a number between 1 and ${selection.options.length}.`,
+    };
+  }
+
+  const qty = `${Math.round(quantity).toLocaleString('en-US')}${option.unit ? ` ${option.unit}` : ''}`;
+  const cost = option.unit_price === null
+    ? (lang === 'sw' ? 'bei kwa mazungumzo' : 'price on request')
+    : `${Math.round(option.unit_price * quantity).toLocaleString('en-US')}/=`;
+  // The supplier's own product name, not the trader's wording: a fuzzy match
+  // is visible here, while it is still a draft.
+  const warn = option.match_basis === 'fuzzy_name'
+    ? (lang === 'sw'
+      ? `\n\n⚠️ Jina lilifanana tu. Wameiandika kama "${option.product_name}".`
+      : `\n\n⚠️ The names only resembled each other. They list it as "${option.product_name}".`)
+    : '';
+
+  const reply = lang === 'sw'
+    ? `Thibitisha oda:\n\n${qty} ${option.product_name}\nKutoka: ${option.supplier_name}\nJumla: ${cost}${warn}\n\nNituma? *1* Ndiyo · *2* Hapana`
+    : `Confirm this order:\n\n${qty} ${option.product_name}\nFrom: ${option.supplier_name}\nTotal: ${cost}${warn}\n\nSend it? *1* Yes · *2* No`;
+
+  return { ok: true, reply, option };
+}
+
+/** Step two, part two: the shopkeeper said NDIYO. Place it and hand over contacts. */
 export async function marketplaceOrder(
   db: Db,
   companyId: string,

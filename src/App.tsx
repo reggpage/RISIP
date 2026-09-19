@@ -28,6 +28,7 @@ const PettyCashPage = lazy(() => import('@/routes/pettyCash/PettyCashPage'));
 const SettingsPage = lazy(() => import('@/routes/settings/SettingsPage'));
 const BillingPage = lazy(() => import('@/routes/billing/BillingPage'));
 const NotificationsPage = lazy(() => import('@/routes/notifications/NotificationsPage'));
+const MarketplacePage = lazy(() => import('@/routes/marketplace/MarketplacePage'));
 const RetirementsPage = lazy(() => import('@/routes/retirements/RetirementsPage'));
 const ReimbursementsPage = lazy(() => import('@/routes/reimbursements/ReimbursementsPage'));
 const DailyRecordsPage = lazy(() => import('@/routes/dailyRecords/DailyRecordsPage'));
@@ -126,6 +127,7 @@ export default function App() {
         <Route path="/reimbursements" element={<ReimbursementsPage />} />
         <Route path="/daily-records" element={<DailyRecordsPage />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/marketplace" element={<MarketplacePage />} />
         <Route path="/scan" element={<ScanPage />} />
         <Route path="/sell" element={<SellPage />} />
         <Route
