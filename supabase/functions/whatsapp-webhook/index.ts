@@ -7598,6 +7598,33 @@ async function handleWebhook(req: Request, web?: NonNullable<ChatTransport['web'
           continue;
         }
 
+        // ── Subscription gate ────────────────────────────────────────────
+        // A shop whose package has run out keeps its data and keeps reading;
+        // what stops is recording new business. Enforced here rather than only
+        // in the app because WhatsApp is where the trading actually happens —
+        // a banner on a screen nobody opens is not a gate.
+        //
+        // Grace is honoured inside billing_blocked: a payment a day late does
+        // not cut a trader off mid-sale.
+        if (identity?.company_id) {
+          const { data: blockRow } = await db.rpc('billing_blocked_for', {
+            p_company_id: identity.company_id,
+          });
+          const block = blockRow as { blocked?: boolean; plan?: string } | null;
+          if (block?.blocked) {
+            const sw = lang === 'sw';
+            await replyQuietly(phone, sw
+              ? `Muda wa kifurushi chako (${block.plan ?? 'Risip'}) umeisha.\n\n`
+                + 'Sijaweza kuhifadhi rekodi mpya mpaka ulipie. Taarifa zako zote zipo salama.\n\n'
+                + 'Fungua Risip → Bili kulipia, au jibu *BILI* nikutumie maelezo.'
+              : `Your ${block.plan ?? 'Risip'} package has expired.\n\n`
+                + 'I cannot save new records until it is paid. All your data is safe.\n\n'
+                + 'Open Risip → Billing to pay, or reply *BILI* and I will send the details.');
+            await finish('skipped');
+            continue;
+          }
+        }
+
         if (identity) {
           await db.from('whatsapp_messages').update({
             profile_id: identity.profile_id,
