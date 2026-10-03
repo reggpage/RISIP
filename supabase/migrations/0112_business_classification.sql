@@ -126,6 +126,10 @@ begin
   values (p_user, v_company, p_phone,
           (select lang from whatsapp_onboarding where phone_e164 = p_phone));
 
+  -- Create 5-day trial subscription for new business
+  insert into public.subscriptions (company_id, plan, cycle, status, trial_ends_at, current_period_start, current_period_end, grace_until)
+  values (v_company, 'ndogo', 'monthly', 'trialing', now() + interval '5 days', current_date, current_date + interval '1 month', null);
+
   delete from whatsapp_onboarding where phone_e164 = p_phone;
   return jsonb_build_object(
     'company_id', v_company,

@@ -290,6 +290,20 @@ import {
 import type { ValidatedBusinessEvent } from '../_shared/whatsappBusinessEvent.ts';
 import type { DailyRecordPaymentMethod } from '../_shared/whatsappDailyRecords.ts';
 import type { WholeAnimalPaymentMethod } from '../_shared/whatsappWholeAnimalProcurement.ts';
+import type {
+  ShopOrderPending,
+  ShopOrderProposal,
+  ShopOrderConfirmationPending,
+  ShopOrderActionPending,
+} from '../_shared/whatsappShopOrders.ts';
+import {
+  buildShopOrderProposalReply,
+  buildShopOrderPlacedReply,
+  buildShopOrderActionAsk,
+  buildShopOrderActionResult,
+  shopOrderRpcError,
+  fromRpcProposal,
+} from '../_shared/whatsappShopOrders.ts';
 import {
   AI_RUNTIME_VERSION,
   PROMPT_VERSION,
@@ -6508,6 +6522,208 @@ ${trendShapeFacts(days)}`,
     const confirmation = `${identity.company_name} — ${buildDailyRecordConfirmation(guardedRecord, lang)}${nearName}${underPrice}`;
     return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
   }
+
+  // ── search_suppliers ──────────────────────────────────────────────────────
+  if (name === 'search_suppliers') {
+    if (!canUseCompanyFinanceReads(identity.role)) {
+      const denied = lang === 'sw'
+        ? 'Kutafuta wauzaji wa jumla kunahitaji mwenye biashara au mhasibu.'
+        : 'Searching wholesale suppliers requires an owner or accountant.';
+      return { content: denied, isError: true, terminalReply: denied };
+    }
+    const products = Array.isArray(input.products)
+      ? (input.products as unknown[])
+          .map((p) => String(p ?? '').trim())
+          .filter((p) => p.length >= 2)
+          .slice(0, 10)
+      : [];
+    if (products.length === 0) {
+      const question = lang === 'sw'
+        ? 'Unataka bidhaa gani? Taja jina.'
+        : 'Which product do you need? State the name.';
+      return { content: question, isError: true, terminalReply: question };
+    }
+    const term = products.join(' | ');
+    const { data, error } = await db.rpc('wa_search_suppliers', {
+      p_term: term,
+      p_exclude_company_id: identity.company_id,
+      p_limit: 10,
+    });
+    if (error) {
+      const failed = lang === 'sw'
+        ? 'Sikuweza kutafuta wauzaji sasa.'
+        : 'I could not search suppliers right now.';
+      return { content: failed, isError: true, terminalReply: failed };
+    }
+    const rows = (data ?? []) as Array<Record<string, unknown>>;
+    if (rows.length === 0) {
+      return { content: lang === 'sw'
+        ? 'Hakuna duka jingine la Risip linalouza bidhaa hii kwa wingi sasa.'
+        : 'No other Risip shop currently sells this product wholesale.' };
+    }
+    return { content: JSON.stringify(rows) };
+  }
+
+  // ── get_shop_orders ───────────────────────────────────────────────────────
+  if (name === 'get_shop_orders') {
+    if (!canUseCompanyFinanceReads(identity.role)) {
+      const denied = lang === 'sw'
+        ? 'Orodha ya agizo inahitaji mwenye biashara au mhasibu.'
+        : 'The order book is available only to an owner or accountant.';
+      return { content: denied, isError: true, terminalReply: denied };
+    }
+    const { data, error } = await db.rpc('wa_shop_order_book', {
+      p_company_id: identity.company_id,
+    });
+    if (error || !data) {
+      const failed = lang === 'sw'
+        ? 'Sikuweza kupata orodha ya agizo sasa.'
+        : 'I could not load the order book right now.';
+      return { content: failed, isError: true, terminalReply: failed };
+    }
+    return { content: JSON.stringify(data) };
+  }
+
+  // ── propose_shop_order ────────────────────────────────────────────────────
+  if (name === 'propose_shop_order') {
+    if (!canUseCompanyFinanceReads(identity.role)) {
+      const denied = lang === 'sw'
+        ? 'Kuagiza bidhaa kunahitaji mwenye biashara au mhasibu.'
+        : 'Placing an order requires an owner or accountant.';
+      return { content: denied, isError: true, terminalReply: denied };
+    }
+    const supplierId = typeof input.supplier_company_id === 'string'
+      ? input.supplier_company_id.trim()
+      : '';
+    if (!/^[0-9a-f-]{36}$/i.test(supplierId)) {
+      const msg = lang === 'sw'
+        ? 'Muuzaji huyu haijatambulishwa vizuri.'
+        : 'That supplier was not identified properly.';
+      return { content: msg, isError: true, terminalReply: msg };
+    }
+    const lines = Array.isArray(input.lines)
+      ? (input.lines as Array<Record<string, unknown>>)
+          .map((l) => ({
+            product_key: typeof l.product_key === 'string' ? l.product_key.trim() : '',
+            quantity: typeof l.quantity === 'number' && Number.isFinite(l.quantity) ? l.quantity : NaN,
+          }))
+          .filter((l) => l.product_key && l.quantity > 0 && l.quantity <= 1_000_000)
+      : [];
+    if (lines.length === 0) {
+      const msg = lang === 'sw'
+        ? 'Taja bidhaa na kiasi unachotaka kuagiza.'
+        : 'Specify the products and quantities you want to order.';
+      return { content: msg, isError: true, terminalReply: msg };
+    }
+    const note = typeof input.note === 'string' && input.note.trim()
+      ? input.note.trim().slice(0, 500)
+      : null;
+    const { data: rpcResult, error } = await db.rpc('wa_place_shop_order', {
+      p_buyer_company_id: identity.company_id,
+      p_supplier_company_id: supplierId,
+      p_lines: lines,
+      p_note: note,
+      p_dry_run: true,
+    });
+    if (error || !rpcResult || typeof rpcResult !== 'object') {
+      const failed = shopOrderRpcError(lang, error);
+      return { content: failed, isError: true, terminalReply: failed };
+    }
+    const proposal = fromRpcProposal(rpcResult as Record<string, unknown>);
+    if (proposal.lines.length === 0 || proposal.total_wholesale <= 0) {
+      const failed = lang === 'sw'
+        ? 'Muuzaji hana bidhaa zinazopatikana kwa bei ya jumla.'
+        : 'The supplier has no wholesale-priced products available.';
+      return { content: failed, isError: true, terminalReply: failed };
+    }
+    const { data: supplierCompany } = await db.from('companies')
+      .select('name').eq('id', supplierId).single();
+    const supplierName = typeof supplierCompany?.name === 'string' ? supplierCompany.name : null;
+    proposal.supplier_company_name = supplierName;
+    const state: ShopOrderConfirmationPending = {
+      kind: 'shop_order_confirmation',
+      supplier_company_id: supplierId,
+      supplier_company_name: supplierName,
+      lines,
+      note,
+      proposal,
+      sourceMessageId: waMessageId,
+    };
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id,
+      company_id: identity.company_id,
+      profile_id: identity.profile_id,
+      awaiting: 'shop_order',
+      receipt_id: null,
+      options: state,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+    const confirmation = buildShopOrderProposalReply(proposal, supplierName, lang);
+    return { content: confirmation, terminalReply: confirmation, fallbackReply: confirmation };
+  }
+
+  // ── propose_shop_order_action ─────────────────────────────────────────────
+  if (name === 'propose_shop_order_action') {
+    if (!canUseCompanyFinanceReads(identity.role)) {
+      const denied = lang === 'sw'
+        ? 'Kubadilisha agizo kunahitaji mwenye biashara au mhasibu.'
+        : 'Changing an order requires an owner or accountant.';
+      return { content: denied, isError: true, terminalReply: denied };
+    }
+    const orderId = typeof input.order_id === 'string' ? input.order_id.trim() : '';
+    if (!/^[0-9a-f-]{36}$/i.test(orderId)) {
+      const msg = lang === 'sw'
+        ? 'Agizo hilo halijatambulishwa vizuri.'
+        : 'That order was not identified properly.';
+      return { content: msg, isError: true, terminalReply: msg };
+    }
+    const action = typeof input.action === 'string' ? input.action : '';
+    if (!['accept', 'reject', 'deliver', 'verify', 'cancel'].includes(action)) {
+      const msg = lang === 'sw'
+        ? 'Kitendo hiki haijatambuliwa.'
+        : 'That action is not recognised.';
+      return { content: msg, isError: true, terminalReply: msg };
+    }
+    const note = typeof input.note === 'string' && input.note.trim()
+      ? input.note.trim().slice(0, 500)
+      : null;
+    const { data: orderRow } = await db.from('shop_orders')
+      .select('order_no, buyer_company_id, supplier_company_id')
+      .eq('id', orderId)
+      .single();
+    if (
+      !orderRow
+      || (orderRow.buyer_company_id !== identity.company_id
+        && orderRow.supplier_company_id !== identity.company_id)
+    ) {
+      const msg = lang === 'sw'
+        ? 'Agizo hilo halijapatikana au si la kampuni yako.'
+        : 'That order was not found or does not belong to your company.';
+      return { content: msg, isError: true, terminalReply: msg };
+    }
+    const orderNo = String(orderRow.order_no ?? '');
+    const state: ShopOrderActionPending = {
+      kind: 'shop_order_action',
+      order_id: orderId,
+      order_no: orderNo,
+      action: action as ShopOrderActionPending['action'],
+      note,
+    };
+    await db.from('whatsapp_conversations').upsert({
+      identity_id: identity.id,
+      company_id: identity.company_id,
+      profile_id: identity.profile_id,
+      awaiting: 'shop_order',
+      receipt_id: null,
+      options: state,
+      expires_at: new Date(Date.now() + 30 * 60_000).toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'identity_id' });
+    const ask = buildShopOrderActionAsk(orderNo, action as ShopOrderActionPending['action'], lang);
+    return { content: ask, terminalReply: ask, fallbackReply: ask };
+  }
+
   return {
     content: lang === 'sw' ? 'Tool hiyo haipatikani.' : 'That tool is not available.',
     isError: true,
@@ -8141,6 +8357,14 @@ async function handleWebhook(req: Request, web?: NonNullable<ChatTransport['web'
           && (convo.options as Partial<DailyRecordBatchClarification> | null)?.kind === 'daily_record_batch_clarification'
           ? convo.options as DailyRecordBatchClarification
           : null;
+        // A B2B shop order awaiting NDIYO. Its own slot ("shop_order") so it can
+        // never collide with payment_source drafts; the kind discriminates the
+        // proposal (place) from a pending status action.
+        const shopOrderPending = convo?.awaiting === 'shop_order'
+          && ((convo.options as Partial<ShopOrderConfirmationPending> | null)?.kind === 'shop_order_confirmation'
+            || (convo.options as Partial<ShopOrderActionPending> | null)?.kind === 'shop_order_action')
+          ? convo.options as ShopOrderPending
+          : null;
         // A buying price awaiting NDIYO. Its own slot, so it can never be
         // confused with a daily-record draft sitting in payment_source.
         // Two different things live in the product_cost slot, so both are tagged.
@@ -9640,6 +9864,73 @@ async function handleWebhook(req: Request, web?: NonNullable<ChatTransport['web'
             continue;
           }
           await replyDailyRecordConfirmationQuietly(phone, dailyConversation.record, lang, waMessageId);
+          await finish('skipped');
+          continue;
+        }
+
+        // ── B2B shop-order confirmation ────────────────────────────────
+        // NDIYO on a parked order proposal places it; NDIYO on a parked action
+        // applies accept/reject/deliver/verify/cancel. Both are executed
+        // through the service-role middle of the RPC stack, never the model.
+        // "Another topic" is a release to the model, like every parked question.
+        if (shopOrderPending && releasesParkedQuestion(body)) {
+          await clearConversation(db, identity.id as string);
+          await audit(db, identity, waMessageId, 'shop_order', 'abandoned', 'skipped');
+          await finish('skipped');
+          continue;
+        }
+        if (shopOrderPending) {
+          if (isDailyRecordConfirmation(body)) {
+            if (shopOrderPending.kind === 'shop_order_confirmation') {
+              const { data: placed, error } = await db.rpc('wa_place_shop_order', {
+                p_buyer_company_id: identity.company_id,
+                p_supplier_company_id: shopOrderPending.supplier_company_id,
+                p_lines: shopOrderPending.lines as Array<{ product_key: string; quantity: number }>,
+                p_note: shopOrderPending.note,
+                p_dry_run: false,
+              });
+              await clearConversation(db, identity.id as string);
+              if (error || !placed || typeof placed !== 'object') {
+                await replyQuietly(phone, shopOrderRpcError(lang, error));
+                await audit(db, identity, waMessageId, 'shop_order', 'place', error ? 'failed' : 'failed');
+              } else {
+                const data = fromRpcProposal(placed as Record<string, unknown>);
+                await replyQuietly(phone, buildShopOrderPlacedReply(data, shopOrderPending.supplier_company_name ?? null, lang));
+                await audit(db, identity, waMessageId, 'shop_order', 'place', 'applied');
+              }
+            } else {
+              const { data: result, error } = await db.rpc('wa_shop_order_action', {
+                p_order_id: shopOrderPending.order_id,
+                p_actor_company_id: identity.company_id,
+                p_action: shopOrderPending.action,
+                p_note: shopOrderPending.note,
+              });
+              await clearConversation(db, identity.id as string);
+              if (error || !result || typeof result !== 'object') {
+                await replyQuietly(phone, shopOrderRpcError(lang, error));
+                await audit(db, identity, waMessageId, 'shop_order', shopOrderPending.action, 'failed');
+              } else {
+                await replyQuietly(phone, buildShopOrderActionResult(result as Record<string, unknown>, shopOrderPending.action, lang));
+                await audit(db, identity, waMessageId, 'shop_order', shopOrderPending.action, 'applied');
+              }
+            }
+          } else if (isDailyRecordRejection(body)) {
+            await clearConversation(db, identity.id as string);
+            await replyQuietly(phone, lang === 'sw'
+              ? 'Sawa, hakuna chochote kimebadilika.'
+              : 'OK, nothing changed.');
+            await audit(db, identity, waMessageId, 'shop_order', 'cancel', 'applied');
+          } else {
+            const reask = shopOrderPending.kind === 'shop_order_action'
+              ? buildShopOrderActionAsk(shopOrderPending.order_no, shopOrderPending.action, lang)
+              : buildShopOrderProposalReply(
+                  shopOrderPending.proposal,
+                  shopOrderPending.supplier_company_name ?? null,
+                  lang,
+                );
+            await replyQuietly(phone, reask);
+            await audit(db, identity, waMessageId, 'shop_order', 'reask', 'skipped');
+          }
           await finish('skipped');
           continue;
         }

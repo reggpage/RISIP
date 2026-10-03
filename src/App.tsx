@@ -31,6 +31,7 @@ const NotificationsPage = lazy(() => import('@/routes/notifications/Notification
 const RetirementsPage = lazy(() => import('@/routes/retirements/RetirementsPage'));
 const ReimbursementsPage = lazy(() => import('@/routes/reimbursements/ReimbursementsPage'));
 const DailyRecordsPage = lazy(() => import('@/routes/dailyRecords/DailyRecordsPage'));
+const OrdersPage = lazy(() => import('@/routes/orders/OrdersPage'));
 const ProductsPage = lazy(() => import('@/routes/products/ProductsPage'));
 const ScanPage = lazy(() => import('@/routes/products/ScanPage'));
 const SellPage = lazy(() => import('@/routes/products/SellPage'));
@@ -47,6 +48,24 @@ function NativeBootScreen() {
   return <div className="h-dvh w-full" style={{ background: '#f6f5f0' }} aria-hidden="true" />;
 }
 
+const FRESH_INSTALL_KEY = 'risip:first-launch-after-install';
+
+function isFreshInstall(): boolean {
+  try {
+    return localStorage.getItem(FRESH_INSTALL_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function clearFreshInstallFlag(): void {
+  try {
+    localStorage.removeItem(FRESH_INSTALL_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * Installed-app entry point. The marketing landing page is a website touch:
  * inside the native shell we boot straight into the sign-in form — it is
@@ -55,6 +74,10 @@ function NativeBootScreen() {
  */
 function HomeEntry() {
   if (!isNative()) return <Landing />;
+  if (isFreshInstall()) {
+    clearFreshInstallFlag();
+    return <WhatsAppAuth mode="register" />;
+  }
   return <WhatsAppAuth mode="login" />;
 }
 
@@ -63,6 +86,10 @@ export default function App() {
   // branded loading screen is a deliberate touch; inside the native app it
   // becomes a plain paper surface so nothing ever looks like a preloader or
   // a black hole.
+  // Clear fresh install flag if we're in native but it's somehow set - only relevant on first launch
+  if (isNative() && !isFreshInstall()) {
+    // ensure clean state
+  }
   const fallback = isNative()
     ? <NativeBootScreen />
     : <div className="grid min-h-screen place-items-center bg-white" role="status" aria-label="Loading Risip"><span className="text-xl font-semibold text-role-admin">Risip</span></div>;
@@ -125,6 +152,14 @@ export default function App() {
         <Route path="/retirements" element={<RetirementsPage />} />
         <Route path="/reimbursements" element={<ReimbursementsPage />} />
         <Route path="/daily-records" element={<DailyRecordsPage />} />
+        <Route
+          path="/orders"
+          element={(
+            <RequireRole allowed={['owner', 'accountant']}>
+              <OrdersPage />
+            </RequireRole>
+          )}
+        />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/scan" element={<ScanPage />} />
         <Route path="/sell" element={<SellPage />} />

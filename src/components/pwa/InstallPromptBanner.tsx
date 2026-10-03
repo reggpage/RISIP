@@ -40,11 +40,22 @@ function hasDismissedRecently(): boolean {
   }
 }
 
+const INSTALLED_KEY = 'risip:app-installed-marked';
+
 function rememberDismissed(): void {
   try {
     localStorage.setItem(DISMISSED_KEY, String(Date.now()));
   } catch {
     // Private browsing can deny storage; failing to remember only re-asks later.
+  }
+}
+
+function markAsFreshInstall(): void {
+  try {
+    localStorage.setItem(INSTALLED_KEY, 'true');
+    localStorage.setItem('risip:first-launch-after-install', 'true');
+  } catch {
+    // ignore
   }
 }
 
@@ -65,7 +76,10 @@ export default function InstallPromptBanner() {
       event.preventDefault();
       setDeferredPrompt(event as BeforeInstallPromptEvent);
     };
-    const installed = () => setSeen(true);
+    const installed = () => {
+      markAsFreshInstall();
+      setSeen(true);
+    };
 
     window.addEventListener('beforeinstallprompt', capturePrompt);
     window.addEventListener('appinstalled', installed);
@@ -114,6 +128,7 @@ export default function InstallPromptBanner() {
       const choice = await prompt.userChoice;
       if (choice.outcome === 'accepted') {
         setSeen(false);
+        markAsFreshInstall();
         rememberDismissed();
       } else {
         setDeferredPrompt(null);

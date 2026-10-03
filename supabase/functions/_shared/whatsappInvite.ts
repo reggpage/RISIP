@@ -101,12 +101,14 @@ export function inviteForwardMessage(
   risipNumber: string | null,
   lang: Lang,
 ): string {
-  const where = risipNumber
-    ? (lang === 'sw' ? `WhatsApp namba ${risipNumber}` : `WhatsApp number ${risipNumber}`)
-    : (lang === 'sw' ? 'WhatsApp namba hii ya Risip' : 'this Risip WhatsApp number');
+  const destination = businessName && businessName.trim()
+    ? businessName
+    : (risipNumber
+      ? (lang === 'sw' ? `WhatsApp namba ${risipNumber}` : `WhatsApp number ${risipNumber}`)
+      : (lang === 'sw' ? 'Risip' : 'Risip'));
   return lang === 'sw'
-    ? `Karibu ${businessName}. Tuma neno ${code} kwenye ${where}, kisha fuata maswali mawili. Ndipo utaweza kurekodi mauzo kwa simu yako.`
-    : `Welcome to ${businessName}. Send the word ${code} to ${where}, then answer two questions. That is when you can start recording sales on your phone.`;
+    ? `Karibu ${businessName}. Tuma neno ${code} kwa ${destination}, kisha fuata maswali mawili. Ndipo utaweza kurekodi mauzo kwa simu yako.`
+    : `Welcome to ${businessName}. Send the word ${code} to ${destination}, then answer two questions. That is when you can start recording sales on your phone.`;
 }
 
 function inviteResponsibilities(role: InviteRole, lang: Lang): string {
