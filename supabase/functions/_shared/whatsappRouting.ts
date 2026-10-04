@@ -13,6 +13,7 @@ const CONFIRMATION_KINDS = new Set([
   'record_queue', 'void_record', 'new_product_registration_confirmation',
   'new_product_pricing', 'portion_setup_confirmation', 'product_rename_confirmation',
   'combo_save', 'vocabulary_teaching', 'product_setup_pending',
+  'shop_order_confirmation', 'shop_order_action',
 ]);
 
 /** Exact commands, never prefixes like "login and show yesterday's sales".

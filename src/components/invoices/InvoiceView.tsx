@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Building2, FileSpreadsheet, FileText } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
+import PlanGate from '@/components/ui/PlanGate';
 import ReceiptAuditModal from '@/components/invoices/ReceiptAuditModal';
 import { formatDate, formatMoney } from '@/lib/format';
 import type { Invoice, InvoiceLineItem, Receipt } from '@/types/db';
@@ -63,7 +64,8 @@ export default function InvoiceView({
             </div>
           </div>
           {(onExportPdf || onExportExcel) && (
-            <div className="flex gap-1.5">
+            <PlanGate capability="pdf_invoices" messageKey="lockPdfInvoices">
+              <div className="flex gap-1.5">
               {onExportPdf && (
                 <button type="button" onClick={onExportPdf}
                   className="inline-flex items-center gap-1 rounded-lg border border-surface-border px-2.5 py-1 text-xs font-medium text-ink hover:bg-surface-muted">
@@ -76,7 +78,8 @@ export default function InvoiceView({
                   <FileSpreadsheet className="h-3.5 w-3.5" /> Excel
                 </button>
               )}
-            </div>
+              </div>
+            </PlanGate>
           )}
         </div>
       </div>

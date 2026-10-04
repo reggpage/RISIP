@@ -656,6 +656,45 @@ export async function fetchBarcodeCatalogue(): Promise<Map<string, ScannedProduc
 }
 
 /**
+ * Every product the shop has priced, barcoded or not, at its current price.
+ *
+ * The till sells by scanning, but a duka sells by eye first: sifted rice, a
+ * hand of bananas, the unmarked jar at the till. For those the shopkeeper types
+ * a name instead of pointing a camera, so the search needs the same table the
+ * scanner reads — minus the barcode.
+ *
+ * A single round trip against the append-only price table. The latest
+ * effective_from row per product wins, exactly as company_current_selling_prices
+ * decides it, and a product without a price is deliberately absent: the till can
+ * only sell what the shop has decided to charge.
+ */
+export async function fetchProductPicklist(): Promise<ScannedProduct[]> {
+  const { data, error } = await (supabase as any)
+    .from('product_selling_prices')
+    .select('product_key, product_name, retail_price, wholesale_price, wholesale_min_qty, effective_from, created_at')
+    .order('effective_from', { ascending: false })
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+
+  const seen = new Set<string>();
+  const picklist: ScannedProduct[] = [];
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const productKey = String(row.product_key);
+    if (seen.has(productKey)) continue;
+    seen.add(productKey);
+    picklist.push({
+      barcode: '',
+      productKey,
+      productName: String(row.product_name),
+      retail: Number(row.retail_price),
+      wholesale: row.wholesale_price === null ? null : Number(row.wholesale_price),
+      wholesaleMinQty: row.wholesale_min_qty === null ? null : Number(row.wholesale_min_qty),
+    });
+  }
+  return picklist;
+}
+
+/**
  * What the shelf holds for one product, or null when nobody has ever counted it.
  *
  * The scanner shows this in the store box so a shopkeeper holding a packet can

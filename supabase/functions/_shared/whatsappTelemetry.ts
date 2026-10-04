@@ -46,6 +46,10 @@ export type SemanticIntent =
   | 'cost_query' | 'price_comparison' | 'missing_selling_price' | 'advice' | 'receipts_query' | 'invoice_query'
   | 'petty_cash_query' | 'reimbursement_query' | 'businesses_query' | 'subscription_query'
   | 'approvals_query' | 'hypothetical_profit' | 'help'
+  // B2B inter-shop ordering: finding another opted-in shop that can supply a
+  // product wholesale, and reading this shop's cross-shop order book.
+  | 'supplier_search'
+  | 'shop_orders_query'
   | 'conversational'
   | 'account_action'
   // A parked question answered through the model rather than by a parser.
@@ -103,6 +107,8 @@ const TOOL_INTENT: Record<string, SemanticIntent> = {
   get_recurring_costs: 'recurring_costs',
   resolve_pending_clarification: 'clarification_answer',
   propose_product_cost: 'product_cost_setup',
+  search_suppliers: 'supplier_search',
+  get_shop_orders: 'shop_orders_query',
 };
 
 /** The record kinds a proposing tool can carry, mapped to the same vocabulary. */

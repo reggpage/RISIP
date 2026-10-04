@@ -25,13 +25,15 @@
             </intent-filter>
 
             <!-- Android App Links: claim wa-login links so WhatsApp taps open
-                 the installed app instead of the browser. Verification happens
-                 against risip.online/.well-known/assetlinks.json. -->
+                 the installed app instead of the browser. The bare domain
+                 risip.online redirects to www.risip.online (HTTP 308), so we
+                 claim both hosts to ensure verification succeeds. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="risip.online" android:pathPrefix="/wa-login" />
+                <data android:scheme="https" android:host="www.risip.online" android:pathPrefix="/wa-login" />
             </intent-filter>
 
         </activity>

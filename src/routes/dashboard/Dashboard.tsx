@@ -11,6 +11,7 @@ import { sw } from '@/i18n/sw';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import Select from '@/components/ui/Select';
 import MetricCard from '@/components/dashboard/MetricCard';
+import PlanGate from '@/components/ui/PlanGate';
 import SpendByCategory from '@/components/dashboard/SpendByCategory';
 import SpendTrendChart from '@/components/dashboard/SpendTrendChart';
 import DailyRecordsTrendChart from '@/components/dashboard/DailyRecordsTrendChart';
@@ -143,7 +144,7 @@ function DailyDashboardContent({ dailyRecords, dailySummary, reporting, reportRa
   const stockAttention = (snapshot?.stock ?? []).filter((row) => Number(row.on_hand) <= 5).slice(0, 8);
   return <section aria-label={text.daily}>
     <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-base font-semibold text-ink">{text.daily}</h2><p className="text-xs text-ink-muted">{text.receiptSeparate} · {text.dailyOnly}</p></div><Link to="/daily-records" className="text-sm font-medium text-role-admin hover:underline">{text.recordsLink}</Link></div>
-    {reporting && reportRange && setReportRange ? <div className="mb-4 flex flex-wrap gap-2" aria-label={lang === 'sw' ? 'Chagua kipindi' : 'Choose reporting period'}>{rangeOptions.map((option) => <button key={option.value} type="button" onClick={() => setReportRange(option.value)} className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${reportRange === option.value ? 'border-role-admin bg-role-admin text-white' : 'border-border bg-surface text-ink hover:bg-surface-muted'}`}>{option[lang]}</button>)}</div> : null}
+    {reporting && reportRange && setReportRange ? <div className="mb-4"><PlanGate capability="reports" messageKey="lockReports"><div className="flex flex-wrap gap-2" aria-label={lang === 'sw' ? 'Chagua kipindi' : 'Choose reporting period'}>{rangeOptions.map((option) => <button key={option.value} type="button" onClick={() => setReportRange(option.value)} className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${reportRange === option.value ? 'border-role-admin bg-role-admin text-white' : 'border-border bg-surface text-ink hover:bg-surface-muted'}`}>{option[lang]}</button>)}</div></PlanGate></div> : null}
     {reporting?.status === 'loading' && !snapshot ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 8 }).map((_, index) => <MetricCardSkeleton key={index} />)}</div> : snapshot ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <MetricCard label={text.todaySales} value={formatMoney(Number(snapshot.sales?.total ?? 0))} icon={<TrendingUp className="h-5 w-5" />} hint={text.reportingHint} />
       <MetricCard label={text.profit} value={formatMoney(Number(snapshot.profit?.estimated_profit ?? 0))} icon={<ArrowLeftRight className="h-5 w-5" />} hint={snapshot.profit?.valuation_complete === false ? text.valuationIncomplete : text.reportingHint} />
@@ -160,7 +161,7 @@ function DailyDashboardContent({ dailyRecords, dailySummary, reporting, reportRa
       <MetricCard label={text.payments} value={formatMoney(dailySummary.customerPayments)} icon={<CreditCard className="h-5 w-5" />} hint={text.paymentHint} />
       <MetricCard label={text.cash} value={formatMoney(dailySummary.cashMovement)} icon={<ArrowLeftRight className="h-5 w-5" />} hint={text.cashHint} />
     </div>}
-    {snapshot ? <div className="mt-6"><h3 className="mb-3 text-base font-semibold text-ink">{text.reportDetails}</h3><div className="grid gap-4 lg:grid-cols-2">
+    {snapshot ? <PlanGate capability="reports" messageKey="lockReports"><div className="mt-6"><h3 className="mb-3 text-base font-semibold text-ink">{text.reportDetails}</h3><div className="grid gap-4 lg:grid-cols-2">
       <ReportList title={text.salesItems} empty={text.noData} rows={(snapshot.sales?.items ?? []).slice(0, 8).map((row) => ({ label: `${row.product_name} × ${Number(row.quantity).toLocaleString('en-US')}${row.unit ? ` ${row.unit}` : ''}`, value: formatMoney(Number(row.total)) }))} />
       <ReportList title={text.receivables} empty={text.noData} rows={(snapshot.customer_receivables ?? []).slice(0, 8).map((row) => ({ label: row.party_name, value: formatMoney(Number(row.outstanding)) }))} />
       <ReportList title={text.supplierPayables} empty={text.noData} rows={(snapshot.supplier_payables ?? []).slice(0, 8).map((row) => ({ label: row.supplier_name, value: formatMoney(Number(row.outstanding)) }))} />
@@ -168,7 +169,7 @@ function DailyDashboardContent({ dailyRecords, dailySummary, reporting, reportRa
       <ReportList title={text.stockLoss} empty={text.noData} rows={(snapshot.stock_loss?.details ?? []).slice(0, 8).map((row) => ({ label: `${row.product_name}${row.reason ? ` — ${row.reason}` : ''}`, value: `${Number(row.quantity).toLocaleString('en-US')}${row.unit ? ` ${row.unit}` : ''}` }))} />
       <ReportList title={text.ownerUse} empty={text.noData} rows={(snapshot.owner_use?.details ?? []).slice(0, 8).map((row) => ({ label: row.product_name, value: `${Number(row.quantity).toLocaleString('en-US')}${row.unit ? ` ${row.unit}` : ''}` }))} />
       <ReportList title={text.wholeAnimals} empty={text.noData} rows={(snapshot.whole_animals?.procurements ?? []).slice(0, 8).map((row) => ({ label: `${row.animal_type} × ${row.animal_count}`, value: row.breakdown_status === 'confirmed' ? (lang === 'sw' ? 'Breakdown imethibitishwa' : 'Breakdown confirmed') : (lang === 'sw' ? 'Inasubiri breakdown' : 'Awaiting breakdown') }))} />
-    </div></div> : null}
+    </div></div></PlanGate> : null}
     <Card className="mt-6"><DailyRecordsTrendChart records={dailyRecords.records} lang={lang} /></Card>
     <Card className="mt-6"><DailyRecordCategoryBars records={dailyRecords.records} /></Card>
   </section>;

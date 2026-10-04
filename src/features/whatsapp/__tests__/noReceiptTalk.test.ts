@@ -106,6 +106,10 @@ describe('the two receipt tools', () => {
     // Twenty-nine since get_my_subscription: the shop could not ask what it was
     // paying for, and the answer must be visible to the model or the question
     // has nowhere to land.
-    expect(shown).toHaveLength(33);
+    // Thirty-three with the receipts reservation, and thirty-seven with B2B
+    // inter-shop ordering: search_suppliers, get_shop_orders,
+    // propose_shop_order and propose_shop_order_action. All four stay between
+    // shops — none of them is a receipt, and none of them reads or writes one.
+    expect(shown).toHaveLength(37);
   });
 });

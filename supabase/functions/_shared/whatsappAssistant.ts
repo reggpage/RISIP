@@ -400,6 +400,14 @@ export const ASSISTANT_TOOL_NAMES = [
   'get_my_subscription',
   'get_pending_approvals',
   'get_stock_on_hand',
+  // B2B inter-shop ordering ("Agizo la bidhaa"): find other opted-in shops that
+  // can supply a product wholesale, read this shop's order book, place an order
+  // and make decisions on one. The two read tools are the source for the two
+  // proposal tools: a proposal re-prices from the supplier's own catalogue.
+  'search_suppliers',
+  'get_shop_orders',
+  'propose_shop_order',
+  'propose_shop_order_action',
   'search_risip_help',
   'propose_product_cost',
   'propose_catalogue_transaction',
@@ -1078,6 +1086,80 @@ const ALL_ASSISTANT_TOOLS: ToolDefinition[] = [
     },
     ['supplier_wording'],
   ),
+  tool(
+    'search_suppliers',
+    'WHOLESALE AVAILABILITY ACROSS OTHER RISIP SHOPS. Called when the trader is short of a product and needs to know which other shops can supply it, at what wholesale (jumla) price and how many they have on hand: "nimeishiwa unga", "ntapata wapi sukari kwa wingi", "where can I buy cooking oil wholesale". '
+      + 'Pass the OUT-OF-STOCK PRODUCT NAME(S) as the trader said them, as precisely as the conversation has established them — never a product you invented. '
+      + 'The server returns the opted-in supplier shops, their wholesale price, minimum bulk quantity and stock left. Compare the rows yourself, present the cheapest or closest option plainly, and quote ONLY the price and quantities the tool returned — never invent a price, a stock figure or a supplier. '
+      + 'This is B2B: use get_stock_on_hand for THIS shop\'s own shelf. A message that only asks what this shop is short of is get_stock_on_hand or get_my_receipts territory, not this tool. '
+      + 'At most ten product names; the server enforces the limit.',
+    {
+      products: {
+        type: 'array',
+        items: { type: 'string' },
+        description: 'The product names the trader needs, in their own words — one array entry per product.',
+      },
+    },
+    ['products'],
+  ),
+  tool(
+    'get_shop_orders',
+    'Read THIS SHOP\'S B2B ORDER BOOK. An "agizo" is an order between Risip shops: outgoing = orders THIS shop placed with other shops; incoming = orders OTHER shops placed with THIS shop to fulfil. '
+      + 'Each order carries its status (placed/accepted/rejected/delivered/verified/cancelled), lines and total, and the result includes counts per status. '
+      + 'Use for "nina agizo mangapi", "kuna agizo jipya?", "show my orders", "what have I been asked to supply", "nilitaka kufahamu agizo langu". '
+      + 'Do NOT confuse agizo with customer debts (get_open_debts) or supplier credit (get_supplier_payables).',
+    {
+      direction: {
+        type: 'string',
+        enum: ['incoming', 'outgoing', 'all'],
+        description: 'incoming = orders this shop must fulfil; outgoing = orders this shop placed; all = both.',
+      },
+    },
+    ['direction'],
+  ),
+  tool(
+    'propose_shop_order',
+    'The trader wants to ORDER goods from ANOTHER Risip shop at that shop\'s wholesale price, for it to pay them directly via mobile money ("lipa namba"). '
+      + 'CALL THIS ONLY WHEN search_suppliers has returned a supplier where the product is actually available — pass that exact supplier_company_id and each product\'s exact product_key from the search result, never a supplier or key you invented, and order only products the trader asked for. '
+      + 'The server re-prices the ENTIRE order from the supplier\'s own catalogue, checks the quantities against what they have on hand, and shows the trader the full order with the supplier\'s payment number for NDIYO to confirm. You never state a total, a price or a payment number yourself. '
+      + 'If the same message first REPORTS a sale or other record, report that separately and ask one clarifying question before considering an order. If the message only names an out-of-stock product without ordering, call search_suppliers first instead. '
+      + 'At most fifty lines, and each quantity is a positive number; the server enforces both.',
+    {
+      supplier_company_id: { type: 'string', description: 'The supplier_company_id returned by search_suppliers for the chosen supplier.' },
+      lines: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            product_key: { type: 'string', description: 'The exact product_key from the supplier\'s search_suppliers row.' },
+            quantity: { type: 'number', description: 'How many units to order, in the unit the supplier\'s row quoted. Positive; the server enforces the bounds.' },
+          },
+          required: ['product_key', 'quantity'],
+        },
+        description: 'The products to order, priced by the supplier\'s own catalogue.',
+      },
+      note: { type: ['string', 'null'], description: 'A short message to the supplier in the trader\'s words, or null.' },
+    },
+    ['supplier_company_id', 'lines', 'note'],
+  ),
+  tool(
+    'propose_shop_order_action',
+    'A decision on an EXISTING order in THIS shop\'s B2B order book. '
+      + 'The supplier ACCEPTS or REJECTS an incoming placed order, and marks an accepted order DELIVERED; the BUYER VERIFIES a delivered order (goods received and paid) or CANCELS. '
+      + 'The order_id must be one get_shop_orders actually returned — never one you invented. The server re-checks which side may do what and shows the change for NDIYO before anything is final. '
+      + 'Use for "nimekubali", "ndiyo ninauza", "zimewasili", "nimepokea", "tafadhali ghairi", "cancel it", "sitawahi", "nawakataa".',
+    {
+      order_id: { type: 'string', description: 'An order_id returned by get_shop_orders.' },
+      action: {
+        type: 'string',
+        enum: ['accept', 'reject', 'deliver', 'verify', 'cancel'],
+        description: 'accept/reject = supplier on a placed incoming order; deliver = supplier on an accepted order; verify = buyer on a delivered order; cancel = either side on placed/accepted.',
+      },
+      note: { type: ['string', 'null'], description: 'A short note for the other party in the trader\'s words, or null.' },
+    },
+    ['order_id', 'action', 'note'],
+  ),
 ];
 
 export function canUseCompanyFinanceReads(role: string): boolean {
@@ -1226,6 +1308,8 @@ EVERY TURN ENDS IN A CAPABILITY
     its subject is a sum of money said    -> propose_money_event
     it sets a buying cost                 -> propose_product_cost
     it asks about this business           -> the matching read tool
+    it wants stock from ANOTHER shop -> search_suppliers
+    it decides on a B2B order (agizo)      -> get_shop_orders, then propose_shop_order_action
     it asks about its plan, bill or allowance -> get_my_subscription
     it asks what Risip can do             -> search_risip_help
     it is a greeting or genuinely off-topic -> respond_conversationally
@@ -1255,6 +1339,7 @@ GROUNDING AND TOOLS
 - Keep confirmed and pending apart when you total anything. Only confirmed records count towards a real total; mention anything still pending separately, with its own figure, so the user can see both.
 - You may call more than one read tool when the question needs it. Do not call a tool unrelated to the question.
 - Receipts, invoices, petty cash, reimbursements and approvals are not part of this WhatsApp assistant. Do not offer them, do not explain them, and do not suggest them as a next step. If somebody asks, say briefly that it lives in the Risip app and move on.
+- B2B ORDERS BETWEEN RISIP SHOPS: only shops that OPTED IN as suppliers can be searched, and only the seller's OWN wholesale price is ever quoted. When the trader is short of something, search_suppliers finds who can supply it; propose_shop_order then passes the returned supplier and product keys and the server re-prices the whole order, showing the supplier's payment number ("lipa namba") for a transfer the trader pays himself — Risip never takes the money. A proposal is only a summary and nothing is placed until the trader answers NDIYO. accept/reject/deliver (supplier side) and verify/cancel (buyer side) go through get_shop_orders + propose_shop_order_action, each also parked behind NDIYO — never your own confirmation.
 - TELLING NEIGHBOURING QUESTIONS APART, by what is being asked rather than by wording:
     which PRODUCT earns or loses            -> get_product_performance
     which PRODUCT is cheapest/most expensive -> get_product_price_comparison (current selling price)
@@ -1313,6 +1398,13 @@ meant.
   long; what the shop owes its suppliers; what the business should do next; what
   selling the whole shelf would make; how Risip itself works; a login link;
   which businesses they belong to, and switching between them.
+
+  ORDERS BETWEEN SHOPS ("agizo"): which other opted-in shops can supply a
+  product wholesale and at what price and how many are left; this shop's order
+  book, incoming and outgoing, with what is pending; placing an order (re-priced
+  from the supplier's catalogue), paying the supplier directly via their mobile
+  money number, and the supplier accepting, rejecting, delivering, the buyer
+  verifying or cancelling.
 
 SCOPE
 - You can explain Risip and offer ordinary small-business guidance. Do not give tax, legal, investment or regulated financial advice; suggest a qualified professional where appropriate.

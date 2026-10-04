@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AlertTriangle, Bell, Building2, Check, ChevronRight, Copy, CreditCard, Languages, LogOut, Mail, MessageCircle, Printer, User, Users } from 'lucide-react';
+import { AlertTriangle, Bell, Building2, Check, ChevronRight, Copy, CreditCard, Languages, LogOut, Mail, MessageCircle, Package, Printer, User, Users } from 'lucide-react';
 import { getLang, setLang, LANG_OPTIONS, type LangCode } from '@/lib/lang';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -12,6 +12,7 @@ import LogoCropModal from '@/components/settings/LogoCropModal';
 import WhatsAppConnectCard from '@/components/whatsapp/WhatsAppConnectCard';
 import WhatsAppCompanyInviteCard from '@/components/whatsapp/WhatsAppCompanyInviteCard';
 import WhatsAppNotificationPreferences from '@/components/whatsapp/WhatsAppNotificationPreferences';
+import SupplierOptInCard from '@/components/settings/SupplierOptInCard';
 import { createNotifications } from '@/features/notifications/notifications';
 import { useAuth, signOut } from '@/lib/auth';
 import { roleBgClass, roleColorClass, roleLabel, shortName } from '@/lib/roles';
@@ -862,6 +863,17 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+          </SettingsSection>
+        )}
+
+        {/* ── B2B Supplier opt-in (owner only) ────────────────────────────── */}
+        {isOwner && (
+          <SettingsSection
+            icon={<Package className="h-4 w-4" />}
+            title={sw.shopOrders.supplierOptIn}
+            description={sw.shopOrders.supplierOptInDesc}
+          >
+            <SupplierOptInCard />
           </SettingsSection>
         )}
 

@@ -60,15 +60,16 @@ const COPY = {
       perMonth: 'kwa mwezi', perYear: 'kwa mwaka', msgs: 'ujumbe unaotuma, kwa mwezi',
       popular: 'Wengi huchagua', soon: 'hivi karibuni', cta: 'Anza wiki ya bure',
       note: 'Bei zote ni za Shilingi ya Tanzania. Malipo yanashughulikiwa na Snippe. Ukizidi ujumbe, unapata taarifa kwanza, na hakuna kinachokatika ghafla.',
+      b2bNote: 'Kwenye plan ya Kati na Kubwa, duka la Risip linaweza kununua bidhaa kwa jumla moja kwa moja kutoka duka jingine la Risip. Unaagiza kwenye duka la wavuti, na duka linalouza linathibitisha agizo kwenye WhatsApp — biashara haiwezi kusimama.',
       plans: [
         { name: 'Kianzio', tagline: 'Kuanza, kwa rekodi chache kila siku', m: '15,000', y: '150,000', cap: '100', popular: false,
           feats: ['Mauzo, manunuzi, matumizi na stoo', 'Bei mbili: rejareja na jumla', 'Ukumbusho wa kila jioni', 'Dashboard ya web kwa simu na kompyuta', 'Mtumiaji 1'] },
         { name: 'Ndogo', tagline: 'Duka moja, unayefanya mwenyewe', m: '29,999', y: '299,990', cap: '250', popular: false,
           feats: ['Mauzo, manunuzi, matumizi na stoo', 'Bei mbili: rejareja na jumla', 'Ukumbusho wa kila jioni', 'Dashboard ya web kwa simu na kompyuta', 'Mtumiaji 1'] },
         { name: 'Kati', tagline: 'Duka lenye wafanyakazi na madeni', m: '39,999', y: '399,990', cap: '450', popular: true,
-          feats: ['Kila kitu cha Ndogo, pamoja na:', 'Ripoti za siku, wiki na mwezi', 'Madeni ya wateja na wasambazaji', 'Kuuza na kusajili kwa barcode', 'Faida kwa kila bidhaa', 'Watumiaji 3'] },
+          feats: ['Kila kitu cha Ndogo, pamoja na:', 'Ripoti za siku, wiki na mwezi', 'Madeni ya wateja na wasambazaji', 'Kuuza na kusajili kwa barcode', 'Faida kwa kila bidhaa', 'Kuagiza bidhaa kwa jumla kutoka maduka mengine ya Risip', 'Watumiaji 3'] },
         { name: 'Kubwa', tagline: 'Maduka zaidi ya moja, au biashara ya jumla', m: '70,000', y: '700,000', cap: '650', popular: false,
-          feats: ['Kila kitu cha Kati, pamoja na:', 'Maduka 3 kwenye namba moja', 'Kulinganisha maduka', 'Ankara za PDF__soon', 'Kutoa data: Excel, CSV, PDF', 'Watumiaji 10'] },
+          feats: ['Kila kitu cha Kati, pamoja na:', 'Maduka 3 kwenye namba moja', 'Kulinganisha maduka', 'Kuagiza bidhaa kwa jumla kutoka maduka mengine ya Risip', 'Ankara za PDF__soon', 'Kutoa data: Excel, CSV, PDF', 'Watumiaji 10'] },
       ],
       compareTitle: 'Kulinganisha plan',
       cols: ['Kianzio', 'Ndogo', 'Kati', 'Kubwa'],
@@ -85,6 +86,7 @@ const COPY = {
         ['Madeni ya wateja', false, false, true, true],
         ['Kuuza na kusajili kwa barcode', false, false, true, true],
         ['Faida kwa kila bidhaa', false, false, true, true],
+        ['Kuagiza bidhaa kwa jumla kutoka maduka mengine ya Risip', false, false, true, true],
         ['Kulinganisha maduka', false, false, false, true],
         ['Ankara za PDF', false, false, false, 'soon'],
         ['Kutoa data: Excel, CSV, PDF', true, true, true, true],
@@ -177,15 +179,16 @@ const COPY = {
       perMonth: 'per month', perYear: 'per year', msgs: 'messages you send, per month',
       popular: 'Most popular', soon: 'coming soon', cta: 'Start the free week',
       note: 'All prices are in Tanzanian Shillings. Payments are handled by Snippe. If you go over, you are told first, and nothing is cut off suddenly.',
+      b2bNote: 'On the Kati and Kubwa plans, a Risip shop can place a wholesale order straight from another Risip shop. You order in the web app, and the selling shop confirms the order on WhatsApp — no need to pause trading.',
       plans: [
         { name: 'Kianzio', tagline: 'Starting out, a few records a day', m: '15,000', y: '150,000', cap: '100', popular: false,
           feats: ['Sales, purchases, expenses and stock', 'Two prices: retail and wholesale', 'An evening reminder', 'Web dashboard on phone and computer', '1 user'] },
         { name: 'Ndogo', tagline: 'One shop, run by you', m: '29,999', y: '299,990', cap: '250', popular: false,
           feats: ['Sales, purchases, expenses and stock', 'Two prices: retail and wholesale', 'An evening reminder', 'Web dashboard on phone and computer', '1 user'] },
         { name: 'Kati', tagline: 'A shop with staff and customer debts', m: '39,999', y: '399,990', cap: '450', popular: true,
-          feats: ['Everything in Ndogo, plus:', 'Daily, weekly and monthly reports', 'Customer and supplier debts', 'Sell and register by barcode', 'Profit per product', '3 users'] },
+          feats: ['Everything in Ndogo, plus:', 'Daily, weekly and monthly reports', 'Customer and supplier debts', 'Sell and register by barcode', 'Profit per product', 'Order wholesale stock from other Risip shops', '3 users'] },
         { name: 'Kubwa', tagline: 'More than one shop, or wholesale', m: '70,000', y: '700,000', cap: '650', popular: false,
-          feats: ['Everything in Kati, plus:', '3 shops on one number', 'Compare shops', 'PDF invoices__soon', 'Export data: Excel, CSV, PDF', '10 users'] },
+          feats: ['Everything in Kati, plus:', '3 shops on one number', 'Compare shops', 'Order wholesale stock from other Risip shops', 'PDF invoices__soon', 'Export data: Excel, CSV, PDF', '10 users'] },
       ],
       compareTitle: 'Compare plans',
       cols: ['Kianzio', 'Ndogo', 'Kati', 'Kubwa'],
@@ -202,6 +205,7 @@ const COPY = {
         ['Customer debts', false, false, true, true],
         ['Sell and register by barcode', false, false, true, true],
         ['Profit per product', false, false, true, true],
+        ['Order wholesale stock from other Risip shops', false, false, true, true],
         ['Compare shops', false, false, false, true],
         ['PDF invoices', false, false, false, 'soon'],
         ['Export data: Excel, CSV, PDF', true, true, true, true],
@@ -668,6 +672,7 @@ export default function Landing() {
             </div>
 
             <p className="mx-auto mt-10 max-w-3xl text-center text-sm leading-7 text-ink-muted">{c.pricing.note}</p>
+            <p className="mx-auto mt-3 max-w-3xl text-center text-sm leading-7 text-ink-muted">{c.pricing.b2bNote}</p>
 
             <details className="rp-comparison">
               <summary>{c.pricing.compareTitle}<ChevronDown size={16} /></summary>

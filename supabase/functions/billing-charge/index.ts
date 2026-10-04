@@ -152,13 +152,13 @@ Deno.serve(async (req) => {
     if (!invoice) return json(404, { error: 'no such invoice' });
     if (invoice.status === 'paid') return json(409, { error: 'already paid' });
 
-    // An override exists ONLY so the first live test can be a small amount.
-    // It can lower the charge and never raise it.
-    const asked = Number(params.get('amount') ?? invoice.amount_tzs);
-    const amount = Math.min(
-      Number.isFinite(asked) && asked > 0 ? Math.round(asked) : invoice.amount_tzs,
-      invoice.amount_tzs,
-    );
+    // THE AMOUNT IS THE INVOICE. Not a negotiation: the owner is billed exactly
+    // what the period costs, and that there is no `amount` parameter is the
+    // point. An override that lets a caller charge less than the invoice means
+    // a shop is billed a bargain price nobody agreed, and one that charges more
+    // is taking money nobody owes. The invoice was snapshotted at raise time,
+    // so this amount never drifts when a plan price later changes.
+    const amount = invoice.amount_tzs;
     if (amount < 500 || amount > MAX_CHARGE_TZS) {
       return json(400, { error: `amount out of range: ${amount}` });
     }

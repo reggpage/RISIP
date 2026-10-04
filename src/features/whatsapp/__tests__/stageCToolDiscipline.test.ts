@@ -167,7 +167,12 @@ describe('nothing about financial authority moved', () => {
     // messages, and can change nothing.
     // Phase 9 adds three read-only, backend-grounded report capabilities for
     // stock loss, owner use and whole-animal breakdowns.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(41);
+    // 41 with the receipts reservation, and 45 with B2B inter-shop ordering:
+    // search_suppliers, get_shop_orders, propose_shop_order and
+    // propose_shop_order_action. The two proposes point only at rows the read
+    // tools returned and stay behind NDIYO; the phone number that moves money
+    // never appears in any schema.
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(45);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('respond_conversationally');
     expect(shown).not.toContain('propose_catalogue_transaction');

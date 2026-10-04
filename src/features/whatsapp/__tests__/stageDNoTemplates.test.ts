@@ -219,7 +219,14 @@ describe('the prompt got shorter, not longer', () => {
     // never a price change. Both are load-bearing, both are one sentence, and
     // a ceiling that never moves for a measured fix is a ceiling that gets
     // ignored.
-    expect(prompt.length).toBeLessThan(20_800);
+    // Raised by 1,700, measured at 22,034 the day it moved, for B2B inter-shop
+    // ordering ("Agizo la bidhaa"). Four tools carry the whole lifecycle, and
+    // the orders rule has to spell out what the model cannot see: other shops
+    // are other companies, so only the server can re-price an order and only
+    // the trader's own NDIYO can place one. A cross-shop wrong answer (ordering
+    // from a shop that never opted in, or stating a total the server never
+    // computed) costs real money, so the paragraph cannot be shorter than it is.
+    expect(prompt.length).toBeLessThan(22_500);
   });
 
   it('tells the adviser to stop, and says what it costs not to', () => {

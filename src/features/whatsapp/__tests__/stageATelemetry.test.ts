@@ -227,7 +227,16 @@ describe('Stage A changed no behaviour', () => {
     // messages were left, so "nimebakiza ngapi" had nowhere to land. It takes
     // no arguments, reads only billing_plans and a count of the shop's own
     // messages, and can change nothing.
-    expect(ASSISTANT_TOOL_NAMES.length).toBe(41);
+    // 41 with the phase-9 reporting trio and the receipts reservation.
+    // 45 with B2B inter-shop ordering. Four tools, and two of them propose:
+    // search_suppliers (wholesale availability across opted-in shops),
+    // get_shop_orders (this shop's cross-shop order book), propose_shop_order
+    // (draft an order, re-priced by the server) and propose_shop_order_action
+    // (a decision on one, re-checked by the server). Both proposes stay behind
+    // the same NDIYO gate as everything else — the surface grew; the authority
+    // did not, and the number a model can type is spoken of nowhere in any
+    // schema.
+    expect(ASSISTANT_TOOL_NAMES.length).toBe(45);
     const shown = ASSISTANT_TOOLS.map((tool) => tool.name);
     expect(shown).toContain('propose_business_event');
     expect(shown).toContain('propose_money_event');
@@ -242,7 +251,18 @@ describe('Stage A changed no behaviour', () => {
     // normalizes the wording itself and a disagreement becomes a question.
     // Stage A is instrumentation. If a proposing tool grew a price field here,
     // that would be Stage B arriving by accident.
-    const json = JSON.stringify(ASSISTANT_TOOLS);
+    //
+    // One carve-out, argued rather than assumed, exactly like propose_record_void:
+    // the B2B shop-order tools carry the supplier_company_id and product_key of
+    // a row search_suppliers actually returned. They are pointers to evidence,
+    // not authority — the server re-prices the ENTIRE order from the supplier's
+    // own catalogue and shows the trader the total plus the supplier's payment
+    // number; a number no proposing tool here is allowed to state. Every other
+    // tool still carries no key, no company and no profile.
+    const withoutB2BPointers = ASSISTANT_TOOLS.filter(
+      (tool) => tool.name !== 'propose_shop_order' && tool.name !== 'propose_shop_order_action',
+    );
+    const json = JSON.stringify(withoutB2BPointers);
     expect(json).not.toContain('"product_key"');
     expect(json).not.toContain('"company_id"');
     expect(json).not.toContain('"profile_id"');

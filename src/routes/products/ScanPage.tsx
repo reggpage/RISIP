@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Barcode, Check, Loader2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import PlanGate from '@/components/ui/PlanGate';
 import Input from '@/components/ui/Input';
 import NumberInput from '@/components/ui/NumberInput';
 import { useAuth } from '@/lib/auth';
@@ -267,7 +268,8 @@ export default function ScanPage({ onExit }: { onExit?: () => void } = {}) {
   const scanning = code === null && !typing;
 
   return (
-    <div className="mx-auto max-w-md space-y-5 p-4">
+    <PlanGate capability="barcode_register" messageKey="lockRegister">
+      <div className="mx-auto max-w-md space-y-5 p-4">
       <div>
         <h1 className="flex items-center gap-2 text-lg font-semibold text-ink">
           <Barcode className="h-5 w-5" /> {c.title}
@@ -391,6 +393,7 @@ export default function ScanPage({ onExit }: { onExit?: () => void } = {}) {
           {c.back}
         </Link>
       )}
-    </div>
+      </div>
+    </PlanGate>
   );
 }

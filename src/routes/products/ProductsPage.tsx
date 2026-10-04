@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, Archive, Barcode, Package, Plus, RefreshCw, ScanLine, Search, TrendingDown } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
+import PlanGate from '@/components/ui/PlanGate';
 import Input from '@/components/ui/Input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import UnderlineTabs from '@/components/ui/UnderlineTabs';
@@ -209,12 +210,14 @@ function ProductRow({ product, level, prices, canPrice, onEdit, onMerge, onArchi
           tone={prices.length === 0 ? 'muted' : currentMargin !== null && currentMargin < 0 ? 'bad' : 'ink'}
           hint={currentMargin === null ? undefined : `${ui.currentMargin} ${formatMoney(currentMargin)}`}
         />
-        <Figure
-          label={ui.margin}
-          value={product.estimatedMargin === null ? '—' : formatMoney(product.estimatedMargin)}
-          tone={product.estimatedMargin === null ? 'muted' : product.estimatedMargin < 0 ? 'bad' : 'good'}
-          hint={percent === null ? undefined : `${percent.toFixed(0)}% · ${ui.period.toLowerCase()}`}
-        />
+        <PlanGate capability="profit_per_product" messageKey="lockProfit">
+          <Figure
+            label={ui.margin}
+            value={product.estimatedMargin === null ? '—' : formatMoney(product.estimatedMargin)}
+            tone={product.estimatedMargin === null ? 'muted' : product.estimatedMargin < 0 ? 'bad' : 'good'}
+            hint={percent === null ? undefined : `${percent.toFixed(0)}% · ${ui.period.toLowerCase()}`}
+          />
+        </PlanGate>
       </div>
 
       {canPrice ? (

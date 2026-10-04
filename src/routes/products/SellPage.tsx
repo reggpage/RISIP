@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Loader2, Minus, Plus, ScanLine, Trash2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
+import PlanGate from '@/components/ui/PlanGate';
 import { useAuth } from '@/lib/auth';
 import { useToast } from '@/components/ui/Toast';
 import { friendlyError } from '@/lib/errors';
@@ -11,6 +12,7 @@ import {
   bandForQuantity,
   basketTotal,
   fetchBarcodeCatalogue,
+  fetchProductPicklist,
   fetchSellingPrice,
   findProductByBarcode,
   lineTotal,
@@ -66,10 +68,14 @@ const COPY = {
     noPictures: 'Kamera haitoi picha. Jaribu kubadili kamera, au funga na ufungue ukurasa tena.',
     noReads: 'Bado sijaisoma. Sogeza karibu kidogo, washa taa, au ihakikishe bar code iko ndani ya mstari.',
     back: 'Rudi kwenye bidhaa',
+    pickName: 'Andika jina la bidhaa',
+    pickPlaceholder: 'Tafuta bidhaa…',
+    pickEmpty: 'Hakuna bidhaa zinazolingana.',
+    pickHelp: 'Gonga bidhaa ili iongeze kwenye kikapu.',
   },
   en: {
     title: 'Sell by scanning',
-    lead: 'Scan the barcode of everything they are buying. When you are done, tap “Finish sale”.',
+    lead: 'Scan the barcode of everything they are buying. When you are done, tap "Finish sale".',
     aim: 'Point at the barcode',
     zoom: 'Camera zoom',
     starting: 'Opening the camera…',
@@ -89,12 +95,16 @@ const COPY = {
     noPrice: 'has no selling price',
     noPriceHelp: 'Set its price under products, then sell it again.',
     denied: 'Camera permission was refused. Allow it in your browser settings.',
-    missing: 'I could not open this phone’s camera.',
+    missing: 'I could not open this phone\'s camera.',
     failed: 'The camera opened but the scanner did not start.',
     retry: 'Try again',
     noPictures: 'The camera is not delivering pictures. Try switching camera, or close and reopen the page.',
     noReads: 'Not read yet. Move a little closer, turn the light on, or line the barcode up inside the box.',
     back: 'Back to products',
+    pickName: 'Type a product name',
+    pickPlaceholder: 'Search products…',
+    pickEmpty: 'No matching products.',
+    pickHelp: 'Tap a product to add it to the basket.',
   },
 } as const;
 
@@ -124,12 +134,18 @@ export default function SellPage({
   const [hit, setHit] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [done, setDone] = useState<{ lines: CounterLine[]; confirmed: boolean } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerQuery, setPickerQuery] = useState('');
+  const picklistRef = useRef<ScannedProduct[]>([]);
 
   useEffect(() => {
     if (auth.status !== 'signed-in') return;
     void fetchBarcodeCatalogue()
       .then((catalogue) => { catalogueRef.current = catalogue; })
       .catch(() => { /* a slow load only means the first scan waits */ });
+    void fetchProductPicklist()
+      .then((list) => { picklistRef.current = list; })
+      .catch(() => { /* best-effort */ });
   }, [auth.status]);
 
   const apply = (next: CounterLine[]) => {
@@ -144,36 +160,34 @@ export default function SellPage({
     window.setTimeout(() => setHit(false), 500);
   };
 
+  /** Shared by both camera scan and name-picker tap. */
+  const addToBasket = useCallback((product: ScannedProduct) => {
+    setProblem(null);
+    const already = linesRef.current.find((line) => line.productKey === product.productKey);
+    if (already) {
+      const quantity = already.quantity + 1;
+      apply(linesRef.current.map((line) => (line.productKey === product.productKey
+        ? { ...line, quantity, band: bandForQuantity(quantity, line.wholesale, line.wholesaleMinQty) }
+        : line)));
+      return;
+    }
+    apply([...linesRef.current, {
+      productKey: product.productKey,
+      productName: product.productName,
+      barcode: product.barcode,
+      quantity: 1,
+      retail: product.retail,
+      wholesale: product.wholesale,
+      wholesaleMinQty: product.wholesaleMinQty,
+      band: bandForQuantity(1, product.wholesale, product.wholesaleMinQty),
+    }]);
+  }, []);
+
   /** A scan adds one, or adds one more. The camera never stops. */
   const scanned = useCallback(async (barcode: string) => {
     flash();
-    // By PRODUCT, not by barcode. A book carries its ISBN and often a second
-    // code for the same book, and the owner's till showed "Eat that frog"
-    // twice, three each, as though they were different things.
-    const add = (product: ScannedProduct) => {
-      setProblem(null);
-      const already = linesRef.current.find((line) => line.productKey === product.productKey);
-      if (already) {
-        const quantity = already.quantity + 1;
-        apply(linesRef.current.map((line) => (line.productKey === product.productKey
-          ? { ...line, quantity, band: bandForQuantity(quantity, line.wholesale, line.wholesaleMinQty) }
-          : line)));
-        return;
-      }
-      apply([...linesRef.current, {
-        productKey: product.productKey,
-        productName: product.productName,
-        barcode: product.barcode,
-        quantity: 1,
-        retail: product.retail,
-        wholesale: product.wholesale,
-        wholesaleMinQty: product.wholesaleMinQty,
-        band: bandForQuantity(1, product.wholesale, product.wholesaleMinQty),
-      }]);
-    };
-
     const known = catalogueRef.current.get(barcode);
-    if (known) { add(known); return; }
+    if (known) { addToBasket(known); return; }
 
     // Not in the table we loaded: either the shop registered it since this page
     // opened, or it is genuinely unknown. Worth one round trip to find out.
@@ -191,11 +205,11 @@ export default function SellPage({
         wholesaleMinQty: price.wholesaleMinQty,
       };
       catalogueRef.current.set(barcode, resolved);
-      add(resolved);
+      addToBasket(resolved);
     } catch (err) {
       toast.error(friendlyError(err));
     }
-  }, [toast]);
+  }, [toast, addToBasket]);
 
   // One camera, opened once — see useScanner.
   const scanner = useScanner(auth.status === 'signed-in', (code) => void scanned(code));
@@ -237,7 +251,8 @@ export default function SellPage({
   const count = lines.reduce((sum, line) => sum + line.quantity, 0);
 
   return (
-    <div className="mx-auto max-w-md space-y-4 p-4 pb-32">
+    <PlanGate capability="barcode_sell" messageKey="lockBarcode">
+      <div className="mx-auto max-w-md space-y-4 p-4 pb-32">
       {done ? (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-surface pt-10">
           <SaleDone
@@ -259,6 +274,74 @@ export default function SellPage({
       </div>
 
       <ScanViewfinder controls={scanner} copy={c} hit={hit} height="h-52" />
+
+      {/* Toggle between camera scan and name search. */}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            if (pickerOpen) {
+              setPickerOpen(false);
+              setPickerQuery('');
+              scanner.resume();
+            } else {
+              scanner.pause();
+              setPickerOpen(true);
+            }
+          }}
+          className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+            pickerOpen
+              ? 'border-surface-accent bg-surface-accent text-role-worker'
+              : 'border-border bg-surface text-ink'
+          }`}
+        >
+          {pickerOpen ? c.aim : c.pickName}
+        </button>
+      </div>
+
+      {pickerOpen ? (
+        <div className="space-y-2">
+          <input
+            autoFocus
+            type="search"
+            value={pickerQuery}
+            onChange={(e) => setPickerQuery(e.target.value)}
+            placeholder={c.pickPlaceholder}
+            className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted"
+          />
+          <p className="text-xs text-ink-muted">{c.pickHelp}</p>
+          {(() => {
+            const q = pickerQuery.toLowerCase().trim();
+            const filtered = q
+              ? picklistRef.current.filter((p) =>
+                  p.productName.toLowerCase().includes(q) || p.productKey.toLowerCase().includes(q))
+              : picklistRef.current;
+            if (filtered.length === 0) return <p className="py-4 text-center text-sm text-ink-muted">{c.pickEmpty}</p>;
+            return (
+              <ul className="max-h-56 divide-y divide-border overflow-y-auto rounded-lg border border-border">
+                {filtered.map((p) => (
+                  <li key={p.productKey}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        flash();
+                        addToBasket(p);
+                        setPickerOpen(false);
+                        setPickerQuery('');
+                        scanner.resume();
+                      }}
+                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-surface-muted"
+                    >
+                      <span className="truncate font-medium text-ink">{p.productName}</span>
+                      <span className="ml-2 shrink-0 tabular-nums text-ink-muted">{formatMoney(p.retail)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
+        </div>
+      ) : null}
 
       {problem ? (
         <div className="flex items-start gap-3 py-1">
@@ -380,6 +463,7 @@ export default function SellPage({
           </div>
         </div>
       ) : null}
-    </div>
+      </div>
+    </PlanGate>
   );
 }

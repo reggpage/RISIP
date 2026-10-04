@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Check, CheckCircle2, ChevronLeft, Download, Filter, RefreshCw, X } from 'lucide-react';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
+import PlanGate from '@/components/ui/PlanGate';
 import Select from '@/components/ui/Select';
 import { Skeleton } from '@/components/ui/Skeleton';
 import WhatsappIcon from '@/components/ui/WhatsappIcon';
@@ -192,14 +193,16 @@ export default function DailyRecordsPage() {
               so "download what I am looking at" is what happens. Owner and
               accountant only, the same wall the reports live behind. */}
           {canExport && (
-            <>
-              <Button variant="secondary" onClick={exportRecords} disabled={exportRows.length === 0}>
-                <Download className="h-4 w-4" /> {ui.export}
-              </Button>
-              <Button variant="secondary" onClick={() => void exportPdfReport()} disabled={exportRows.length === 0 || pdfBusy}>
-                <Download className="h-4 w-4" /> {pdfBusy ? ui.saving : ui.exportPdf}
-              </Button>
-            </>
+            <PlanGate capability="export" messageKey="lockExport">
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={exportRecords} disabled={exportRows.length === 0}>
+                  <Download className="h-4 w-4" /> {ui.export}
+                </Button>
+                <Button variant="secondary" onClick={() => void exportPdfReport()} disabled={exportRows.length === 0 || pdfBusy}>
+                  <Download className="h-4 w-4" /> {pdfBusy ? ui.saving : ui.exportPdf}
+                </Button>
+              </div>
+            </PlanGate>
           )}
           <Button variant="secondary" onClick={state.reload} disabled={state.status === 'loading'}>
             <RefreshCw className="h-4 w-4" /> {ui.refresh}

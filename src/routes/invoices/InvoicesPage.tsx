@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { FileText, Plus, Pencil, Link as LinkIcon, Loader2, Trash2 } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
+import PlanGate from '@/components/ui/PlanGate';
 import EmptyState from '@/components/ui/EmptyState';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
@@ -143,7 +144,8 @@ export default function InvoicesPage() {
   return (
     <div className="mx-auto max-w-4xl p-4 sm:p-6">
       {canGenerate && (
-        <Card className="mb-6">
+        <PlanGate capability="pdf_invoices" messageKey="lockPdfInvoices">
+          <Card className="mb-6">
           <CardHeader>
             <CardTitle>{sw.invoices.generateFor}</CardTitle>
           </CardHeader>
@@ -179,6 +181,7 @@ export default function InvoicesPage() {
             </Button>
           </div>
         </Card>
+        </PlanGate>
       )}
 
       <h2 className="mb-2 text-sm font-semibold text-ink-muted">{sw.invoices.list}</h2>
