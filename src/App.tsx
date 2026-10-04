@@ -1,4 +1,5 @@
-import { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
+import { lazyRoute } from '@/lib/lazyRoute';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import RequireAuth from '@/guards/RequireAuth';
 import RequireRole from '@/guards/RequireRole';
@@ -10,6 +11,35 @@ import { isNative } from '@/lib/native';
 import AppDeepLink from '@/components/navigation/AppDeepLink';
 
 // Load business screens when opened, keeping the public landing page lightweight.
+<<<<<<< HEAD
+const AppShell = lazyRoute(() => import('@/components/layout/AppShell'));
+const WaLogin = lazyRoute(() => import('@/routes/auth/WaLogin'));
+const BusinessSignup = lazyRoute(() => import('@/routes/auth/BusinessSignup'));
+const ClaimsInbox = lazyRoute(() => import('@/routes/claims/ClaimsInbox'));
+const ProjectsList = lazyRoute(() => import('@/routes/projects/ProjectsList'));
+const NewProject = lazyRoute(() => import('@/routes/projects/NewProject'));
+const EditProject = lazyRoute(() => import('@/routes/projects/EditProject'));
+const ProjectDetail = lazyRoute(() => import('@/routes/projects/ProjectDetail'));
+const ReceiptsPage = lazyRoute(() => import('@/routes/receipts/ReceiptsPage'));
+const ManualReceipt = lazyRoute(() => import('@/routes/receipts/ManualReceipt'));
+const Dashboard = lazyRoute(() => import('@/routes/dashboard/Dashboard'));
+const InvoicesPage = lazyRoute(() => import('@/routes/invoices/InvoicesPage'));
+const InvoiceEditor = lazyRoute(() => import('@/routes/invoices/InvoiceEditor'));
+const PublicInvoice = lazyRoute(() => import('@/routes/invoices/PublicInvoice'));
+const PettyCashPage = lazyRoute(() => import('@/routes/pettyCash/PettyCashPage'));
+const SettingsPage = lazyRoute(() => import('@/routes/settings/SettingsPage'));
+const BillingPage = lazyRoute(() => import('@/routes/billing/BillingPage'));
+const NotificationsPage = lazyRoute(() => import('@/routes/notifications/NotificationsPage'));
+const MarketplacePage = lazyRoute(() => import('@/routes/marketplace/MarketplacePage'));
+const RetirementsPage = lazyRoute(() => import('@/routes/retirements/RetirementsPage'));
+const ReimbursementsPage = lazyRoute(() => import('@/routes/reimbursements/ReimbursementsPage'));
+const DailyRecordsPage = lazyRoute(() => import('@/routes/dailyRecords/DailyRecordsPage'));
+const ProductsPage = lazyRoute(() => import('@/routes/products/ProductsPage'));
+const ScanPage = lazyRoute(() => import('@/routes/products/ScanPage'));
+const SellPage = lazyRoute(() => import('@/routes/products/SellPage'));
+const ChatPage = lazyRoute(() => import('@/routes/chat/ChatPage'));
+const LegalPage = lazyRoute(() => import('@/routes/legal/LegalPage'));
+=======
 const AppShell = lazy(() => import('@/components/layout/AppShell'));
 const WaLogin = lazy(() => import('@/routes/auth/WaLogin'));
 const BusinessSignup = lazy(() => import('@/routes/auth/BusinessSignup'));
@@ -37,6 +67,7 @@ const ScanPage = lazy(() => import('@/routes/products/ScanPage'));
 const SellPage = lazy(() => import('@/routes/products/SellPage'));
 const ChatPage = lazy(() => import('@/routes/chat/ChatPage'));
 const LegalPage = lazy(() => import('@/routes/legal/LegalPage'));
+>>>>>>> be457e6 (fix(pwa): route native fresh install to register; set fresh-install flag on PWA install)
 
 /**
  * Branded launch screen shown only inside the installed app while a business
@@ -161,6 +192,7 @@ export default function App() {
           )}
         />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/marketplace" element={<MarketplacePage />} />
         <Route path="/scan" element={<ScanPage />} />
         <Route path="/sell" element={<SellPage />} />
         <Route
