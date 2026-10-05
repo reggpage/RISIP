@@ -10132,7 +10132,11 @@ async function handleWebhook(req: Request, web?: NonNullable<ChatTransport['web'
           }
           const result = made as { code?: string; company_name?: string } | null;
           const inviteCode = String(result?.code ?? '');
-          const inviteBusiness = result?.company_name ?? '';
+          // The identity's own company_name, not the RPC's. Both read
+          // `companies.name`, but the RPC coalesces to '' and an empty string is
+          // what sent this bubble down the "here is a number to trust" path —
+          // the shop's name is the destination and it is already to hand.
+          const inviteBusiness = result?.company_name?.trim() || String(identity.company_name ?? '');
           const risipNumber = await whatsAppDisplayNumber();
           await replyQuietly(phone, inviteReady(
             inviteCode, role, lang,
@@ -11170,7 +11174,8 @@ async function handleWebhook(req: Request, web?: NonNullable<ChatTransport['web'
                   String(invite?.code ?? ''), 'worker', lang,
                 ));
                 await sendReplyText(phone, inviteForwardMessage(
-                  String(invite?.code ?? ''), invite?.company_name ?? '',
+                  String(invite?.code ?? ''),
+                  invite?.company_name?.trim() || String(identity.company_name ?? ''),
                   await whatsAppDisplayNumber(), lang,
                 ), waMessageId);
               }
@@ -11226,7 +11231,8 @@ async function handleWebhook(req: Request, web?: NonNullable<ChatTransport['web'
           // Its own message, with no owner-facing instructions mixed into it,
           // so the owner can forward this bubble as-is.
           await sendReplyText(phone, inviteForwardMessage(
-            String(invite?.code ?? ''), invite?.company_name ?? '',
+            String(invite?.code ?? ''),
+            invite?.company_name?.trim() || String(identity.company_name ?? ''),
             await whatsAppDisplayNumber(), lang,
           ), waMessageId);
           await audit(db, identity, waMessageId, 'invite', 'worker', 'applied');
