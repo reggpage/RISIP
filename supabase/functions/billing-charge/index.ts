@@ -80,6 +80,30 @@ Deno.serve(async (req) => {
 
   // ── sweep: write the invoices that are due ─────────────────────────────
   if (action === 'sweep') {
+    // The state transitions FIRST, via SQL, before any invoice is raised.
+    //
+    // This loop below only ever writes `subscription_invoices`. The moves —
+    // trial expired → past_due, period ended → past_due, grace spent →
+    // suspended — live in `billing_raise_due_invoices()` (migration 0160) and
+    // NOTHING called it: not the cron in 0105, not this function. So a trial
+    // never expired and a shop past its grace was never suspended. A sweep that
+    // reads `status in ('trialing','active','past_due')` and writes invoices
+    // is working perfectly while every subscription in the system is frozen in
+    // whatever state it was born in. The shop gets billed eventually and never
+    // gets locked, which is the worst of both.
+    //
+    // Delegating also keeps one implementation of the transitions rather than
+    // two that drift. If 0160 is not applied yet, the RPC errors and we fall
+    // through to the invoice loop below, which is the old behaviour and is
+    // still better than refusing to sweep at all.
+    let transitions: Record<string, unknown> | null = null;
+    const { data: swept, error: sweepErr } = await db.rpc('billing_raise_due_invoices');
+    if (sweepErr) {
+      console.error('billing-charge: billing_raise_due_invoices failed, invoices only:', sweepErr.message);
+    } else {
+      transitions = (swept ?? {}) as Record<string, unknown>;
+    }
+
     const horizon = new Date();
     horizon.setUTCDate(horizon.getUTCDate() + RAISE_DAYS_AHEAD);
     const cutoff = horizon.toISOString().slice(0, 10);
@@ -129,7 +153,17 @@ Deno.serve(async (req) => {
       if (dup) { skipped.push(`${sub.id}:${dup.code === '23505' ? 'exists' : 'error'}`); continue; }
       raised.push(String(sub.id));
     }
-    return json(200, { action, due: (due ?? []).length, raised: raised.length, skipped });
+    return json(200, {
+      action,
+      // Null rather than zeros when the SQL sweep could not run, so a caller
+      // reading this can tell "nothing to move" from "nobody checked". Both
+      // look like success otherwise, which is how a frozen system reads as a
+      // healthy one for months.
+      transitions,
+      due: (due ?? []).length,
+      raised: raised.length,
+      skipped,
+    });
   }
 
   // ── pay: ask Snippe to push one USSD prompt ────────────────────────────
