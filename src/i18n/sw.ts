@@ -251,6 +251,11 @@ const english = {
     companyPasswordDesc: 'Set the shared password staff use when they search for your business on the landing page and join without an invite link.',
     dangerZoneDesc: 'Deleting a business removes its live records, files, connections and memberships. Your Risip login remains separate.',
     deleteAccountDesc: 'Delete your Risip account separately from any business. Businesses you own must be explicitly confirmed; businesses you only joined remain.',
+    whatsappContactTitle: 'Save Risip as a contact',
+    whatsappContactDesc: 'Save the official Risip number to your phone with your shop name, so WhatsApp shows "Dickson Shop" instead of a number you have never heard of.',
+    whatsappContactSave: 'Save contact',
+    whatsappContactSaved: 'Contact file ready. Open it and save to your phone.',
+    whatsappContactFailed: 'Could not create the contact file on this device.',
   },
   invoices: {
     generate: 'Generate invoice',

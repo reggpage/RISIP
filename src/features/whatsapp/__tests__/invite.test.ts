@@ -123,10 +123,22 @@ describe('what the owner gets back', () => {
   });
 
   it('creates the exact clean bubble the owner can forward', () => {
+    // The shop, not the number. "Tuma neno G38EGXTM kwenye WhatsApp namba
+    // +255 750 513 538" told a stranger to trust a number; the shop's own name
+    // is what they were invited into, and it is also the name WhatsApp shows
+    // once they have saved the contact.
     expect(inviteForwardMessage(
       'G38EGXTM', 'St. Ritha bookshop', '+255 750 513 538', 'sw',
     )).toBe(
-      'Karibu St. Ritha bookshop. Tuma neno G38EGXTM kwenye WhatsApp namba +255 750 513 538, kisha fuata maswali mawili. Ndipo utaweza kurekodi mauzo kwa simu yako.',
+      'Karibu St. Ritha bookshop. Tuma neno G38EGXTM kwa St. Ritha bookshop, kisha fuata maswali mawili. Ndipo utaweza kurekodi mauzo kwa simu yako.',
+    );
+  });
+
+  it('falls back to the number when the shop has no name saved', () => {
+    // No "Karibu ." — a company with no name saved is called Risip, and the
+    // number is named so the recipient knows where to send the code.
+    expect(inviteForwardMessage('G38EGXTM', '', '+255 750 513 538', 'sw')).toBe(
+      'Karibu Risip. Tuma neno G38EGXTM kwa WhatsApp +255 750 513 538, kisha fuata maswali mawili. Ndipo utaweza kurekodi mauzo kwa simu yako.',
     );
   });
 
@@ -160,10 +172,20 @@ describe('worker reporting permissions', () => {
 
 describe('when Meta will not say what the number is', () => {
   it('still produces a usable invite', () => {
+    // A shop WITH a name never sees the number, and neither does the reader when
+    // Meta refuses to say what the number is — the business is the destination
+    // either way.
     const reply = inviteForwardMessage('KTM4PQ7X', 'St. Ritha bookshop', null, 'sw');
     expect(reply).toContain('KTM4PQ7X');
-    expect(reply).toMatch(/WhatsApp namba hii ya Risip/);
+    expect(reply).toContain('kwa St. Ritha bookshop');
     expect(reply).not.toMatch(/null|undefined/);
+  });
+
+  it('names neither a blank shop nor an absent number', () => {
+    const reply = inviteForwardMessage('KTM4PQ7X', '', null, 'sw');
+    expect(reply).toContain('Karibu Risip.');
+    expect(reply).toContain('kwa Risip kwenye WhatsApp');
+    expect(reply).not.toMatch(/Karibu \.|null|undefined/);
   });
 });
 

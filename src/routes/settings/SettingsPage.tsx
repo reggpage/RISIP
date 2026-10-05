@@ -643,7 +643,7 @@ export default function SettingsPage() {
           description="Send receipt photos to Risip from your own WhatsApp account. You finish the details here in the app."
         >
           <div className="space-y-4">
-            <WhatsAppConnectCard />
+            <WhatsAppConnectCard companyName={company?.name ?? companyName} />
             {(profile?.role === 'owner' || profile?.role === 'accountant') && (
               <WhatsAppNotificationPreferences />
             )}

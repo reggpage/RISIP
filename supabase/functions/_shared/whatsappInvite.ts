@@ -101,14 +101,20 @@ export function inviteForwardMessage(
   risipNumber: string | null,
   lang: Lang,
 ): string {
-  const destination = businessName && businessName.trim()
-    ? businessName
-    : (risipNumber
-      ? (lang === 'sw' ? `WhatsApp namba ${risipNumber}` : `WhatsApp number ${risipNumber}`)
-      : (lang === 'sw' ? 'Risip' : 'Risip'));
+  const named = businessName.trim();
+  // What the shop is called, or the product's own name when the company has
+  // never saved one. Never an empty string: "Karibu ." is worse than useless.
+  const shop = named || 'Risip';
+  // WHERE the code goes. The shop's name, not the number: the owner is the one
+  // forwarding this bubble, and the point is that the invited person ends up in
+  // a conversation with the BUSINESS. The number is the fallback for a shop
+  // with no name saved, and plain "Risip" when Meta will not say the number.
+  const destination = named
+    ? shop
+    : (risipNumber ? `WhatsApp ${risipNumber}` : 'Risip kwenye WhatsApp');
   return lang === 'sw'
-    ? `Karibu ${businessName}. Tuma neno ${code} kwa ${destination}, kisha fuata maswali mawili. Ndipo utaweza kurekodi mauzo kwa simu yako.`
-    : `Welcome to ${businessName}. Send the word ${code} to ${destination}, then answer two questions. That is when you can start recording sales on your phone.`;
+    ? `Karibu ${shop}. Tuma neno ${code} kwa ${destination}, kisha fuata maswali mawili. Ndipo utaweza kurekodi mauzo kwa simu yako.`
+    : `Welcome to ${shop}. Send the word ${code} to ${destination}, then answer two questions. That is when you can start recording sales on your phone.`;
 }
 
 function inviteResponsibilities(role: InviteRole, lang: Lang): string {

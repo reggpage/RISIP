@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CheckCircle2, Loader2, MessageCircle } from 'lucide-react';
+import { BookUser, CheckCircle2, Loader2, MessageCircle } from 'lucide-react';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { useToast } from '@/components/ui/Toast';
@@ -9,14 +9,26 @@ import {
   revokeWhatsApp,
   useWhatsAppLink,
 } from '@/features/whatsapp/useWhatsAppLink';
+import { risipWhatsAppNumberDisplay, saveRisipContact } from '@/features/whatsapp/publicWhatsApp';
+import { sw } from '@/i18n/sw';
 
 // Connect / show / revoke the employee's WhatsApp number. Deliberately small:
 // this MVP only lets WhatsApp deliver a receipt photo, and everything else still
 // happens in the app.
-export default function WhatsAppConnectCard() {
+export default function WhatsAppConnectCard({ companyName }: { companyName?: string }) {
   const { identity, loading, refresh, configured } = useWhatsAppLink();
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const c = sw.settingsCopy;
+  const shop = String(companyName ?? '').trim();
+
+  // WhatsApp takes the name of a chat from the phone's contact book. Save the
+  // number under the shop's name and every message from then on is labelled with
+  // the business instead of with digits the owner does not recognise.
+  function saveContact() {
+    if (saveRisipContact(shop)) toast.success(c.whatsappContactSaved);
+    else toast.error(c.whatsappContactFailed);
+  }
 
   async function connect() {
     setBusy(true);
@@ -92,6 +104,23 @@ export default function WhatsAppConnectCard() {
           The Risip WhatsApp number is not configured for this deployment yet.
         </p>
       )}
+
+      {/* The number, named, and saveable under the shop's name. */}
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-surface-muted px-3 py-2.5">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-ink">{c.whatsappContactTitle}</p>
+          <p className="mt-0.5 max-w-prose text-xs text-ink-muted">
+            {c.whatsappContactDesc}
+          </p>
+          <p className="mt-1 text-sm font-semibold tabular-nums text-ink">
+            {risipWhatsAppNumberDisplay()}
+          </p>
+        </div>
+        <Button variant="secondary" tint="neutral" onClick={saveContact} className="shrink-0">
+          <BookUser className="h-4 w-4" />
+          {c.whatsappContactSave}
+        </Button>
+      </div>
 
       <p className="mt-4 text-xs leading-relaxed text-ink-muted">
         Privacy: receipt photos you send to the official Risip number are stored in your company's Risip

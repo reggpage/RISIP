@@ -173,9 +173,14 @@ export const swahiliOverrides = {
     preview: 'Fungua PDF',
     markSent: 'Weka kama imetumwa',
   },
-  settingsCopy: {
+settingsCopy: {
     subtitle: 'Taarifa za kampuni, timu na usalama.',
     languageDesc: 'Chagua lugha ya app. Itapakia upya baada ya kubadilisha.',
+    whatsappContactTitle: 'Hifadhi Risip kama mwanariishi',
+    whatsappContactDesc: 'Hifadhi namba rasmi ya Risip kwenye simu yako kwa jina la duka lako, ili WhatsApp ionyeshe "Dickson Shop" badala ya namba ambayo hujawahi kuisikia.',
+    whatsappContactSave: 'Hifadhi mwanariishi',
+    whatsappContactSaved: 'Faili ya mwanariishi iko tayari. Fungua kwa kuihifadhi kwenye simu yako.',
+    whatsappContactFailed: 'Hatukuweza kutengeneza faili ya mwanariishi kwenye kifaa hiki.',
   },
   shopOrders: {
     title: 'Agizo la bidhaa',
