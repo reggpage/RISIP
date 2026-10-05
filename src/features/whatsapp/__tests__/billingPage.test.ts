@@ -36,9 +36,12 @@ describe('which banner a shop sees', () => {
     expect(billingBanner(base)).toEqual({ kind: 'none' });
   });
 
-  it('shows nothing to a shop with no plan at all', () => {
-    // Every company that existed before billing did is in this state.
-    expect(billingBanner(null)).toEqual({ kind: 'none' });
+  it('treats a shop with no subscription row as being on the trial', () => {
+    // Every company that registered before trials existed. It has never been
+    // charged, so it is on the free trial — and it has to be TOLD so, because
+    // this is the shop that will be asked for money later. Silence here reads as
+    // "already paid" to the owner, which is the one reading we cannot support.
+    expect(billingBanner(null)).toEqual({ kind: 'trial', daysLeft: null });
   });
 
   it('shows nothing to a cancelled shop', () => {

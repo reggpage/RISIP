@@ -139,7 +139,21 @@ export type Banner =
  * five different shops.
  */
 export function billingBanner(subscription: Subscription | null): Banner {
-  if (!subscription) return { kind: 'none' };
+  // NO ROW AT ALL IS A TRIAL, NOT AN ABSENCE.
+  //
+  // A company with no subscription has never been charged anything, which is
+  // the definition of being on the free trial. It used to read as `{ kind:
+  // 'none' }` — silence — which meant every business that registered before
+  // trials existed looked to its owner exactly like a paid-up shop: no banner,
+  // no bill, no indication that money was ever expected. Silence is the one
+  // answer that cannot be defended here, because the shop is being asked to pay
+  // later and had no way of knowing.
+  //
+  // `daysLeft: null` rather than a number: without a `trial_ends_at` there is
+  // no honest countdown to show, and inventing one is worse than omitting it.
+  // Once the backfill migration has run, the row exists and the real number
+  // takes over. This only decides what is drawn for the shops that have none.
+  if (!subscription) return { kind: 'trial', daysLeft: null };
   switch (subscription.status) {
     case 'suspended':
       return { kind: 'suspended' };
