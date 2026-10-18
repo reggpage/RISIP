@@ -203,17 +203,20 @@ as $$
      where k is not null and btrim(k) <> ''
   ),
   latest_price as (
-    select distinct on (p.key)
-      p.key as product_key,
-      (array_agg(s.product_name order by s.effective_from desc, s.created_at desc))[1] as product_name,
-      (array_agg(s.retail_price order by s.effective_from desc, s.created_at desc))[1] as retail_price,
-      (array_agg(s.wholesale_price order by s.effective_from desc, s.created_at desc))[1] as wholesale_price,
-      (array_agg(s.wholesale_min_qty order by s.effective_from desc, s.created_at desc))[1] as wholesale_min_qty
+    -- One row per wanted product: the supplier's most recent price. DISTINCT ON
+    -- (not DISTINCT ON + array_agg) because the aggregate form is invalid without
+    -- a GROUP BY; the ORDER BY picks the same winning row.
+    select distinct on (p.product_key)
+      p.product_key,
+      s.product_name,
+      s.retail_price,
+      s.wholesale_price,
+      s.wholesale_min_qty
     from wanted p
     join product_selling_prices s
       on s.company_id = p_supplier_company_id
      and private.product_key(s.product_key) = p.product_key
-    order by p.key, s.effective_from desc, s.created_at desc
+    order by p.product_key, s.effective_from desc, s.created_at desc
   )
   select
     w.product_key,
@@ -260,12 +263,14 @@ as $$
      where length(btrim(t)) >= 2
   ),
   candidates as (
+    -- Most recent wholesale price per (product, supplier). DISTINCT ON only; no
+    -- aggregate, which is invalid here without a GROUP BY.
     select distinct on (private.product_key(s.product_key), s.company_id)
       s.company_id,
       private.product_key(s.product_key) as product_key,
-      (array_agg(s.product_name order by s.effective_from desc, s.created_at desc))[1] as product_name,
-      (array_agg(s.wholesale_price order by s.effective_from desc, s.created_at desc))[1] as wholesale_price,
-      (array_agg(s.wholesale_min_qty order by s.effective_from desc, s.created_at desc))[1] as wholesale_min_qty
+      s.product_name,
+      s.wholesale_price,
+      s.wholesale_min_qty
     from product_selling_prices s
     where s.wholesale_price is not null
       and exists (
@@ -367,11 +372,13 @@ begin
       where w.wholesale_price is not null
       limit 1;
     if v_row is null then
-      raise exception 'Product % is not in the supplier''s wholesale catalogue'
+      raise exception 'Product % is not in the supplier''s wholesale catalogue',
+        coalesce(nullif(btrim(v_item->>'product_key'), ''), 'that product')
         using errcode = 'P0001', hint = 'product_unpriced_or_unknown';
     end if;
     if v_row.has_count and v_qty > v_row.on_hand then
-      raise exception 'Only % of % are on hand at the supplier'
+      raise exception 'Only % of % are on hand at the supplier',
+        v_row.on_hand, v_qty
         using errcode = 'P0001', hint = 'stock_insufficient';
     end if;
     v_price := round(v_row.wholesale_price, 2);

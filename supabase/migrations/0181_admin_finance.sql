@@ -666,3 +666,5 @@ do $grants$ declare signature text; begin
     execute 'revoke all on function public.' || signature || ' from public, anon, authenticated, service_role';
     execute 'grant execute on function public.' || signature || ' to authenticated, service_role';
   end loop;
+end;
+$grants$;
