@@ -15,7 +15,7 @@
     "interrogate:quick": "vite-node scripts/interrogate.ts --seeds 2 --count 120",
     "check:edge": "vite-node scripts/check-edge-functions.ts",
     "check:pdf": "vite-node scripts/check-pdf-layout.ts",
-    "app:build": "vite build && cap sync android",
+    "app:build": "vite build --mode android && cap sync android",
     "app:apk": "cd android && ./gradlew assembleDebug",
     "app:install": "adb install -r android/app/build/outputs/apk/debug/app-debug.apk"
   },
